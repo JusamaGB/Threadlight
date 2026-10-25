@@ -11,6 +11,7 @@ import { checkVoiceRouting } from './voice-routing.smoke.mjs'
 import { checkMicPill } from './mic-pill.smoke.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
 import { checkPanelHeight } from './panel-height.smoke.mjs'
+import { checkTips } from './tips.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
 
@@ -149,6 +150,7 @@ let browser, memoryProof, testPage
 try {
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 460, height: 900 } })
+  await page.clock.install()
   memoryProof = await setupMemory(
     page,
     require(join(root, 'src/main/memory/store.ts')).MemoryStore,
@@ -369,7 +371,9 @@ try {
   assert.equal(await row('Claude').isVisible(), true)
   assert.equal(await row('Codex').isVisible(), true)
   assert.equal(await box.inputValue(), 'Claude draft')
-  assert.equal(await page.getByTitle('Claude chat').count(), 1)
+  await checkTips(page, row)
+  await capture('thread-context-tooltip')
+  await page.locator('[class*="header"]').first().hover()
   assert.equal(await row('Claude').getAttribute('data-provider'), 'claude')
   assert.equal(await row('Codex').getAttribute('data-provider'), 'codex')
   assert.equal(await row('Claude').locator('[class*="providerBadge"]').count(), 0)

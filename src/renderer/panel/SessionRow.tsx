@@ -70,10 +70,11 @@ export function SessionRow(props: SessionRowProps) {
       data-session-id={session.id}
       data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
     >
-      <button
+      <Tip
+        as="button"
         className={styles.rowButton}
         data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
-        title={props.showProvider ? `${providerName(sessionProvider(session.id))} chat` : undefined}
+        text={props.showProvider ? `${providerName(sessionProvider(session.id))} chat` : ''}
         aria-description={
           props.showProvider ? `${providerName(sessionProvider(session.id))} chat` : undefined
         }
@@ -83,9 +84,9 @@ export function SessionRow(props: SessionRowProps) {
       >
         <span className={styles.rowTop}>
           {/* The state dot, with the thread's context ring around it. */}
-          <span
+          <Tip
             className={styles.dotSlot}
-            title={session.contextUsed !== null ? contextLabel(session.contextUsed) : undefined}
+            text={session.contextUsed !== null ? contextLabel(session.contextUsed) : ''}
           >
             {session.contextUsed !== null && (
               <ContextRing used={session.contextUsed} wide={attention !== null} />
@@ -95,7 +96,7 @@ export function SessionRow(props: SessionRowProps) {
               data-state={session.state}
               data-attention={attention ? '' : undefined}
             />
-          </span>
+          </Tip>
           <span className={titleClass}>{session.title}</span>
           {session.git && <GitCount git={session.git} onOpen={props.onShowChanges} />}
           {/* A long title fades out behind this, so it always shows. */}
@@ -118,7 +119,7 @@ export function SessionRow(props: SessionRowProps) {
             {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
           </span>
         </span>
-      </button>
+      </Tip>
       {expanded && appId && (
         <button className={styles.rowOpen} onClick={() => window.threadlight.openInClaude(appId)}>
           {en.detail.open}
