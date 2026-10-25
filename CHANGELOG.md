@@ -305,6 +305,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Thread edge glows are half as wide (10 px) and mirrored on both sides.
+
 - Expanded thread details show elapsed turn time beside NOW, above the current action.
 
 - Thread context hovers use the panel's styled tooltips instead of native system boxes.

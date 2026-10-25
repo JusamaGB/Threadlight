@@ -338,11 +338,13 @@
 }
 
 /* Overlay the whole row so raised details and cards don't interrupt the narrow edge tint. */
+.row[data-provider]::before,
 .row[data-provider]::after {
   content: '';
   position: absolute;
-  inset: 0 0 0 auto;
-  width: 20px;
+  top: 0;
+  bottom: 0;
+  width: 10px;
   pointer-events: none;
   z-index: 1;
   background-image: linear-gradient(
@@ -350,6 +352,15 @@
     color-mix(in srgb, var(--provider-tint) 20%, transparent),
     transparent
   );
+}
+
+.row[data-provider]::before {
+  left: 0;
+  transform: scaleX(-1);
+}
+
+.row[data-provider]::after {
+  right: 0;
 }
 
 .row[data-provider='codex'] {
