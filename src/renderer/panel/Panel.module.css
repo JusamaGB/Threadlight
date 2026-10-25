@@ -114,6 +114,19 @@
   text-overflow: ellipsis;
 }
 
+.composing {
+  color: var(--accent);
+}
+
+/* Relay lines on rows and in the detail: ✓✓ replies in blue, failures in amber. */
+[data-tone='accent'] {
+  color: var(--accent);
+}
+
+[data-tone='amber'] {
+  color: var(--amber);
+}
+
 .age {
   color: var(--faint);
   font-size: 11px;

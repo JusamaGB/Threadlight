@@ -1,0 +1,111 @@
+.composer {
+  flex: none;
+  border-top: 1px solid var(--border);
+  padding: 6px 8px 8px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 5px;
+  font-size: 11px;
+}
+
+.to {
+  color: var(--faint);
+}
+
+/* Stretches, so the ticks and × always sit at the right edge. */
+.target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--accent);
+}
+
+.ticks {
+  flex: none;
+  color: var(--faint);
+}
+
+.ticks[data-tone='accent'] {
+  color: var(--accent);
+}
+
+.ticks[data-tone='amber'] {
+  color: var(--amber);
+}
+
+.close {
+  flex: none;
+  margin-left: 6px;
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.close:hover {
+  color: var(--fg);
+}
+
+.error {
+  margin: 0 4px 5px;
+  font-size: 11px;
+  color: var(--amber);
+}
+
+/* The pill, matching the Claude app's own composer. */
+.pill {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 38px;
+  padding: 9px 10px 9px 12px;
+  box-sizing: border-box;
+  background: var(--composer-bg);
+  border: 1px solid var(--composer-edge);
+  border-radius: 11px;
+}
+
+.pill:focus-within {
+  border-color: #5a5a5a;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  user-select: text;
+  scrollbar-width: thin;
+}
+
+.input::placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.send {
+  flex: none;
+  width: 20px;
+  height: 18px;
+  font-size: 14px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--fg);
+}
+
+.send:disabled {
+  color: var(--faint);
+  cursor: default;
+}

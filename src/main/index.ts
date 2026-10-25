@@ -3,6 +3,8 @@ import { app, ipcMain } from 'electron'
 import { IPC } from '../shared/ipc'
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
+import { findClaudeCli, isHeldByRunningProcess, type CliCommand } from './relay'
+import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
 import { defaultPaths } from './sessions/paths'
 import { SessionService } from './sessions/service'
@@ -53,6 +55,21 @@ function start(): void {
   ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
     if (typeof appId === 'string' && openThread(appId)) windows.closePanel()
   })
+
+  // The UI passes only a session id and text; folder, permission mode and model come from
+  // Threadlight's own scan, so a misbehaving page cannot choose them.
+  let cli: CliCommand | null = null
+  const relays = new RelayService(
+    async () => ({ cli: (cli ??= await findClaudeCli(paths)), isHeld: isHeldByRunningProcess }),
+    (id) => sessions.sessions.find((s) => s.id === id),
+    (list) => windows.send(IPC.relaysChanged, list),
+  )
+  ipcMain.handle(IPC.sendMessage, (_event, sessionId: unknown, text: unknown) =>
+    typeof sessionId === 'string' && typeof text === 'string'
+      ? relays.send(sessionId, text)
+      : { ok: false, reason: 'Invalid message.' },
+  )
+  ipcMain.handle(IPC.getRelays, () => relays.list())
 
   sessions.start(SCAN_INTERVAL_MS)
 

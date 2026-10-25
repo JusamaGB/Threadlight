@@ -1,9 +1,12 @@
 // The one contract between the UI (renderer) and the Node side (main).
 // Channel names and payload types live here so both sides stay in step.
 
-import type { Session } from './types'
+import type { RelayStatus, Session } from './types'
 
 export const IPC = {
+  sendMessage: 'relay:send',
+  getRelays: 'relay:get',
+  relaysChanged: 'relay:changed',
   getVersion: 'app:get-version',
   getSessions: 'sessions:get',
   sessionsChanged: 'sessions:changed',
@@ -37,4 +40,12 @@ export interface ThreadlightApi {
   resizePanel(height: number): void
   closePanel(): void
   openInClaude(appId: string): void
+
+  /** Relays `text` to a session in the background. Resolves once accepted, not when replied. */
+  sendMessage(
+    sessionId: string,
+    text: string,
+  ): Promise<{ ok: true } | { ok: false; reason: string }>
+  getRelays(): Promise<RelayStatus[]>
+  onRelays(listener: (statuses: RelayStatus[]) => void): () => void
 }

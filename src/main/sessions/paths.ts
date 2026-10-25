@@ -12,6 +12,10 @@ export interface ClaudePaths {
   appSessionsDir: string
   /** Electron keeps this file locked while the Claude app runs. */
   appLockFile: string
+  /** The Claude app bundles Claude Code here: `<appCliRoot>/<version>/<build>/claude.exe`. */
+  appCliRoot: string
+  /** Where Claude Code's own native installer puts it. */
+  nativeCli: string
 }
 
 export function defaultPaths(env: NodeJS.ProcessEnv = process.env, home = homedir()): ClaudePaths {
@@ -20,6 +24,8 @@ export function defaultPaths(env: NodeJS.ProcessEnv = process.env, home = homedi
     projectsDir: join(home, '.claude', 'projects'),
     appSessionsDir: join(appData, 'Claude', 'claude-code-sessions'),
     appLockFile: join(appData, 'Claude', 'lockfile'),
+    appCliRoot: join(appData, 'Claude', 'claude-code'),
+    nativeCli: join(home, '.local', 'bin', 'claude.exe'),
   }
 }
 

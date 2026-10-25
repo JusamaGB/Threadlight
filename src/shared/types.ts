@@ -40,3 +40,18 @@ export interface Session {
   permissionMode: string | null
   model: string | null
 }
+
+/**
+ * A message relayed to a session in the background.
+ * sending → sent (✓, handed to the session) → replied (✓✓, the session answered), or failed.
+ */
+export type RelayState = 'sending' | 'sent' | 'replied' | 'failed'
+
+export interface RelayStatus {
+  sessionId: string
+  state: RelayState
+  /** The reply when replied, the reason when failed. */
+  detail: string
+  /** When the state last changed, in milliseconds since the epoch. */
+  at: number
+}

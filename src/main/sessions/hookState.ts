@@ -25,10 +25,6 @@ export class HookStateStore {
     const event = str(payload['hook_event_name'])
     if (!sessionId || !event) return
 
-    if (event === 'SessionEnd') {
-      this.records.delete(sessionId)
-      return
-    }
     const state = stateForEvent(event, payload)
     if (!state) return
     const previous = this.records.get(sessionId)
@@ -55,8 +51,11 @@ export class HookStateStore {
 
 function stateForEvent(event: string, payload: Record<string, unknown>): SessionState | null {
   switch (event) {
+    // SessionEnd means the process ended, not the thread: a background reply or a closed app
+    // window ends it too. Keep the record as idle, or the transcript guess says "working".
     case 'SessionStart':
     case 'Stop':
+    case 'SessionEnd':
       return 'idle'
     case 'UserPromptSubmit':
     case 'PreToolUse':

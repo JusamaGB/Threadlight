@@ -25,3 +25,15 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   PowerShell 7, and always exits cleanly when Threadlight is not running.
 - The endpoint only accepts session-state events and refuses anything a web page could
   send (requests with an Origin or Referer header, or a non-local Host).
+- Right-click a session → Compose to message it in the background, without opening the
+  Claude window. The message goes to your own `claude` CLI (`--resume … -p`) as a single
+  argument, never through a shell, using the session's own folder, permission mode and
+  model from Threadlight's scan (the UI only supplies the session id and text).
+  ✓ Sent when it is delivered, ✓✓ Read when the session replies; the reply shows on the
+  row for two minutes. Threads the Claude app holds open are refused, and only one
+  message per thread can be in flight.
+
+### Fixed
+
+- A session whose Claude Code process ended (for example after a background reply) no
+  longer flips back to "working" for 30 seconds.

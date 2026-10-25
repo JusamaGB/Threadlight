@@ -1,17 +1,25 @@
 import type { ReactNode } from 'react'
 
-import type { PlanItem, Session } from '../../shared/types'
+import type { PlanItem, RelayStatus, Session } from '../../shared/types'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
+import { relayLine } from '../lib/relay'
 import styles from './Panel.module.css'
 
 const MARKS: Record<PlanItem['status'], string> = { completed: '✓', in_progress: '●', pending: '○' }
 
-export function SessionDetail({ session }: { session: Session }) {
+interface SessionDetailProps {
+  session: Session
+  relay: RelayStatus | undefined
+  now: number
+}
+
+export function SessionDetail({ session, relay, now }: SessionDetailProps) {
   const done = session.plan.filter((item) => item.status === 'completed').length
   const active = session.state !== 'idle'
   const status = en.state[session.state] + (session.tracked ? '' : ` · ${en.state.guessed}`)
   const appId = session.appId
+  const message = relayLine(relay, now)
 
   return (
     <div className={styles.detail}>
@@ -26,6 +34,12 @@ export function SessionDetail({ session }: { session: Session }) {
         )}
       </div>
       {session.cwd && <div className={styles.cwd}>{session.cwd}</div>}
+
+      {message && (
+        <Section label={en.detail.yourMessage}>
+          <p data-tone={message.tone}>{clip(message.text, 320)}</p>
+        </Section>
+      )}
 
       {session.lastPrompt && (
         <Section label={en.detail.asked}>

@@ -26,10 +26,15 @@ describe('HookStateStore', () => {
     expect(stateAfter('Stop')).toBe('idle')
   })
 
-  it('forgets a session when it ends, and ignores junk', () => {
+  it('keeps an ended session as idle, so it is not guessed back to working', () => {
     const store = new HookStateStore()
     store.apply(event('UserPromptSubmit'))
     store.apply(event('SessionEnd'))
+    expect(store.get('session-a')?.state).toBe('idle')
+  })
+
+  it('ignores junk', () => {
+    const store = new HookStateStore()
     store.apply('not an object')
     store.apply({ hook_event_name: 'Stop' }) // no session id
     store.apply(event('SomeFutureEvent'))

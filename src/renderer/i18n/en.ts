@@ -29,9 +29,26 @@ export const en = {
     result: 'Result',
     lastReply: 'Last reply',
     open: 'Open ↗',
+    yourMessage: 'Your message',
   },
   menu: {
+    compose: 'Compose',
     openInClaude: 'Open in Claude',
+  },
+  composer: {
+    to: 'To',
+    placeholder: 'Type a message…',
+    send: 'Send',
+    close: 'Close the composer',
+  },
+  relay: {
+    sending: '…',
+    sent: '✓ Sent',
+    read: '✓✓ Read',
+    notSent: 'Not sent',
+    ticks: '✓✓',
+    rowSending: 'Sending…',
+    rowSent: '✓ Sent · waiting for a reply',
   },
   age: {
     now: 'now',
