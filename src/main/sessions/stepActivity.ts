@@ -12,6 +12,16 @@ import type { PlanItem, StepActivity } from '../../shared/types'
 import { isObject, str, type JsonObject } from './json'
 import { replayPlan } from './transcript'
 
+/**
+ * What starting threads are told (hookServer's /context), so each plan step names the files it
+ * means to change and why. Threadlight shows those next to what the step actually changed.
+ */
+export const PLAN_CONTEXT =
+  'Threadlight, a companion app the user runs, shows each step of your task list (update_plan) with the files it means to change. ' +
+  'Whenever you send update_plan a full "items" list, give every item two more fields: ' +
+  '"files", the paths you expect that step to create or change, relative to your working folder ([] if none), ' +
+  'and "why", one short sentence on what the step does and why. Keep them current when you send the list again.'
+
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
 /** Bookkeeping tools that say nothing about the work itself. */
 const QUIET = /(^|__)(update_plan|wrap_up|mark_chapter)$|^ToolSearch$/

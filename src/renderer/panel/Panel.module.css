@@ -695,6 +695,23 @@
   color: var(--muted);
 }
 
+/* Planned and not changed: faint. Changed without a plan: amber mark, to stand out. */
+.stepList li[data-untouched] {
+  color: var(--faint);
+}
+
+.stepList li[data-unplanned] .stepMark {
+  color: var(--amber);
+}
+
+/* Why the step is there, as the thread put it. */
+.stepWhy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
 .stepList li[data-failed] {
   color: var(--amber);
 }

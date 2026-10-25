@@ -207,6 +207,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the other tools it used and what it last said. It is read from the thread's transcript, so
   it works on old threads too; a step in progress keeps up as it goes. Files changed by a
   shell command show only as that command.
+- Plan steps can say which files they mean to change and why (plugin 0.0.4). While
+  Threadlight runs, starting threads are asked to add "files" and "why" to each step of
+  their task list. A step then shows why it is there, and its planned files next to what it
+  changed: ✓ planned and changed, ○ planned but not changed, + changed without a plan. A
+  step not started yet shows what it plans to touch.
 
 ### Changed
 

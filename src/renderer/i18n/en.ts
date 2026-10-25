@@ -50,7 +50,11 @@ export const en = {
     nothing: 'Nothing was recorded on this step.',
     took: (time: string) => `Took ${time}`,
     running: (time: string) => `Running for ${time}`,
-    files: 'Files changed',
+    files: 'Files',
+    planned: 'Planned',
+    plannedChanged: 'Planned, and changed',
+    plannedUnchanged: 'Planned, but not changed on this step',
+    unplanned: 'Changed, but not in the plan',
     commands: 'Commands run',
   },
   workspaces: {

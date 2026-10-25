@@ -7,6 +7,10 @@ export type PlanStatus = 'pending' | 'in_progress' | 'completed'
 export interface PlanItem {
   content: string
   status: PlanStatus
+  /** The files the thread says the step will create or change, when it says (PLAN_CONTEXT). */
+  files?: string[]
+  /** What the step does and why, in a sentence, when the thread says. */
+  why?: string
 }
 
 /** What a thread did while one of its plan steps was in progress, read from its transcript. */

@@ -28,7 +28,7 @@ import { CodexRelayService } from './codex/relay'
 import { codexDeepLink } from './codex/identity'
 import { codexProcesses } from './codex/live'
 import { SessionService } from './sessions/service'
-import { readStepActivity } from './sessions/stepActivity'
+import { PLAN_CONTEXT, readStepActivity } from './sessions/stepActivity'
 import { listChanges, readFileDiff } from './sessions/gitChanges'
 import { GitStates } from './sessions/gitDiff'
 import { Tracker } from './sessions/tracker'
@@ -150,6 +150,7 @@ async function start(): Promise<void> {
     port: DEFAULT_HOOK_PORT,
     // For the installer's check: is it running, and have the plugin's hooks reached it?
     status: () => ({ app: 'threadlight', version: app.getVersion(), hookEvents }),
+    context: () => PLAN_CONTEXT,
     onEvent: (payload) => {
       hookEvents += 1
       hooks.apply(payload)

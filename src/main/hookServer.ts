@@ -5,6 +5,8 @@
 // `POST /ask`, `/stop`, `/permission` and `/offer` are the routes that answer with a body: the
 // question-card, Stop, PermissionRequest and session-offer hooks wait on them, and get either
 // the user's answer or nothing (holds.ts).
+// `POST /context` is the one route whose answer is meant for Claude: the SessionStart hook
+// passes it on as context, asking threads to note each plan step's files (planContext).
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -27,6 +29,8 @@ export interface HookServerOptions {
   onPermission?: HoldHandler
   /** A New session / Do it here offer (`POST /offer`). */
   onOffer?: HoldHandler
+  /** What a starting session is told (`POST /context`); null for nothing. */
+  context?: () => string | null
 }
 
 /**
@@ -62,9 +66,23 @@ export function startHookServer(options: HookServerOptions): Promise<HookServer>
 function handle(
   request: IncomingMessage,
   response: ServerResponse,
-  { onEvent, status, onAsk, onStop, onPermission, onOffer }: HookServerOptions,
+  { onEvent, status, onAsk, onStop, onPermission, onOffer, context }: HookServerOptions,
   server: Server,
 ): void {
+  if (request.method === 'POST' && request.url === '/context' && context) {
+    if (!fromLocalTool(request, server)) return finish(response, 403)
+    // Read and drop the event, then answer in the SessionStart hook's documented shape.
+    return readJson(request, () => {
+      const text = context()
+      if (!text) return finish(response, 204)
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(
+        JSON.stringify({
+          hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text },
+        }),
+      )
+    })
+  }
   const holders: Record<string, HoldHandler | undefined> = {
     '/ask': onAsk,
     '/stop': onStop,

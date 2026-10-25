@@ -376,10 +376,20 @@ export class TranscriptReader {
 export function replayPlan(plan: PlanItem[], input: JsonObject): PlanItem[] {
   const items = input['items']
   if (Array.isArray(items)) {
-    plan = items.filter(isObject).map((item) => ({
-      content: oneLine(str(item['content'])),
-      status: toPlanStatus(item['status']),
-    }))
+    plan = items.filter(isObject).map((item) => {
+      const step: PlanItem = {
+        content: oneLine(str(item['content'])),
+        status: toPlanStatus(item['status']),
+      }
+      // What the thread says the step will touch and why, when asked to (PLAN_CONTEXT).
+      const files = Array.isArray(item['files'])
+        ? item['files'].filter((f): f is string => typeof f === 'string' && f.trim() !== '')
+        : []
+      if (files.length) step.files = files.slice(0, 30).map((f) => f.trim().slice(0, 300))
+      const why = oneLine(str(item['why'])).slice(0, 300)
+      if (why) step.why = why
+      return step
+    })
   }
   if (input['advance'] === true) {
     const current = plan.findIndex((item) => item.status === 'in_progress')

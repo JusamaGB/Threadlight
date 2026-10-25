@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { stepActivity } from '../src/main/sessions/stepActivity'
+import { replayPlan } from '../src/main/sessions/transcript'
+import { fileRows } from '../src/shared/stepFiles'
 
 let clock = 0
 /** One transcript line: an assistant block in message `id`, or a tool result. */
@@ -99,6 +101,37 @@ describe('step activity', () => {
     ]
     expect(stepActivity(running, 'Build').commands).toEqual([
       { label: 'npm run build', command: 'npm run build', failed: null },
+    ])
+  })
+})
+
+describe('planned files', () => {
+  it('reads files and why from a plan item, and leaves them out when not given', () => {
+    const steps = replayPlan([], {
+      items: [
+        { content: 'Fix it', status: 'pending', files: ['src/a.ts', '', 3], why: ' The   bug ' },
+        { content: 'Ship it', status: 'pending' },
+      ],
+    })
+    expect(steps).toEqual([
+      { content: 'Fix it', status: 'pending', files: ['src/a.ts'], why: 'The bug' },
+      { content: 'Ship it', status: 'pending' },
+    ])
+  })
+
+  it('matches planned files to changed ones, then lists changes nobody planned', () => {
+    const rows = fileRows(
+      ['src/a.ts', './src/b.ts', 'src\\A.ts'],
+      [
+        { path: 'Z:\\repo\\src\\a.ts', added: 2, removed: 1 },
+        { path: 'Z:/repo/README.md', added: 1, removed: 0 },
+      ],
+      'Z:\\repo',
+    )
+    expect(rows).toEqual([
+      { path: 'Z:\\repo\\src\\a.ts', planned: true, changed: { added: 2, removed: 1 } },
+      { path: 'Z:/repo/src/b.ts', planned: true, changed: null },
+      { path: 'Z:/repo/README.md', planned: false, changed: { added: 1, removed: 0 } },
     ])
   })
 })

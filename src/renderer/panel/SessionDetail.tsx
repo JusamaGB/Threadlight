@@ -80,8 +80,7 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
                 {openStep === item.content && (
                   <StepView
                     sessionId={session.id}
-                    step={item.content}
-                    status={item.status}
+                    item={item}
                     cwd={session.cwd}
                     version={session.lastActiveAt}
                   />

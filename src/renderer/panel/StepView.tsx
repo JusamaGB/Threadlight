@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
 
 import { elapsedText } from '../../shared/elapsed'
-import type { PlanStatus, StepActivity } from '../../shared/types'
+import type { PlanItem, StepActivity } from '../../shared/types'
 import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
+import { fileRows, type FileRow } from '../../shared/stepFiles'
 import styles from './Panel.module.css'
 
 interface StepViewProps {
   sessionId: string
-  step: string
-  status: PlanStatus
+  item: PlanItem
   /** The thread's working folder, so file paths read short. */
   cwd: string | null
   /** Changes whenever the thread does something, so a step in progress keeps up. */
@@ -18,11 +18,13 @@ interface StepViewProps {
 }
 
 /**
- * What a thread did on one plan step, under the step when it is clicked: how long it took, the
- * files it changed, the commands it ran (✗ for a failed one), the other tools it used and what
- * it last said. Read from the thread's transcript each time it changes.
+ * What a thread did on one plan step, under the step when it is clicked: why the step is there,
+ * how long it took, its files (the ones planned next to the ones changed), the commands it ran
+ * (✗ for a failed one), the other tools it used and what it last said. Read from the thread's
+ * transcript each time it changes.
  */
-export function StepView({ sessionId, step, status, cwd, version }: StepViewProps) {
+export function StepView({ sessionId, item, cwd, version }: StepViewProps) {
+  const { content: step, status } = item
   const now = useNow(1000)
   const [activity, setActivity] = useState<StepActivity | null | undefined>(undefined)
 
@@ -37,12 +39,23 @@ export function StepView({ sessionId, step, status, cwd, version }: StepViewProp
     }
   }, [sessionId, step, status, version])
 
-  if (status === 'pending') return <p className={styles.stepNote}>{en.step.notStarted}</p>
+  const why = item.why && <p className={styles.stepWhy}>{item.why}</p>
+  const planned = item.files ?? []
+  if (status === 'pending') {
+    return (
+      <div className={styles.step}>
+        {why}
+        <FileList rows={fileRows(planned, [], cwd)} cwd={cwd} pending />
+        <p className={styles.stepNote}>{en.step.notStarted}</p>
+      </div>
+    )
+  }
   if (activity === undefined) return <p className={styles.stepNote}>{en.step.reading}</p>
   if (activity === null) return <p className={styles.stepNote}>{en.step.unreadable}</p>
 
   const { startedAt, endedAt, files, commands, tools, said } = activity
-  const empty = !files.length && !commands.length && !tools.length && !said.length
+  const rows = fileRows(planned, files, cwd)
+  const empty = !rows.length && !commands.length && !tools.length && !said.length
   const time =
     startedAt === null
       ? null
@@ -54,19 +67,10 @@ export function StepView({ sessionId, step, status, cwd, version }: StepViewProp
 
   return (
     <div className={styles.step}>
+      {why}
       {time && <p className={styles.stepNote}>{time}</p>}
       {empty && <p className={styles.stepNote}>{en.step.nothing}</p>}
-      {files.length > 0 && (
-        <ul className={styles.stepList} aria-label={en.step.files}>
-          {files.map((file) => (
-            <li key={file.path} title={file.path}>
-              <span className={styles.stepName}>{shortPath(file.path, cwd)}</span>
-              {file.added > 0 && <span className={styles.added}>+{file.added}</span>}
-              {file.removed > 0 && <span className={styles.removed}>−{file.removed}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
+      <FileList rows={rows} cwd={cwd} pending={false} />
       {commands.length > 0 && (
         <ul className={styles.stepList} aria-label={en.step.commands}>
           {commands.map((command, index) => (
@@ -88,6 +92,58 @@ export function StepView({ sessionId, step, status, cwd, version }: StepViewProp
       )}
       {said.length > 0 && <p className={styles.stepSaid}>{clip(said[said.length - 1]!, 320)}</p>}
     </div>
+  )
+}
+
+/**
+ * The step's files. Without a plan for them, just what changed. With one: ✓ planned and changed,
+ * ○ planned and not changed (yet), + changed without being planned.
+ */
+function FileList({
+  rows,
+  cwd,
+  pending,
+}: {
+  rows: FileRow[]
+  cwd: string | null
+  pending: boolean
+}) {
+  if (!rows.length) return null
+  const anyPlanned = rows.some((row) => row.planned)
+  const mark = (row: FileRow) =>
+    !anyPlanned ? null : row.planned ? (row.changed ? '✓' : '○') : '+'
+  const tip = (row: FileRow) =>
+    !anyPlanned
+      ? row.path
+      : `${row.path}\n${
+          row.planned
+            ? row.changed
+              ? en.step.plannedChanged
+              : pending
+                ? en.step.planned
+                : en.step.plannedUnchanged
+            : en.step.unplanned
+        }`
+  return (
+    <ul className={styles.stepList} aria-label={en.step.files}>
+      {rows.map((row) => (
+        <li
+          key={row.path}
+          title={tip(row)}
+          data-unplanned={anyPlanned && !row.planned ? '' : undefined}
+          data-untouched={row.planned && !row.changed ? '' : undefined}
+        >
+          {anyPlanned && <span className={styles.stepMark}>{mark(row)}</span>}
+          <span className={styles.stepName}>{shortPath(row.path, cwd)}</span>
+          {row.changed && row.changed.added > 0 && (
+            <span className={styles.added}>+{row.changed.added}</span>
+          )}
+          {row.changed && row.changed.removed > 0 && (
+            <span className={styles.removed}>−{row.changed.removed}</span>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }
 
