@@ -695,8 +695,13 @@
   text-align: left;
 }
 
-.qOption:hover {
+.qOption:hover:not(:disabled) {
   background: var(--hover);
+}
+
+.qOption:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 /* A radio circle; the picked one fills with the accent. Square for pick-any questions. */

@@ -75,11 +75,13 @@ function NextStepCard({
   const OTHER = -1
   const [picked, setPicked] = useState(0) // the first answer is the recommended one
   const [sending, setSending] = useState(false)
+  /** Answered from here: locked, so it cannot be sent twice before the thread moves on. */
+  const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const action: NextStepAction | undefined = attention.actions[picked]
 
   const go = async () => {
-    if (sending) return
+    if (sending || sent) return
     if (picked === OTHER || !action) return onCompose()
     // An app action (commit, open a PR…) can only be done in the Claude app itself.
     if (action.message === null) return onOpen()
@@ -87,12 +89,14 @@ function NextStepCard({
     const result = await window.threadlight.sendMessage(session.id, action.message)
     setSending(false)
     // On success the thread's next turn clears this card; the row's ticks show progress.
+    setSent(result.ok)
     setError(result.ok ? null : result.reason)
   }
   useCtrlEnter(() => void go())
 
-  const label =
-    picked === OTHER || !action
+  const label = sent
+    ? en.attention.sent
+    : picked === OTHER || !action
       ? en.attention.writeReply
       : action.message === null
         ? en.attention.doInClaude
@@ -114,6 +118,7 @@ function NextStepCard({
           description={
             option.message !== null && option.message !== option.label ? option.message : ''
           }
+          disabled={sent}
           onPick={() => setPicked(index)}
         />
       ))}
@@ -121,10 +126,11 @@ function NextStepCard({
         checked={picked === OTHER}
         label={en.attention.other}
         description=""
+        disabled={sent}
         onPick={() => setPicked(OTHER)}
       />
       <Buttons>
-        <MainButton label={label} disabled={sending} onClick={() => void go()} />
+        <MainButton label={label} disabled={sending || sent} onClick={() => void go()} />
         {error && <p className={styles.qError}>{error}</p>}
       </Buttons>
     </div>
@@ -153,6 +159,7 @@ function QuestionCard({
   const [others, setOthers] = useState<Record<number, string>>({})
   const [skipped, setSkipped] = useState<Record<number, boolean>>({})
   const [sending, setSending] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const answerable = answerableUntil !== null
   const last = index === questions.length - 1
@@ -190,10 +197,12 @@ function QuestionCard({
     const result = await window.threadlight.answerQuestion(session.id, answers)
     setSending(false)
     // On success the session carries on, and this card clears with the next scan.
+    setSubmitted(result.ok)
     setError(result.ok ? null : result.reason)
   }
 
   const forward = (skip = false) => {
+    if (submitted) return
     const skipping = { ...skipped, [index]: skip }
     setSkipped(skipping)
     setError(null)
@@ -273,13 +282,15 @@ function QuestionCard({
         </button>
         <MainButton
           label={
-            !last
-              ? en.attention.next
-              : answerable
-                ? en.attention.submit
-                : en.attention.answerInClaude
+            submitted
+              ? en.attention.sent
+              : !last
+                ? en.attention.next
+                : answerable
+                  ? en.attention.submit
+                  : en.attention.answerInClaude
           }
-          disabled={sending || (last && !answerable && !session.appId)}
+          disabled={sending || submitted || (last && !answerable && !session.appId)}
           onClick={() => forward()}
         />
         {error && <p className={styles.qError}>{error}</p>}
@@ -328,6 +339,7 @@ function ApprovalCard({
 
 function OptionRow(props: {
   checked: boolean
+  disabled?: boolean
   square?: boolean
   label: string
   description: string
@@ -338,6 +350,7 @@ function OptionRow(props: {
       className={styles.qOption}
       role={props.square ? 'checkbox' : 'radio'}
       aria-checked={props.checked}
+      disabled={props.disabled}
       onClick={props.onPick}
     >
       <span className={props.square ? `${styles.qMark} ${styles.square}` : styles.qMark} />

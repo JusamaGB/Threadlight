@@ -31,6 +31,9 @@ const TASK_NOTIFICATION = /<tool-use-id>(toolu_\w+)<\/tool-use-id>[\s\S]*?<statu
  */
 const BACKGROUND_RESULT = /^\s*(Command running in background|Async agent launched)/
 
+/** How Claude Code records a Stop hook's reason for carrying a turn on (a hidden user note). */
+const STOP_HOOK_FEEDBACK = 'Stop hook feedback:'
+
 export interface TranscriptSummary {
   title: string | null
   cwd: string | null
@@ -185,6 +188,8 @@ export class TranscriptReader {
         if (sidechain) break
         this.feedResults(messageContent(record), record['toolUseResult'])
         if (record['isMeta'] !== true) this.feedUser(messageContent(record), timeOf(record))
+        // A Stop hook that hands back an answer carries the turn on: what was asked is answered.
+        else if (startsWith(messageContent(record), STOP_HOOK_FEEDBACK)) this.nextStep = null
         break
       case 'assistant':
         if (sidechain) break
@@ -346,6 +351,17 @@ function messageContent(record: JsonObject): unknown {
 function timeOf(record: JsonObject): number {
   const at = Date.parse(str(record['timestamp']) ?? '')
   return Number.isNaN(at) ? Date.now() : at
+}
+
+/** Whether a message's text (a string, or its first text block) opens with `prefix`. */
+function startsWith(content: unknown, prefix: string): boolean {
+  const text =
+    typeof content === 'string'
+      ? content
+      : Array.isArray(content)
+        ? (str(content.filter(isObject).find((b) => b['type'] === 'text')?.['text']) ?? '')
+        : ''
+  return text.trimStart().startsWith(prefix)
 }
 
 function resultText(block: JsonObject): string {

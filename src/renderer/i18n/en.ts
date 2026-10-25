@@ -56,6 +56,7 @@ export const en = {
     skip: 'Skip',
     skipped: 'Skipped',
     submit: 'Submit',
+    sent: '✓ Sent',
     pickOne: 'Pick an answer first.',
     typeOther: 'Type your answer first.',
     otherPlaceholder: 'Type your answer',

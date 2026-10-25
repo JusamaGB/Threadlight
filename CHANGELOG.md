@@ -85,6 +85,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
   moment as the Claude app's own timer (the thread record's turn start), or from the
   prompt's time for sessions the app does not track.
+- A card answered from Threadlight locks at once ("✓ Sent") so it cannot be sent twice, and a
+  next-step box a Stop hook has answered (recorded as "Stop hook feedback") no longer shows.
 - Fixed: sending in the background could start a second Claude Code process on a thread the
   Claude app had open, because the app's processes no longer name their session on the
   command line. The check now reads Claude Code's own registry of live sessions

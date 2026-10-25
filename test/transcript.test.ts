@@ -243,6 +243,13 @@ describe('attention cards', () => {
       ],
     })
     expect((await read([prompt('Make the page'), wrap, prompt('Yes')])).nextStep).toBeNull()
+    // A Stop hook handing back the answer counts too, though it is a hidden (meta) note.
+    const handedBack = {
+      type: 'user',
+      isMeta: true,
+      message: { content: 'Stop hook feedback:\nThe user chose "Yes, publish".' },
+    }
+    expect((await read([prompt('Make the page'), wrap, handedBack])).nextStep).toBeNull()
   })
 })
 
