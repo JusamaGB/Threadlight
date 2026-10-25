@@ -10,6 +10,8 @@ export interface ClaudePaths {
   projectsDir: string
   /** Claude app thread records: `<appSessionsDir>/<account>/<org>/local_<id>.json`. */
   appSessionsDir: string
+  /** Electron keeps this file locked while the Claude app runs. */
+  appLockFile: string
 }
 
 export function defaultPaths(env: NodeJS.ProcessEnv = process.env, home = homedir()): ClaudePaths {
@@ -17,6 +19,7 @@ export function defaultPaths(env: NodeJS.ProcessEnv = process.env, home = homedi
   return {
     projectsDir: join(home, '.claude', 'projects'),
     appSessionsDir: join(appData, 'Claude', 'claude-code-sessions'),
+    appLockFile: join(appData, 'Claude', 'lockfile'),
   }
 }
 

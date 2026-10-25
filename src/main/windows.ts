@@ -1,9 +1,17 @@
+// The two windows: the dot, and the panel that opens in its place.
+
 import { join } from 'node:path'
 
-import { BrowserWindow, screen, shell } from 'electron'
+import { BrowserWindow, screen, shell, type Rectangle } from 'electron'
+
+import { IPC, type PanelOpened } from '../shared/ipc'
+import { loadDotPosition, saveDotPosition, type Point } from './windowState'
 
 export const DOT_SIZE = 22
+export const PANEL_WIDTH = 342 // 340 of content plus a 1 px border each side
 const MARGIN = 8
+
+type View = 'dot' | 'panel'
 
 /** Shared hardening for every window: no navigation away, no pop-ups, links open in the browser. */
 function harden(win: BrowserWindow): void {
@@ -14,32 +22,18 @@ function harden(win: BrowserWindow): void {
   })
 }
 
-function loadView(win: BrowserWindow, view: 'dot'): void {
-  const devServer = process.env['ELECTRON_RENDERER_URL']
-  if (devServer) {
-    void win.loadURL(`${devServer}?view=${view}`)
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'), { query: { view } })
-  }
-}
-
-/** The status dot: tiny, frameless, transparent, always on top, never in the taskbar. */
-export function createDotWindow(): BrowserWindow {
-  const { workArea } = screen.getPrimaryDisplay()
+function createWindow(view: View, size: { width: number; height: number }, focusable: boolean) {
   const win = new BrowserWindow({
-    width: DOT_SIZE,
-    height: DOT_SIZE,
-    x: workArea.x + workArea.width - DOT_SIZE - MARGIN,
-    y: workArea.y + MARGIN,
+    ...size,
     frame: false,
     transparent: true,
     resizable: false,
-    movable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
     hasShadow: false,
+    focusable,
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -51,7 +45,113 @@ export function createDotWindow(): BrowserWindow {
   // 'screen-saver' keeps it above full-screen windows such as borderless games.
   win.setAlwaysOnTop(true, 'screen-saver')
   harden(win)
-  win.once('ready-to-show', () => win.showInactive())
-  loadView(win, 'dot')
+  const devServer = process.env['ELECTRON_RENDERER_URL']
+  if (devServer) void win.loadURL(`${devServer}?view=${view}`)
+  else void win.loadFile(join(__dirname, '../renderer/index.html'), { query: { view } })
   return win
+}
+
+export class WindowManager {
+  readonly dot: BrowserWindow
+  readonly panel: BrowserWindow
+  private dragStart: Point | null = null
+  private claudeRunning = false
+
+  constructor() {
+    // The dot never takes focus, so clicking it does not pull focus from a game.
+    this.dot = createWindow('dot', { width: DOT_SIZE, height: DOT_SIZE }, false)
+    this.dot.setPosition(...this.initialDotPosition())
+    // The panel is created up front (hidden) so it opens instantly.
+    this.panel = createWindow('panel', { width: PANEL_WIDTH, height: 120 }, true)
+    this.panel.on('blur', () => this.closePanel())
+  }
+
+  /** Every window gets the same broadcasts. */
+  send(channel: string, ...args: unknown[]): void {
+    for (const win of [this.dot, this.panel]) {
+      if (!win.isDestroyed()) win.webContents.send(channel, ...args)
+    }
+  }
+
+  setClaudeRunning(running: boolean): void {
+    if (running === this.claudeRunning) return
+    this.claudeRunning = running
+    if (running) {
+      this.dot.showInactive()
+    } else {
+      this.closePanel()
+      this.dot.hide()
+    }
+  }
+
+  openPanel(): void {
+    const info: PanelOpened = { maxHeight: this.workArea().height - 2 * MARGIN }
+    this.panel.webContents.send(IPC.panelOpened, info)
+    this.placePanel(this.panel.getBounds().height)
+    this.dot.hide() // the panel takes the dot's place
+    this.panel.show()
+    this.panel.focus()
+  }
+
+  closePanel(): void {
+    if (!this.panel.isVisible()) return
+    this.panel.hide()
+    if (this.claudeRunning) this.dot.showInactive()
+  }
+
+  resizePanel(height: number): void {
+    if (!Number.isFinite(height)) return
+    const max = this.workArea().height - 2 * MARGIN
+    this.placePanel(Math.max(40, Math.min(Math.ceil(height), max)))
+  }
+
+  dragDot(dx: number, dy: number): void {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
+    const [x, y] = this.dot.getPosition() as [number, number]
+    this.dragStart ??= { x, y }
+    this.dot.setPosition(Math.round(this.dragStart.x + dx), Math.round(this.dragStart.y + dy))
+  }
+
+  endDrag(): void {
+    if (!this.dragStart) return
+    this.dragStart = null
+    const [x, y] = this.dot.getPosition() as [number, number]
+    saveDotPosition({ x, y })
+  }
+
+  /** The panel's top-right corner sits where the dot is; it flips upward near the bottom edge. */
+  private placePanel(height: number): void {
+    const dot = this.dot.getBounds()
+    const area = this.workArea()
+    const x = clamp(dot.x + DOT_SIZE - PANEL_WIDTH, area.x, area.x + area.width - PANEL_WIDTH)
+    const fitsBelow = dot.y + height <= area.y + area.height
+    const y = clamp(
+      fitsBelow ? dot.y : dot.y + DOT_SIZE - height,
+      area.y,
+      area.y + area.height - height,
+    )
+    this.panel.setBounds({ x, y, width: PANEL_WIDTH, height })
+  }
+
+  private workArea(): Rectangle {
+    return screen.getDisplayMatching(this.dot.getBounds()).workArea
+  }
+
+  private initialDotPosition(): [number, number] {
+    const saved = loadDotPosition()
+    if (saved) {
+      // Only reuse it if it is still on a connected display.
+      const area = screen.getDisplayNearestPoint(saved).workArea
+      return [
+        clamp(saved.x, area.x, area.x + area.width - DOT_SIZE),
+        clamp(saved.y, area.y, area.y + area.height - DOT_SIZE),
+      ]
+    }
+    const area = screen.getPrimaryDisplay().workArea
+    return [area.x + area.width - DOT_SIZE - MARGIN, area.y + MARGIN]
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }

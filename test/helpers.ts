@@ -14,7 +14,11 @@ export interface Sandbox {
 
 export async function sandbox(): Promise<Sandbox> {
   const root = await mkdtemp(join(tmpdir(), 'threadlight-test-'))
-  const paths = { projectsDir: join(root, 'projects'), appSessionsDir: join(root, 'app-sessions') }
+  const paths = {
+    projectsDir: join(root, 'projects'),
+    appSessionsDir: join(root, 'app-sessions'),
+    appLockFile: join(root, 'lockfile'),
+  }
   await mkdir(paths.projectsDir, { recursive: true })
   await mkdir(paths.appSessionsDir, { recursive: true })
   return { root, paths, cleanup: () => rm(root, { recursive: true, force: true }) }

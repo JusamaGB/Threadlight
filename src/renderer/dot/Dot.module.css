@@ -3,6 +3,11 @@
   height: 22px;
   display: grid;
   place-items: center;
+  flex: none;
+}
+
+.floating {
+  cursor: pointer;
 }
 
 .dot {
@@ -11,6 +16,7 @@
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
+  transition: background-color 200ms ease;
 }
 
 .working {

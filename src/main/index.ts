@@ -1,18 +1,79 @@
 import { app, ipcMain } from 'electron'
 
 import { IPC } from '../shared/ipc'
-import { createDotWindow } from './windows'
+import { isClaudeAppRunning, openThread } from './claudeApp'
+import { HookStateStore } from './sessions/hookState'
+import { defaultPaths } from './sessions/paths'
+import { SessionService } from './sessions/service'
+import { Tracker } from './sessions/tracker'
+import { WindowManager } from './windows'
+
+const SCAN_INTERVAL_MS = 1000
+const CLAUDE_CHECK_INTERVAL_MS = 2000
 
 // One Threadlight per user: a second launch just exits.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  ipcMain.handle(IPC.getVersion, () => app.getVersion())
+  void app.whenReady().then(start)
+  // Threadlight lives in the corner, not in windows; hiding windows never quits it.
+  app.on('window-all-closed', () => {})
+}
 
-  void app.whenReady().then(() => {
-    createDotWindow()
+function start(): void {
+  const paths = defaultPaths()
+  const hooks = new HookStateStore() // fed by the hook server (added in a later step)
+  const windows = new WindowManager()
+  const sessions = new SessionService(new Tracker({ paths, hooks }), (list) =>
+    windows.send(IPC.sessionsChanged, list),
+  )
+
+  ipcMain.handle(IPC.getVersion, () => app.getVersion())
+  ipcMain.handle(IPC.getSessions, () => sessions.sessions)
+  ipcMain.on(IPC.dotClick, () => windows.openPanel())
+  ipcMain.on(IPC.dotDrag, (_event, dx: unknown, dy: unknown) =>
+    windows.dragDot(Number(dx), Number(dy)),
+  )
+  ipcMain.on(IPC.dotDragEnd, () => windows.endDrag())
+  ipcMain.on(IPC.panelResize, (_event, height: unknown) => windows.resizePanel(Number(height)))
+  ipcMain.on(IPC.panelClose, () => windows.closePanel())
+  ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
+    if (typeof appId === 'string' && openThread(appId)) windows.closePanel()
   })
 
-  // Threadlight lives in the tray, not in windows; closing windows never quits it.
-  app.on('window-all-closed', () => {})
+  sessions.start(SCAN_INTERVAL_MS)
+
+  // The dot only shows while the Claude desktop app is running.
+  const checkClaude = async () =>
+    windows.setClaudeRunning(await isClaudeAppRunning(paths.appLockFile))
+  void checkClaude()
+  setInterval(() => void checkClaude(), CLAUDE_CHECK_INTERVAL_MS)
+
+  if (!app.isPackaged) devAids(windows)
+}
+
+/**
+ * Development-only flags for screenshots and testing without driving the mouse:
+ * `--open-panel` opens the panel on start; add `--expand-first` or `--menu-first` to also
+ * expand the first row or open its right-click menu.
+ */
+function devAids(windows: WindowManager): void {
+  const flag = (name: string) => process.argv.includes(name)
+  if (!flag('--open-panel')) return
+  windows.panel.webContents.once('did-finish-load', () =>
+    setTimeout(() => {
+      windows.openPanel()
+      const row = "document.querySelector('[aria-expanded]')"
+      if (flag('--expand-first'))
+        void windows.panel.webContents.executeJavaScript(`${row}?.click()`)
+      if (flag('--menu-first')) {
+        // After the panel's own "just opened" reset, which would otherwise close it again.
+        setTimeout(() => {
+          void windows.panel.webContents.executeJavaScript(
+            `${row}?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 50 }))`,
+          )
+        }, 300)
+      }
+    }, 1500),
+  )
 }
