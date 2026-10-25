@@ -409,6 +409,7 @@ async function start(): Promise<void> {
       windows.panel.webContents.send(IPC.agentChanged, state)
     },
     onRateLimit: (info) => usage.note(info),
+    onLive: (event) => windows.panel.webContents.send(IPC.agentLiveEvent, event),
   })
   await agent.store
     .load()
@@ -422,6 +423,22 @@ async function start(): Promise<void> {
   // Complete previously requested cleanup before allowing a history continuation to race it.
   await agent.retryArchives().catch(() => {})
   ipcMain.handle(IPC.agentGet, () => agent.current)
+  ipcMain.handle(IPC.agentLiveStart, (event, id: unknown, sdp: unknown) =>
+    event.sender === windows.panel.webContents
+      ? agent.startLive(id, sdp)
+      : { ok: false, reason: 'Live is only available in the panel.' },
+  )
+  ipcMain.handle(IPC.agentLiveOpen, (event, id: unknown, text: unknown) =>
+    event.sender === windows.panel.webContents
+      ? agent.openLive(id, text)
+      : { ok: false, reason: 'Live is only available in the panel.' },
+  )
+  ipcMain.on(IPC.agentLiveStop, (event, id: unknown) => {
+    if (event.sender === windows.panel.webContents && typeof id === 'string')
+      void agent.stopLive(id)
+  })
+  windows.panel.webContents.on('render-process-gone', () => void agent.stopLive())
+  windows.panel.webContents.on('did-start-loading', () => void agent.stopLive())
   ipcMain.handle(IPC.agentSend, (_event, text: unknown) => agent.send(text))
   ipcMain.handle(IPC.agentRespond, (_event, id: unknown, response: unknown) =>
     agent.respond(id, response),

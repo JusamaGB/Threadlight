@@ -2,6 +2,31 @@ import { describe, expect, it } from 'vitest'
 import { MicSessionRouter } from '../src/shared/voiceCommands'
 
 describe('microphone session routing', () => {
+  it('treats a long conversational opening as conversation even when it begins with open', () => {
+    const text =
+      'Open the project and help me understand why all the tests started failing yesterday'
+    const session = new MicSessionRouter()
+    expect(session.preview('Open the project')).toBe(false)
+    expect(session.mode).toBe('undecided')
+    expect(session.preview(text)).toBe(true)
+    expect(session.mode).toBe('undecided')
+    expect(session.route(text)).toEqual({ kind: 'agent', text })
+    expect(session.route('Open')).toEqual({ kind: 'agent', text: 'Open' })
+  })
+
+  it('preserves long known titles and their incomplete previews as commands', () => {
+    const title = 'Review all the changes to the voice agent and the microphone session routing'
+    const names = [{ id: 'long', title }]
+    const session = new MicSessionRouter()
+    expect(
+      session.preview('Open Review all the changes to the voice agent and the microphone', names),
+    ).toBe(false)
+    expect(session.route(`Open ${title}`, names)).toEqual({
+      kind: 'command',
+      command: { kind: 'focus', threadId: 'long' },
+    })
+    expect(session.preview('Please help me discuss an entirely different subject now')).toBe(false)
+  })
   const threads = [
     { id: 'one', title: 'Review ThreadLight Codex support' },
     { id: 'two', title: 'Review ThreadLight layouts' },

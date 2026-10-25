@@ -15,11 +15,22 @@ const recordSchema = z.object({
   createdAt: z.number().optional(),
   at: z.number(),
   archiveState: z.enum(['pending', 'archived']).optional(),
+  // The native history API currently omits realtime timeline items. Keep completed voice text.
+  liveItems: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        kind: z.enum(['you', 'agent', 'step']),
+        text: z.string().max(32_000),
+      }),
+    )
+    .max(2000)
+    .optional(),
   pending: z.object({ id: z.string(), text: z.string().max(32_000), at: z.number() }).nullable(),
 })
 export type AgentRecord = z.infer<typeof recordSchema>
 
-/** Metadata only; provider transcripts remain the source for the conversation. */
+/** Provider metadata plus completed voice text not exposed by the native history API. */
 export class AgentStore {
   private records = new Map<string, AgentRecord>()
   private loaded: Promise<void> | null = null
@@ -65,11 +76,9 @@ export class AgentStore {
         next.set(checked.id, checked)
         await mkdir(dirname(this.file), { recursive: true })
         const temporary = `${this.file}.${randomUUID()}.tmp`
-        await writeFile(
-          temporary,
-          JSON.stringify({ version: 1, conversations: [...next.values()] }),
-          { encoding: 'utf8', mode: 0o600 },
-        )
+        const encoded = JSON.stringify({ version: 1, conversations: [...next.values()] })
+        if (encoded.length > 16 * 1024 * 1024) throw new Error('Agent history index is full.')
+        await writeFile(temporary, encoded, { encoding: 'utf8', mode: 0o600 })
         await rename(temporary, this.file)
         this.records = next
       })

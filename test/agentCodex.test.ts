@@ -52,6 +52,7 @@ class Fake implements CodexTransport {
         nextCursor: params.cursor ? null : 'second',
       }
     if (method === 'config/read') return { config: { mcp_servers: {}, plugins: {}, apps: {} } }
+    if (method === 'account/read') return { account: { type: 'chatgpt' } }
     if (method === 'thread/start' || method === 'thread/resume')
       return {
         thread: { id: 'owned-thread', status: { type: 'idle' } },
@@ -574,4 +575,139 @@ it('runs Codex without Claude installed or monitoring enabled, pins settings, an
   expect(service.current.conversationId).toBe(conversation.id)
   expect(fake.calls.filter((c) => c.method === 'thread/start')).toHaveLength(1)
   await service.close()
+})
+
+describe('native Live voice', () => {
+  const voiceId = '11111111-2222-3333-4444-555555555555'
+  const offer = 'v=0\r\nsynthetic-offer'
+  const answer = 'v=0\r\nsynthetic-answer'
+  function connect(fake: Fake) {
+    fake.handler = async (method) => {
+      if (method === 'thread/realtime/start') {
+        fake.emit('thread/realtime/started', { version: 'v3' })
+        fake.emit('thread/realtime/sdp', { sdp: answer })
+        return {}
+      }
+    }
+  }
+
+  it('prepares without sending, sends the opening once, retains voice history, and stops before archiving', async () => {
+    const { run, fake, store } = await fixture()
+    connect(fake)
+    expect(await run.startLive(voiceId, offer)).toBe(answer)
+    expect(fake.calls.find((c) => c.method === 'thread/realtime/start')?.params).toMatchObject({
+      transport: { type: 'webrtc', sdp: offer },
+      flushTranscriptTailOnSessionEnd: false,
+    })
+    expect(
+      fake.calls.some(
+        (c) => c.method === 'turn/start' || c.method === 'thread/realtime/appendText',
+      ),
+    ).toBe(false)
+    expect(await run.openLive('Please review this with me')).toEqual({ ok: true })
+    expect((await run.openLive('Duplicate')).ok).toBe(false)
+    expect((await run.send('Typed fallback')).ok).toBe(false)
+    expect(fake.calls.filter((c) => c.method === 'thread/realtime/appendText')).toHaveLength(1)
+    fake.emit('thread/realtime/item/started', {
+      item: { type: 'transcriptSegment', id: 'spoken', role: 'assistant', text: '' },
+    })
+    fake.emit('thread/realtime/item/transcript/delta', {
+      itemId: 'spoken',
+      delta: 'A spoken reply',
+    })
+    expect(run.current.items.at(-1)?.text).toBe('A spoken reply')
+    fake.emit('thread/realtime/item/completed', {
+      item: { type: 'transcriptSegment', id: 'spoken', role: 'assistant', text: 'A spoken reply' },
+    })
+    await run.close()
+    expect(store.get(run.current.conversationId!)?.liveItems?.map((i) => i.text)).toEqual([
+      'Please review this with me',
+      'A spoken reply',
+    ])
+    const methods = fake.calls.map((c) => c.method)
+    expect(methods.indexOf('thread/realtime/stop')).toBeLessThan(methods.indexOf('thread/archive'))
+  })
+
+  it('retains an uncertain opening without automatically resending it', async () => {
+    const { run, fake, store } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    fake.handler = async (method) => {
+      if (method === 'thread/realtime/appendText') throw new Error('connection lost')
+    }
+    expect((await run.openLive('Keep this message')).ok).toBe(false)
+    expect((await run.openLive('Keep this message')).ok).toBe(false)
+    await run.close()
+    expect(store.get(run.current.conversationId!)?.pending?.text).toBe('Keep this message')
+    expect(fake.calls.filter((c) => c.method === 'thread/realtime/appendText')).toHaveLength(1)
+  })
+
+  it('does not fall back to API authentication', async () => {
+    const { run, fake } = await fixture()
+    fake.handler = async (method) =>
+      method === 'account/read' ? { account: { type: 'apiKey' } } : undefined
+    await expect(run.startLive(voiceId, offer)).rejects.toThrow('No API-key fallback')
+    expect(fake.calls.some((c) => c.method === 'thread/realtime/start')).toBe(false)
+    await run.close()
+  })
+
+  it('cancels a pending Live handshake without waiting for its timeout', async () => {
+    const { run, fake } = await fixture()
+    const starting = run.startLive(voiceId, offer)
+    const result = expect(starting).rejects.toThrow('closed')
+    await expect.poll(() => fake.calls.some((c) => c.method === 'thread/realtime/start')).toBe(true)
+    await run.close()
+    await result
+    expect(run.current.ended).toBe(true)
+    expect(fake.calls.some((c) => c.method === 'thread/realtime/appendText')).toBe(false)
+  })
+
+  it('propagates native connection errors and never claims the session is ready', async () => {
+    const { run, fake } = await fixture()
+    fake.handler = async (method) => {
+      if (method === 'thread/realtime/start') {
+        fake.emit('thread/realtime/error', { message: 'Voice unavailable' })
+        return {}
+      }
+    }
+    await expect(run.startLive(voiceId, offer)).rejects.toThrow('Voice unavailable')
+    expect(run.current.live).toBeNull()
+    await run.close()
+  })
+
+  it('protects a working Agent and ignores stop requests from older mic sessions', async () => {
+    const { folder, fake } = await fixture()
+    connect(fake)
+    const service = new AgentService({
+      workspace: folder,
+      index: join(folder, 'live-service.json'),
+      claudeProjects: folder,
+      settings: () => ({ ...DEFAULT_SETTINGS, agentProvider: 'codex' }),
+      snapshot: () => ({
+        sessions: [],
+        workspaces: [],
+        allWorkspaces: [],
+        currentWorkspace: null,
+        currentThreadId: null,
+      }),
+      cli: async () => null,
+      codexClient: async () => fake,
+      onChange: () => {},
+      onRateLimit: () => {},
+    })
+    await service.send('Existing work')
+    expect((await service.startLive(voiceId, offer)).ok).toBe(false)
+    expect(fake.calls.some((c) => c.method === 'thread/realtime/start')).toBe(false)
+    fake.complete()
+    await expect.poll(() => service.current.status).toBe('ready')
+    expect(await service.startLive(voiceId, offer)).toEqual({ ok: true, sdp: answer })
+    await service.stopLive('older-session-111111')
+    expect(service.current.live).toBe('ready')
+    expect((await service.openLive('older-session-111111', 'Do not send')).ok).toBe(false)
+    expect(await service.openLive(voiceId, 'New conversation')).toEqual({ ok: true })
+    await service.stopLive(voiceId)
+    expect(service.current.ended).toBe(true)
+    const past = (await service.history()).find((r) => r.title === 'New conversation')!
+    expect((await service.read(past.id)).items.map((i) => i.text)).toContain('New conversation')
+  })
 })

@@ -16,6 +16,15 @@ export class SentenceAssembler {
   private speaking = false
   private lastEnded = Number.NEGATIVE_INFINITY
 
+  get text(): string {
+    return this.parts.join(' ')
+  }
+
+  /** A handoff can happen only after all captured speech has been transcribed and a pause. */
+  quiet(now: number): boolean {
+    return !this.speaking && this.transcribing === 0 && now - this.lastEnded >= SENTENCE_PAUSE_MS
+  }
+
   /** An utterance began. */
   started(): void {
     this.speaking = true
