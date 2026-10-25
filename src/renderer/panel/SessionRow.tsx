@@ -60,9 +60,7 @@ export function SessionRow(props: SessionRowProps) {
   const line = relayLine(relay, now)
   const appId = session.appId
   const attention = session.attention
-  const titleClass = [styles.title, composing && styles.composing, attention && styles.fadeTitle]
-    .filter(Boolean)
-    .join(' ')
+  const titleClass = [styles.title, composing && styles.composing].filter(Boolean).join(' ')
   return (
     <div className={expanded ? `${styles.row} ${styles.expanded}` : styles.row}>
       <button

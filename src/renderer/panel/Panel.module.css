@@ -384,7 +384,8 @@
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
+  /* A long title fades out before whatever sits beside it, rather than ending in "…". */
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 
 .composing {
@@ -711,12 +712,6 @@
   flex: none;
   color: var(--amber);
   font-size: 11px;
-}
-
-/* Instead of an ellipsis, a long title fades out before "Needs you". */
-.fadeTitle {
-  text-overflow: clip;
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 
 /* Waiting on the user: Claude's amber double circle, still and slightly larger. */
