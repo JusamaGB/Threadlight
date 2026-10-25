@@ -305,6 +305,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Expanded thread details show elapsed turn time beside NOW, above the current action.
+
 - Thread context hovers use the panel's styled tooltips instead of native system boxes.
   Provider-name bubbles have been removed from thread rows.
 
@@ -316,10 +318,14 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Hover-opening the panel restores full opacity immediately, avoiding a half-visible
-  intermediate state. Only closing uses the short fade.
+- Codex history scans use the native item-type column and yield between threads so
+  long conversations do not block panel hover, leave and blur events. Duplicate hover
+  messages are ignored, including delayed requests after the pointer has left the dot.
 
-- Thread context bubbles wait one second and sit beside the pointer,
+- Hover-opening and leaving the panel are immediate. Native cursor checks reject stale
+  leave/open events and cover missing browser leave events during the dot/panel handoff.
+
+- Thread context and usage bubbles appear immediately and sit beside the pointer,
   switching sides at the window edge. Leaving, clicking or scrolling clears stale tips.
 
 - Expanded thread lists recalculate available height while moving the panel, including

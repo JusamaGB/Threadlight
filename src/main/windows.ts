@@ -83,6 +83,7 @@ export class WindowManager {
   private stayOpen = false
   private dotPosition: Point
   private openMicLive = false
+  private pointerWatch: ReturnType<typeof setInterval> | null = null
 
   constructor() {
     // The dot never takes focus, so clicking it does not pull focus from a game.
@@ -95,6 +96,7 @@ export class WindowManager {
     this.panel.on('blur', () => {
       if (!this.stayOpen) this.closePanel()
     })
+    this.panel.on('closed', () => this.stopPointerWatch())
   }
 
   /** Every window gets the same broadcasts. */
@@ -128,16 +130,35 @@ export class WindowManager {
     win.moveTop()
   }
 
+  /** Ignore duplicate and delayed hover messages from the dot window being replaced. */
+  openFromDot(hover = false): void {
+    if (this.panel.isVisible()) return
+    if (hover) {
+      if (!this.dot.isVisible()) return
+      const point = screen.getCursorScreenPoint()
+      const bounds = this.dot.getBounds()
+      if (
+        point.x < bounds.x ||
+        point.x >= bounds.x + bounds.width ||
+        point.y < bounds.y ||
+        point.y >= bounds.y + bounds.height
+      )
+        return
+    }
+    this.openPanel({ focus: !hover, fresh: true })
+  }
+
   /**
    * Opens the panel in the dot's place. A click opens it fresh and focused. The talk hotkey
    * opens it without focus (so a full-screen game is not minimised) and keeps the panel's
    * state, because the panel has just filled in the composer itself.
    */
-  openPanel({ focus = true }: { focus?: boolean } = {}): void {
+  openPanel({ focus = true, fresh = focus }: { focus?: boolean; fresh?: boolean } = {}): void {
+    if (fresh) this.stayOpen = false
     const info: PanelOpened = {
       maxHeight: this.maxPanelHeight(),
       opensDown: this.opensDown(),
-      fresh: focus,
+      fresh,
     }
     this.panel.webContents.send(IPC.panelOpened, info)
     this.placePanel(this.panel.getBounds().height)
@@ -148,6 +169,7 @@ export class WindowManager {
     } else {
       this.panel.showInactive()
     }
+    this.startPointerWatch()
   }
 
   setStayOpen(on: boolean): void {
@@ -156,9 +178,47 @@ export class WindowManager {
 
   closePanel(): void {
     this.stayOpen = false
+    this.stopPointerWatch()
     if (!this.panel.isVisible()) return
     this.panel.hide()
     if (this.claudeRunning) this.dot.showInactive()
+  }
+
+  /** Browser leave events may be stale while replacing or resizing a transparent window. */
+  closeOnPointerLeave(): void {
+    if (this.stayOpen || this.dragStart || this.pointerInsidePanel()) return
+    this.closePanel()
+  }
+
+  private pointerInsidePanel(): boolean {
+    const point = screen.getCursorScreenPoint()
+    const bounds = this.panel.getBounds()
+    return (
+      point.x >= bounds.x &&
+      point.x < bounds.x + bounds.width &&
+      point.y >= bounds.y &&
+      point.y < bounds.y + bounds.height
+    )
+  }
+
+  private startPointerWatch(): void {
+    if (this.pointerWatch) return
+    // Showing the panel beneath the pointer can miss Chromium's enter/leave handoff.
+    // The renderer still applies its pin, microphone and countdown protections.
+    this.pointerWatch = setInterval(() => {
+      if (!this.panel.isVisible()) {
+        this.stopPointerWatch()
+        return
+      }
+      if (!this.stayOpen && !this.dragStart && !this.pointerInsidePanel())
+        this.panel.webContents.send(IPC.panelPointerOutside)
+    }, 16)
+    this.pointerWatch.unref()
+  }
+
+  private stopPointerWatch(): void {
+    if (this.pointerWatch) clearInterval(this.pointerWatch)
+    this.pointerWatch = null
   }
 
   resizePanel(height: number): void {

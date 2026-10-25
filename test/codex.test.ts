@@ -211,152 +211,164 @@ describe('Codex relay', () => {
 })
 
 describe('read-only Codex discovery', () => {
-  it('reads paginated history and groups workspaces without changing source files', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'threadlight-codex-'))
-    temp.push(home)
-    const paths = codexPaths({ CODEX_HOME: home }, home)
-    await mkdir(join(home, 'sessions'), { recursive: true })
-    const rollout = join(home, 'sessions', 'synthetic.jsonl')
-    await writeFile(
-      rollout,
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        type: 'event_msg',
-        payload: {
-          type: 'token_count',
-          info: { model_context_window: 1000, last_token_usage: { input_tokens: 250 } },
-          rate_limits: {
-            limit_id: 'codex',
-            primary: {
-              used_percent: 27,
-              window_minutes: 10080,
-              resets_at: Math.floor(Date.now() / 1000) + 86400,
-            },
-            secondary: null,
-          },
-        },
-      }) + '\n',
-    )
-    const state = new DatabaseSync(paths.state)
-    state.exec(
-      'CREATE TABLE threads (id TEXT, cwd TEXT, name TEXT, archived INTEGER, updated_at INTEGER, rollout_path TEXT, model TEXT, approval_mode TEXT)',
-    )
-    state
-      .prepare('INSERT INTO threads VALUES (?,?,?,0,?,?,?,?)')
-      .run(
-        id,
-        'C:/synthetic/project',
-        'Synthetic Codex',
-        Math.floor(Date.now() / 1000) - 7200,
+  it.each([false, true])(
+    'reads paginated history read-only (native type column: %s)',
+    async (native) => {
+      const home = await mkdtemp(join(tmpdir(), 'threadlight-codex-'))
+      temp.push(home)
+      const paths = codexPaths({ CODEX_HOME: home }, home)
+      await mkdir(join(home, 'sessions'), { recursive: true })
+      const rollout = join(home, 'sessions', 'synthetic.jsonl')
+      await writeFile(
         rollout,
-        'gpt-test',
-        'on-request',
-      )
-    state.close()
-    const history = new DatabaseSync(paths.history)
-    history.exec(
-      'CREATE TABLE thread_items(thread_id TEXT, rollout_ordinal INTEGER, item_json TEXT); CREATE TABLE thread_turns(thread_id TEXT,rollout_ordinal INTEGER,status TEXT,started_at INTEGER,completed_at INTEGER)',
-    )
-    history
-      .prepare('INSERT INTO thread_items VALUES (?,0,?)')
-      .run(id, JSON.stringify({ type: 'plan', text: '# Synthetic plan\n- Build the display' }))
-    for (let n = 1; n <= 201; n++)
-      history.prepare('INSERT INTO thread_items VALUES (?,?,?)').run(
-        id,
-        n,
         JSON.stringify({
-          type: 'reasoning',
-          text: 'Synthetic reasoning must not become a plan.',
+          timestamp: new Date().toISOString(),
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: { model_context_window: 1000, last_token_usage: { input_tokens: 250 } },
+            rate_limits: {
+              limit_id: 'codex',
+              primary: {
+                used_percent: 27,
+                window_minutes: 10080,
+                resets_at: Math.floor(Date.now() / 1000) + 86400,
+              },
+              secondary: null,
+            },
+          },
+        }) + '\n',
+      )
+      const state = new DatabaseSync(paths.state)
+      state.exec(
+        'CREATE TABLE threads (id TEXT, cwd TEXT, name TEXT, archived INTEGER, updated_at INTEGER, rollout_path TEXT, model TEXT, approval_mode TEXT)',
+      )
+      state
+        .prepare('INSERT INTO threads VALUES (?,?,?,0,?,?,?,?)')
+        .run(
+          id,
+          'C:/synthetic/project',
+          'Synthetic Codex',
+          Math.floor(Date.now() / 1000) - 7200,
+          rollout,
+          'gpt-test',
+          'on-request',
+        )
+      state.close()
+      const history = new DatabaseSync(paths.history)
+      history.exec(
+        'CREATE TABLE thread_items(thread_id TEXT, rollout_ordinal INTEGER, item_json TEXT); CREATE TABLE thread_turns(thread_id TEXT,rollout_ordinal INTEGER,status TEXT,started_at INTEGER,completed_at INTEGER)',
+      )
+      history
+        .prepare('INSERT INTO thread_items VALUES (?,0,?)')
+        .run(id, JSON.stringify({ type: 'plan', text: '# Synthetic plan\n- Build the display' }))
+      for (let n = 1; n <= 201; n++)
+        history.prepare('INSERT INTO thread_items VALUES (?,?,?)').run(
+          id,
+          n,
+          JSON.stringify({
+            type: 'reasoning',
+            text: 'Synthetic reasoning must not become a plan.',
+          }),
+        )
+      history.prepare('INSERT INTO thread_items VALUES (?,202,?)').run(
+        id,
+        JSON.stringify({
+          type: 'userMessage',
+          content: [{ type: 'text', text: 'Synthetic prompt' }],
         }),
       )
-    history.prepare('INSERT INTO thread_items VALUES (?,202,?)').run(
-      id,
-      JSON.stringify({
-        type: 'userMessage',
-        content: [{ type: 'text', text: 'Synthetic prompt' }],
-      }),
-    )
-    history
-      .prepare('INSERT INTO thread_items VALUES (?,203,?)')
-      .run(id, JSON.stringify({ type: 'agentMessage', text: 'Synthetic reply.' }))
-    history.prepare('INSERT INTO thread_turns VALUES (?,1,?,1,2)').run(id, 'completed')
-    history.close()
-    const before = await Promise.all(
-      [paths.state, paths.history, rollout].map((path) => readFile(path)),
-    )
-    const tracker = new CodexTracker(paths, new CodexHolds(() => {}))
-    // Hide the dedicated agent workspace before its new thread ID has reached the agent index.
-    const hiddenByFolder = new CodexTracker(
-      paths,
-      new CodexHolds(() => {}),
-      () => null,
-      (_id, cwd) => cwd === 'C:/synthetic/project',
-    )
-    const agentOnly = await hiddenByFolder.snapshot({
-      expanded: ['C:/synthetic/project'],
-      showAll: [],
-    })
-    expect(agentOnly.sessions).toEqual([])
-    expect(agentOnly.lookupSessions ?? []).toEqual([])
-    expect(agentOnly.workspaces).toEqual([])
-    expect(agentOnly.allWorkspaces).toEqual([])
-    expect(agentOnly.currentThreadId).toBeNull()
-    const snapshot = await tracker.snapshot({ expanded: ['C:/synthetic/project'], showAll: [] })
-    expect(snapshot.provider).toBe('codex')
-    expect(snapshot.sessions[0]).toMatchObject({
-      id: key,
-      provider: 'codex',
-      title: 'Synthetic Codex',
-      lastPrompt: 'Synthetic prompt',
-      lastReply: 'Synthetic reply.',
-      state: 'idle',
-      tracked: true,
-      contextUsed: 0.25,
-      planText: '# Synthetic plan\n- Build the display',
-    })
-    expect(snapshot.workspaces[0]?.threads[0]?.session.id).toBe(key)
-    expect(snapshot.codexUsage).toMatchObject({ fiveHour: null, week: { used: 0.27 } })
-    tracker.configure(1, 10)
-    const noRecentChats = await tracker.snapshot()
-    expect(noRecentChats.sessions).toEqual([])
-    expect(noRecentChats.codexUsage).toEqual(snapshot.codexUsage)
-    const after = await Promise.all(
-      [paths.state, paths.history, rollout].map((path) => readFile(path)),
-    )
-    expect(after).toEqual(before)
-    tracker.configure(24, 10)
-    await appendFile(
-      rollout,
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'function_call',
-          name: 'functions.update_plan',
-          arguments: JSON.stringify({ plan: [{ step: 'Retained step', status: 'in_progress' }] }),
-        },
-      }) + '\n',
-    )
-    expect((await tracker.snapshot()).sessions[0]?.plan[0]?.content).toBe('Retained step')
-    await appendFile(
-      rollout,
-      (
+      history
+        .prepare('INSERT INTO thread_items VALUES (?,203,?)')
+        .run(id, JSON.stringify({ type: 'agentMessage', text: 'Synthetic reply.' }))
+      history.prepare('INSERT INTO thread_turns VALUES (?,1,?,1,2)').run(id, 'completed')
+      if (native) {
+        history.exec(
+          "ALTER TABLE thread_items ADD COLUMN item_type TEXT; UPDATE thread_items SET item_type=json_extract(item_json,'$.type')",
+        )
+        // Native type metadata must be usable without parsing unrelated historical payloads.
+        history
+          .prepare('UPDATE thread_items SET item_json=? WHERE rollout_ordinal=1')
+          .run('not valid JSON')
+      }
+      history.close()
+      const before = await Promise.all(
+        [paths.state, paths.history, rollout].map((path) => readFile(path)),
+      )
+      const tracker = new CodexTracker(paths, new CodexHolds(() => {}))
+      // Hide the dedicated agent workspace before its new thread ID has reached the agent index.
+      const hiddenByFolder = new CodexTracker(
+        paths,
+        new CodexHolds(() => {}),
+        () => null,
+        (_id, cwd) => cwd === 'C:/synthetic/project',
+      )
+      const agentOnly = await hiddenByFolder.snapshot({
+        expanded: ['C:/synthetic/project'],
+        showAll: [],
+      })
+      expect(agentOnly.sessions).toEqual([])
+      expect(agentOnly.lookupSessions ?? []).toEqual([])
+      expect(agentOnly.workspaces).toEqual([])
+      expect(agentOnly.allWorkspaces).toEqual([])
+      expect(agentOnly.currentThreadId).toBeNull()
+      const snapshot = await tracker.snapshot({ expanded: ['C:/synthetic/project'], showAll: [] })
+      expect(snapshot.provider).toBe('codex')
+      expect(snapshot.sessions[0]).toMatchObject({
+        id: key,
+        provider: 'codex',
+        title: 'Synthetic Codex',
+        lastPrompt: 'Synthetic prompt',
+        lastReply: 'Synthetic reply.',
+        state: 'idle',
+        tracked: true,
+        contextUsed: 0.25,
+        planText: '# Synthetic plan\n- Build the display',
+      })
+      expect(snapshot.workspaces[0]?.threads[0]?.session.id).toBe(key)
+      expect(snapshot.codexUsage).toMatchObject({ fiveHour: null, week: { used: 0.27 } })
+      tracker.configure(1, 10)
+      const noRecentChats = await tracker.snapshot()
+      expect(noRecentChats.sessions).toEqual([])
+      expect(noRecentChats.codexUsage).toEqual(snapshot.codexUsage)
+      const after = await Promise.all(
+        [paths.state, paths.history, rollout].map((path) => readFile(path)),
+      )
+      expect(after).toEqual(before)
+      tracker.configure(24, 10)
+      await appendFile(
+        rollout,
         JSON.stringify({
           type: 'response_item',
-          payload: { type: 'function_call_output', output: 'Synthetic output '.repeat(100) },
-        }) + '\n'
-      ).repeat(800),
-    )
-    const grown = await tracker.snapshot()
-    expect(grown.sessions[0]?.plan[0]?.content).toBe('Retained step')
-    expect(grown.codexUsage).toEqual(snapshot.codexUsage)
-    await writeFile(rollout, '{}\n')
-    expect((await tracker.snapshot()).sessions[0]?.plan).toEqual([])
-    expect(await writerHeld(paths.locks, id)).toBe(false)
-    expect(await writerHeld(paths.locks, '../bad')).toBe(true)
-    const outside = join(home, 'outside.jsonl')
-    await writeFile(outside, '{"secret":"not a transcript"}\n')
-    expect(await rolloutTail(outside, home)).toEqual([])
-  })
+          payload: {
+            type: 'function_call',
+            name: 'functions.update_plan',
+            arguments: JSON.stringify({ plan: [{ step: 'Retained step', status: 'in_progress' }] }),
+          },
+        }) + '\n',
+      )
+      expect((await tracker.snapshot()).sessions[0]?.plan[0]?.content).toBe('Retained step')
+      await appendFile(
+        rollout,
+        (
+          JSON.stringify({
+            type: 'response_item',
+            payload: { type: 'function_call_output', output: 'Synthetic output '.repeat(100) },
+          }) + '\n'
+        ).repeat(800),
+      )
+      const grown = await tracker.snapshot()
+      expect(grown.sessions[0]?.plan[0]?.content).toBe('Retained step')
+      expect(grown.codexUsage).toEqual(snapshot.codexUsage)
+      await writeFile(rollout, '{}\n')
+      expect((await tracker.snapshot()).sessions[0]?.plan).toEqual([])
+      expect(await writerHeld(paths.locks, id)).toBe(false)
+      expect(await writerHeld(paths.locks, '../bad')).toBe(true)
+      const outside = join(home, 'outside.jsonl')
+      await writeFile(outside, '{"secret":"not a transcript"}\n')
+      expect(await rolloutTail(outside, home)).toEqual([])
+    },
+  )
   it('shows native question cards without claiming a hook can submit them', () => {
     const summary = summarizeCodex([
       {

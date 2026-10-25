@@ -67,9 +67,12 @@ export const IPC = {
   dotClick: 'dot:click',
   dotDrag: 'dot:drag',
   dotDragEnd: 'dot:drag-end',
+  dotHover: 'dot:hover',
   panelOpened: 'panel:opened',
   panelResize: 'panel:resize',
   panelClose: 'panel:close',
+  panelLeave: 'panel:leave',
+  panelPointerOutside: 'panel:pointer-outside',
   panelStayOpen: 'panel:stay-open',
   openInClaude: 'claude:open-thread',
   answerQuestion: 'hold:answer-question',
@@ -142,12 +145,15 @@ export interface ThreadlightApi {
   onPanelOpened(listener: (info: PanelOpened) => void): () => void
 
   dotClick(): void
+  dotHover(): void
   /** Total pointer movement since the drag started, in screen pixels. */
   dotDrag(dx: number, dy: number): void
   dotDragEnd(): void
 
   resizePanel(height: number): void
   closePanel(): void
+  leavePanel(): void
+  onPanelPointerOutside(listener: () => void): () => void
   /** While on, clicking elsewhere does not close the panel (the active or full list pinned open). */
   setStayOpen(on: boolean): void
   openInClaude(appId: string): void

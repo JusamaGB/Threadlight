@@ -12,6 +12,7 @@ import { checkMicPill } from './mic-pill.smoke.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
 import { checkPanelHeight } from './panel-height.smoke.mjs'
 import { checkTips } from './tips.smoke.mjs'
+import { checkNowTimer } from './now-timer.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
 
@@ -239,6 +240,7 @@ try {
           getStt: async () => ({ state: 'missing' }),
           getOpenMicIndicator: async () => ({ live: false, level: 0 }),
           dotClick: () => window.proof.calls.push(['dotClick']),
+          leavePanel: () => window.proof.calls.push(['leavePanel']),
           stopOpenMic: () => window.proof.calls.push(['stopOpenMic']),
           getAgent: async () => agent,
           getUsage: async () => ({
@@ -372,6 +374,7 @@ try {
   assert.equal(await row('Codex').isVisible(), true)
   assert.equal(await box.inputValue(), 'Claude draft')
   await checkTips(page, row)
+  await checkNowTimer(page, row)
   await capture('thread-context-tooltip')
   await page.locator('[class*="header"]').first().hover()
   assert.equal(await row('Claude').getAttribute('data-provider'), 'claude')

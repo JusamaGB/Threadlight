@@ -40,8 +40,6 @@ import { MicDivider } from './MicDivider'
 
 type View = 'active' | 'all'
 
-/** How long the panel takes to fade out once the pointer leaves it. Matches `.closing` in the CSS. */
-const FADE_MS = 150
 /** How long a double-click on the header waits to see whether it becomes a triple-click. */
 const TRIPLE_CLICK_WAIT_MS = 250
 
@@ -129,16 +127,14 @@ export function Panel() {
   const [heard, setHeard] = useState<{ text: string; n: number } | null>(null)
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [cancelToken, setCancelToken] = useState(0)
-  const [closing, setClosing] = useState(false)
   /**
-   * How the panel behaves when the pointer leaves. Normal: it fades away. Double-click the
+   * How the panel behaves when the pointer leaves. Normal: it closes. Double-click the
    * header's bare space to pin the active list open ("active"); triple-click to pin the full
    * list open ("pinned"). The same clicks again unpin it.
    */
   const [hold, setHold] = useState<HoldMode>('normal')
   const pendingDoubleClick = useRef<number | undefined>(undefined)
   const card = useRef<HTMLDivElement>(null)
-  const fade = useRef<number | undefined>(undefined)
   const drag = useDotDrag()
 
   /**
@@ -220,9 +216,8 @@ export function Panel() {
       window.threadlight.onPanelOpened(({ maxHeight, opensDown, fresh }) => {
         setMaxHeight(maxHeight)
         setOpensDown(opensDown)
-        window.clearTimeout(fade.current)
-        setClosing(false)
         if (!fresh) return
+        window.clearTimeout(pendingDoubleClick.current)
         setView('active')
         setExpanded(null)
         setVoiceSelection(null)
@@ -430,21 +425,17 @@ export function Panel() {
     if (!document.hasFocus()) window.threadlight.closePanel()
   }
 
-  // The panel only shows while the pointer is over it: leaving fades it out, coming back cancels.
+  // The panel only shows while the pointer is over it; no delayed close can race a re-entry.
   // Pinned (either list), leaving does nothing at all.
-  const leave = () => {
+  const leave = useCallback(() => {
     if (drag.isDragging() || hold !== 'normal' || showMemory) return
     // Never hide the panel while the microphone is open or a voice send is counting down:
     // the recording or the send would carry on with nothing on screen to show or stop it.
     if (voice.state !== 'idle' || Date.now() < countdownUntil.current) return
-    setClosing(true)
-    window.clearTimeout(fade.current)
-    fade.current = window.setTimeout(() => window.threadlight.closePanel(), FADE_MS)
-  }
-  const enter = () => {
-    window.clearTimeout(fade.current)
-    setClosing(false)
-  }
+    window.clearTimeout(pendingDoubleClick.current)
+    window.threadlight.leavePanel()
+  }, [drag, hold, showMemory, voice.state])
+  useEffect(() => window.threadlight.onPanelPointerOutside(leave), [leave])
   const changeHold = (next: HoldMode) => {
     // Pinned holds the full list open, pinned active the active list; unpinning goes back to
     // the active list.
@@ -732,10 +723,9 @@ export function Panel() {
       <div
         ref={card}
         data-card=""
-        className={[styles.card, closing && styles.closing].filter(Boolean).join(' ')}
+        className={styles.card}
         // Room above the card, when opening upwards, keeps the card in place on screen.
         style={{ maxHeight, marginTop: opensDown ? 0 : room }}
-        onMouseEnter={enter}
         onMouseLeave={leave}
       >
         <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>

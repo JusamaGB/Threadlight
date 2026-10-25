@@ -1,6 +1,7 @@
 import { open, readFile, realpath, stat } from 'node:fs/promises'
 import { basename, isAbsolute, relative } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { setImmediate as yieldToEvents } from 'node:timers/promises'
 import type {
   Attention,
   GitState,
@@ -275,6 +276,14 @@ export class CodexTracker {
       } catch {
         /* legacy rollouts */
       }
+      // Native projections expose the type separately. Parsing every historical JSON
+      // payload to find a plan stalls the window event loop on long conversations.
+      const planType = history
+        ?.prepare('PRAGMA table_info(thread_items)')
+        .all()
+        .some((column) => column['name'] === 'item_type')
+        ? 'item_type'
+        : "json_extract(item_json,'$.type')"
       const focus = new Map<string, number>()
       try {
         const state = json(await readFile(this.paths.desktopState, 'utf8')),
@@ -343,7 +352,7 @@ export class CodexTracker {
             // of silently losing it when it falls outside the normal recent-items page.
             const priorPlan = history
               .prepare(
-                "SELECT item_json FROM thread_items WHERE thread_id=? AND json_extract(item_json,'$.type')='plan' ORDER BY rollout_ordinal DESC LIMIT 1",
+                `SELECT item_json FROM thread_items WHERE thread_id=? AND ${planType}='plan' ORDER BY rollout_ordinal DESC LIMIT 1`,
               )
               .get(id) as Row | undefined
             if (priorPlan) records.unshift(json(priorPlan['item_json']))
@@ -417,8 +426,17 @@ export class CodexTracker {
         built.set(key, session)
         return session
       }
+      const buildList = async (rows: Row[]) => {
+        const list: Session[] = []
+        for (const row of rows) {
+          list.push(await build(row))
+          // A batch of synchronous SQLite reads must not hold up hover, close or blur.
+          await yieldToEvents()
+        }
+        return list
+      }
       const recent = valid.filter((row) => activity(row) > cutoff).slice(0, 200)
-      const sessions = await Promise.all(recent.map(build))
+      const sessions = await buildList(recent)
       const order = { working: 0, waiting: 1, idle: 2 }
       sessions.sort((a, b) => order[a.state] - order[b.state] || b.lastActiveAt - a.lastActiveAt)
       const expanded = new Set(view.expanded ?? (currentWorkspace ? [currentWorkspace] : [])),
@@ -428,9 +446,7 @@ export class CodexTracker {
         const recentMembers = members.filter((row) => activity(row) > cutoff)
         if (!recentMembers.length) continue
         const list = expanded.has(cwd)
-          ? await Promise.all(
-              (all.has(cwd) ? recentMembers : recentMembers.slice(0, this.maxSessions)).map(build),
-            )
+          ? await buildList(all.has(cwd) ? recentMembers : recentMembers.slice(0, this.maxSessions))
           : []
         const nodes = list.map((session) => ({
           session,

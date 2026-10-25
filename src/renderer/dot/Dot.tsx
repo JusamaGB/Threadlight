@@ -102,7 +102,8 @@ export function FloatingDot({
         </button>
       </div>
     )
-  const hover = openOn === 'hover' ? { onPointerEnter: open, onMouseMove: open } : {}
+  const hoverOpen = () => window.threadlight.dotHover()
+  const hover = openOn === 'hover' ? { onPointerEnter: hoverOpen, onMouseMove: hoverOpen } : {}
   return (
     <div className={styles.floating} {...hover} onClick={open}>
       <StatusDot working={working} talk={talk} providers={providers} openMic={openMic} />

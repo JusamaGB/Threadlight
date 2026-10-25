@@ -11,18 +11,6 @@
   overflow: hidden;
 }
 
-.closing {
-  opacity: 0;
-  /* Only closing fades; reopening must not replay the fade backwards. */
-  transition: opacity 150ms ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .closing {
-    transition: none;
-  }
-}
-
 /* ---------- header ---------- */
 
 .header {
@@ -1353,12 +1341,14 @@ span.planStep {
   background: var(--hover);
 }
 
-/* The Now line's timer: how long the turn has run, "Reading hookServer.ts  41s". */
+/* Elapsed turn time sits beside the NOW heading, above the current action. */
 .elapsed {
   margin-left: 6px;
   color: var(--faint);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 /* Background tasks: the row's age becomes "Task 42s" or "Tasks ×3", with a list on hover. */

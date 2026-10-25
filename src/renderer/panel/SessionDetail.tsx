@@ -105,10 +105,12 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
       )}
 
       {active && (session.lastAction || session.thinking) && (
-        <Section label={en.detail.now}>
+        <Section
+          label={en.detail.now}
+          extra={session.turnStartedAt !== null && <Elapsed since={session.turnStartedAt} />}
+        >
           <p className={styles.strong}>
             {session.thinking ? en.detail.thinking : session.lastAction}
-            {session.turnStartedAt !== null && <Elapsed since={session.turnStartedAt} />}
           </p>
         </Section>
       )}
@@ -136,10 +138,21 @@ function Elapsed({ since }: { since: number }) {
   return <span className={styles.elapsed}>{elapsedText(since, now)}</span>
 }
 
-function Section({ label, children }: { label: string; children: ReactNode }) {
+function Section({
+  label,
+  extra,
+  children,
+}: {
+  label: string
+  extra?: ReactNode
+  children: ReactNode
+}) {
   return (
     <section className={styles.section}>
-      <h3 className={styles.sectionLabel}>{label}</h3>
+      <h3 className={styles.sectionLabel}>
+        {label}
+        {extra}
+      </h3>
       {children}
     </section>
   )

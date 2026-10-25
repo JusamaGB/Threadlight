@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IPC } from '../src/shared/ipc'
 
 const state = vi.hoisted(() => ({
   saved: { x: 1200, y: 200 },
+  cursor: { x: 1205, y: 205 },
   primary: { x: 0, y: 0, width: 1920, height: 1040 },
   secondary: { x: -1280, y: 0, width: 1280, height: 720 },
 }))
@@ -16,6 +17,7 @@ vi.mock('electron', () => {
   })
   return {
     screen: {
+      getCursorScreenPoint: () => state.cursor,
       getPrimaryDisplay: () => ({ workArea: state.primary }),
       getDisplayMatching: display,
       getDisplayNearestPoint: display,
@@ -38,6 +40,9 @@ vi.mock('electron', () => {
       show() {
         this.visible = true
       }
+      showInactive() {
+        this.visible = true
+      }
       getBounds() {
         return this.bounds
       }
@@ -54,8 +59,11 @@ import { WindowManager } from '../src/main/windows'
 
 describe('panel movement and available height', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     state.saved = { x: 1200, y: 200 }
+    state.cursor = { x: 1205, y: 205 }
   })
+  afterEach(() => vi.useRealTimers())
 
   it('refreshes room during each drag without resetting the expanded view', () => {
     const windows = new WindowManager()
@@ -72,6 +80,69 @@ describe('panel movement and available height', () => {
     expect(windows.panel.getBounds()).toMatchObject({ y: 50, height: 960 })
     windows.dragDot(0, 100)
     expect(windows.panel.getBounds()).toMatchObject({ y: 300, height: 732 })
+  })
+
+  it('opens once for duplicate hover/click events from the replaced dot', () => {
+    const windows = new WindowManager()
+    windows.dot.show()
+    windows.openFromDot(true)
+    windows.openFromDot(true)
+    windows.openFromDot()
+    expect(windows.panel.webContents.send).toHaveBeenCalledTimes(1)
+    expect(windows.panel.isVisible()).toBe(true)
+  })
+
+  it('discards a queued hover once the mouse has left, while keyboard clicks still open', () => {
+    const windows = new WindowManager()
+    windows.dot.show()
+    state.cursor = { x: 400, y: 400 }
+    windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.openFromDot()
+    expect(windows.panel.isVisible()).toBe(true)
+  })
+
+  it('rejects stale leave events inside the panel and closes immediately outside it', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(true)
+    state.cursor = { x: 400, y: 400 }
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.dot.show()
+    windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(false)
+  })
+
+  it('detects a native pointer exit even without a browser leave event', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    state.cursor = { x: 400, y: 400 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.webContents.send).toHaveBeenLastCalledWith(IPC.panelPointerOutside)
+    windows.closeOnPointerLeave()
+    const calls = vi.mocked(windows.panel.webContents.send).mock.calls.length
+    vi.advanceTimersByTime(100)
+    expect(windows.panel.webContents.send).toHaveBeenCalledTimes(calls)
+  })
+
+  it('preserves pins, but a fresh hover clears an old pin without taking focus', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.setStayOpen(true)
+    state.cursor = { x: 400, y: 400 }
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(true)
+    windows.openPanel({ focus: false, fresh: true })
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.dot.show()
+    state.cursor = { x: 1205, y: 205 }
+    vi.mocked(windows.panel.focus).mockClear()
+    windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(true)
+    expect(windows.panel.focus).not.toHaveBeenCalled()
   })
 
   it('updates direction and clamps immediately on a shorter display', () => {

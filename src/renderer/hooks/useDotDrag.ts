@@ -31,7 +31,13 @@ export function useDotDrag() {
   }
 
   return {
-    handlers: { onPointerDown, onPointerMove, onPointerUp },
+    handlers: {
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onPointerCancel: onPointerUp,
+      onLostPointerCapture: onPointerUp,
+    },
     isDragging: () => drag.current !== null,
   }
 }

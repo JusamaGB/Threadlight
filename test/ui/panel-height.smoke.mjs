@@ -1,4 +1,4 @@
-/* global window, document, getComputedStyle */
+/* global window, document, getComputedStyle, MouseEvent */
 import assert from 'node:assert/strict'
 
 export async function checkPanelHeight(page) {
@@ -37,6 +37,29 @@ export async function checkPanelHeight(page) {
     })
   const natural = await measure()
   assert.equal(natural.overflow, 0)
+  // Closing must not wait for an opacity transition or a timeout.
+  await page.clock.pauseAt(new Date())
+  const leaves = () =>
+    page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'leavePanel').length)
+  await page.mouse.move(5, 5)
+  const before = await leaves()
+  await page.mouse.move(450, 1100)
+  assert.equal(await leaves(), before + 1)
+  await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
+  assert.equal(await leaves(), before + 2, 'native pointer fallback also closes without a timer')
+  await page.evaluate(() => {
+    document
+      .querySelector('header')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
+    window.proof.emit('onPanelPointerOutside')
+  })
+  await page.clock.runFor(300)
+  assert.equal(
+    await page.getByTitle(/Pinned open/).count(),
+    0,
+    'a pending header double-click must not pin the panel after leaving',
+  )
+  await page.clock.resume()
   for (const opensDown of [true, false]) {
     const limit = Math.floor(natural.height - 35)
     await page.evaluate((layout) => window.proof.emit('onPanelOpened', layout), {

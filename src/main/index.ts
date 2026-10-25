@@ -260,7 +260,8 @@ async function start(): Promise<void> {
       showAll: valid(raw['showAll']) ? raw['showAll'] : [],
     })
   })
-  ipcMain.on(IPC.dotClick, () => windows.openPanel())
+  ipcMain.on(IPC.dotClick, () => windows.openFromDot())
+  ipcMain.on(IPC.dotHover, () => windows.openFromDot(true))
   ipcMain.on(IPC.dotDrag, (_event, dx: unknown, dy: unknown) =>
     windows.dragDot(Number(dx), Number(dy)),
   )
@@ -268,6 +269,7 @@ async function start(): Promise<void> {
   ipcMain.on(IPC.resetDotPosition, () => windows.resetDotPosition())
   ipcMain.on(IPC.panelResize, (_event, height: unknown) => windows.resizePanel(Number(height)))
   ipcMain.on(IPC.panelClose, () => windows.closePanel())
+  ipcMain.on(IPC.panelLeave, () => windows.closeOnPointerLeave())
   ipcMain.on(IPC.panelStayOpen, (_event, on: unknown) => windows.setStayOpen(on === true))
   ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
     if (typeof appId !== 'string') return

@@ -12,7 +12,6 @@ import { createPortal } from 'react-dom'
 
 import styles from './Panel.module.css'
 
-const HOVER_DELAY = 1000
 /** Keep the bubble clear of the cursor, including its visible arrow. */
 const GAP = 18
 const EDGE = 4
@@ -29,7 +28,7 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
 }
 
 /**
- * A delayed note beside the pointer. Nested context/git targets take precedence over the row.
+ * An immediate note beside the pointer. Nested targets take precedence over their parents.
  * Portalled outside the anchor so row layout and scrolling cannot displace or clip the bubble.
  */
 export function Tip({ as: Tag = 'span', text, children, className, onClick, ...props }: TipProps) {
@@ -37,12 +36,8 @@ export function Tip({ as: Tag = 'span', text, children, className, onClick, ...p
   const setAnchor = useCallback((element: HTMLElement | null) => {
     anchor.current = element
   }, [])
-  const hover = useRef<{ point: Point; timer: number | null; visible: boolean } | null>(null)
   const [point, setPoint] = useState<Point | null>(null)
   const dismiss = useCallback(() => {
-    const timer = hover.current?.timer
-    if (timer != null) window.clearTimeout(timer)
-    hover.current = null
     setPoint(null)
   }, [])
   useLayoutEffect(() => {
@@ -59,8 +54,6 @@ export function Tip({ as: Tag = 'span', text, children, className, onClick, ...p
     window.addEventListener('blur', dismiss)
     window.addEventListener('resize', dismiss)
     return () => {
-      const timer = hover.current?.timer
-      if (timer != null) window.clearTimeout(timer)
       document.removeEventListener('scroll', dismiss, true)
       window.removeEventListener('blur', dismiss)
       window.removeEventListener('resize', dismiss)
@@ -75,25 +68,7 @@ export function Tip({ as: Tag = 'span', text, children, className, onClick, ...p
       dismiss()
       return
     }
-    const next = { x: event.clientX, y: event.clientY }
-    if (hover.current) {
-      hover.current.point = next
-      if (hover.current.visible) setPoint(next)
-      return
-    }
-    hover.current = { point: next, timer: null, visible: false }
-    hover.current.timer = window.setTimeout(() => {
-      const current = hover.current
-      if (!current) return
-      const target = document.elementFromPoint(current.point.x, current.point.y)
-      if (target?.closest('[data-tip-anchor]') !== anchor.current) {
-        dismiss()
-        return
-      }
-      current.timer = null
-      current.visible = true
-      setPoint(current.point)
-    }, HOVER_DELAY)
+    setPoint({ x: event.clientX, y: event.clientY })
   }
   return (
     <Tag

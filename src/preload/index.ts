@@ -37,11 +37,14 @@ const api: ThreadlightApi = {
   onPanelOpened: (listener) => subscribe<PanelOpened>(IPC.panelOpened, listener),
 
   dotClick: () => ipcRenderer.send(IPC.dotClick),
+  dotHover: () => ipcRenderer.send(IPC.dotHover),
   dotDrag: (dx, dy) => ipcRenderer.send(IPC.dotDrag, dx, dy),
   dotDragEnd: () => ipcRenderer.send(IPC.dotDragEnd),
 
   resizePanel: (height) => ipcRenderer.send(IPC.panelResize, height),
   closePanel: () => ipcRenderer.send(IPC.panelClose),
+  leavePanel: () => ipcRenderer.send(IPC.panelLeave),
+  onPanelPointerOutside: (listener) => subscribe<void>(IPC.panelPointerOutside, listener),
   setStayOpen: (on) => ipcRenderer.send(IPC.panelStayOpen, on),
   openInClaude: (appId) => ipcRenderer.send(IPC.openInClaude, appId),
 
