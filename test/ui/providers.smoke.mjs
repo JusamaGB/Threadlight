@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { checkVoiceRouting } from './voice-routing.smoke.mjs'
 import { checkMicPill } from './mic-pill.smoke.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
+import { checkPanelHeight } from './panel-height.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
 
@@ -359,6 +360,7 @@ try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  await checkPanelHeight(page)
   await checkMemory(page, memoryProof, capture)
   await page.reload()
   await compose('Claude')

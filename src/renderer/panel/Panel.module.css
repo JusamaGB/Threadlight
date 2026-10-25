@@ -1,7 +1,8 @@
 /* The panel card. The window is sized to this card, so it must not stretch. */
 .card {
   position: relative;
-  width: 340px;
+  box-sizing: border-box;
+  width: 342px;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -1439,10 +1440,8 @@ span.planStep {
 
 /* The plan's usage along the card's foot (UsageBar.tsx): a 2px line in a taller hover strip. */
 .usageBars {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  /* Reserve room so the final row remains above the usage lines. */
+  flex: none;
   display: flex;
   flex-direction: column;
   z-index: 2;

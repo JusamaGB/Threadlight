@@ -313,6 +313,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Expanded thread lists recalculate available height while moving the panel, including
+  across displays and growth directions. Borders and usage bars fit inside that limit;
+  the list scrolls only when its contents exceed the available room.
+
 - The dot is raised again whenever another window comes to the front, so full-screen apps
   and Show desktop no longer leave it hidden behind them.
 - A session whose Claude Code process ended (for example after a background reply) no

@@ -109,7 +109,7 @@ export interface PanelOpened {
   maxHeight: number
   /** Grows down from the dot (top half of the screen), or up from it (bottom half). */
   opensDown: boolean
-  /** Opened by a click: start fresh on the Active view. False when the talk hotkey opened it. */
+  /** Start fresh on click; preserve state for quiet opens and position/layout updates. */
   fresh: boolean
 }
 

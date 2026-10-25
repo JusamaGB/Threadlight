@@ -202,6 +202,18 @@ export class WindowManager {
     return dot.y + DOT_SIZE / 2 <= area.y + area.height / 2
   }
 
+  /** Moving changes the available room, without reopening or resetting the current view. */
+  private updatePanelLayout(): void {
+    if (!this.panel.isVisible()) return
+    const info: PanelOpened = {
+      maxHeight: this.maxPanelHeight(),
+      opensDown: this.opensDown(),
+      fresh: false,
+    }
+    this.panel.webContents.send(IPC.panelOpened, info)
+    this.placePanel(Math.min(this.panel.getBounds().height, info.maxHeight))
+  }
+
   dragDot(dx: number, dy: number): void {
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
     const { x, y } = this.dotPosition
@@ -215,7 +227,7 @@ export class WindowManager {
     }
     this.placeDot()
     // Dragging the panel's header moves the hidden dot, and the panel stays anchored to it.
-    if (this.panel.isVisible()) this.placePanel(this.panel.getBounds().height)
+    this.updatePanelLayout()
   }
 
   endDrag(): void {
@@ -230,7 +242,7 @@ export class WindowManager {
     this.dotPosition = { x, y }
     this.placeDot()
     saveDotPosition({ x, y })
-    if (this.panel.isVisible()) this.placePanel(this.panel.getBounds().height)
+    this.updatePanelLayout()
   }
 
   /**
