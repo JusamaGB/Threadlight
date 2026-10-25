@@ -11,6 +11,7 @@ import { en } from '../i18n/en'
 import { clip } from '../lib/format'
 import { useDraft } from '../lib/drafts'
 import { CodexCard } from './CodexCard'
+import { CodexQuestionCard } from './CodexQuestionCard'
 import styles from './Panel.module.css'
 
 interface AttentionCardProps {
@@ -20,6 +21,7 @@ interface AttentionCardProps {
   relay: RelayStatus | undefined
   /** Opens Threadlight's composer on this thread, for an answer of your own (Other). */
   onCompose: () => void
+  onCollapse: () => void
 }
 
 /**
@@ -29,7 +31,22 @@ interface AttentionCardProps {
  * kind is answered from here and the thread carries on with it; otherwise a next-step answer
  * is sent to the thread in the background, and the rest open the thread in Claude.
  */
-export function AttentionCard({ session, attention, relay, onCompose }: AttentionCardProps) {
+export function AttentionCard({
+  session,
+  attention,
+  relay,
+  onCompose,
+  onCollapse,
+}: AttentionCardProps) {
+  if (session.provider === 'codex' && attention.kind === 'question')
+    return (
+      <CodexQuestionCard
+        key={`${session.id}:${JSON.stringify(attention.questions)}`}
+        session={session}
+        questions={attention.questions}
+        onCollapse={onCollapse}
+      />
+    )
   if (session.provider === 'codex')
     return (
       <CodexCard

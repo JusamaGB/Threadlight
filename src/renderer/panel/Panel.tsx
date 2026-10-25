@@ -36,6 +36,7 @@ import { SessionRow } from './SessionRow'
 import { CodexUsageBar, UsageBar } from './UsageBar'
 import { WorkspacePicker } from './WorkspacePicker'
 import { sameFolder, WorkspaceTree } from './WorkspaceTree'
+import { MicDivider } from './MicDivider'
 
 type View = 'active' | 'all'
 
@@ -139,6 +140,7 @@ export function Panel() {
    * setting alone.
    */
   const [micLive, setMicLive] = useState(false)
+  const [recordingProvider, setRecordingProvider] = useState<'claude' | 'codex'>('claude')
   const openMicMode = settings?.openMic === true && settings.talkMode === 'toggle'
   const openMicModeRef = useRef(openMicMode)
   useEffect(() => {
@@ -315,6 +317,7 @@ export function Panel() {
     if (voice.state === 'idle') {
       try {
         startedBy.current = 'mic'
+        setRecordingProvider(compose ? sessionProvider(compose.sessionId) : 'claude')
         await voice.start()
       } catch {
         startedBy.current = null
@@ -331,7 +334,7 @@ export function Panel() {
         startedBy.current = null
       }
     }
-  }, [voice, toggleLive])
+  }, [voice, toggleLive, compose])
 
   // The talk hotkey: start, stop-and-send, or cancel a countdown in progress.
   const onTalk = useCallback(async () => {
@@ -364,6 +367,7 @@ export function Panel() {
     }
     try {
       startedBy.current = 'hotkey'
+      setRecordingProvider('claude')
       await voice.start()
     } catch {
       startedBy.current = null
@@ -439,7 +443,7 @@ export function Panel() {
   }
   // The open mic: "open", then a pause, opens the full list pinned, without taking focus from a
   // game, ready for whatever comes next. Anything else is a sentence for later commands.
-  const openMic = useOpenMic({
+  const { state: openMic, level: openMicLevel } = useOpenMic({
     enabled: micLive && stt.state === 'ready',
     paused: voice.state !== 'idle',
     onSentence: (text) => {
@@ -448,7 +452,8 @@ export function Panel() {
       changeHold('pinned')
     },
   })
-  useEffect(() => window.threadlight.setOpenMicLive(openMic !== 'off'), [openMic])
+  const openMicListening = openMic === 'listening' || openMic === 'hearing'
+  useEffect(() => window.threadlight.setOpenMicLive(openMicListening), [openMicListening])
 
   // Clicks on the header's bare space: 2 pins the active list, 3 pins the full list. A triple-click arrives
   // as a double-click first, so the double waits a moment in case a third click follows.
@@ -618,6 +623,13 @@ export function Panel() {
         onMouseLeave={leave}
       >
         <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>
+          {(openMicListening || voice.state === 'listening') && (
+            <MicDivider
+              provider={voice.state === 'listening' ? recordingProvider : 'claude'}
+              level={voice.level}
+              openMicLevel={voice.state === 'listening' ? undefined : openMicLevel}
+            />
+          )}
           {pickingWorkspace ? (
             <>
               <button

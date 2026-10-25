@@ -285,6 +285,128 @@ try {
   )
   await page.locator('[class*="header"]').first().hover()
   await capture('codex-plan-usage')
+  // Native Codex questions prepare answers without pretending to submit to a held hook.
+  const nativeQuestion = {
+    header: 'Preview colour',
+    question: 'Which colour should the preview use for this workspace?',
+    multiSelect: false,
+    options: [
+      {
+        label: 'Follow the chat destination',
+        description: 'Use the application colour.',
+        recommended: true,
+      },
+      { label: 'Use the same colour everywhere', description: '', recommended: false },
+    ],
+  }
+  await page.evaluate(
+    (question) =>
+      window.proof.patch({
+        plan: [],
+        attention: { kind: 'question', questions: [question], answerableUntil: null },
+      }),
+    nativeQuestion,
+  )
+  const questionCard = page.getByRole('region', { name: 'Codex question', exact: true })
+  const customAnswer = questionCard.getByLabel('Answer for this Codex question')
+  await questionCard.waitFor()
+  assert.equal(await questionCard.getByRole('radio').first().isChecked(), true)
+  await capture('codex-question')
+  const beforeQuestion = await page.evaluate(
+    () => window.proof.calls.filter((c) => ['send', 'answer'].includes(c[0])).length,
+  )
+  await questionCard.getByRole('radio').nth(1).check()
+  await questionCard.getByRole('button', { name: 'Copy & open', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.proof.calls.slice(-2)), [
+    ['copy', 'Use the same colour everywhere'],
+    ['open', chats.codex.appId],
+  ])
+  await customAnswer.fill('Use a softer blue for this workspace.')
+  assert.equal(await questionCard.getByRole('radio').nth(1).isChecked(), false)
+  await questionCard.getByRole('button', { name: 'Collapse question' }).click()
+  await questionCard.waitFor({ state: 'detached' })
+  await row('Codex').click()
+  assert.equal(await customAnswer.inputValue(), 'Use a softer blue for this workspace.')
+  await capture('codex-question-custom')
+  await customAnswer.press('Control+Enter')
+  assert.deepEqual(await page.evaluate(() => window.proof.calls.slice(-2)), [
+    ['copy', 'Use a softer blue for this workspace.'],
+    ['open', chats.codex.appId],
+  ])
+  await page.evaluate(
+    (question) =>
+      window.proof.patch({
+        attention: {
+          kind: 'question',
+          questions: [
+            question,
+            {
+              header: 'Details',
+              question: 'What else should the preview show?',
+              options: [],
+              multiSelect: false,
+            },
+          ],
+          answerableUntil: null,
+        },
+      }),
+    nativeQuestion,
+  )
+  assert.equal(
+    await questionCard.getByRole('button', { name: 'Copy & open', exact: true }).isDisabled(),
+    true,
+  )
+  await questionCard.getByRole('button', { name: 'Next question' }).click()
+  await customAnswer.fill('Keep the labels visible.')
+  await toggle('Codex')
+  await toggle('Codex')
+  await row('Codex').click()
+  assert.equal(await customAnswer.inputValue(), 'Keep the labels visible.')
+  await questionCard.getByRole('button', { name: 'Previous question' }).click()
+  assert.equal(await questionCard.getByRole('radio').first().isChecked(), true)
+  await questionCard.getByRole('button', { name: 'Copy & open', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.proof.calls.slice(-2)), [
+    [
+      'copy',
+      `${nativeQuestion.question}\nFollow the chat destination\n\nWhat else should the preview show?\nKeep the labels visible.`,
+    ],
+    ['open', chats.codex.appId],
+  ])
+  assert.equal(
+    await page.evaluate(
+      () => window.proof.calls.filter((c) => ['send', 'answer'].includes(c[0])).length,
+    ),
+    beforeQuestion,
+  )
+  await page.evaluate((plan) => window.proof.patch({ plan }), trackedPlan)
+  await page.evaluate(
+    (question) =>
+      window.proof.patch({
+        attention: {
+          kind: 'question',
+          questions: [{ ...question, multiSelect: true }],
+          answerableUntil: null,
+        },
+      }),
+    nativeQuestion,
+  )
+  assert.equal(
+    await questionCard.getByRole('button', { name: 'Copy & open', exact: true }).isDisabled(),
+    true,
+  )
+  await questionCard.getByRole('checkbox').first().check()
+  await questionCard.getByRole('checkbox').nth(1).check()
+  await questionCard.getByRole('button', { name: 'Copy & open', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.proof.calls.slice(-2)), [
+    ['copy', 'Follow the chat destination, Use the same colour everywhere'],
+    ['open', chats.codex.appId],
+  ])
+  await customAnswer.fill('Custom answer')
+  await questionCard.getByRole('checkbox').first().check()
+  assert.equal(await customAnswer.inputValue(), '')
+  assert.equal(await questionCard.getByRole('checkbox').first().isChecked(), true)
+  assert.equal(await questionCard.getByRole('checkbox').nth(1).isChecked(), false)
+  assert.equal(await questionCard.evaluate((node) => node.scrollWidth <= node.clientWidth), true)
   await page.evaluate(() =>
     window.proof.patch({
       attention: null,
@@ -426,6 +548,11 @@ try {
           gain.gain.linearRampToValueAtTime(0.12, now + i * 0.4 + 0.15)
           gain.gain.linearRampToValueAtTime(0.02, now + i * 0.4 + 0.4)
         }
+        window.proof.setAudioLevel = (value) => {
+          gain.gain.cancelScheduledValues(context.currentTime)
+          gain.gain.setValueAtTime(value, context.currentTime)
+        }
+        if (window.proof.quietInput) window.proof.setAudioLevel(0)
         tone.start()
         await context.resume()
         for (const track of destination.stream.getTracks()) {
@@ -465,6 +592,9 @@ try {
   await page.getByRole('button', { name: 'Talk', exact: true }).click()
   const waveform = page.getByRole('img', { name: 'Listening...', exact: true })
   await waveform.waitFor()
+  const codexDivider = page.getByRole('status', { name: 'Codex microphone listening', exact: true })
+  await codexDivider.waitFor()
+  assert.equal(await codexDivider.getAttribute('data-provider'), 'codex')
   await page.waitForFunction(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return false
@@ -491,6 +621,7 @@ try {
   )
   await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).click()
   await waveform.waitFor({ state: 'detached' })
+  await codexDivider.waitFor({ state: 'detached' })
   await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
   await page.evaluate(() => window.proof.finishTranscript('Synthetic transcript'))
   await page.waitForFunction(
@@ -501,6 +632,10 @@ try {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.getByRole('button', { name: 'Talk', exact: true }).click()
   await waveform.waitFor()
+  await page.waitForFunction(() => {
+    const node = document.querySelector('[aria-label="Codex microphone listening"]')
+    return node && Number(getComputedStyle(node).getPropertyValue('--spread')) === 0.15
+  })
   assert.equal(await page.locator('textarea').inputValue(), 'Existing draft')
   assert.equal(await page.locator('textarea').isVisible(), true)
   const centreMask = () =>
@@ -520,6 +655,12 @@ try {
   const stationary = await centreMask()
   await page.waitForTimeout(180) // several animation frames: reduced motion must not scroll sideways
   assert.equal(await centreMask(), stationary)
+  assert.equal(
+    await codexDivider.evaluate((node) =>
+      Number(getComputedStyle(node).getPropertyValue('--spread')),
+    ),
+    0.15,
+  )
   await capture('composer-listening-draft')
   await page.evaluate(() => {
     window.proof.finishTranscript = null
@@ -537,9 +678,52 @@ try {
     await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'send').length),
     sendsBeforeRecording,
   )
+  // The global open mic follows the built-in Claude agent, even with a Codex composer selected.
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.evaluate(async () => {
+    window.proof.quietInput = true
+    await window.threadlight.updateSettings({ openMic: true })
+  })
+  await page.getByRole('button', { name: 'Open the mic for voice commands', exact: true }).waitFor()
+  await page.evaluate(() => window.proof.emit('onTalkToggle'))
+  const divider = page.getByRole('status', { name: 'Claude microphone listening', exact: true })
+  await divider.waitFor()
+  assert.equal(await divider.getAttribute('data-provider'), 'claude')
+  await page.waitForFunction(() => {
+    const node = document.querySelector('[aria-label="Claude microphone listening"]')
+    return node && Number(getComputedStyle(node).getPropertyValue('--spread')) < 0.05
+  })
+  await capture('open-mic-quiet')
+  const before = await page.locator('[data-card]').boundingBox()
+  await page.evaluate(() => window.proof.setAudioLevel(0.18))
+  await page.waitForFunction(() => {
+    const node = document.querySelector('[aria-label="Claude microphone listening"]')
+    return node && Number(getComputedStyle(node).getPropertyValue('--spread')) > 0.85
+  })
+  assert.equal((await page.locator('[data-card]').boundingBox()).height, before.height)
+  await capture('open-mic-speaking')
+  await page.evaluate(() => window.proof.setAudioLevel(0))
+  await page.waitForFunction(() => {
+    const node = document.querySelector('[aria-label="Claude microphone listening"]')
+    return node && Number(getComputedStyle(node).getPropertyValue('--spread')) < 0.06
+  })
+  await page.evaluate(() => window.proof.emit('onTalkToggle'))
+  await divider.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => window.proof.stoppedTracks === 3)
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: async () => {
+        throw new Error('Synthetic microphone denied')
+      },
+    })
+    window.proof.emit('onTalkToggle')
+  })
+  await page.getByRole('button', { name: 'The microphone is blocked', exact: true }).waitFor()
+  assert.equal(await divider.count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'PASS: both toggles, combined rows/workspaces, draft and answer retention, exact send target, live copy/open, paused list/hotkey/dot, persisted off state; no browser errors.',
+    'PASS: provider lists, drafts, sends, plans, usage, composer waveform and destination-coloured mic divider; quiet/loud, reduced motion, stop and denied-mic states; no browser errors.',
   )
 } finally {
   await browser?.close()

@@ -8,6 +8,15 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Codex question cards use numbered selectable choices, a custom-response field,
+  question paging and compact actions. Picks and drafts stay with their chat when
+  collapsed or hidden; Copy & open prepares the answer for completion in Codex.
+
+- The header divider glows while the microphone is open, with steady illuminated ends
+  and a centre glow that expands with speech. Agent commands use Claude orange;
+  composer dictation follows its chat destination, including Codex blue. Reduced-motion
+  mode varies brightness without stretching the line.
+
 - The recording waveform fills the available composer input width and scrolls smoothly
   with real mic levels. Existing drafts stay visible above it; reduced-motion mode
   keeps the level display stationary.

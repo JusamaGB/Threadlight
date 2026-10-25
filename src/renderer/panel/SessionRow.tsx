@@ -137,6 +137,7 @@ export function SessionRow(props: SessionRowProps) {
               attention={attention}
               relay={relay}
               onCompose={onCompose}
+              onCollapse={onToggle}
             />
           </div>
         ) : (

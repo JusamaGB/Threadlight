@@ -27,8 +27,10 @@ interface OpenMicOptions {
  * The page's root carries `data-open-mic` with the state, set when the microphone is actually
  * taken and released, so a check can see that switching off really lets the microphone go.
  */
-export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions): OpenMicState {
+export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions) {
   const [state, setState] = useState<OpenMicState>('off')
+  // A visual-only level shared with the divider; audio callbacks need not rerender the panel.
+  const level = useRef(0)
   const latest = useRef({ paused, onSentence })
   useEffect(() => {
     latest.current = { paused, onSentence }
@@ -37,6 +39,7 @@ export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions): Ope
   useEffect(() => {
     if (!enabled) return
     let stopped = false
+    level.current = 0
     let release = () => {}
     const show = (next: OpenMicState) => {
       document.documentElement.dataset['openMic'] = next
@@ -80,12 +83,17 @@ export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions): Ope
       let generation = 0
       processor.onaudioprocess = (event) => {
         if (latest.current.paused) {
+          level.current = 0
           segmenter.drop()
           sentences.reset()
           generation += 1
           return
         }
-        const heard = segmenter.feed(new Float32Array(event.inputBuffer.getChannelData(0)))
+        const frame = new Float32Array(event.inputBuffer.getChannelData(0))
+        let sum = 0
+        for (const sample of frame) sum += sample * sample
+        level.current = Math.min(1, Math.sqrt(sum / frame.length) * 8)
+        const heard = segmenter.feed(frame)
         if (heard?.kind === 'start') {
           sentences.started()
           show('hearing')
@@ -108,6 +116,7 @@ export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions): Ope
         if (heard?.kind === 'dropped' || sentence !== null) show('listening')
       }
       release = () => {
+        level.current = 0
         processor.onaudioprocess = null
         stream.getTracks().forEach((track) => track.stop()) // the mic light goes off here
         void context.close()
@@ -117,9 +126,10 @@ export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions): Ope
     })()
     return () => {
       stopped = true
+      level.current = 0
       release()
     }
   }, [enabled])
 
-  return enabled ? state : 'off'
+  return { state: enabled ? state : 'off', level }
 }
