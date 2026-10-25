@@ -14,6 +14,9 @@ export const en = {
     openMic: 'Open mic is listening',
   },
   openMic: {
+    pill: 'Microphone is open',
+    stop: 'Close microphone',
+    showThreads: 'Show threads while microphone is open',
     on: 'Open mic is listening: click to close it',
     off: 'Open the mic for voice commands',
     blocked: 'The microphone is blocked',

@@ -564,6 +564,19 @@ export function Panel() {
   })
   const openMicListening = openMic === 'listening' || openMic === 'hearing'
   useEffect(() => window.threadlight.setOpenMicLive(openMicListening), [openMicListening])
+  useEffect(() => window.threadlight.onStopOpenMic(() => setMicLive(false)), [])
+  useEffect(() => {
+    if (!openMicListening) return
+    // The panel may be hidden, so use a timer rather than animation frames for the dot's meter.
+    const timer = window.setInterval(
+      () => window.threadlight.setOpenMicLevel(openMicLevel.current),
+      50,
+    )
+    return () => {
+      window.clearInterval(timer)
+      window.threadlight.setOpenMicLevel(0)
+    }
+  }, [openMicListening, openMicLevel])
 
   // Clicks on the header's bare space: 2 pins the active list, 3 pins the full list. A triple-click arrives
   // as a double-click first, so the double waits a moment in case a third click follows.

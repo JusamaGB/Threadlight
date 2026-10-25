@@ -5,6 +5,7 @@ import { app, clipboard, ipcMain, session, shell, type WebContents } from 'elect
 
 import { agentBusy } from '../shared/agent'
 import { IPC } from '../shared/ipc'
+import { registerMicIndicator } from './micIndicator'
 import type { Settings } from '../shared/settings'
 import type { Provider, Session, Snapshot, ThreadNode } from '../shared/types'
 import { combinedSnapshot, PROVIDERS, providerView, sessionProvider } from '../shared/providers'
@@ -63,6 +64,7 @@ async function start(): Promise<void> {
 
   const hooks = new HookStateStore()
   const windows = new WindowManager()
+  registerMicIndicator(windows)
   // The agent's own folder; its conversations stay out of the thread list unless shown.
   const agentFiles = agentPaths(app.getPath('userData'))
   const agentWorkspace = agentFiles.workspace
@@ -468,9 +470,6 @@ async function start(): Promise<void> {
     if (state === 'idle' || state === 'listening' || state === 'transcribing') {
       windows.dot.webContents.send(IPC.talkState, state)
     }
-  })
-  ipcMain.on(IPC.openMicLive, (_event, live: unknown) => {
-    windows.dot.webContents.send(IPC.openMicLive, live === true)
   })
   ipcMain.on(IPC.openPanelQuietly, () => windows.openPanel({ focus: false }))
 

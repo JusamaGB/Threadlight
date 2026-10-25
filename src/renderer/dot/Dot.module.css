@@ -10,6 +10,48 @@
   cursor: pointer;
 }
 
+.micPill {
+  width: 92px;
+  height: 32px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px 3px 10px;
+  border: 1px solid var(--composer-edge);
+  border-radius: 999px;
+  background: var(--composer-bg);
+}
+
+.micWave {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+}
+
+.micStop {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.micStop:hover,
+.micWave:hover {
+  background: rgb(255 255 255 / 7%);
+}
+
+.micStop:focus-visible,
+.micWave:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
 .dot {
   width: 12px;
   height: 12px;

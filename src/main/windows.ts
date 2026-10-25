@@ -6,8 +6,9 @@ import { BrowserWindow, screen, shell, type Rectangle } from 'electron'
 
 import { IPC, type PanelOpened } from '../shared/ipc'
 import { loadDotPosition, saveDotPosition, type Point } from './windowState'
+import { DOT_SIZE, micIndicatorBounds } from '../shared/micIndicator'
 
-export const DOT_SIZE = 22
+export { DOT_SIZE }
 export const PANEL_WIDTH = 342 // 340 of content plus a 1 px border each side
 const MARGIN = 8
 
@@ -45,6 +46,9 @@ function createWindow(view: View, size: { width: number; height: number }, focus
     frame: false,
     transparent: true,
     resizable: false,
+    // Keep application-imposed minima below the compact indicator's dimensions.
+    minWidth: 1,
+    minHeight: 1,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -77,11 +81,15 @@ export class WindowManager {
   private claudeRunning = false
   /** The panel is kept up (the active list or the full list pinned open), so clicking elsewhere must not close it. */
   private stayOpen = false
+  private dotPosition: Point
+  private openMicLive = false
 
   constructor() {
     // The dot never takes focus, so clicking it does not pull focus from a game.
     this.dot = createWindow('dot', { width: DOT_SIZE, height: DOT_SIZE }, false)
-    this.dot.setPosition(...this.initialDotPosition())
+    const [x, y] = this.initialDotPosition()
+    this.dotPosition = { x, y }
+    this.placeDot()
     // The panel is created up front (hidden) so it opens instantly.
     this.panel = createWindow('panel', { width: PANEL_WIDTH, height: 120 }, true)
     this.panel.on('blur', () => {
@@ -158,12 +166,26 @@ export class WindowManager {
     this.placePanel(Math.max(40, Math.min(Math.ceil(height), this.maxPanelHeight())))
   }
 
+  setOpenMicLive(live: boolean): void {
+    if (this.openMicLive === live) return
+    this.openMicLive = live
+    this.placeDot()
+  }
+
+  private dotBounds(): Rectangle {
+    return { ...this.dotPosition, width: DOT_SIZE, height: DOT_SIZE }
+  }
+
+  private placeDot(): void {
+    this.dot.setBounds(micIndicatorBounds(this.dotPosition, this.workArea(), this.openMicLive))
+  }
+
   /**
    * The tallest the panel can be from where it starts (the dot) to the far edge of the screen's
    * work area, leaving the same gap at the far end as the dot has at its own edge (up to 8 px).
    */
   private maxPanelHeight(): number {
-    const dot = this.dot.getBounds()
+    const dot = this.dotBounds()
     const area = this.workArea()
     if (this.opensDown()) {
       const gap = clamp(dot.y - area.y, 0, MARGIN)
@@ -175,22 +197,23 @@ export class WindowManager {
 
   /** Downward from a dot in the top half of the screen, upward from one in the bottom half. */
   private opensDown(): boolean {
-    const dot = this.dot.getBounds()
+    const dot = this.dotBounds()
     const area = this.workArea()
     return dot.y + DOT_SIZE / 2 <= area.y + area.height / 2
   }
 
   dragDot(dx: number, dy: number): void {
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
-    const [x, y] = this.dot.getPosition() as [number, number]
+    const { x, y } = this.dotPosition
     this.dragStart ??= { x, y }
     // Kept inside the screen's work area, just as the panel is.
     const target = { x: Math.round(this.dragStart.x + dx), y: Math.round(this.dragStart.y + dy) }
     const area = screen.getDisplayNearestPoint(target).workArea
-    this.dot.setPosition(
-      clamp(target.x, area.x, area.x + area.width - DOT_SIZE),
-      clamp(target.y, area.y, area.y + area.height - DOT_SIZE),
-    )
+    this.dotPosition = {
+      x: clamp(target.x, area.x, area.x + area.width - DOT_SIZE),
+      y: clamp(target.y, area.y, area.y + area.height - DOT_SIZE),
+    }
+    this.placeDot()
     // Dragging the panel's header moves the hidden dot, and the panel stays anchored to it.
     if (this.panel.isVisible()) this.placePanel(this.panel.getBounds().height)
   }
@@ -198,14 +221,14 @@ export class WindowManager {
   endDrag(): void {
     if (!this.dragStart) return
     this.dragStart = null
-    const [x, y] = this.dot.getPosition() as [number, number]
-    saveDotPosition({ x, y })
+    saveDotPosition(this.dotPosition)
   }
 
   /** Puts the dot back in the top-right corner of the main screen (Settings → Reset). */
   resetDotPosition(): void {
     const { x, y } = cornerPosition('top-right', screen.getPrimaryDisplay().workArea)
-    this.dot.setPosition(x, y)
+    this.dotPosition = { x, y }
+    this.placeDot()
     saveDotPosition({ x, y })
     if (this.panel.isVisible()) this.placePanel(this.panel.getBounds().height)
   }
@@ -215,7 +238,7 @@ export class WindowManager {
    * half its bottom-right corner does, growing up.
    */
   private placePanel(height: number): void {
-    const dot = this.dot.getBounds()
+    const dot = this.dotBounds()
     const area = this.workArea()
     const x = clamp(dot.x + DOT_SIZE - PANEL_WIDTH, area.x, area.x + area.width - PANEL_WIDTH)
     const y = clamp(
@@ -227,7 +250,7 @@ export class WindowManager {
   }
 
   private workArea(): Rectangle {
-    return screen.getDisplayMatching(this.dot.getBounds()).workArea
+    return screen.getDisplayMatching(this.dotBounds()).workArea
   }
 
   private initialDotPosition(): [number, number] {

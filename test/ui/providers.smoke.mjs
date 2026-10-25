@@ -8,6 +8,7 @@ import { createRequire } from 'node:module'
 import { join, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkVoiceRouting } from './voice-routing.smoke.mjs'
+import { checkMicPill } from './mic-pill.smoke.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -212,6 +213,9 @@ try {
           },
           getRelays: async () => [],
           getStt: async () => ({ state: 'missing' }),
+          getOpenMicIndicator: async () => ({ live: false, level: 0 }),
+          dotClick: () => window.proof.calls.push(['dotClick']),
+          stopOpenMic: () => window.proof.calls.push(['stopOpenMic']),
           getAgent: async () => agent,
           getUsage: async () => ({
             at: Date.now(),
@@ -632,11 +636,7 @@ try {
     .waitFor()
   await page.goto(url + '?view=dot')
   await page.getByRole('status', { name: /Chat monitoring is paused/ }).waitFor()
-  await page.evaluate(() => window.proof.emit('onOpenMicLive', true))
-  await page
-    .getByRole('status', { name: /Chat monitoring is paused.*Open mic is listening/ })
-    .waitFor()
-  await page.evaluate(() => window.proof.emit('onOpenMicLive', false))
+  await checkMicPill(page, capture)
   await page.goto(url + '?view=panel')
   await toggle('Codex')
   await page.evaluate(() =>

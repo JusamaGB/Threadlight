@@ -1,6 +1,7 @@
 import type { TalkState } from '../../shared/ipc'
 import type { Provider } from '../../shared/types'
 import { en } from '../i18n/en'
+import { VoiceWave } from '../composer/VoiceWave'
 import styles from './Dot.module.css'
 
 interface StatusDotProps {
@@ -62,14 +63,45 @@ interface FloatingDotProps {
   /** Settings → "Open the panel on": hover opens straight away, click only on a click. */
   openOn: 'hover' | 'click'
   openMic: boolean
+  micLevel: number
 }
 
 /**
  * The floating dot window: opens the panel on hover (or only on click, if chosen in Settings).
  * It is moved by dragging the panel's header, since the panel covers it the moment it opens.
  */
-export function FloatingDot({ working, talk, openOn, providers, openMic }: FloatingDotProps) {
+export function FloatingDot({
+  working,
+  talk,
+  openOn,
+  providers,
+  openMic,
+  micLevel,
+}: FloatingDotProps) {
   const open = () => window.threadlight.dotClick()
+  if (openMic)
+    return (
+      <div className={styles.micPill} role="group" aria-label={en.openMic.pill}>
+        <button
+          className={styles.micWave}
+          onClick={open}
+          aria-label={en.openMic.showThreads}
+          title={en.openMic.showThreads}
+        >
+          <VoiceWave level={micLevel} />
+        </button>
+        <button
+          className={styles.micStop}
+          onClick={() => window.threadlight.stopOpenMic()}
+          aria-label={en.openMic.stop}
+          title={en.openMic.stop}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <rect width="10" height="10" rx="1.5" fill="currentColor" />
+          </svg>
+        </button>
+      </div>
+    )
   const hover = openOn === 'hover' ? { onPointerEnter: open, onMouseMove: open } : {}
   return (
     <div className={styles.floating} {...hover} onClick={open}>

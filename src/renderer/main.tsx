@@ -17,7 +17,27 @@ function DotView() {
   const [talk, setTalk] = useState<TalkState>('idle')
   useEffect(() => window.threadlight.onTalkState(setTalk), [])
   const [openMic, setOpenMic] = useState(false)
-  useEffect(() => window.threadlight.onOpenMicLive(setOpenMic), [])
+  const [micLevel, setMicLevel] = useState(0)
+  useEffect(() => {
+    let active = true
+    let updated = false
+    const offLive = window.threadlight.onOpenMicLive((live) => {
+      updated = true
+      setOpenMic(live)
+      if (!live) setMicLevel(0)
+    })
+    const offLevel = window.threadlight.onOpenMicLevel(setMicLevel)
+    void window.threadlight.getOpenMicIndicator().then((state) => {
+      if (!active || updated) return
+      setOpenMic(state.live)
+      setMicLevel(state.level)
+    })
+    return () => {
+      active = false
+      offLive()
+      offLevel()
+    }
+  }, [])
   return (
     <FloatingDot
       providers={settings?.enabledProviders}
@@ -25,6 +45,7 @@ function DotView() {
       talk={talk}
       openOn={settings?.openOn ?? 'hover'}
       openMic={openMic}
+      micLevel={micLevel}
     />
   )
 }
