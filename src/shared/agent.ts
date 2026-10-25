@@ -2,10 +2,42 @@
 
 /** idle: no run. working: a turn is under way. waiting: it needs your approval. ready: done,
  * and listening for a follow-up. error: the run stopped unexpectedly. */
-export type AgentStatus = 'idle' | 'starting' | 'working' | 'waiting' | 'ready' | 'error'
+export type AgentStatus =
+  'idle' | 'starting' | 'working' | 'waiting' | 'stopping' | 'ready' | 'interrupted' | 'error'
+
+export type AgentProvider = 'claude' | 'codex'
+export type AgentResult = { ok: true } | { ok: false; reason: string }
+export interface AgentModel {
+  id: string
+  name: string
+  hidden: boolean
+  isDefault: boolean
+  efforts: string[]
+  defaultEffort: string | null
+}
+export interface AgentQuestion {
+  id: string
+  text: string
+  options: string[]
+  other: boolean
+  secret?: boolean
+}
+export interface AgentRequest extends AgentApproval {
+  kind: 'approval' | 'questions' | 'permissions' | 'elicitation'
+  questions?: AgentQuestion[]
+  canAllow: boolean
+}
+export type AgentResponse =
+  { action: 'allow' | 'deny' } | { action: 'answer'; answers: Record<string, string> }
+export interface AgentHistoryPage {
+  items: AgentItem[]
+  cursor: string | null
+  error?: string
+}
 
 /** One line of the conversation: what you said, what it said, or a step it took. */
 export interface AgentItem {
+  id?: string
   kind: 'you' | 'agent' | 'step'
   text: string
 }
@@ -20,6 +52,12 @@ export interface AgentApproval {
 }
 
 export interface AgentState {
+  revision: number
+  provider: AgentProvider | null
+  model: string | null
+  reasoning: string | null
+  conversationId: string | null
+  requests: AgentRequest[]
   status: AgentStatus
   items: AgentItem[]
   approval: AgentApproval | null
@@ -30,7 +68,7 @@ export interface AgentState {
   /** Its time ran out (settings): the next message starts a fresh conversation. */
   ended: boolean
   /** Spent so far in this conversation, in US dollars. */
-  costUsd: number
+  costUsd: number | null
   /** Claude Code's id for this conversation, once it has started (or the one continued). */
   sessionId: string | null
 }
@@ -38,6 +76,8 @@ export interface AgentState {
 /** A past conversation, listed under Earlier. */
 export interface AgentConversation {
   id: string
+  provider?: AgentProvider
+  model?: string | null
   /** What you asked first. */
   title: string
   /** When it last changed, in ms since the epoch. */
@@ -45,6 +85,12 @@ export interface AgentConversation {
 }
 
 export const IDLE_AGENT: AgentState = {
+  revision: 0,
+  provider: null,
+  model: null,
+  reasoning: null,
+  conversationId: null,
+  requests: [],
   status: 'idle',
   items: [],
   approval: null,
@@ -60,4 +106,8 @@ export interface AgentApp {
   name: string
   /** "connected", "needs sign-in", or why it failed. */
   status: string
+  unavailable?: boolean
 }
+
+export const agentBusy = (state: AgentState) =>
+  ['starting', 'working', 'waiting', 'stopping'].includes(state.status)

@@ -137,9 +137,9 @@ export const en = {
   },
   agent: {
     title: 'Agent',
-    open: 'Agent: ask Claude to do something',
+    open: 'Agent: ask it to do something',
     empty:
-      'Ask it to do something. It can read your connected apps freely; anything that sends, deletes or changes things waits for your OK here.',
+      'Ask it to do something. Available tools depend on the selected provider. Actions that need permission wait for your answer here.',
     placeholder: 'Ask your agent…',
     followUp: 'Follow up…',
     working: 'Working…',

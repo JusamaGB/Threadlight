@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { AgentConversation, AgentItem } from '../../shared/agent'
+import { agentBusy, type AgentConversation, type AgentItem } from '../../shared/agent'
+import { AgentRequestCard } from './AgentRequestCard'
 import { useAgent } from '../hooks/useAgent'
 import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
@@ -11,6 +12,7 @@ import styles from './Panel.module.css'
 interface Reading {
   id: string
   items: AgentItem[]
+  cursor: string | null
 }
 
 /** The lines of a conversation: what you asked, what it said, and its steps. */
@@ -64,7 +66,9 @@ function Earlier({ current, onOpen }: { current: string | null; onOpen: (id: str
               title={conversation.title}
               onClick={() => onOpen(conversation.id)}
             >
-              <span className={styles.agentPastTitle}>{conversation.title}</span>
+              <span className={styles.agentPastTitle}>
+                {conversation.provider === 'codex' ? 'Codex' : 'Claude'} · {conversation.title}
+              </span>
               <span className={styles.age}>{ageText(conversation.at, now)}</span>
             </button>
           ))}
@@ -85,15 +89,19 @@ export function AgentView() {
   const [error, setError] = useState<string | null>(null)
   const [reading, setReading] = useState<Reading | null>(null)
   const log = useRef<HTMLDivElement>(null)
-  const busy = agent.status === 'starting' || agent.status === 'working'
+  const busy = agentBusy(agent)
+  const [sending, setSending] = useState(false)
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   // Keep the newest line in view.
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight })
-  }, [agent.items.length, agent.approval, agent.progress, reading])
+  }, [agent.revision, reading])
 
   const read = async (id: string) => {
-    setReading({ id, items: await window.threadlight.agentReadPast(id) })
+    const page = await window.threadlight.agentReadPage(id)
+    setError(page.error ?? null)
+    setReading({ id, items: page.items, cursor: page.cursor })
   }
 
   const carryOn = async () => {
@@ -109,6 +117,29 @@ export function AgentView() {
       <div className={styles.agent}>
         <div className={styles.agentLog} ref={log}>
           <Lines items={reading.items} />
+          {reading.cursor && (
+            <button
+              className={styles.agentEnd}
+              disabled={loadingHistory}
+              onClick={async () => {
+                setLoadingHistory(true)
+                try {
+                  const page = await window.threadlight.agentReadPage(reading.id, reading.cursor)
+                  setError(page.error ?? null)
+                  if (!page.error)
+                    setReading((old) =>
+                      old?.id === reading.id
+                        ? { ...old, items: [...page.items, ...old.items], cursor: page.cursor }
+                        : old,
+                    )
+                } finally {
+                  setLoadingHistory(false)
+                }
+              }}
+            >
+              Load earlier messages
+            </button>
+          )}
           {error && <p className={styles.qError}>{error}</p>}
         </div>
         <div className={styles.agentInput}>
@@ -130,13 +161,26 @@ export function AgentView() {
   }
 
   const send = async () => {
-    const result = await window.threadlight.agentSend(text)
-    if (result.ok) setText('')
-    setError(result.ok ? null : result.reason)
+    if (sending || busy) return
+    setSending(true)
+    try {
+      const result = await window.threadlight.agentSend(text)
+      if (result.ok) setText('')
+      setError(result.ok ? null : result.reason)
+    } catch {
+      setError('Could not send. Check the conversation before retrying.')
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
     <div className={styles.agent}>
+      <p className={styles.agentIdentity}>
+        {agent.provider === 'codex' ? 'Codex' : 'Claude'} ·{' '}
+        {agent.model ?? (agent.conversationId ? 'Model not recorded' : 'Runtime default')}
+        {agent.reasoning ? ` · ${agent.reasoning}` : ''}
+      </p>
       <div className={styles.agentLog} ref={log}>
         {agent.items.length === 0 && <p className={styles.agentEmpty}>{en.agent.empty}</p>}
         <Lines items={agent.items} />
@@ -146,7 +190,7 @@ export function AgentView() {
             {agent.progress ?? en.agent.working}
           </p>
         )}
-        {agent.approval && (
+        {!agent.requests.length && agent.approval && (
           <div className={styles.qCard}>
             <div className={styles.qHead}>
               <p className={`${styles.qText} ${styles.qHeadText}`}>
@@ -170,6 +214,16 @@ export function AgentView() {
             </div>
           </div>
         )}
+        {agent.requests[0] && (
+          <AgentRequestCard
+            key={agent.requests[0].id}
+            request={agent.requests[0]}
+            count={agent.requests.length}
+          />
+        )}
+        {agent.status === 'interrupted' && (
+          <p className={styles.agentEmpty}>Turn stopped. You can continue this conversation.</p>
+        )}
         {(agent.error || error) && <p className={styles.qError}>{agent.error ?? error}</p>}
         {agent.ended && <p className={styles.agentEmpty}>{en.agent.ended}</p>}
       </div>
@@ -182,12 +236,24 @@ export function AgentView() {
               ? en.agent.placeholder
               : en.agent.followUp
           }
-          disabled={busy || agent.status === 'waiting'}
+          disabled={busy || sending}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') void send()
           }}
         />
+        {busy && (
+          <button
+            className={styles.agentEnd}
+            disabled={agent.status === 'stopping'}
+            onClick={async () => {
+              const result = await window.threadlight.agentInterrupt()
+              setError(result.ok ? null : result.reason)
+            }}
+          >
+            {agent.status === 'stopping' ? 'Stopping…' : 'Stop'}
+          </button>
+        )}
         {(agent.status !== 'idle' || agent.items.length > 0) && (
           <button
             className={styles.agentEnd}
@@ -198,7 +264,7 @@ export function AgentView() {
           </button>
         )}
       </div>
-      <Earlier current={agent.sessionId} onOpen={(id) => void read(id)} />
+      <Earlier current={agent.ended ? null : agent.conversationId} onOpen={(id) => void read(id)} />
     </div>
   )
 }

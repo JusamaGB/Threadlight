@@ -50,6 +50,28 @@ const canUse = (id: string, tool: string, input: object) => ({
 })
 
 describe('AgentRun', () => {
+  it('keeps concurrent requests queued and ignores an older child after replacement', async () => {
+    run.send('Synthetic actions')
+    fake.say(canUse('one', 'Write', { file_path: 'one.txt' }))
+    fake.say(canUse('two', 'Write', { file_path: 'two.txt' }))
+    await settle()
+    const first = latest().requests[0]!.id
+    expect(latest().requests).toHaveLength(2)
+    expect(run.respond(first, { action: 'deny' })).toEqual({ ok: true })
+    expect(latest().requests).toHaveLength(1)
+    const old = fake
+    run.close()
+    fake = fakeClaude()
+    run.send('New conversation')
+    old.say({ type: 'result', result: 'Late reply' })
+    old.child.stderr.write('late error')
+    old.child.emit('exit', 1)
+    await settle()
+    expect(latest().status).toBe('working')
+    expect(latest().items).toEqual([{ kind: 'you', text: 'New conversation' }])
+    expect(run.respond(first, { action: 'allow' }).ok).toBe(false)
+    run.close()
+  })
   it('starts Claude Code on the two-way stream, answering permissions itself', async () => {
     expect(run.send('Find my next meeting')).toEqual({ ok: true })
     await settle()

@@ -29,6 +29,30 @@ telemetry and no servers.
 
 ## Requirements
 
+### Hosted Agent
+
+Open **Settings → Agent → Provider** to choose Claude or Codex. The Agent works
+independently of the Applications monitoring toggles, including when both are off.
+Codex requires a signed-in native Codex CLI; Claude is not required for a Codex Agent.
+
+Codex models and reasoning choices come from the installed runtime. Search the
+catalog, refresh it, or select **Show additional models** to see hidden entries.
+Availability still depends on your account. Model and connected-app choices apply
+to new conversations; an existing or continued conversation keeps its selection.
+Claude retains its Haiku conversation model and Opus/Sonnet worker.
+
+The Agent streams replies, displays questions and approval cards, and keeps earlier
+conversations under **Earlier**. **Stop** interrupts the current turn; **End** closes
+the conversation. Continue resumes its original provider and model. An uncertain
+send is retained for recovery and is never automatically sent again.
+
+Configured Codex MCP servers require permission for each tool call. Desktop-only
+plugins and connectors are shown as unavailable until their permissions and
+execution support can be verified. Codex Agent conversations use their own runtime
+connection and are excluded from the monitored chat list. See the
+[implementation specification](AGENT-CODEX-SPEC.md) and
+[validation record](AGENT-CODEX-VALIDATION.md) for compatibility and test coverage.
+
 ### Show one application or both
 
 **Settings → Applications** has independent **Claude** and **Codex** toggles. Enable

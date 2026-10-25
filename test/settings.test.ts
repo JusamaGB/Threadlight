@@ -63,6 +63,34 @@ describe('validatePatch', () => {
 })
 
 describe('SettingsStore', () => {
+  it('migrates Agent defaults and preserves provider-specific choices across switches', async () => {
+    await writeFile(
+      join(box.root, 'settings.json'),
+      JSON.stringify({ agentWorker: 'sonnet', agentAppsOff: ['claude-app'] }),
+    )
+    const store = new SettingsStore(box.root)
+    expect(await store.load()).toMatchObject({
+      agentProvider: 'claude',
+      agentWorker: 'sonnet',
+      agentCodexModel: null,
+      agentCodexAppsOff: [],
+    })
+    await store.update({
+      agentProvider: 'codex',
+      agentCodexModel: 'future-model',
+      agentCodexReasoning: 'future-effort',
+      agentCodexAppsOff: ['codex-app'],
+    })
+    await store.update({ agentProvider: 'claude' })
+    expect(await new SettingsStore(box.root).load()).toMatchObject({
+      agentProvider: 'claude',
+      agentWorker: 'sonnet',
+      agentAppsOff: ['claude-app'],
+      agentCodexModel: 'future-model',
+      agentCodexReasoning: 'future-effort',
+      agentCodexAppsOff: ['codex-app'],
+    })
+  })
   it('persists both enabled and paused states without forgetting legacy workspace choices', async () => {
     await writeFile(
       join(box.root, 'settings.json'),

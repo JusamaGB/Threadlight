@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { acceleratorFrom, acceleratorLabel } from '../../shared/accelerator'
-import type { AgentApp } from '../../shared/agent'
+import { AgentSettings } from './AgentSettings'
 import type { Settings, SettingsPatch } from '../../shared/settings'
 import { PROVIDERS, providerName } from '../../shared/providers'
 import type { SttStatus } from '../../shared/stt'
@@ -19,45 +19,6 @@ interface SettingsViewProps {
 }
 
 const HOUR_CHOICES = [6, 12, 24, 72, 168]
-/** How long an agent conversation stays open after its last reply; 0 means until ended. */
-const LIFETIME_CHOICES = [10, 60, 240, 0]
-
-/**
- * One switch per app the agent could use: the connected apps Claude Code sees, checked once
- * when Settings opens (it takes a few seconds). Off means the agent cannot use it at all.
- */
-function AgentApps({ off, onChange }: { off: string[]; onChange: (off: string[]) => void }) {
-  const [apps, setApps] = useState<AgentApp[] | null>(null)
-  useEffect(() => {
-    let live = true
-    void window.threadlight.agentApps().then((found) => live && setApps(found))
-    return () => {
-      live = false
-    }
-  }, [])
-  if (!apps) return <p className={styles.footer}>{en.settings.appsChecking}</p>
-  if (apps.length === 0) return <p className={styles.footer}>{en.settings.appsNone}</p>
-  return (
-    <>
-      {apps.map((app) => (
-        <Row
-          key={app.name}
-          label={app.name.replace(/^claude\.ai /, '')}
-          hint={app.status === 'connected' ? undefined : app.status}
-        >
-          <Toggle
-            on={!off.includes(app.name)}
-            label={app.name}
-            onChange={(on) =>
-              onChange(on ? off.filter((name) => name !== app.name) : [...off, app.name])
-            }
-          />
-        </Row>
-      ))}
-    </>
-  )
-}
-
 /** Every setting in one compact list, inside the panel's own card. Changes save immediately. */
 export function SettingsView({
   settings,
@@ -233,34 +194,7 @@ export function SettingsView({
         </Row>
       </Group>
 
-      {settings.enabledProviders.includes('claude') && (
-        <Group label={en.settings.agent}>
-          <Row label={en.settings.agentLifetime} hint={en.settings.agentLifetimeHint}>
-            <Segmented
-              value={settings.agentLifetimeMinutes}
-              options={LIFETIME_CHOICES.map((minutes) => ({
-                value: minutes,
-                label: en.settings.lifetime(minutes),
-              }))}
-              onChange={(agentLifetimeMinutes) => save({ agentLifetimeMinutes })}
-            />
-          </Row>
-          <Row label={en.settings.agentWorker} hint={en.settings.agentWorkerHint}>
-            <Segmented
-              value={settings.agentWorker}
-              options={[
-                { value: 'opus', label: 'Opus' },
-                { value: 'sonnet', label: 'Sonnet' },
-              ]}
-              onChange={(agentWorker) => save({ agentWorker })}
-            />
-          </Row>
-          <AgentApps
-            off={settings.agentAppsOff}
-            onChange={(agentAppsOff) => save({ agentAppsOff })}
-          />
-        </Group>
-      )}
+      <AgentSettings key={settings.agentProvider} settings={settings} save={save} />
 
       <Group label={en.settings.app}>
         <Row label={en.settings.launchAtSignIn} error={errors.launchAtSignIn}>

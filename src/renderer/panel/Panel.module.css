@@ -1635,3 +1635,23 @@ span.planStep {
     animation: none;
   }
 }
+/* Agent requests retain the complete action detail in a scrollable preview. */
+.agentIdentity {
+  margin: 4px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.agentQuestion {
+  border: 0;
+  padding: 6px 0;
+  margin: 0;
+  min-width: 0;
+  font-size: 12px;
+}
+.agentOption {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin: 4px 0;
+}

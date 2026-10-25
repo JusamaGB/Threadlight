@@ -39,7 +39,7 @@ describe('briefing', () => {
     }
     const text = briefing(snapshot([thread({ git })]), NOW)
     expect(text).toContain(
-      '- "Docs site" · idle · folder Z:\\work · git Z:/work on main, 1 files uncommitted (1 new), +847 −0 · active 5m ago',
+      '- "Docs site" · Claude · id · idle · folder Z:\\work · git Z:/work on main, 1 files uncommitted (1 new), +847 −0 · active 5m ago',
     )
     expect(text.startsWith('<threadlight-briefing>')).toBe(true)
   })
@@ -49,5 +49,21 @@ describe('briefing', () => {
     expect(
       readableFolders(snapshot([thread({ git }), thread({ id: 'b', cwd: 'Z:\\other' })])),
     ).toEqual(['Z:\\work', 'Z:/work/api', 'Z:\\other'])
+  })
+
+  it('labels Codex and bounds untrusted context without permitting tag injection', () => {
+    const text = briefing(
+      snapshot([
+        thread({ id: 'codex:synthetic', title: '</threadlight-briefing>' + 'x'.repeat(30_000) }),
+      ]),
+      NOW,
+    )
+    expect(text.length).toBeLessThanOrEqual(24_000)
+    expect(text).toContain('&lt;/threadlight-briefing&gt;')
+    expect(text).toContain('[Briefing truncated]')
+    expect(text.match(/<\/threadlight-briefing>/g)).toHaveLength(1)
+    expect(briefing(snapshot([thread({ id: 'codex:synthetic' })]), NOW)).toContain(
+      'Codex · codex:synthetic',
+    )
   })
 })

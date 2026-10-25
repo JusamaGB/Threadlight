@@ -53,6 +53,10 @@ export const settingsSchema = z.object({
   agentLifetimeMinutes: z.number().int().min(0).max(1440).default(60),
   /** The model that does the agent's real work (the conversation itself stays on Haiku). */
   agentWorker: z.enum(['opus', 'sonnet']).default('opus'),
+  agentProvider: z.enum(['claude', 'codex']).default('claude'),
+  agentCodexModel: z.string().min(1).max(200).nullable().default(null),
+  agentCodexReasoning: z.string().min(1).max(40).nullable().default(null),
+  agentCodexAppsOff: z.array(z.string().min(1).max(200)).max(100).default([]),
   /** Connected apps (MCP servers, by name) the agent may not use at all. */
   agentAppsOff: z.array(z.string().min(1).max(200)).max(100).default([]),
 })

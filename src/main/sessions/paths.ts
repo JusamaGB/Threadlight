@@ -47,6 +47,11 @@ export interface CodexPaths {
   cliRoot: string
 }
 
+export const agentPaths = (userData: string) => ({
+  workspace: join(userData, 'agent'),
+  index: join(userData, 'agent-conversations.json'),
+})
+
 export function codexPaths(env: NodeJS.ProcessEnv = process.env, home = homedir()): CodexPaths {
   const root = env['CODEX_HOME'] || join(home, '.codex')
   return {

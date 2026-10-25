@@ -7,8 +7,11 @@ export function useAgent(): AgentState {
   const [state, setState] = useState<AgentState>(IDLE_AGENT)
   useEffect(() => {
     let live = true
-    void window.threadlight.getAgent().then((first) => live && setState(first))
-    const stop = window.threadlight.onAgent(setState)
+    const receive = (next: AgentState) => {
+      if (live) setState((previous) => (next.revision >= previous.revision ? next : previous))
+    }
+    const stop = window.threadlight.onAgent(receive)
+    void window.threadlight.getAgent().then(receive)
     return () => {
       live = false
       stop()

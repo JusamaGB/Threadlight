@@ -15,6 +15,12 @@ quota hovers, expired usage, and safe text rendering. Provider aggregation and s
 shared modules. Optional `THREADLIGHT_SCREENSHOTS` writes synthetic `.local.png`
 previews to a chosen directory. The browser and temporary HTTP server close on exit.
 
+The Agent scenarios cover Codex with both monitoring providers disabled, dynamic
+and additional models, reasoning reset, explicit question submission, queued
+approvals, Stop/End and paginated history continuation. These use synthetic IPC;
+runtime protocol tests are in `test/agentCodex.test.ts` and `test/codexClient.test.ts`.
+Opt-in authenticated tests are documented in `AGENT-CODEX-VALIDATION.md`.
+
 Recording checks generate an audio stream in the browser and replace `getUserMedia`;
 they never access a microphone or speakers. They verify full-width changing waveform
 pixels, reduced-motion behaviour, preserved drafts, transcription and stopped tracks.

@@ -1,7 +1,17 @@
 // The one contract between the UI (renderer) and the Node side (main).
 // Channel names and payload types live here so both sides stay in step.
 
-import type { AgentApp, AgentConversation, AgentItem, AgentState } from './agent'
+import type {
+  AgentApp,
+  AgentConversation,
+  AgentItem,
+  AgentState,
+  AgentHistoryPage,
+  AgentModel,
+  AgentProvider,
+  AgentResponse,
+  AgentResult,
+} from './agent'
 import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
 import type { Usage } from './usage'
@@ -69,6 +79,10 @@ export const IPC = {
   agentHistory: 'agent:history',
   agentReadPast: 'agent:read-past',
   agentResume: 'agent:resume',
+  agentModels: 'agent:models',
+  agentRespond: 'agent:respond',
+  agentInterrupt: 'agent:interrupt',
+  agentReadPage: 'agent:read-page',
   usageGet: 'usage:get',
   usageChanged: 'usage:changed',
 } as const
@@ -171,7 +185,11 @@ export interface ThreadlightApi {
   /** Ends the conversation. */
   agentClose(): void
   /** The connected apps the agent could use (for the Settings switches). */
-  agentApps(): Promise<AgentApp[]>
+  agentApps(provider?: AgentProvider): Promise<AgentApp[]>
+  agentModels(): Promise<{ models: AgentModel[]; error: string | null }>
+  agentRespond(id: string, response: AgentResponse): Promise<AgentResult>
+  agentInterrupt(): Promise<AgentResult>
+  agentReadPage(id: string, cursor?: string | null): Promise<AgentHistoryPage>
   /** Past conversations, newest first (agentHistory.ts). */
   agentHistory(): Promise<AgentConversation[]>
   /** One past conversation's lines, to read. */

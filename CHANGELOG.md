@@ -8,6 +8,14 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The hosted Agent can use Claude or any eligible text model in the installed Codex
+  runtime's catalog, independently of chat monitoring. Codex adds dynamic model and
+  reasoning selection, streamed replies, queued approval and question cards, Stop,
+  provider-aware history and exact-thread continuation. Conversations retain their
+  model and app choices. Uncertain sends are journaled without automatic replay;
+  configured MCP tools require explicit permission, while unverified desktop-only
+  integrations remain unavailable.
+
 - Settings has a centred header title and slightly tighter row and help-text spacing.
 
 - Codex workspace labels hide Windows long-path prefixes. Verified database turn states

@@ -183,6 +183,10 @@ try {
       window.proof = {
         calls: [],
         emit,
+        agent(next) {
+          agent = { ...agent, ...next, revision: agent.revision + 1 }
+          emit('onAgent', agent)
+        },
         async patch(patch) {
           emit('onSnapshot', await window.mockPatch(patch))
         },
@@ -218,7 +222,67 @@ try {
               window.proof.finishTranscript = resolve
             }),
           agentApps: async () => [],
-          agentHistory: async () => [],
+          agentModels: async () => ({
+            error: null,
+            models: [
+              {
+                id: 'future-fast',
+                name: 'Future Fast',
+                isDefault: true,
+                hidden: false,
+                efforts: ['low', 'medium'],
+                defaultEffort: 'low',
+              },
+              {
+                id: 'future-deep',
+                name: 'Future Deep',
+                isDefault: false,
+                hidden: true,
+                efforts: ['high', 'ultra'],
+                defaultEffort: 'high',
+              },
+            ],
+          }),
+          agentHistory: async () => [
+            {
+              id: 'codex:past',
+              provider: 'codex',
+              model: 'future-fast',
+              title: 'Synthetic earlier agent',
+              at: Date.now(),
+            },
+          ],
+          agentReadPage: async (_id, cursor) => ({
+            items: [{ kind: 'agent', text: cursor ? 'An older reply' : 'A saved reply' }],
+            cursor: cursor ? null : 'older',
+          }),
+          agentResume: async (id) => {
+            window.proof.calls.push(['agentResume', id])
+            return { ok: true }
+          },
+          agentRespond: async (...args) => {
+            window.proof.calls.push(['agentRespond', ...args])
+            window.proof.agent({ status: 'working', requests: [] })
+            return { ok: true }
+          },
+          agentSend: async (text) => {
+            window.proof.calls.push(['agentSend', text])
+            window.proof.agent({
+              status: 'working',
+              provider: 'codex',
+              model: 'future-deep',
+              reasoning: 'ultra',
+              items: [{ kind: 'you', text }],
+              conversationId: 'codex:active',
+            })
+            return { ok: true }
+          },
+          agentInterrupt: async () => {
+            window.proof.agent({ status: 'interrupted', requests: [] })
+            return { ok: true }
+          },
+          agentClose: () =>
+            window.proof.agent({ status: 'idle', ended: true, requests: [], conversationId: null }),
           sendMessage: async (...args) => {
             window.proof.calls.push(['send', ...args])
             return { ok: true }
@@ -772,9 +836,105 @@ try {
   })
   await page.getByRole('button', { name: 'The microphone is blocked', exact: true }).waitFor()
   assert.equal(await divider.count(), 0)
+
+  // The hosted Agent is available independently of monitoring and uses a dynamic catalog.
+  await page.evaluate(() =>
+    window.threadlight.updateSettings({ enabledProviders: [], openMic: false }),
+  )
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByLabel('Agent provider', { exact: true }).selectOption('codex')
+  const modelPicker = page.getByLabel('Codex agent model', { exact: true })
+  await modelPicker.waitFor()
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Codex agent model"]').disabled,
+  )
+  assert.equal(await modelPicker.inputValue(), 'future-fast')
+  assert.equal(await modelPicker.locator('option').count(), 1)
+  await page.getByLabel('Show additional models').check()
+  await page.getByLabel('Search Codex models').fill('deep')
+  await modelPicker.selectOption('future-deep')
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="Agent reasoning"]').value === 'high',
+  )
+  assert.equal(await page.getByLabel('Agent reasoning', { exact: true }).inputValue(), 'high')
+  await page.getByLabel('Agent reasoning', { exact: true }).selectOption('ultra')
+  assert.equal(settings.agentCodexModel, 'future-deep')
+  assert.equal(settings.agentCodexReasoning, 'ultra')
+  await capture('agent-codex-settings')
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  await page.getByPlaceholder('Ask your agent…').fill('Synthetic agent question')
+  await page.getByPlaceholder('Ask your agent…').press('Enter')
+  await page.getByRole('button', { name: 'Stop', exact: true }).waitFor()
+  await page.getByText('Codex · future-deep · ultra', { exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.proof.agent({
+      status: 'waiting',
+      requests: [
+        {
+          id: 'question-1',
+          kind: 'questions',
+          title: 'Choose a colour',
+          detail: '',
+          canAllow: true,
+          questions: [
+            { id: 'colour', text: 'Which colour?', options: ['Blue', 'Green'], other: true },
+          ],
+        },
+      ],
+    }),
+  )
+  assert.equal(await page.getByRole('radio', { name: 'Blue', exact: true }).isChecked(), false)
+  await page.getByRole('radio', { name: 'Green', exact: true }).check()
+  await page.getByRole('button', { name: 'Submit', exact: true }).click()
+  const response = await page.evaluate(() =>
+    window.proof.calls.filter((c) => c[0] === 'agentRespond').at(-1),
+  )
+  assert.deepEqual(response, [
+    'agentRespond',
+    'question-1',
+    { action: 'answer', answers: { colour: 'Green' } },
+  ])
+  await page.evaluate(() =>
+    window.proof.agent({
+      status: 'waiting',
+      requests: [
+        {
+          id: 'approval-1',
+          kind: 'approval',
+          title: 'Synthetic file change',
+          detail: 'Full synthetic action details',
+          canAllow: true,
+        },
+        { id: 'approval-2', kind: 'approval', title: 'Second action', detail: '', canAllow: true },
+      ],
+    }),
+  )
+  await page.getByText('Synthetic file change · 2 pending', { exact: true }).waitFor()
+  await capture('agent-approval')
+  await page.getByRole('button', { name: 'Deny', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'agentRespond').at(-1)),
+    ['agentRespond', 'approval-1', { action: 'deny' }],
+  )
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await page
+    .getByText('Turn stopped. You can continue this conversation.', { exact: true })
+    .waitFor()
+  await page.getByRole('button', { name: 'End', exact: true }).click()
+  await page.getByRole('button', { name: /Earlier · 1/ }).click()
+  await page.getByRole('button', { name: /Synthetic earlier agent/ }).click()
+  await page.getByText('A saved reply', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Load earlier messages', exact: true }).click()
+  await page.getByText('An older reply', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'agentResume').at(-1)),
+    ['agentResume', 'codex:past'],
+  )
   assert.deepEqual(errors, [])
   console.log(
-    'PASS: provider lists, drafts, sends, plans, usage, composer waveform and destination-coloured mic divider; quiet/loud, reduced motion, stop and denied-mic states; no browser errors.',
+    'PASS: provider lists, drafts, sends, plans, usage, composer waveform and mic divider; Agent model settings, questions, queued approvals, Stop/End and history; no browser errors.',
   )
 } finally {
   await browser?.close()

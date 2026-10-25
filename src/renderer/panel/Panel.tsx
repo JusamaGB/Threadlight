@@ -95,7 +95,10 @@ export function Panel() {
   const agent = useAgent()
   const agentBusy =
     !showAgent &&
-    (agent.status === 'starting' || agent.status === 'working' || agent.status === 'waiting')
+    (agent.status === 'starting' ||
+      agent.status === 'working' ||
+      agent.status === 'waiting' ||
+      agent.status === 'stopping')
   /** The Changes view, for this thread's git folder: it takes over the card too. */
   const [changesFor, setChangesFor] = useState<string | null>(null)
   /** Choosing which workspace the Workspace list shows; takes over the card like settings. */
@@ -196,7 +199,7 @@ export function Panel() {
         setMenu(null)
         setPicking(null)
         setChangesFor(null)
-        if (!enabled.includes('claude')) setShowAgent(false)
+
         setOpenWorkspaces(null)
         setMoreWorkspaces([])
         setHeard(null)
@@ -745,22 +748,18 @@ export function Panel() {
                   </svg>
                 </button>
               )}
-              {enabled.includes('claude') && (
+              {
                 <button
                   className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
                   onClick={() => setShowAgent(true)}
-                  aria-label={
-                    provider === 'both' ? 'Claude agent' : agentBusy ? en.agent.busy : en.agent.open
-                  }
-                  title={
-                    provider === 'both' ? 'Claude agent' : agentBusy ? en.agent.busy : en.agent.open
-                  }
+                  aria-label={agentBusy ? en.agent.busy : en.agent.open}
+                  title={agentBusy ? en.agent.busy : en.agent.open}
                 >
                   <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z" />
                   </svg>
                 </button>
-              )}
+              }
               <button
                 className={styles.gear}
                 onClick={() => setShowSettings(true)}

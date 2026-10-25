@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { app, clipboard, ipcMain, session, shell, type WebContents } from 'electron'
 
-import { IDLE_AGENT } from '../shared/agent'
+import { agentBusy } from '../shared/agent'
 import { IPC } from '../shared/ipc'
 import type { Settings } from '../shared/settings'
 import type { Provider, Session, Snapshot, ThreadNode } from '../shared/types'
@@ -11,10 +11,9 @@ import { combinedSnapshot, PROVIDERS, providerView, sessionProvider } from '../s
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { TalkHotkey } from './hotkeys'
-import { listConversations, readConversation, transcriptsFolder } from './agent/agentHistory'
-import { AgentRun } from './agent/agentRun'
-import { connectedApps } from './agent/agentApps'
-import { briefing, readableFolders } from './agent/briefing'
+import { AgentService } from './agent/agentService'
+import { excludeAgentChats } from './agent/briefing'
+import { isObject } from './sessions/json'
 import { foregroundTitle, foregroundWindowId } from './keyState'
 import { setLaunchAtSignIn } from './loginItem'
 import { Holds } from './holds'
@@ -22,10 +21,10 @@ import { UsageWatcher } from './usage'
 import { findClaudeCli, isHeld, type CliCommand } from './relay'
 import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
-import { codexPaths, defaultPaths } from './sessions/paths'
+import { agentPaths, codexPaths, defaultPaths } from './sessions/paths'
 import { CodexTracker } from './codex/tracker'
 import { CodexHolds } from './codex/holds'
-import { CodexRelayService } from './codex/relay'
+import { CodexRelayService, findCodexCli } from './codex/relay'
 import { codexDeepLink } from './codex/identity'
 import { codexProcesses } from './codex/live'
 import { SessionService } from './sessions/service'
@@ -40,7 +39,6 @@ import { createTray } from './tray'
 import { WindowManager } from './windows'
 
 const SCAN_INTERVAL_MS = 1000
-const AGENT_MODEL = 'claude-haiku-5-5'
 const CLAUDE_CHECK_INTERVAL_MS = 2000
 /** How often to look for a new window in front, to raise the dot above it. */
 const ON_TOP_CHECK_MS = 500
@@ -66,7 +64,9 @@ async function start(): Promise<void> {
   const hooks = new HookStateStore()
   const windows = new WindowManager()
   // The agent's own folder; its conversations stay out of the thread list unless shown.
-  const agentWorkspace = join(app.getPath('userData'), 'agent')
+  const agentFiles = agentPaths(app.getPath('userData'))
+  const agentWorkspace = agentFiles.workspace
+  const agentSessionIds = new Set<string>()
   // Cards held so they can be answered here (holds.ts); any change is shown at once.
   const holds = new Holds(() => {
     if (enabled('claude')) void claudeSessions.refresh()
@@ -90,7 +90,12 @@ async function start(): Promise<void> {
   const codexHolds = new CodexHolds(() => {
     if (enabled('codex')) void codexSessions.refresh()
   })
-  const codexTracker = new CodexTracker(codex, codexHolds, (folder) => gitStates.get(folder))
+  const codexTracker = new CodexTracker(
+    codex,
+    codexHolds,
+    (folder) => gitStates.get(folder),
+    (id) => agentSessionIds.has(id),
+  )
   codexTracker.configure(initial.listWindowHours, initial.maxSessions)
   const codexSessions = new SessionService(codexTracker, () => {
     if (enabled('codex')) publish()
@@ -117,7 +122,10 @@ async function start(): Promise<void> {
     get snapshot() {
       return combinedSnapshot(
         settings.settings.enabledProviders,
-        { claude: claudeSessions.snapshot, codex: codexSessions.snapshot },
+        {
+          claude: excludeAgentChats(claudeSessions.snapshot, agentSessionIds),
+          codex: excludeAgentChats(codexSessions.snapshot, agentSessionIds),
+        },
         settings.settings.maxSessions,
       )
     },
@@ -142,6 +150,7 @@ async function start(): Promise<void> {
     status: () => ({ app: 'threadlight-codex', version: app.getVersion() }),
     onEvent: (payload) => codexHolds.event(payload),
     onAsk: (payload, reply, dropped) => {
+      if (isObject(payload) && agentSessionIds.has(`codex:${payload.session_id}`)) return false
       codexHolds.event(payload)
       if (!enabled('codex') || /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')) return false
       const held = codexHolds.hold(payload, reply)
@@ -149,6 +158,7 @@ async function start(): Promise<void> {
       return held
     },
     onStop: (payload, reply, dropped) => {
+      if (isObject(payload) && agentSessionIds.has(`codex:${payload.session_id}`)) return false
       codexHolds.event(payload)
       if (!enabled('codex') || /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')) return false
       const held = codexHolds.hold(payload, reply)
@@ -356,59 +366,56 @@ async function start(): Promise<void> {
   )
   ipcMain.handle(IPC.getRelays, () => [...relays.list(), ...codexRelays.list()])
 
-  // The agent: one conversation Threadlight hosts itself (agent/agentRun.ts), working in its
-  // own folder. It talks on Haiku and hands real work to its worker (settings: Opus or Sonnet).
-  let agent: AgentRun | null = null
-  const sendAgent = (state: unknown) => windows.panel.webContents.send(IPC.agentChanged, state)
-  const getAgent = async () => {
-    const found = (cli ??= await findClaudeCli(paths))
-    if (!found) return null
-    await mkdir(agentWorkspace, { recursive: true })
-    agent ??= new AgentRun({
-      cli: found,
-      workspace: agentWorkspace,
-      model: AGENT_MODEL,
-      onChange: sendAgent,
-      // What it knows about the threads, fresh with each question, and where it may look.
-      briefing: () => briefing(claudeSessions.snapshot),
-      readable: () => readableFolders(claudeSessions.snapshot),
-      // Settings are read as each conversation starts (and after each reply, for its length).
-      workerModel: () => settings.settings.agentWorker,
-      blockedApps: () => settings.settings.agentAppsOff,
-      lifetimeMinutes: () => settings.settings.agentLifetimeMinutes,
-      onRateLimit: (info) => usage.note(info),
-    })
-    return agent
-  }
-  ipcMain.handle(IPC.agentGet, () => agent?.current ?? IDLE_AGENT)
-  ipcMain.handle(IPC.agentSend, async (_event, text: unknown) => {
-    if (typeof text !== 'string') return { ok: false, reason: 'Nothing to send.' }
-    const run = await getAgent()
-    return run ? run.send(text) : { ok: false, reason: 'Claude Code was not found on this PC.' }
+  const agent = new AgentService({
+    workspace: agentWorkspace,
+    index: agentFiles.index,
+    claudeProjects: paths.projectsDir,
+    settings: () => settings.settings,
+    snapshot: () => sessions.snapshot,
+    cli: async (provider) =>
+      provider === 'codex' ? findCodexCli(codex) : (cli ??= await findClaudeCli(paths)),
+    onChange: (state) => {
+      if (state.sessionId)
+        agentSessionIds.add(
+          state.provider === 'codex' ? `codex:${state.sessionId}` : state.sessionId,
+        )
+      windows.panel.webContents.send(IPC.agentChanged, state)
+    },
+    onRateLimit: (info) => usage.note(info),
   })
-  ipcMain.on(IPC.agentDecide, (_event, id: unknown, allow: unknown) => {
-    if (typeof id === 'string') agent?.decide(id, allow === true)
-  })
-  ipcMain.on(IPC.agentClose, () => agent?.close())
-  // Past conversations, from Claude Code's own transcripts of the agent's folder.
-  const agentPast = transcriptsFolder(paths.projectsDir, agentWorkspace)
-  ipcMain.handle(IPC.agentHistory, () => listConversations(agentPast))
-  ipcMain.handle(IPC.agentReadPast, (_event, id: unknown) =>
-    typeof id === 'string' ? readConversation(agentPast, id) : [],
+  await agent.store
+    .load()
+    .catch(() =>
+      console.error('Agent history metadata is unavailable; monitoring remains available.'),
+    )
+  for (const record of agent.store.all())
+    agentSessionIds.add(
+      record.provider === 'codex' ? `codex:${record.providerId}` : record.providerId,
+    )
+  ipcMain.handle(IPC.agentGet, () => agent.current)
+  ipcMain.handle(IPC.agentSend, (_event, text: unknown) => agent.send(text))
+  ipcMain.handle(IPC.agentRespond, (_event, id: unknown, response: unknown) =>
+    agent.respond(id, response),
   )
-  ipcMain.handle(IPC.agentResume, async (_event, id: unknown) => {
-    if (typeof id !== 'string') return { ok: false, reason: 'No conversation.' }
-    const items = await readConversation(agentPast, id)
-    if (items.length === 0) return { ok: false, reason: 'That conversation is gone.' }
-    const run = await getAgent()
-    return run
-      ? run.resume(id, items)
-      : { ok: false, reason: 'Claude Code was not found on this PC.' }
+  ipcMain.handle(IPC.agentInterrupt, () => agent.interrupt())
+  ipcMain.handle(IPC.agentModels, () =>
+    agent.models().catch((error: Error) => ({ models: [], error: error.message })),
+  )
+  ipcMain.on(IPC.agentDecide, (_event, id: unknown, allow: unknown) => {
+    if (typeof id === 'string') agent.decide(id, allow === true)
   })
-  ipcMain.handle(IPC.agentApps, async () => {
-    const found = (cli ??= await findClaudeCli(paths))
-    return found ? connectedApps(found) : []
-  })
+  ipcMain.on(IPC.agentClose, () => agent.close())
+  ipcMain.handle(IPC.agentHistory, () => agent.history())
+  ipcMain.handle(IPC.agentReadPast, async (_event, id: unknown) => (await agent.read(id)).items)
+  ipcMain.handle(IPC.agentReadPage, (_event, id: unknown, cursor: unknown) =>
+    agent.read(id, cursor ?? null),
+  )
+  ipcMain.handle(IPC.agentResume, (_event, id: unknown) => agent.resume(id))
+  ipcMain.handle(IPC.agentApps, (_event, provider: unknown) =>
+    agent
+      .apps(provider === 'codex' ? 'codex' : 'claude')
+      .catch((error: Error) => [{ name: 'Connection', status: error.message, unavailable: true }]),
+  )
 
   // The plan's usage limits, for the bar along the panel's foot: from the agent's runs, or a
   // tiny check of its own when the panel asks and the last reading is old (usage.ts).
@@ -487,6 +494,7 @@ async function start(): Promise<void> {
       }
       hotkeyProblem = hotkey.setMode(result.settings.talkMode)
       reportHotkey()
+      agent.refreshDefaults()
       applyLive(result.settings)
     }
     return result
@@ -531,7 +539,9 @@ async function start(): Promise<void> {
       ),
     )
     if (selected.join() === settings.settings.enabledProviders.join())
-      windows.setClaudeRunning(selected.length === 0 || running.some(Boolean))
+      windows.setClaudeRunning(
+        selected.length === 0 || running.some(Boolean) || agentBusy(agent.current),
+      )
   }
   void checkProviders()
   setInterval(() => void checkProviders(), CLAUDE_CHECK_INTERVAL_MS)

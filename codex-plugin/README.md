@@ -58,7 +58,8 @@ steps are separate and are not run automatically by the provider toggle.
   **Copy and open Codex**. An expired Stop card uses the same fallback.
 - Open uses `codex://threads/<id>`. Workspace following uses last recorded user
   activity, not a claim about the exact foreground tab. Remote/cloud chats are
-  outside this local-file adapter. Claude's hosted Agent remains Claude-only.
+  outside this local-file adapter. The separate [hosted Agent](../README.md#hosted-agent)
+  supports Claude and Codex and answers its own runtime's questions directly.
   Codex PR badges and background task inventory are not inferred.
 - Codex plans include explicit step updates and proposed plan text. Current steps
   appear in the row and plans stay visible above waiting cards. Step activity drill-down
