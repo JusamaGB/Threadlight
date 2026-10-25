@@ -6,7 +6,8 @@ import { Composer } from '../composer/Composer'
 import { useDotDrag } from '../hooks/useDotDrag'
 import { useNow } from '../hooks/useNow'
 import { useRelays } from '../hooks/useRelays'
-import { useSessions } from '../hooks/useSessions'
+import { findInSnapshot } from '../../shared/snapshot'
+import { useSnapshot } from '../hooks/useSnapshot'
 import { useSettings } from '../hooks/useSettings'
 import { useStt } from '../hooks/useStt'
 import { useVoice } from '../hooks/useVoice'
@@ -15,6 +16,7 @@ import { SettingsView } from '../settings/SettingsView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
 import { SessionRow } from './SessionRow'
+import { sameFolder, WorkspaceTree } from './WorkspaceTree'
 
 type View = 'active' | 'all'
 
@@ -28,19 +30,12 @@ type HoldMode = 'normal' | 'slim' | 'pinned'
 const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
 
-/** Shown only while pinned, so it is clear why the panel is not closing. Clicking it unpins. */
-function PinButton({ onUnpin, pushRight = false }: { onUnpin: () => void; pushRight?: boolean }) {
+/** While pinned, this icon takes the place of the thread count, next to the word "recent". */
+function PinIcon() {
   return (
-    <button
-      className={pushRight ? `${styles.pin} ${styles.pushRight}` : styles.pin}
-      onClick={onUnpin}
-      aria-label={en.panel.unpin}
-      title={en.panel.unpin}
-    >
-      <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M10.5 1.5 14.5 5.5 12 6.5 9.5 9l.5 3.5-1.5 1.5-3-3-3.5 3.5-.5-.5L5.5 10.5l-3-3L4 6l3.5.5L10 4z" />
-      </svg>
-    </button>
+    <svg className={styles.pin} width="10" height="10" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M10.5 1.5 14.5 5.5 12 6.5 9.5 9l.5 3.5-1.5 1.5-3-3-3.5 3.5-.5-.5L5.5 10.5l-3-3L4 6l3.5.5L10 4z" />
+    </svg>
   )
 }
 
@@ -57,7 +52,8 @@ interface ComposeState {
 }
 
 export function Panel() {
-  const sessions = useSessions()
+  const snapshot = useSnapshot()
+  const sessions = snapshot.sessions
   const relays = useRelays()
   const stt = useStt()
   const settings = useSettings()
@@ -65,6 +61,10 @@ export function Panel() {
   const [view, setView] = useState<View>('active')
   /** The settings list takes over the panel's card while this is true. */
   const [showSettings, setShowSettings] = useState(false)
+  /** Open workspaces in the "All" list; null until changed means "just the current one". */
+  const [openWorkspaces, setOpenWorkspaces] = useState<string[] | null>(null)
+  /** Workspaces showing every thread, not just the most recent few. */
+  const [moreWorkspaces, setMoreWorkspaces] = useState<string[]>([])
   const [version, setVersion] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -81,8 +81,9 @@ export function Panel() {
   const [closing, setClosing] = useState(false)
   /**
    * How the panel behaves when the pointer leaves. Normal: it fades away. Double-click the
-   * header's bare space for "slim": it shrinks to the header bar between hovers. Triple-click
-   * for "pinned": it stays fully open until triple-clicked again.
+   * header's bare space for "slim": the active list stays up, shrinking to the header bar
+   * between hovers. Triple-click for "pinned": the full recent list stays open until
+   * triple-clicked again.
    */
   const [hold, setHold] = useState<HoldMode>('normal')
   const [collapsed, setCollapsed] = useState(false)
@@ -285,6 +286,9 @@ export function Panel() {
     setCollapsed(false)
   }
   const changeHold = (next: HoldMode) => {
+    // Pinned means the full recent list held open; leaving it goes back to the active list.
+    if (next === 'pinned') setView('all')
+    else if (hold === 'pinned') setView('active')
     setHold(next)
     setCollapsed(false)
     window.threadlight.setStayOpen(next !== 'normal')
@@ -308,7 +312,41 @@ export function Panel() {
   // The thread being written to stays listed even after it goes idle.
   const shown =
     view === 'all' ? sessions : sessions.filter((s) => isActive(s) || s.id === compose?.sessionId)
-  const target = sessions.find((s) => s.id === compose?.sessionId)
+  // The composer's thread may come from the workspace tree, not just the recent list.
+  const target = compose ? findInSnapshot(snapshot, compose.sessionId) : undefined
+
+  // The full list: recent threads, or the same rows wrapped in workspaces (Settings → list).
+  const listMode = settings?.listMode ?? 'recent'
+  const tree = view === 'all' && listMode !== 'recent'
+  // The header tag names what the full list holds, number first (the pin replaces it).
+  const currentGroup = snapshot.workspaces.find(
+    (w) => snapshot.currentWorkspace && sameFolder(w.id, snapshot.currentWorkspace),
+  )
+  const listTag =
+    listMode === 'workspace'
+      ? { count: currentGroup?.threadCount ?? 0, word: currentGroup?.name ?? en.panel.workspace }
+      : listMode === 'all'
+        ? { count: snapshot.workspaces.length, word: en.panel.workspaces }
+        : { count: sessions.length, word: en.panel.recentWord }
+  const isOpen = (id: string) =>
+    (openWorkspaces ?? (snapshot.currentWorkspace ? [snapshot.currentWorkspace] : [])).some((w) =>
+      sameFolder(w, id),
+    )
+  const toggleWorkspace = (id: string) => {
+    const open = openWorkspaces ?? (snapshot.currentWorkspace ? [snapshot.currentWorkspace] : [])
+    setOpenWorkspaces(isOpen(id) ? open.filter((w) => !sameFolder(w, id)) : [...open, id])
+  }
+
+  // Tell the main process which workspaces can be seen, so it reads only their transcripts.
+  const current = snapshot.currentWorkspace
+  useEffect(() => {
+    if (!tree) return window.threadlight.setTreeView({ expanded: [], showAll: [] })
+    if (listMode === 'workspace') {
+      const only = current ? [current] : []
+      return window.threadlight.setTreeView({ expanded: only, showAll: only })
+    }
+    window.threadlight.setTreeView({ expanded: openWorkspaces, showAll: moreWorkspaces })
+  }, [tree, listMode, current, openWorkspaces, moreWorkspaces])
 
   const openMenu = (event: MouseEvent, session: Session) => {
     event.preventDefault()
@@ -322,6 +360,20 @@ export function Panel() {
       onSelect: () => session.appId && window.threadlight.openInClaude(session.appId),
     },
   ]
+
+  /** One thread row, the same in the recent list and inside a workspace. */
+  const renderRow = (session: Session) => (
+    <SessionRow
+      key={session.id}
+      session={session}
+      relay={relays.get(session.id)}
+      composing={session.id === compose?.sessionId}
+      now={now}
+      expanded={!picking && expanded === session.id}
+      onToggle={() => onRowClick(session)}
+      onContextMenu={(event) => openMenu(event, session)}
+    />
+  )
 
   const onRowClick = (session: Session) => {
     if (picking) {
@@ -355,21 +407,32 @@ export function Panel() {
               ‹
             </button>
             <span className={styles.heading}>{en.settings.title}</span>
-            {hold === 'pinned' && <PinButton onUnpin={() => changeHold('normal')} pushRight />}
           </>
         ) : (
           <>
             <span className={styles.heading}>{en.panel.activeCount(active)}</span>
-            {/* The recent count opens the full list and closes it again. */}
-            <button
-              className={styles.recent}
-              aria-pressed={view === 'all'}
-              title={view === 'all' ? en.panel.hideRecent : en.panel.showRecent}
-              onClick={() => setView(view === 'active' ? 'all' : 'active')}
-            >
-              {en.panel.recentCount(sessions.length)}
-            </button>
-            {hold === 'pinned' && <PinButton onUnpin={() => changeHold('normal')} />}
+            {/* "10 recent", "18 General" or "18 workspaces" opens the full list and closes it
+                again. Pinned, the pin takes the number's place, and clicking it unpins. */}
+            {hold === 'pinned' ? (
+              <button
+                className={styles.recent}
+                aria-pressed
+                aria-label={en.panel.unpin}
+                title={en.panel.unpin}
+                onClick={() => changeHold('normal')}
+              >
+                <PinIcon /> {listTag.word}
+              </button>
+            ) : (
+              <button
+                className={styles.recent}
+                aria-pressed={view === 'all'}
+                title={view === 'all' ? en.panel.hideList : en.panel.showList}
+                onClick={() => setView(view === 'active' ? 'all' : 'active')}
+              >
+                {listTag.count} {listTag.word}
+              </button>
+            )}
             <button
               className={styles.gear}
               onClick={() => setShowSettings(true)}
@@ -400,25 +463,27 @@ export function Panel() {
         )}
 
         <div className={styles.list}>
-          {shown.length === 0 && (
-            <p className={styles.empty}>
-              {view === 'active'
-                ? en.panel.nothingWorking
-                : en.panel.noSessions(settings?.listWindowHours ?? 24)}
-            </p>
-          )}
-          {shown.map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              relay={relays.get(session.id)}
-              composing={session.id === compose?.sessionId}
-              now={now}
-              expanded={!picking && expanded === session.id}
-              onToggle={() => onRowClick(session)}
-              onContextMenu={(event) => openMenu(event, session)}
+          {tree ? (
+            <WorkspaceTree
+              workspaces={snapshot.workspaces}
+              only={listMode === 'workspace' ? current : null}
+              isOpen={isOpen}
+              onToggle={toggleWorkspace}
+              onShowMore={(id) => setMoreWorkspaces((list) => [...list, id])}
+              renderRow={renderRow}
             />
-          ))}
+          ) : (
+            <>
+              {shown.length === 0 && (
+                <p className={styles.empty}>
+                  {view === 'active'
+                    ? en.panel.nothingWorking
+                    : en.panel.noSessions(settings?.listWindowHours ?? 24)}
+                </p>
+              )}
+              {shown.map(renderRow)}
+            </>
+          )}
         </div>
 
         {target && compose && (

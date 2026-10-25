@@ -31,6 +31,11 @@ function tracker(options: { maxSessions?: number } = {}) {
   return new Tracker({ paths: box.paths, hooks, now: () => NOW, ...options })
 }
 
+/** The flat recent list (the Active view and counts). */
+async function recent(t = tracker()) {
+  return (await t.snapshot()).sessions
+}
+
 async function addSession(id: string, records: object[], modifiedAgoMs: number) {
   const path = transcriptPath(box.paths, 'demo-project', id)
   await writeTranscript(path, records)
@@ -87,7 +92,7 @@ describe('Tracker', () => {
     })
     hooks.apply({ session_id: 'cli-1', hook_event_name: 'PreToolUse' }, NOW - 1000)
 
-    const [session] = await tracker().snapshot()
+    const [session] = await recent()
     expect(session).toMatchObject({
       id: 'cli-1',
       appId: 'local_app-1',
@@ -113,7 +118,7 @@ describe('Tracker', () => {
         { prNumber: 'six', state: 'OPEN' },
       ],
     })
-    const [session] = await tracker().snapshot()
+    const [session] = await recent()
     expect(session?.pullRequests).toEqual([
       { number: 4, state: 'merged' },
       { number: 5, state: 'draft' },
@@ -128,13 +133,13 @@ describe('Tracker', () => {
       isArchived: true,
     })
     await addSession('cli-ancient', [prompt('last week')], 3 * 24 * 60 * MINUTE)
-    expect(await tracker().snapshot()).toEqual([])
+    expect(await recent()).toEqual([])
   })
 
   it('marks a stopped session idle straight away', async () => {
     await addSession('cli-1', [prompt('go'), interrupt()], 1000)
     hooks.apply({ session_id: 'cli-1', hook_event_name: 'PreToolUse' }, NOW - 2000)
-    const [session] = await tracker().snapshot()
+    const [session] = await recent()
     expect(session?.state).toBe('idle')
   })
 
@@ -149,9 +154,9 @@ describe('Tracker', () => {
     )
     hooks.apply({ session_id: 'working', hook_event_name: 'UserPromptSubmit' }, NOW)
 
-    const ids = (await tracker().snapshot()).map((s) => s.id)
+    const ids = (await recent()).map((s) => s.id)
     expect(ids).toEqual(['working', 'waiting', 'idle-new', 'idle-old'])
-    expect((await tracker({ maxSessions: 2 }).snapshot()).map((s) => s.id)).toEqual([
+    expect((await recent(tracker({ maxSessions: 2 }))).map((s) => s.id)).toEqual([
       'working',
       'waiting',
     ])
@@ -159,12 +164,12 @@ describe('Tracker', () => {
 
   it('shows the last result for idle sessions', async () => {
     await addSession('cli-1', [prompt('go'), textReply('All   tests pass.')], 5 * MINUTE)
-    const [session] = await tracker().snapshot()
+    const [session] = await recent()
     expect(session).toMatchObject({ state: 'idle', tracked: false, stage: 'All tests pass.' })
   })
 
   it('copes with missing folders', async () => {
     await box.cleanup()
-    expect(await tracker().snapshot()).toEqual([])
+    expect(await recent()).toEqual([])
   })
 })

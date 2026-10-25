@@ -49,6 +49,42 @@ export interface Session {
   pullRequests: PullRequest[]
 }
 
+/** A thread in the workspace tree, with the side threads it started nested under it. */
+export interface ThreadNode {
+  session: Session
+  children: ThreadNode[]
+}
+
+/** One workspace folder, as the Claude sidebar groups threads. */
+export interface Workspace {
+  /** The folder path; also the key for expanding it. */
+  id: string
+  name: string
+  threadCount: number
+  /** Threads working or waiting right now, shown as a dot on the collapsed header. */
+  activeCount: number
+  anyWorking: boolean
+  /** Only filled in while the workspace is expanded; collapsed ones cost nothing to scan. */
+  threads: ThreadNode[]
+  /** Top-level threads not shown yet ("Show N more"). */
+  hiddenCount: number
+}
+
+/** Which workspaces the UI has open. `expanded: null` means "just the current workspace". */
+export interface TreeView {
+  expanded: string[] | null
+  showAll: string[]
+}
+
+/** Everything one scan produces. */
+export interface Snapshot {
+  /** Recent sessions, working first: the Active list and the counts. */
+  sessions: Session[]
+  workspaces: Workspace[]
+  /** The workspace of the thread last open in Claude. */
+  currentWorkspace: string | null
+}
+
 /**
  * A message relayed to a session in the background.
  * sending → sent (✓, handed to the session) → replied (✓✓, the session answered), or failed.

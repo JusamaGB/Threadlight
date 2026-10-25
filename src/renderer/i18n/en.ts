@@ -9,11 +9,13 @@ export const en = {
   },
   panel: {
     activeCount: (n: number) => `Active · ${n}`,
-    recentCount: (n: number) => `${n} recent`,
+    recentWord: 'recent',
+    workspace: 'workspace',
+    workspaces: 'workspaces',
     nothingWorking: 'Nothing working right now',
     noSessions: (hours: number) => `No sessions in the last ${hours} h`,
-    showRecent: 'Show recent sessions',
-    hideRecent: 'Show only active sessions',
+    showList: 'Show the full list',
+    hideList: 'Show only active sessions',
     unpin: 'Pinned open. Click (or triple-click the bar) to unpin',
   },
   state: {
@@ -30,6 +32,10 @@ export const en = {
     lastReply: 'Last reply',
     open: 'Open ↗',
     yourMessage: 'Your message',
+  },
+  workspaces: {
+    none: 'No threads in this workspace yet',
+    showMore: (n: number) => `Show ${n} more`,
   },
   pr: {
     state: { open: 'open', draft: 'draft', merged: 'merged', closed: 'closed' },
@@ -96,6 +102,10 @@ export const en = {
     click: 'Click',
     dotPosition: 'Dot position',
     reset: 'Reset',
+    listMode: 'Full list shows',
+    listRecent: 'Recent',
+    listWorkspace: 'Workspace',
+    listAll: 'All',
     listWindow: 'Show sessions from the last',
     maxSessions: 'Sessions listed',
     launchAtSignIn: 'Launch at sign-in',

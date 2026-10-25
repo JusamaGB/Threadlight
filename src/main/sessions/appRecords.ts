@@ -15,9 +15,16 @@ export interface AppRecord {
   title: string | null
   archived: boolean
   cwd: string | null
+  /** The workspace folder the sidebar groups it under (a worktree's own repo, not the worktree). */
+  workspace: string | null
+  /** The thread that started this one (a side thread), by its `local_…` id. */
+  parentAppId: string | null
   permissionMode: string | null
   model: string | null
   pullRequests: PullRequest[]
+  lastActivityAt: number
+  /** When the thread was last open in front of the user; the latest marks the current workspace. */
+  lastFocusedAt: number
 }
 
 /** Caches parsed records by file modification time, so a refresh only re-reads changed files. */
@@ -64,10 +71,18 @@ export function parseAppRecord(raw: unknown): AppRecord | null {
     title: str(raw['title']),
     archived: raw['isArchived'] === true,
     cwd: str(raw['cwd']),
+    workspace: str(raw['originCwd']) ?? str(raw['gitAnchorsFolderRealpath']) ?? str(raw['cwd']),
+    parentAppId: isObject(raw['spawnedFrom']) ? str(raw['spawnedFrom']['sessionId']) : null,
     permissionMode: str(raw['permissionMode']),
     model: str(raw['model']),
     pullRequests: parsePullRequests(raw['prs']),
+    lastActivityAt: num(raw['lastActivityAt']),
+    lastFocusedAt: num(raw['lastFocusedAt']),
   }
+}
+
+function num(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 const PR_STATES: Record<string, PullRequest['state']> = {

@@ -55,9 +55,20 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   back sessions are listed and how many, launch at sign-in, and reset the dot's position.
   A message you were typing survives a trip into Settings.
 - A tray icon with Show sessions, Settings, Pause talk hotkey and Quit.
-- Header clicks on its bare space: double-click keeps the panel as a slim bar between
-  hovers; triple-click pins it fully open (a small pin shows) until you triple-click
-  again or click the pin. Dragging the bare header moves the panel and its dot.
+- Header clicks on its bare space: double-click keeps the active list up as a slim bar
+  between hovers; triple-click pins the full recent list open (a pin icon then takes the
+  place of the count, next to "recent") until you triple-click again or click the pin or
+  the word. Dragging the bare header moves the panel and
+  its dot.
+- The full list can show your workspaces (Settings → "Full list shows"): Recent (the most
+  recent threads, as before), Workspace (every thread in the workspace you last had open
+  in Claude), or All (every workspace as a collapsible group, like the Claude sidebar,
+  with the current one open). Threads look exactly as in the recent list, side threads
+  nest under the thread that started them, and big workspaces show their newest threads
+  with "Show N more". Only threads you can see have their transcripts read. "Show
+  sessions from the last" filters all three; an older thread stays when a side thread
+  under it is recent.
+- The panel can now grow to the full height of the screen from wherever the dot is.
 - Threads with pull requests show the Claude sidebar's branch icon, coloured by the
   latest PR's state, with a count when there are several.
 - Settings are stored in `%APPDATA%\Threadlight\settings.json`; a damaged or partly

@@ -1,22 +1,39 @@
-// Polls the tracker and reports the session list only when it actually changes.
+// Polls the tracker and reports what it finds only when something actually changes.
 
-import type { Session } from '../../shared/types'
+import { findInSnapshot } from '../../shared/snapshot'
+import type { Session, Snapshot, TreeView } from '../../shared/types'
 import type { Tracker } from './tracker'
 
 export class SessionService {
-  private latest: Session[] = []
-  private latestJson = '[]'
+  private latest: Snapshot = { sessions: [], workspaces: [], currentWorkspace: null }
+  private latestJson = ''
+  private view: TreeView = { expanded: null, showAll: [] }
   private timer: NodeJS.Timeout | null = null
   private running = false
   private again = false
 
   constructor(
     private readonly tracker: Tracker,
-    private readonly onChange: (sessions: Session[]) => void,
+    private readonly onChange: (snapshot: Snapshot) => void,
   ) {}
 
   get sessions(): Session[] {
+    return this.latest.sessions
+  }
+
+  get snapshot(): Snapshot {
     return this.latest
+  }
+
+  /** A session from either the recent list or an open workspace in the tree. */
+  find(id: string): Session | undefined {
+    return findInSnapshot(this.latest, id)
+  }
+
+  /** The UI opened or closed a workspace: rescan now, so its threads appear straight away. */
+  setView(view: TreeView): void {
+    this.view = view
+    void this.refresh()
   }
 
   start(intervalMs: number): void {
@@ -37,12 +54,12 @@ export class SessionService {
     }
     this.running = true
     try {
-      const sessions = await this.tracker.snapshot()
-      const json = JSON.stringify(sessions)
+      const snapshot = await this.tracker.snapshot(this.view)
+      const json = JSON.stringify(snapshot)
       if (json !== this.latestJson) {
-        this.latest = sessions
+        this.latest = snapshot
         this.latestJson = json
-        this.onChange(sessions)
+        this.onChange(snapshot)
       }
     } catch (error) {
       console.error('Session scan failed', error)

@@ -1,12 +1,21 @@
-// Merges the three sources (hook state, transcripts, Claude app records) into the
-// session list the UI shows. Keeps one TranscriptReader per session between calls.
+// Merges the three sources (hook state, transcripts, Claude app records) into what the UI shows:
+// a flat list of recent sessions, and the same threads grouped by workspace like the Claude
+// sidebar. Transcripts are only read for threads that can be seen, so hundreds of collapsed
+// threads cost almost nothing. Keeps one TranscriptReader per session between calls.
 
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import type { Session, SessionState } from '../../shared/types'
-import { AppRecordIndex } from './appRecords'
-import type { HookStateStore } from './hookState'
+import type {
+  Session,
+  SessionState,
+  Snapshot,
+  ThreadNode,
+  TreeView,
+  Workspace,
+} from '../../shared/types'
+import { AppRecordIndex, type AppRecord } from './appRecords'
+import type { HookRecord, HookStateStore } from './hookState'
 import { oneLine } from './json'
 import type { ClaudePaths } from './paths'
 import { TranscriptReader, type TranscriptSummary } from './transcript'
@@ -19,8 +28,9 @@ export const FALLBACK_ACTIVE_MS = 30 * 1000
 export interface TrackerOptions {
   paths: ClaudePaths
   hooks: HookStateStore
-  /** Only sessions active within this window are listed. */
+  /** Only sessions active within this window are in the recent list. */
   windowHours?: number
+  /** The recent list's length, and how many threads an expanded workspace shows at first. */
   maxSessions?: number
   now?: () => number
 }
@@ -31,6 +41,7 @@ interface TranscriptFile {
 }
 
 const ORDER: Record<SessionState, number> = { working: 0, waiting: 1, idle: 2 }
+const DEFAULT_VIEW: TreeView = { expanded: null, showAll: [] }
 
 export class Tracker {
   private readers = new Map<string, TranscriptReader>()
@@ -51,52 +62,173 @@ export class Tracker {
     this.maxSessions = maxSessions
   }
 
-  /** Working sessions first, then waiting, then most recently active. */
-  async snapshot(): Promise<Session[]> {
+  async snapshot(view: TreeView = DEFAULT_VIEW): Promise<Snapshot> {
     const now = this.now()
-    const [files, apps] = await Promise.all([this.findTranscripts(now), this.appRecords.refresh()])
+    const [files, apps] = await Promise.all([this.findTranscripts(), this.appRecords.refresh()])
     const hooks = new Map(this.options.hooks.all(now).map((h) => [h.sessionId, h]))
-
-    const sessions: Session[] = []
-    for (const id of new Set([...files.keys(), ...hooks.keys()])) {
-      const app = apps.get(id)
-      if (app?.archived) continue
-      const hook = hooks.get(id)
-      const file =
-        files.get(id) ?? (hook?.transcriptPath ? { path: hook.transcriptPath, mtimeMs: 0 } : null)
-      const summary = file ? await this.read(id, file.path) : null
-
-      const lastActiveAt = Math.max(file?.mtimeMs ?? 0, hook?.updatedAt ?? 0)
-      const state = resolveState({
-        hookState: hook?.state ?? null,
-        lastActiveAt,
-        transcriptChangedAt: file?.mtimeMs ?? 0,
-        interrupted: summary?.interrupted ?? false,
-        now,
-      })
-      const cwd = hook?.cwd ?? app?.cwd ?? summary?.cwd ?? ''
-      sessions.push({
-        id,
-        appId: app?.appId ?? null,
-        title: oneLine(app?.title ?? summary?.title ?? lastPathPart(cwd) ?? id.slice(0, 8)),
-        state,
-        tracked: hook !== undefined,
-        cwd,
-        lastActiveAt,
-        stage: stageLine(state, summary),
-        lastPrompt: summary?.lastPrompt ?? null,
-        plan: summary?.plan ?? [],
-        currentStep: summary?.currentStep ?? null,
-        recap: summary?.recap ?? null,
-        lastReply: summary?.lastReply ?? null,
-        lastAction: summary?.lastAction ?? null,
-        permissionMode: app?.permissionMode ?? null,
-        model: app?.model ?? null,
-        pullRequests: app?.pullRequests ?? [],
-      })
+    const built = new Map<string, Session>() // full sessions, built once per scan
+    const build = async (id: string) => {
+      let session = built.get(id)
+      if (!session) {
+        session = await this.build(id, files.get(id), hooks.get(id), apps.get(id), now)
+        built.set(id, session)
+      }
+      return session
     }
-    sessions.sort((a, b) => ORDER[a.state] - ORDER[b.state] || b.lastActiveAt - a.lastActiveAt)
-    return sessions.slice(0, this.maxSessions)
+
+    // The recent list: everything active within the window, working first.
+    const cutoff = now - this.windowMs
+    const recentIds = new Set(hooks.keys())
+    for (const [id, file] of files) if (file.mtimeMs > cutoff) recentIds.add(id)
+    const recent: Session[] = []
+    for (const id of recentIds) {
+      if (apps.get(id)?.archived) continue
+      recent.push(await build(id))
+    }
+    recent.sort(byStateThenActivity)
+
+    // The workspace tree: every thread the Claude app has, grouped like its sidebar.
+    const records = [...apps.values()].filter((app) => !app.archived && app.workspace)
+
+    // Like the Claude sidebar, a side thread sits under the thread that started it, even when it
+    // works in another folder: it belongs to its top-most ancestor's workspace.
+    const recordsByAppId = new Map(records.map((app) => [app.appId, app]))
+    const homeOf = (app: AppRecord): string => {
+      let home = app
+      const seen = new Set([app.appId])
+      for (;;) {
+        const parent = home.parentAppId ? recordsByAppId.get(home.parentAppId) : undefined
+        if (!parent || seen.has(parent.appId)) return home.workspace!
+        seen.add(parent.appId)
+        home = parent
+      }
+    }
+    const focused = latestFocused(records)
+    const currentWorkspace = focused ? homeOf(focused) : null
+    const expanded = new Set(
+      (view.expanded ?? (currentWorkspace ? [currentWorkspace] : [])).map(workspaceKey),
+    )
+    const showAll = new Set(view.showAll.map(workspaceKey))
+
+    // "Show sessions from the last …" applies here too. A thread outside the window stays only
+    // when a side thread under it is inside, so the nesting still reads right.
+    const activity = (app: AppRecord) =>
+      Math.max(
+        app.lastActivityAt,
+        files.get(app.cliSessionId)?.mtimeMs ?? 0,
+        hooks.get(app.cliSessionId)?.updatedAt ?? 0,
+      )
+    const kids = new Map<string, AppRecord[]>()
+    for (const app of records) {
+      if (app.parentAppId) kids.set(app.parentAppId, [...(kids.get(app.parentAppId) ?? []), app])
+    }
+    const kept = new Map<string, boolean>()
+    const keep = (app: AppRecord): boolean => {
+      const known = kept.get(app.appId)
+      if (known !== undefined) return known
+      kept.set(app.appId, false) // guards against a loop in bad data
+      const result = activity(app) > cutoff || (kids.get(app.appId) ?? []).some(keep)
+      kept.set(app.appId, result)
+      return result
+    }
+
+    const groups = new Map<string, AppRecord[]>()
+    for (const app of records.filter(keep)) {
+      const key = workspaceKey(homeOf(app))
+      groups.set(key, [...(groups.get(key) ?? []), app])
+    }
+
+    const workspaces: Workspace[] = []
+    for (const [key, members] of groups) {
+      const path = homeOf(members[0]!)
+      const states = members.map((app) =>
+        lightState(hooks.get(app.cliSessionId), files.get(app.cliSessionId), now),
+      )
+      const workspace: Workspace = {
+        id: path,
+        name: lastPathPart(path) ?? path,
+        threadCount: members.length,
+        activeCount: states.filter((s) => s !== 'idle').length,
+        anyWorking: states.includes('working'),
+        threads: [],
+        hiddenCount: 0,
+      }
+      if (expanded.has(key)) {
+        // Side threads nest under the thread that started them, when it is in the same workspace.
+        const byAppId = new Map(members.map((app) => [app.appId, app]))
+        const childrenOf = new Map<string, AppRecord[]>()
+        const roots: AppRecord[] = []
+        for (const app of members) {
+          if (app.parentAppId && byAppId.has(app.parentAppId) && app.parentAppId !== app.appId) {
+            childrenOf.set(app.parentAppId, [...(childrenOf.get(app.parentAppId) ?? []), app])
+          } else {
+            roots.push(app)
+          }
+        }
+        roots.sort((a, b) => activity(b) - activity(a))
+        const shown = showAll.has(key) ? roots : roots.slice(0, this.maxSessions)
+        workspace.hiddenCount = roots.length - shown.length
+        const seen = new Set<string>()
+        const node = async (app: AppRecord): Promise<ThreadNode> => {
+          seen.add(app.appId)
+          const kids = (childrenOf.get(app.appId) ?? [])
+            .filter((kid) => !seen.has(kid.appId)) // guards against a loop in bad data
+            .sort((a, b) => activity(b) - activity(a))
+          return {
+            session: await build(app.cliSessionId),
+            children: await Promise.all(kids.map(node)),
+          }
+        }
+        for (const app of shown) workspace.threads.push(await node(app))
+      }
+      workspaces.push(workspace)
+    }
+    workspaces.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
+
+    return { sessions: recent.slice(0, this.maxSessions), workspaces, currentWorkspace }
+  }
+
+  private async build(
+    id: string,
+    file: TranscriptFile | undefined,
+    hook: HookRecord | undefined,
+    app: AppRecord | undefined,
+    now: number,
+  ): Promise<Session> {
+    const path = file?.path ?? hook?.transcriptPath
+    const summary = path ? await this.read(id, path) : null
+    const lastActiveAt = Math.max(
+      file?.mtimeMs ?? 0,
+      hook?.updatedAt ?? 0,
+      app?.lastActivityAt ?? 0,
+    )
+    const state = resolveState({
+      hookState: hook?.state ?? null,
+      lastActiveAt: Math.max(file?.mtimeMs ?? 0, hook?.updatedAt ?? 0),
+      transcriptChangedAt: file?.mtimeMs ?? 0,
+      interrupted: summary?.interrupted ?? false,
+      now,
+    })
+    const cwd = hook?.cwd ?? app?.cwd ?? summary?.cwd ?? ''
+    return {
+      id,
+      appId: app?.appId ?? null,
+      title: oneLine(app?.title ?? summary?.title ?? lastPathPart(cwd) ?? id.slice(0, 8)),
+      state,
+      tracked: hook !== undefined,
+      cwd,
+      lastActiveAt,
+      stage: stageLine(state, summary),
+      lastPrompt: summary?.lastPrompt ?? null,
+      plan: summary?.plan ?? [],
+      currentStep: summary?.currentStep ?? null,
+      recap: summary?.recap ?? null,
+      lastReply: summary?.lastReply ?? null,
+      lastAction: summary?.lastAction ?? null,
+      permissionMode: app?.permissionMode ?? null,
+      model: app?.model ?? null,
+      pullRequests: app?.pullRequests ?? [],
+    }
   }
 
   private async read(id: string, path: string): Promise<TranscriptSummary> {
@@ -109,10 +241,9 @@ export class Tracker {
     return reader.summary()
   }
 
-  /** `<projectsDir>/<project>/<sessionId>.jsonl`, modified within the window. */
-  private async findTranscripts(now: number): Promise<Map<string, TranscriptFile>> {
+  /** Every `<projectsDir>/<project>/<sessionId>.jsonl`, with when it last changed. */
+  private async findTranscripts(): Promise<Map<string, TranscriptFile>> {
     const found = new Map<string, TranscriptFile>()
-    const cutoff = now - this.windowMs
     let projects: string[]
     try {
       const entries = await readdir(this.options.paths.projectsDir, { withFileTypes: true })
@@ -134,7 +265,7 @@ export class Tracker {
         const path = join(project, entry.name)
         try {
           const { mtimeMs } = await stat(path)
-          if (mtimeMs > cutoff) found.set(entry.name.slice(0, -'.jsonl'.length), { path, mtimeMs })
+          found.set(entry.name.slice(0, -'.jsonl'.length), { path, mtimeMs })
         } catch {
           // deleted between listing and stat
         }
@@ -142,6 +273,37 @@ export class Tracker {
     }
     return found
   }
+}
+
+function byStateThenActivity(a: Session, b: Session): number {
+  return ORDER[a.state] - ORDER[b.state] || b.lastActiveAt - a.lastActiveAt
+}
+
+/** State without reading the transcript, for collapsed workspaces' header dots. */
+function lightState(
+  hook: HookRecord | undefined,
+  file: TranscriptFile | undefined,
+  now: number,
+): SessionState {
+  return resolveState({
+    hookState: hook?.state ?? null,
+    lastActiveAt: Math.max(file?.mtimeMs ?? 0, hook?.updatedAt ?? 0),
+    transcriptChangedAt: file?.mtimeMs ?? 0,
+    interrupted: false,
+    now,
+  })
+}
+
+/** The thread most recently in front of the user. */
+function latestFocused(records: AppRecord[]): AppRecord | null {
+  let best: AppRecord | null = null
+  for (const app of records) if (!best || app.lastFocusedAt > best.lastFocusedAt) best = app
+  return best
+}
+
+/** Windows paths are case-insensitive, and may or may not end with a separator. */
+export function workspaceKey(path: string): string {
+  return path.replace(/[\\/]+$/, '').toLowerCase()
 }
 
 export interface StateInputs {

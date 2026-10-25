@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { IPC, type PanelOpened, type TalkState, type ThreadlightApi } from '../shared/ipc'
 import type { Settings } from '../shared/settings'
 import type { SttStatus } from '../shared/stt'
-import type { RelayStatus, Session } from '../shared/types'
+import type { RelayStatus, Session, Snapshot } from '../shared/types'
 
 // The renderer has no Node access. This object is the only door between them,
 // and each method maps to exactly one IPC channel.
@@ -18,6 +18,9 @@ const api: ThreadlightApi = {
   getVersion: () => ipcRenderer.invoke(IPC.getVersion),
   getSessions: () => ipcRenderer.invoke(IPC.getSessions),
   onSessions: (listener) => subscribe<Session[]>(IPC.sessionsChanged, listener),
+  getSnapshot: () => ipcRenderer.invoke(IPC.getSnapshot),
+  onSnapshot: (listener) => subscribe<Snapshot>(IPC.snapshotChanged, listener),
+  setTreeView: (view) => ipcRenderer.send(IPC.setTreeView, view),
   onPanelOpened: (listener) => subscribe<PanelOpened>(IPC.panelOpened, listener),
 
   dotClick: () => ipcRenderer.send(IPC.dotClick),

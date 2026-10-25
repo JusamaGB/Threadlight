@@ -43,7 +43,10 @@ async function start(): Promise<void> {
     windowHours: initial.listWindowHours,
     maxSessions: initial.maxSessions,
   })
-  const sessions = new SessionService(tracker, (list) => windows.send(IPC.sessionsChanged, list))
+  const sessions = new SessionService(tracker, (snapshot) => {
+    windows.send(IPC.sessionsChanged, snapshot.sessions)
+    windows.panel.webContents.send(IPC.snapshotChanged, snapshot)
+  })
 
   // Hook events make state exact and immediate: apply, then rescan straight away.
   startHookServer({
@@ -59,6 +62,16 @@ async function start(): Promise<void> {
 
   ipcMain.handle(IPC.getVersion, () => app.getVersion())
   ipcMain.handle(IPC.getSessions, () => sessions.sessions)
+  ipcMain.handle(IPC.getSnapshot, () => sessions.snapshot)
+  ipcMain.on(IPC.setTreeView, (_event, view: unknown) => {
+    const valid = (list: unknown): list is string[] =>
+      Array.isArray(list) && list.length <= 500 && list.every((item) => typeof item === 'string')
+    const raw = (typeof view === 'object' && view !== null ? view : {}) as Record<string, unknown>
+    sessions.setView({
+      expanded: raw['expanded'] === null ? null : valid(raw['expanded']) ? raw['expanded'] : null,
+      showAll: valid(raw['showAll']) ? raw['showAll'] : [],
+    })
+  })
   ipcMain.on(IPC.dotClick, () => windows.openPanel())
   ipcMain.on(IPC.dotDrag, (_event, dx: unknown, dy: unknown) =>
     windows.dragDot(Number(dx), Number(dy)),
@@ -77,7 +90,7 @@ async function start(): Promise<void> {
   let cli: CliCommand | null = null
   const relays = new RelayService(
     async () => ({ cli: (cli ??= await findClaudeCli(paths)), isHeld: isHeldByRunningProcess }),
-    (id) => sessions.sessions.find((s) => s.id === id),
+    (id) => sessions.find(id),
     (list) => windows.send(IPC.relaysChanged, list),
   )
   ipcMain.handle(IPC.sendMessage, (_event, sessionId: unknown, text: unknown) =>

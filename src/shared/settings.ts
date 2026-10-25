@@ -15,6 +15,12 @@ export const settingsSchema = z.object({
   openOn: z.enum(['hover', 'click']).default('hover'),
   /** Start Threadlight when you sign in to Windows. Off until you turn it on. */
   launchAtSignIn: z.boolean().default(false),
+  /**
+   * What the full list (the "recent" view) shows: the most recent threads, one workspace with
+   * all its threads (the workspace of the thread last open in Claude), or every workspace as
+   * collapsible groups like the Claude sidebar.
+   */
+  listMode: z.enum(['recent', 'workspace', 'all']).default('recent'),
   /** Sessions active within this many hours are listed. */
   listWindowHours: z.number().int().min(1).max(168).default(24),
   /** At most this many sessions are listed. */

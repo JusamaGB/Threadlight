@@ -3,9 +3,12 @@
 
 import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
-import type { RelayStatus, Session } from './types'
+import type { RelayStatus, Session, Snapshot, TreeView } from './types'
 
 export const IPC = {
+  getSnapshot: 'sessions:get-snapshot',
+  snapshotChanged: 'sessions:snapshot-changed',
+  setTreeView: 'sessions:set-tree-view',
   getSettings: 'settings:get',
   updateSettings: 'settings:update',
   settingsChanged: 'settings:changed',
@@ -52,6 +55,11 @@ export interface ThreadlightApi {
   getSessions(): Promise<Session[]>
   /** Called whenever the session list changes. Returns an unsubscribe function. */
   onSessions(listener: (sessions: Session[]) => void): () => void
+  /** Recent sessions plus the workspace tree. */
+  getSnapshot(): Promise<Snapshot>
+  onSnapshot(listener: (snapshot: Snapshot) => void): () => void
+  /** Which workspaces are open; their threads are read and sent in the next snapshot. */
+  setTreeView(view: TreeView): void
   onPanelOpened(listener: (info: PanelOpened) => void): () => void
 
   dotClick(): void

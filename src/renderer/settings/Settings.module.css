@@ -33,6 +33,11 @@
   padding: 3px 0;
 }
 
+/* A setting that does not apply right now (e.g. "Sessions listed" outside the Recent list). */
+.row[aria-disabled] {
+  opacity: 0.4;
+}
+
 .text {
   flex: 1;
   min-width: 0;

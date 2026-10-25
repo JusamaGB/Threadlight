@@ -96,7 +96,7 @@ export class WindowManager {
    * state, because the panel has just filled in the composer itself.
    */
   openPanel({ focus = true }: { focus?: boolean } = {}): void {
-    const info: PanelOpened = { maxHeight: this.workArea().height - 2 * MARGIN, fresh: focus }
+    const info: PanelOpened = { maxHeight: this.maxPanelHeight(), fresh: focus }
     this.panel.webContents.send(IPC.panelOpened, info)
     this.placePanel(this.panel.getBounds().height)
     this.dot.hide() // the panel takes the dot's place
@@ -121,8 +121,29 @@ export class WindowManager {
 
   resizePanel(height: number): void {
     if (!Number.isFinite(height)) return
-    const max = this.workArea().height - 2 * MARGIN
-    this.placePanel(Math.max(40, Math.min(Math.ceil(height), max)))
+    this.placePanel(Math.max(40, Math.min(Math.ceil(height), this.maxPanelHeight())))
+  }
+
+  /**
+   * The tallest the panel can be from where it starts (the dot) to the far edge of the screen's
+   * work area, leaving the same gap at the far end as the dot has at its own edge (up to 8 px).
+   */
+  private maxPanelHeight(): number {
+    const dot = this.dot.getBounds()
+    const area = this.workArea()
+    if (this.opensDown()) {
+      const gap = clamp(dot.y - area.y, 0, MARGIN)
+      return area.y + area.height - gap - dot.y
+    }
+    const gap = clamp(area.y + area.height - (dot.y + DOT_SIZE), 0, MARGIN)
+    return dot.y + DOT_SIZE - (area.y + gap)
+  }
+
+  /** Downward from a dot in the top half of the screen, upward from one in the bottom half. */
+  private opensDown(): boolean {
+    const dot = this.dot.getBounds()
+    const area = this.workArea()
+    return dot.y + DOT_SIZE / 2 <= area.y + area.height / 2
   }
 
   dragDot(dx: number, dy: number): void {
@@ -157,14 +178,16 @@ export class WindowManager {
     if (this.panel.isVisible()) this.placePanel(this.panel.getBounds().height)
   }
 
-  /** The panel's top-right corner sits where the dot is; it flips upward near the bottom edge. */
+  /**
+   * The panel's top-right corner sits where the dot is, growing down; from a dot in the bottom
+   * half its bottom-right corner does, growing up.
+   */
   private placePanel(height: number): void {
     const dot = this.dot.getBounds()
     const area = this.workArea()
     const x = clamp(dot.x + DOT_SIZE - PANEL_WIDTH, area.x, area.x + area.width - PANEL_WIDTH)
-    const fitsBelow = dot.y + height <= area.y + area.height
     const y = clamp(
-      fitsBelow ? dot.y : dot.y + DOT_SIZE - height,
+      this.opensDown() ? dot.y : dot.y + DOT_SIZE - height,
       area.y,
       area.y + area.height - height,
     )

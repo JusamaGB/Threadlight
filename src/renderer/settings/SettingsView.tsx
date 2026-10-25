@@ -71,6 +71,17 @@ export function SettingsView({ settings, stt, version }: SettingsViewProps) {
       </Group>
 
       <Group label={en.settings.sessions}>
+        <Row label={en.settings.listMode}>
+          <Segmented
+            value={settings.listMode}
+            options={[
+              { value: 'recent', label: en.settings.listRecent },
+              { value: 'workspace', label: en.settings.listWorkspace },
+              { value: 'all', label: en.settings.listAll },
+            ]}
+            onChange={(listMode) => save({ listMode })}
+          />
+        </Row>
         <Row label={en.settings.listWindow}>
           <Segmented
             value={settings.listWindowHours}
@@ -78,12 +89,14 @@ export function SettingsView({ settings, stt, version }: SettingsViewProps) {
             onChange={(listWindowHours) => save({ listWindowHours })}
           />
         </Row>
-        <Row label={en.settings.maxSessions}>
+        {/* Only the Recent list has a length to choose; greyed out for Workspace and All. */}
+        <Row label={en.settings.maxSessions} disabled={settings.listMode !== 'recent'}>
           <Stepper
             value={settings.maxSessions}
             min={3}
             max={25}
             format={String}
+            disabled={settings.listMode !== 'recent'}
             onChange={(maxSessions) => save({ maxSessions })}
           />
         </Row>
@@ -121,10 +134,11 @@ function Row(props: {
   label: string
   hint?: string
   error?: string | undefined
+  disabled?: boolean
   children: ReactNode
 }) {
   return (
-    <div className={styles.row}>
+    <div className={styles.row} aria-disabled={props.disabled || undefined}>
       <div className={styles.text}>
         <span className={styles.label}>{props.label}</span>
         {props.error ? (
@@ -199,13 +213,14 @@ function Stepper(props: {
   min: number
   max: number
   format: (n: number) => string
+  disabled?: boolean
   onChange: (n: number) => void
 }) {
-  const { value, min, max, format, onChange } = props
+  const { value, min, max, format, disabled = false, onChange } = props
   return (
     <span className={styles.stepper}>
       <button
-        disabled={value <= min}
+        disabled={disabled || value <= min}
         onClick={() => onChange(value - 1)}
         aria-label={en.settings.less}
       >
@@ -213,7 +228,7 @@ function Stepper(props: {
       </button>
       <span className={styles.value}>{format(value)}</span>
       <button
-        disabled={value >= max}
+        disabled={disabled || value >= max}
         onClick={() => onChange(value + 1)}
         aria-label={en.settings.more}
       >
