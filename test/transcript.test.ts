@@ -283,9 +283,9 @@ describe('attention cards', () => {
       recap: 'Built and checked.',
       ask: 'Publish it?',
       actions: [
-        { label: 'Yes, publish', message: 'Yes, publish it.' },
-        { label: 'Not yet', message: 'Not yet' },
-        { label: 'Commit', message: null },
+        { label: 'Yes, publish', message: 'Yes, publish it.', appAction: null },
+        { label: 'Not yet', message: 'Not yet', appAction: null },
+        { label: 'Commit', message: null, appAction: 'commit' },
       ],
     })
     expect((await read([prompt('Make the page'), wrap, prompt('Yes')])).nextStep).toBeNull()

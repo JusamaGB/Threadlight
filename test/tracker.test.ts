@@ -119,12 +119,29 @@ describe('attentionFor', () => {
     expect(attentionFor('waiting', summary({ nextStep }))).toEqual({
       kind: 'approval',
       action: 'Running tests',
+      tool: null,
+      answerableUntil: null,
     })
     expect(attentionFor('idle', summary({ nextStep }))).toEqual({
       kind: 'next-step',
       ...nextStep,
       answerableUntil: null,
     })
+  })
+
+  it('shows a held approval or session offer first, answerable here', () => {
+    const busy = summary({ pendingQuestion: question })
+    expect(
+      attentionFor('working', busy, {
+        kind: 'approval',
+        releasesAt: 9,
+        tool: 'Bash',
+        detail: 'git push',
+      }),
+    ).toEqual({ kind: 'approval', action: 'git push', tool: 'Bash', answerableUntil: 9 })
+    expect(
+      attentionFor('working', busy, { kind: 'offer', releasesAt: 9, detail: 'Fix it' }),
+    ).toEqual({ kind: 'offer', title: 'Fix it', answerableUntil: 9 })
   })
 
   it('marks a question card answerable while Threadlight holds it', () => {

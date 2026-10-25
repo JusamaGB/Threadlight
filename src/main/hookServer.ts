@@ -2,8 +2,9 @@
 // piping the event JSON Claude Code gave it. This endpoint can only update session state;
 // it has no way to send messages, so the worst a stray request can do is mislabel a dot.
 // `GET /status` answers with a few counts, for the installer's check.
-// `POST /ask` and `POST /stop` are the routes that answer with a body: the question-card and
-// Stop hooks wait on them, and get either the user's answer or nothing (holds.ts).
+// `POST /ask`, `/stop`, `/permission` and `/offer` are the routes that answer with a body: the
+// question-card, Stop, PermissionRequest and session-offer hooks wait on them, and get either
+// the user's answer or nothing (holds.ts).
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -22,6 +23,10 @@ export interface HookServerOptions {
   onAsk?: HoldHandler
   /** The end of a turn the Stop hook is waiting on (`POST /stop`). */
   onStop?: HoldHandler
+  /** A tool waiting for permission (`POST /permission`). */
+  onPermission?: HoldHandler
+  /** A New session / Do it here offer (`POST /offer`). */
+  onOffer?: HoldHandler
 }
 
 /**
@@ -57,10 +62,16 @@ export function startHookServer(options: HookServerOptions): Promise<HookServer>
 function handle(
   request: IncomingMessage,
   response: ServerResponse,
-  { onEvent, status, onAsk, onStop }: HookServerOptions,
+  { onEvent, status, onAsk, onStop, onPermission, onOffer }: HookServerOptions,
   server: Server,
 ): void {
-  const holder = request.url === '/ask' ? onAsk : request.url === '/stop' ? onStop : undefined
+  const holders: Record<string, HoldHandler | undefined> = {
+    '/ask': onAsk,
+    '/stop': onStop,
+    '/permission': onPermission,
+    '/offer': onOffer,
+  }
+  const holder = Object.hasOwn(holders, request.url ?? '') ? holders[request.url!] : undefined
   if (request.method === 'POST' && holder) {
     if (!fromLocalTool(request, server)) return finish(response, 403)
     return readJson(request, (payload) => ask(payload, response, holder))

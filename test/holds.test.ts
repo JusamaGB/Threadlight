@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HOLD_MS, Holds } from '../src/main/holds'
 
+/** Every next-step answer ends by asking the thread to redraw the Claude app's box. */
+const REFRESH =
+  ' When you have done that, if you have the wrap_up tool, call it again so the Claude app replaces the box the user just answered with where things stand now.'
+
 const questions = [
   { question: 'Which colour?', header: 'Colour', options: [{ label: 'Blue' }, { label: 'Green' }] },
   { question: 'Which size?', header: 'Size', options: [{ label: 'Small' }, { label: 'Large' }] },
@@ -14,8 +18,9 @@ const asked = (sessionId = 'session-a') => ({
 const nextStep = {
   ask: 'Publish it?',
   actions: [
-    { label: 'Yes, publish', message: 'Yes, publish the page.' },
-    { label: 'Commit', message: null },
+    { label: 'Yes, publish', message: 'Yes, publish the page.', appAction: null },
+    { label: 'Commit', message: null, appAction: 'commit' },
+    { label: 'Mystery', message: null, appAction: 'teleport' },
   ],
 }
 
@@ -78,20 +83,33 @@ describe('next steps', () => {
     expect(JSON.parse(replies[0]!)).toEqual({
       decision: 'block',
       reason:
-        'The user answered your question "Publish it?" in Threadlight, choosing "Yes, publish": Yes, publish the page.',
+        'The user answered your question "Publish it?" in Threadlight, choosing "Yes, publish": Yes, publish the page.' +
+        REFRESH,
     })
   })
 
-  it('hands back words of the user’s own, and refuses an unknown or app-only button', () => {
+  it('asks the thread to do an app action itself, but not one it does not know', () => {
+    holds.holdNextStep('session-a', nextStep, reply)
+    expect(holds.answerNextStep('session-a', { label: 'Mystery' }).ok).toBe(false)
+    expect(holds.answerNextStep('session-a', { label: 'Commit' })).toEqual({ ok: true })
+    expect(JSON.parse(replies[0]!)).toEqual({
+      decision: 'block',
+      reason:
+        'The user answered your question "Publish it?" in Threadlight, choosing "Commit" (the Claude app\'s commit button, which Threadlight cannot press), so commit the changes now.' +
+        REFRESH,
+    })
+  })
+
+  it('hands back words of the user’s own, and refuses an unknown button', () => {
     holds.holdNextStep('session-a', nextStep, reply)
     expect(holds.answerNextStep('session-a', { label: 'Delete everything' }).ok).toBe(false)
-    expect(holds.answerNextStep('session-a', { label: 'Commit' }).ok).toBe(false) // app action
     expect(holds.answerNextStep('session-a', { text: '   ' }).ok).toBe(false)
     expect(holds.answerNextStep('session-a', { text: 'Not yet, fix the title first' })).toEqual({
       ok: true,
     })
     expect(JSON.parse(replies[0]!).reason).toBe(
-      'The user answered your question "Publish it?" in Threadlight, in their own words: Not yet, fix the title first',
+      'The user answered your question "Publish it?" in Threadlight, in their own words: Not yet, fix the title first' +
+        REFRESH,
     )
   })
 
@@ -123,5 +141,85 @@ describe('letting go', () => {
     expect(other).toEqual([null])
     expect(replies).toEqual([]) // a dropped hook is not answered
     expect(changes).toBeGreaterThanOrEqual(3)
+  })
+})
+
+describe('approvals', () => {
+  const permission = (tool: string, tool_input: object = {}, sessionId = 'session-a') => ({
+    session_id: sessionId,
+    hook_event_name: 'PermissionRequest',
+    tool_name: tool,
+    tool_input,
+  })
+
+  it('holds a tool with the gist of what it wants, and allows it', () => {
+    expect(holds.holdApproval(permission('Bash', { command: 'git push' }), reply)).toBe(true)
+    expect(holds.held('session-a')).toMatchObject({
+      kind: 'approval',
+      tool: 'Bash',
+      detail: 'git push',
+    })
+    expect(holds.answerApproval('session-a', { allow: true })).toEqual({ ok: true })
+    expect(JSON.parse(replies[0]!)).toEqual({
+      hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } },
+    })
+  })
+
+  it('denies a plan with the user’s reason', () => {
+    holds.holdApproval(permission('ExitPlanMode', { plan: '# Plan' }), reply)
+    expect(holds.held('session-a')?.detail).toBe('# Plan')
+    expect(holds.answerApproval('session-a', { allow: false, message: 'Smaller steps' })).toEqual({
+      ok: true,
+    })
+    expect(JSON.parse(replies[0]!).hookSpecificOutput.decision).toEqual({
+      behavior: 'deny',
+      message: 'The user denied this in Threadlight, saying: Smaller steps',
+    })
+  })
+
+  it('holds a session start, leaves question cards to their own hold, and refuses odd answers', () => {
+    expect(holds.holdApproval(permission('AskUserQuestion'), reply)).toBe(false)
+    expect(
+      holds.holdApproval(permission('mcp__ccd_session__start_session', {}, 'session-b'), reply),
+    ).toBe(true)
+    holds.holdApproval(permission('Write', { file_path: 'a.txt' }), reply)
+    expect(holds.answerApproval('session-a', { allow: 'yes' }).ok).toBe(false)
+    expect(holds.answerQuestion('session-a', { 'Which colour?': 'Blue' }).ok).toBe(false)
+    expect(replies).toEqual([])
+  })
+})
+
+describe('session offers', () => {
+  const offer = (tool_input: object, sessionId = 'session-a') => ({
+    session_id: sessionId,
+    tool_name: 'mcp__ccd_session__start_session',
+    tool_input,
+  })
+
+  it('holds only an offer’s first call', () => {
+    expect(holds.holdOffer(offer({ initiation: 'user_asked', title: 'Fix it' }), reply)).toBe(false)
+    expect(
+      holds.holdOffer(
+        offer({ initiation: 'offer', title: 'Fix it', proposal_id: 'task_1' }),
+        reply,
+      ),
+    ).toBe(false)
+    expect(holds.holdOffer(offer({ initiation: 'offer', title: 'Fix it' }), reply)).toBe(true)
+    expect(holds.held('session-a')).toMatchObject({ kind: 'offer', detail: 'Fix it' })
+  })
+
+  it('denies the call with the user’s choice, so the thread acts on it', () => {
+    holds.holdOffer(offer({ initiation: 'offer', title: 'Fix it' }), reply)
+    expect(holds.answerOffer('session-a', 'somewhere').ok).toBe(false)
+    expect(holds.answerOffer('session-a', 'new-session')).toEqual({ ok: true })
+    const output = JSON.parse(replies[0]!).hookSpecificOutput
+    expect(output.permissionDecision).toBe('deny')
+    expect(output.permissionDecisionReason).toContain('initiation "user_asked", title "Fix it"')
+
+    holds.holdOffer(offer({ initiation: 'offer', title: 'Fix it' }, 'session-b'), reply)
+    holds.answerOffer('session-b', 'here')
+    expect(JSON.parse(replies[1]!).hookSpecificOutput.permissionDecisionReason).toContain(
+      'choosing "Do it here"',
+    )
   })
 })

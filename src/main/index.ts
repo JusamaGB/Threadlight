@@ -95,6 +95,18 @@ async function start(): Promise<void> {
       if (held) dropped(() => holds.dropped(reply))
       return held
     },
+    // A tool waiting for permission (a plan to approve included) waits here to be allowed.
+    onPermission: (payload, reply, dropped) => {
+      const held = holds.holdApproval(payload, reply)
+      if (held) dropped(() => holds.dropped(reply))
+      return held
+    },
+    // A New session / Do it here offer waits here, before Claude shows its own card.
+    onOffer: (payload, reply, dropped) => {
+      const held = holds.holdOffer(payload, reply)
+      if (held) dropped(() => holds.dropped(reply))
+      return held
+    },
     // The Stop hook waits here when a turn ends, in case it asked a next-step question.
     onStop: (payload, reply, dropped) => {
       const event = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<
@@ -155,6 +167,18 @@ async function start(): Promise<void> {
   ipcMain.handle(IPC.answerNextStep, (_event, sessionId: unknown, choice: unknown) =>
     typeof sessionId === 'string'
       ? holds.answerNextStep(sessionId, choice)
+      : { ok: false, reason: 'Invalid answer.' },
+  )
+  ipcMain.handle(IPC.answerApproval, (_event, sessionId: unknown, choice: unknown) => {
+    if (typeof sessionId !== 'string') return { ok: false, reason: 'Invalid answer.' }
+    const result = holds.answerApproval(sessionId, choice)
+    // Answered: the session works on, whatever Claude's permission notice said before.
+    if (result.ok) hooks.apply({ session_id: sessionId, hook_event_name: 'PreToolUse' })
+    return result
+  })
+  ipcMain.handle(IPC.answerOffer, (_event, sessionId: unknown, choice: unknown) =>
+    typeof sessionId === 'string'
+      ? holds.answerOffer(sessionId, choice)
       : { ok: false, reason: 'Invalid answer.' },
   )
   // The Changes view. A thread is named by its id; its repository comes from Threadlight's own
@@ -378,7 +402,7 @@ async function start(): Promise<void> {
 }
 
 /**
- * A held question card is let go as soon as it would be answered in Claude anyway: when the user
+ * A held card is let go as soon as it would be answered in Claude anyway: when the user
  * has opened that thread in Claude since it was asked, when Claude is in front showing it, or
  * when Threadlight no longer lists the thread at all.
  */

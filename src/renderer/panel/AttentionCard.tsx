@@ -7,7 +7,6 @@ import type {
   RelayStatus,
   Session,
 } from '../../shared/types'
-import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
 import styles from './Panel.module.css'
@@ -24,8 +23,9 @@ interface AttentionCardProps {
 /**
  * What an expanded thread shows while it waits on the user, drawn like the Claude app's own
  * question card: the question on top, radio rows for the answers (the recommended one picked
- * to start with), then the buttons. A next-step box's answers are sent to the thread from here;
- * a question card and an approval can only be answered inside Claude, so they open it there.
+ * to start with), then the buttons. While Threadlight holds a card (`answerableUntil`), every
+ * kind is answered from here and the thread carries on with it; otherwise a next-step answer
+ * is sent to the thread in the background, and the rest open the thread in Claude.
  */
 export function AttentionCard({ session, attention, relay, onCompose }: AttentionCardProps) {
   const open = () => session.appId && window.threadlight.openInClaude(session.appId)
@@ -50,7 +50,9 @@ export function AttentionCard({ session, attention, relay, onCompose }: Attentio
         />
       )
     case 'approval':
-      return <ApprovalCard session={session} action={attention.action} onOpen={open} />
+      return <ApprovalCard session={session} attention={attention} onOpen={open} />
+    case 'offer':
+      return <OfferCard session={session} title={attention.title} />
   }
 }
 
@@ -114,8 +116,8 @@ function NextStepCard({
   const go = async () => {
     if (sending || locked) return
     const own = picked === OTHER || !action
-    // An app action (commit, open a PR…) can only be done in the Claude app itself.
-    if (!own && action.message === null) return onOpen()
+    // An app action (commit, open a PR…): a held turn is asked to do it itself, else Claude does.
+    if (!own && action.message === null && !answerable) return onOpen()
     if (copyAndOpen) {
       if (!own) window.threadlight.copyText(action.message!)
       setDone('copied')
@@ -139,7 +141,7 @@ function NextStepCard({
   const own = picked === OTHER || !action
   const label = locked
     ? en.attention.sent
-    : !own && action.message === null
+    : !own && action.message === null && !answerable
       ? en.attention.doInClaude
       : copyAndOpen
         ? own
@@ -161,7 +163,7 @@ function NextStepCard({
         <OptionRow
           key={option.label}
           checked={picked === index}
-          label={option.label + (option.message === null ? ' ↗' : '')}
+          label={option.label + (option.message === null && !answerable ? ' ↗' : '')}
           description={
             option.message !== null && option.message !== option.label ? option.message : ''
           }
@@ -195,9 +197,7 @@ function NextStepCard({
         {(error ?? failed) && <p className={styles.qError}>{error ?? failed}</p>}
         {done === 'copied' && <p className={styles.qNote}>{en.attention.copied}</p>}
         {copyAndOpen && !done && <p className={styles.qNote}>{en.attention.openInClaudeNote}</p>}
-        {attention.answerableUntil !== null && !locked && (
-          <HoldNote until={attention.answerableUntil} kind="next-step" />
-        )}
+        {answerable && !locked && <p className={styles.qNote}>{en.attention.heldNote}</p>}
       </Buttons>
     </div>
   )
@@ -360,47 +360,148 @@ function QuestionCard({
           onClick={() => forward()}
         />
         {error && <p className={styles.qError}>{error}</p>}
-        {answerableUntil !== null && !submitted && (
-          <HoldNote until={answerableUntil} kind="question" />
-        )}
+        {answerable && !submitted && <p className={styles.qNote}>{en.attention.heldNote}</p>}
       </Buttons>
     </div>
   )
 }
 
-/** While Threadlight holds the card: Claude carries on by itself after this many seconds. */
-function HoldNote({ until, kind }: { until: number; kind: 'question' | 'next-step' }) {
-  const now = useNow(1000)
-  const seconds = Math.max(0, Math.ceil((until - now) / 1000))
-  const note = kind === 'question' ? en.attention.holdNote : en.attention.holdStepNote
-  return <p className={styles.qNote}>{note(seconds)}</p>
-}
-
-/** A tool waiting for approval: what it wants to do, answered in Claude. */
+/**
+ * A tool waiting for approval: what it wants to do. While Threadlight holds it, Allow and Deny
+ * answer it from here (Deny with an optional word on why); otherwise it is answered in Claude.
+ */
 function ApprovalCard({
   session,
-  action,
+  attention,
   onOpen,
 }: {
   session: Session
-  action: string | null
+  attention: Extract<Attention, { kind: 'approval' }>
   onOpen: () => void
 }) {
-  useCtrlEnter(onOpen)
+  const answerable = attention.answerableUntil !== null
+  const plan = attention.tool === 'ExitPlanMode'
+  const [denying, setDenying] = useState(false)
+  const [why, setWhy] = useState('')
+  const [sending, setSending] = useState(false)
+  const [done, setDone] = useState<'allowed' | 'denied' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const answer = async (allow: boolean) => {
+    if (sending || done) return
+    setSending(true)
+    const result = await window.threadlight.answerApproval(
+      session.id,
+      allow ? { allow: true } : { allow: false, message: why },
+    )
+    setSending(false)
+    if (result.ok) setDone(allow ? 'allowed' : 'denied')
+    setError(result.ok ? null : result.reason)
+  }
+  useCtrlEnter(() => (answerable ? void answer(!denying) : onOpen()))
+
+  const heading = plan
+    ? en.attention.approvePlan
+    : attention.tool
+      ? en.attention.approveTool(attention.tool)
+      : en.attention.approval
   return (
     <div className={styles.qCard}>
       <div className={styles.qHead}>
         <div className={styles.qHeadText}>
-          <p className={styles.qText}>{en.attention.approval}</p>
-          {action && <p className={styles.qRecap}>{action}</p>}
+          <p className={styles.qText}>{heading}</p>
+          {attention.action && (
+            <p className={styles.qRecap}>{clip(attention.action, plan ? 600 : 320)}</p>
+          )}
+        </div>
+      </div>
+      {answerable && denying && !done && (
+        <input
+          className={styles.qOther}
+          data-answer=""
+          autoFocus
+          placeholder={en.attention.denyPlaceholder}
+          value={why}
+          onChange={(event) => setWhy(event.target.value)}
+        />
+      )}
+      <Buttons>
+        {answerable ? (
+          <>
+            {!denying && (
+              <button
+                className={styles.qSkip}
+                disabled={sending || done !== null}
+                onClick={() => setDenying(true)}
+              >
+                {en.attention.deny}
+              </button>
+            )}
+            <MainButton
+              label={
+                done === 'allowed'
+                  ? en.attention.allowed
+                  : done === 'denied'
+                    ? en.attention.denied
+                    : denying
+                      ? en.attention.deny
+                      : en.attention.allow
+              }
+              disabled={sending || done !== null}
+              onClick={() => void answer(!denying)}
+            />
+          </>
+        ) : (
+          <MainButton
+            label={en.attention.answerInClaude}
+            disabled={!session.appId}
+            onClick={onOpen}
+          />
+        )}
+        {error && <p className={styles.qError}>{error}</p>}
+        {answerable && !done && <p className={styles.qNote}>{en.attention.heldNote}</p>}
+      </Buttons>
+    </div>
+  )
+}
+
+/** A New session / Do it here offer, only ever drawn while Threadlight holds it. */
+function OfferCard({ session, title }: { session: Session; title: string }) {
+  const [sending, setSending] = useState(false)
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const answer = async (choice: 'new-session' | 'here') => {
+    if (sending || done) return
+    setSending(true)
+    const result = await window.threadlight.answerOffer(session.id, choice)
+    setSending(false)
+    setDone(result.ok)
+    setError(result.ok ? null : result.reason)
+  }
+  useCtrlEnter(() => void answer('new-session'))
+  return (
+    <div className={styles.qCard}>
+      <div className={styles.qHead}>
+        <div className={styles.qHeadText}>
+          <p className={styles.qText}>{en.attention.offer}</p>
+          <p className={styles.qRecap}>{clip(title, 320)}</p>
         </div>
       </div>
       <Buttons>
+        <button
+          className={styles.qSkip}
+          disabled={sending || done}
+          onClick={() => void answer('here')}
+        >
+          {en.attention.doItHere}
+        </button>
         <MainButton
-          label={en.attention.answerInClaude}
-          disabled={!session.appId}
-          onClick={onOpen}
+          label={done ? en.attention.sent : en.attention.newSession}
+          disabled={sending || done}
+          onClick={() => void answer('new-session')}
         />
+        {error && <p className={styles.qError}>{error}</p>}
+        {!done && <p className={styles.qNote}>{en.attention.heldNote}</p>}
       </Buttons>
     </div>
   )
@@ -454,6 +555,9 @@ export function attentionLine(attention: Attention): string | null {
     case 'question':
       return attention.questions[0]?.question ?? null
     case 'approval':
-      return null // the stage line already says "Needs approval · …"
+      // Claude's own approval: the stage line already says "Needs approval · …".
+      return attention.answerableUntil !== null ? en.attention.approval : null
+    case 'offer':
+      return attention.title
   }
 }

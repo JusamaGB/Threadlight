@@ -189,6 +189,17 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   each resets. The numbers come from the agent's runs, or else from a one-word Haiku check
   (no tools, settings or saved session; about a thousand tokens) at most every five
   minutes while the panel is open.
+- Every card a thread waits on can be answered from Threadlight (plugin 0.0.3, for threads
+  started after it is installed). Approvals, a plan to approve included, are held through a
+  PermissionRequest hook and get Allow or Deny (with an optional reason). New session / Do
+  it here offers are held before Claude shows them, and the choice goes back to the thread,
+  which starts the session or does the work itself. A next-step box's app buttons (Commit,
+  Open PR…) ask the thread to do that itself.
+
+### Changed
+
+- A held card no longer lets go after a minute: it waits until it is answered here, or let
+  go when the thread is opened in Claude or Threadlight quits (12 hours at most).
 
 ### Fixed
 

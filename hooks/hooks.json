@@ -1,5 +1,5 @@
 {
-  "description": "Report session activity to Threadlight on 127.0.0.1. Each hook pipes the event JSON to the local app and always exits 0, so a closed Threadlight never disturbs a session. The AskUserQuestion hook, and the second Stop hook when a turn ends on a question, wait (up to a minute) for an answer given in Threadlight and pass it on; with Threadlight closed, nothing asked, or the card let go, they return nothing at once and Claude carries on as usual. Written to run unchanged in both Git Bash and PowerShell, the two shells Claude Code uses on Windows.",
+  "description": "Report session activity to Threadlight on 127.0.0.1. Each hook pipes the event JSON to the local app and always exits 0, so a closed Threadlight never disturbs a session. The question-card hook, the session-offer hook, the PermissionRequest hook and the second Stop hook (when a turn ends on a question) wait for an answer given in Threadlight and pass it on, until it is answered or let go (opening the thread in Claude lets it go); with Threadlight closed, nothing asked, or the card let go, they return nothing at once and Claude carries on as usual. Written to run unchanged in both Git Bash and PowerShell, the two shells Claude Code uses on Windows.",
   "hooks": {
     "SessionStart": [
       {
@@ -39,8 +39,30 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 75 --data-binary '@-' http://127.0.0.1:47615/ask; exit 0",
-            "timeout": 90
+            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/ask; exit 0",
+            "timeout": 43260
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__ccd_session__start_session",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/offer; exit 0",
+            "timeout": 43260
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/permission; exit 0",
+            "timeout": 43260
           }
         ]
       }
@@ -78,8 +100,8 @@
           },
           {
             "type": "command",
-            "command": "curl.exe -s -m 75 --data-binary '@-' http://127.0.0.1:47615/stop; exit 0",
-            "timeout": 90
+            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/stop; exit 0",
+            "timeout": 43260
           }
         ]
       }

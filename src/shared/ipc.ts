@@ -42,6 +42,8 @@ export const IPC = {
   openInClaude: 'claude:open-thread',
   answerQuestion: 'hold:answer-question',
   answerNextStep: 'hold:answer-next-step',
+  answerApproval: 'hold:answer-approval',
+  answerOffer: 'hold:answer-offer',
   releaseHold: 'hold:release',
   copyText: 'clipboard:copy',
   getChanges: 'changes:get',
@@ -117,6 +119,16 @@ export interface ThreadlightApi {
   answerNextStep(
     sessionId: string,
     choice: { label: string } | { text: string },
+  ): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Allows or denies a tool Threadlight is holding for approval. Refused once let go. */
+  answerApproval(
+    sessionId: string,
+    choice: { allow: true } | { allow: false; message?: string },
+  ): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Answers a held New session / Do it here offer. Refused once let go. */
+  answerOffer(
+    sessionId: string,
+    choice: 'new-session' | 'here',
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   /** Lets a held card go, so the Claude app carries on with it as usual. */
   releaseHold(sessionId: string): void

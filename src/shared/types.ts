@@ -38,6 +38,8 @@ export interface NextStepAction {
   label: string
   /** What clicking it sends to the thread; null for an app action (commit, open a PR…). */
   message: string | null
+  /** The app action's name (commit, create_pr…), or null for a reply. */
+  appAction: string | null
 }
 
 /**
@@ -54,7 +56,20 @@ export type Attention =
        */
       answerableUntil: number | null
     }
-  | { kind: 'approval'; action: string | null }
+  | {
+      kind: 'approval'
+      action: string | null
+      /** The tool asking (Bash, ExitPlanMode…), known while Threadlight holds it. */
+      tool: string | null
+      /** Set while Threadlight holds the approval so it can be allowed or denied here. */
+      answerableUntil: number | null
+    }
+  | {
+      /** A New session / Do it here offer, only ever seen while Threadlight holds it. */
+      kind: 'offer'
+      title: string
+      answerableUntil: number
+    }
   | {
       kind: 'next-step'
       recap: string | null

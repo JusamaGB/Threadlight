@@ -17,6 +17,7 @@ import type {
   Workspace,
 } from '../../shared/types'
 import { AppRecordIndex, type AppRecord } from './appRecords'
+import type { HeldCard } from '../holds'
 import type { HookRecord, HookStateStore } from './hookState'
 import { oneLine } from './json'
 import { liveSessionIds } from './liveSessions'
@@ -43,7 +44,7 @@ export interface TrackerOptions {
   /** Where a folder's repository stands (gitDiff.ts); counted in the background. */
   gitFor?: (folder: string) => GitState | null
   /** A card Threadlight is holding for the user to answer here (holds.ts). */
-  held?: (sessionId: string) => { kind: 'question' | 'next-step'; releasesAt: number } | null
+  held?: (sessionId: string) => HeldPart | null
 }
 
 interface TranscriptFile {
@@ -412,16 +413,32 @@ function countWorktrees(nodes: ThreadNode[]): number {
   return seen.size
 }
 
+/** What the tracker needs of a held card (holds.ts). */
+export type HeldPart = Pick<HeldCard, 'kind' | 'releasesAt'> & Partial<HeldCard>
+
 /**
- * Whether the thread is waiting on the user, and with which card: a question it asked mid-turn
- * comes first, then a tool waiting for approval, then the question its last turn ended on.
+ * Whether the thread is waiting on the user, and with which card. A card Threadlight holds for
+ * a tool's approval or a session offer comes first, since Claude shows nothing while it is held;
+ * then a question it asked mid-turn, a tool waiting for approval in Claude, and the question its
+ * last turn ended on.
  */
 export function attentionFor(
   state: SessionState,
   summary: TranscriptSummary | null,
-  held: { kind: 'question' | 'next-step'; releasesAt: number } | null = null,
+  held: HeldPart | null = null,
 ): Attention | null {
-  const until = (kind: 'question' | 'next-step') => (held?.kind === kind ? held.releasesAt : null)
+  const until = (kind: HeldCard['kind']) => (held?.kind === kind ? held.releasesAt : null)
+  if (held?.kind === 'offer' && held.detail) {
+    return { kind: 'offer', title: held.detail, answerableUntil: held.releasesAt }
+  }
+  if (held?.kind === 'approval') {
+    return {
+      kind: 'approval',
+      action: held.detail ?? summary?.lastAction ?? null,
+      tool: held.tool ?? null,
+      answerableUntil: held.releasesAt,
+    }
+  }
   if (!summary || summary.interrupted) return null
   if (summary.pendingQuestion) {
     return {
@@ -430,7 +447,9 @@ export function attentionFor(
       answerableUntil: until('question'),
     }
   }
-  if (state === 'waiting') return { kind: 'approval', action: summary.lastAction }
+  if (state === 'waiting') {
+    return { kind: 'approval', action: summary.lastAction, tool: null, answerableUntil: null }
+  }
   if (state === 'idle' && summary.nextStep) {
     return { kind: 'next-step', ...summary.nextStep, answerableUntil: until('next-step') }
   }

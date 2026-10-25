@@ -461,6 +461,7 @@
 .tip {
   position: fixed;
   z-index: 13;
+  box-sizing: border-box; /* so the cap below includes the padding and border */
   max-width: calc(100vw - 8px);
   padding: 4px 8px;
   border: 1px solid var(--border);
@@ -1211,6 +1212,8 @@
 .taskPopup {
   position: fixed;
   z-index: 12;
+  /* The width cap TaskTimer measures against includes the padding and border. */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 2px;

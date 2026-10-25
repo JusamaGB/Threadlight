@@ -459,7 +459,11 @@ function parseNextStep(input: JsonObject, recap: string | null): TranscriptSumma
       if (!label) return null
       // An app action (commit, create a PR…) has no message: only the Claude app can do it.
       const appAction = str(a['action'])
-      return { label, message: appAction ? null : (str(a['message']) ?? label) }
+      return {
+        label,
+        message: appAction ? null : (str(a['message']) ?? label),
+        appAction: appAction ?? null,
+      }
     })
     .filter((a): a is NextStepAction => a !== null)
   return { recap, ask, actions }

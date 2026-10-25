@@ -40,6 +40,8 @@ const api: ThreadlightApi = {
   answerQuestion: (sessionId, answers) =>
     ipcRenderer.invoke(IPC.answerQuestion, sessionId, answers),
   answerNextStep: (sessionId, choice) => ipcRenderer.invoke(IPC.answerNextStep, sessionId, choice),
+  answerApproval: (sessionId, choice) => ipcRenderer.invoke(IPC.answerApproval, sessionId, choice),
+  answerOffer: (sessionId, choice) => ipcRenderer.invoke(IPC.answerOffer, sessionId, choice),
   releaseHold: (sessionId) => ipcRenderer.send(IPC.releaseHold, sessionId),
   copyText: (text) => ipcRenderer.send(IPC.copyText, text),
   getChanges: (sessionId) => ipcRenderer.invoke(IPC.getChanges, sessionId),
