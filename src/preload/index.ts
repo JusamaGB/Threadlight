@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
 import { IPC, type PanelOpened, type TalkState, type ThreadlightApi } from '../shared/ipc'
+import type { Settings } from '../shared/settings'
 import type { SttStatus } from '../shared/stt'
 import type { RelayStatus, Session } from '../shared/types'
 
@@ -42,6 +43,13 @@ const api: ThreadlightApi = {
   onTalkState: (listener) => subscribe<TalkState>(IPC.talkState, listener),
   openPanelQuietly: () => ipcRenderer.send(IPC.openPanelQuietly),
   onHotkeyProblem: (listener) => subscribe<string | null>(IPC.hotkeyProblem, listener),
+
+  getSettings: () => ipcRenderer.invoke(IPC.getSettings),
+  updateSettings: (patch) => ipcRenderer.invoke(IPC.updateSettings, patch),
+  onSettings: (listener) => subscribe<Settings>(IPC.settingsChanged, listener),
+  onOpenSettings: (listener) => subscribe<void>(IPC.openSettings, listener),
+  setHotkeyCapture: (capturing) => ipcRenderer.send(IPC.hotkeyCapture, capturing),
+  resetDotPosition: () => ipcRenderer.send(IPC.resetDotPosition),
 }
 
 contextBridge.exposeInMainWorld('threadlight', api)

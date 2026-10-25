@@ -190,7 +190,7 @@ Verified 2026-10-25: a plugin installed with `claude plugin install … --scope 
 
 ## 10. Settings
 
-Stored as JSON in `%APPDATA%/Threadlight/settings.json`, validated with zod, migrated by version number. Every setting has a control in the Settings window (users are never told to edit files): hotkeys, countdown, dot corner/position reset, list window (hours), max rows, launch at sign-in, Whisper model (`tiny.en`/`base.en`), microphone, hook port, "show sessions not from the desktop app".
+Stored as JSON in `%APPDATA%/Threadlight/settings.json` (with a `version`), validated with zod; a bad field falls back to its default on its own. Every setting has a control (users are never told to edit files). There is no separate window: the panel's own card switches to a compact settings list (header gear or tray → Settings; ‹ returns, and a draft in the composer survives). Built in v1 (2026-10-25): talk hotkey (captured from a key press, clash-checked, old one kept on failure), voice countdown 1–10 s, open on hover or click, list window, max sessions, launch at sign-in, reset dot position, speech model status. Deliberately not settings in v1: the hook port (the plugin's `hooks.json` is static, so a changed port would silently break hooks), a second Whisper model (needs its own download/consent flow), microphone choice (the system default is used).
 
 ## 11. Design
 

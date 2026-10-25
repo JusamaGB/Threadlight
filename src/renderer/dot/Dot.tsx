@@ -27,14 +27,22 @@ export function StatusDot({ working, talk = 'idle' }: StatusDotProps) {
   )
 }
 
+interface FloatingDotProps {
+  working: boolean
+  talk: TalkState
+  /** Settings → "Open the panel on": hover opens straight away, click only on a click. */
+  openOn: 'hover' | 'click'
+}
+
 /**
- * The floating dot window: hovering opens the panel straight away (a click too, as a fallback).
- * It is moved by dragging the panel's header, since the panel covers it the moment it is hovered.
+ * The floating dot window: opens the panel on hover (or only on click, if chosen in Settings).
+ * It is moved by dragging the panel's header, since the panel covers it the moment it opens.
  */
-export function FloatingDot({ working, talk }: { working: boolean; talk: TalkState }) {
+export function FloatingDot({ working, talk, openOn }: FloatingDotProps) {
   const open = () => window.threadlight.dotClick()
+  const hover = openOn === 'hover' ? { onPointerEnter: open, onMouseMove: open } : {}
   return (
-    <div className={styles.floating} onPointerEnter={open} onMouseMove={open} onClick={open}>
+    <div className={styles.floating} {...hover} onClick={open}>
       <StatusDot working={working} talk={talk} />
     </div>
   )

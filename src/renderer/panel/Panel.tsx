@@ -7,20 +7,19 @@ import { useDotDrag } from '../hooks/useDotDrag'
 import { useNow } from '../hooks/useNow'
 import { useRelays } from '../hooks/useRelays'
 import { useSessions } from '../hooks/useSessions'
+import { useSettings } from '../hooks/useSettings'
 import { useStt } from '../hooks/useStt'
 import { useVoice } from '../hooks/useVoice'
 import { en } from '../i18n/en'
+import { SettingsView } from '../settings/SettingsView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
 import { SessionRow } from './SessionRow'
 
 type View = 'active' | 'all'
 
-const LIST_HOURS = 24
 /** How long the panel takes to fade out once the pointer leaves it. Matches `.closing` in the CSS. */
 const FADE_MS = 150
-/** Voice sends always count down first, so a misheard sentence can be stopped. */
-const VOICE_COUNTDOWN_S = 3
 /** After a voice send is answered, an untouched panel turns back into the dot. */
 const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
@@ -41,8 +40,12 @@ export function Panel() {
   const sessions = useSessions()
   const relays = useRelays()
   const stt = useStt()
+  const settings = useSettings()
   const now = useNow()
   const [view, setView] = useState<View>('active')
+  /** The settings list takes over the panel's card while this is true. */
+  const [showSettings, setShowSettings] = useState(false)
+  const [version, setVersion] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   /** The composer is hidden while this is null. */
@@ -69,9 +72,11 @@ export function Panel() {
   /** The thread a voice send went to, until it is answered. */
   const [voiceSendId, setVoiceSendId] = useState<string | null>(null)
   const sessionsRef = useRef(sessions)
+  const settingsRef = useRef(settings)
   useEffect(() => {
     sessionsRef.current = sessions
-  }, [sessions])
+    settingsRef.current = settings
+  }, [sessions, settings])
 
   const limitHandler = useRef<() => void>(() => {})
   const voice = useVoice(useCallback(() => limitHandler.current(), []))
@@ -92,10 +97,15 @@ export function Panel() {
         setPicking(null)
         setNotice(null)
         setSemiOpen(false)
+        setShowSettings(false)
       }),
     [],
   )
   useEffect(() => window.threadlight.onHotkeyProblem(setHotkeyProblem), [])
+  useEffect(() => window.threadlight.onOpenSettings(() => setShowSettings(true)), [])
+  useEffect(() => {
+    void window.threadlight.getVersion().then(setVersion)
+  }, [])
 
   // The dot shows the talk hotkey's progress.
   useEffect(() => window.threadlight.setTalkState(voice.state), [voice.state])
@@ -138,14 +148,13 @@ export function Panel() {
     const candidates = sessionsRef.current.map((s) => ({ id: s.id, title: s.title }))
     const match = command ? matchThread(command.thread, candidates) : null
     setNotice(null)
+    setShowSettings(false)
     if (command && match) {
+      // Voice sends always count down first, so a misheard sentence can be stopped.
+      const seconds = settingsRef.current?.voiceCountdownSeconds ?? 3
       setPicking(null)
-      setCompose({
-        sessionId: match.id,
-        initialText: command.message,
-        countdownSeconds: VOICE_COUNTDOWN_S,
-      })
-      countdownUntil.current = Date.now() + VOICE_COUNTDOWN_S * 1000
+      setCompose({ sessionId: match.id, initialText: command.message, countdownSeconds: seconds })
+      countdownUntil.current = Date.now() + seconds * 1000
       setVoiceSendId(match.id)
     } else {
       setCompose(null)
@@ -296,65 +305,99 @@ export function Panel() {
       onMouseLeave={leave}
     >
       <header className={styles.header} onDoubleClick={toggleSemiOpen} {...drag.handlers}>
-        <span className={styles.heading}>{en.panel.activeCount(active)}</span>
-        {/* The recent count opens the full list and closes it again. */}
-        <button
-          className={styles.recent}
-          aria-pressed={view === 'all'}
-          title={view === 'all' ? en.panel.hideRecent : en.panel.showRecent}
-          onClick={() => setView(view === 'active' ? 'all' : 'active')}
-        >
-          {en.panel.recentCount(sessions.length)}
-        </button>
+        {showSettings ? (
+          <>
+            <button
+              className={styles.back}
+              onClick={() => setShowSettings(false)}
+              aria-label={en.settings.back}
+              title={en.settings.back}
+            >
+              ‹
+            </button>
+            <span className={styles.heading}>{en.settings.title}</span>
+          </>
+        ) : (
+          <>
+            <span className={styles.heading}>{en.panel.activeCount(active)}</span>
+            {/* The recent count opens the full list and closes it again. */}
+            <button
+              className={styles.recent}
+              aria-pressed={view === 'all'}
+              title={view === 'all' ? en.panel.hideRecent : en.panel.showRecent}
+              onClick={() => setView(view === 'active' ? 'all' : 'active')}
+            >
+              {en.panel.recentCount(sessions.length)}
+            </button>
+            <button
+              className={styles.gear}
+              onClick={() => setShowSettings(true)}
+              aria-label={en.settings.open}
+              title={en.settings.open}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M6.6 1h2.8l.4 2 1.3.7 1.9-.7 1.4 2.4-1.5 1.3v1.6l1.5 1.3-1.4 2.4-1.9-.7-1.3.7-.4 2H6.6l-.4-2-1.3-.7-1.9.7L1.6 9.6l1.5-1.3V6.7L1.6 5.4 3 3l1.9.7L6.2 3z" />
+                <circle cx="8" cy="8" r="2.2" />
+              </svg>
+            </button>
+          </>
+        )}
       </header>
 
-      {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
-      {picking && (
-        <div className={styles.picking}>
-          <span className={styles.pickPrompt}>
-            {picking.heardThread ? en.voice.noMatch(picking.heardThread) : en.voice.pickThread}
-          </span>
-          <span className={styles.pickText}>“{picking.text}”</span>
-        </div>
-      )}
+      {showSettings && settings && <SettingsView settings={settings} stt={stt} version={version} />}
 
-      <div className={styles.list}>
-        {shown.length === 0 && (
-          <p className={styles.empty}>
-            {view === 'active' ? en.panel.nothingWorking : en.panel.noSessions(LIST_HOURS)}
-          </p>
+      {/* Kept mounted (just hidden) while settings show, so a half-typed message survives. */}
+      <div className={styles.sessions} hidden={showSettings}>
+        {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
+        {picking && (
+          <div className={styles.picking}>
+            <span className={styles.pickPrompt}>
+              {picking.heardThread ? en.voice.noMatch(picking.heardThread) : en.voice.pickThread}
+            </span>
+            <span className={styles.pickText}>“{picking.text}”</span>
+          </div>
         )}
-        {shown.map((session) => (
-          <SessionRow
-            key={session.id}
-            session={session}
-            relay={relays.get(session.id)}
-            composing={session.id === compose?.sessionId}
-            now={now}
-            expanded={!picking && expanded === session.id}
-            onToggle={() => onRowClick(session)}
-            onContextMenu={(event) => openMenu(event, session)}
-          />
-        ))}
-      </div>
 
-      {target && compose && (
-        <Composer
-          key={`${target.id}:${compose.initialText ?? ''}`}
-          session={target}
-          relay={relays.get(target.id)}
-          stt={stt}
-          voiceState={voice.state}
-          level={voice.level}
-          onMic={() => void micToggle()}
-          heard={heard}
-          voiceError={voiceError}
-          initialText={compose.initialText}
-          countdownSeconds={compose.countdownSeconds}
-          cancelToken={cancelToken}
-          onClose={closeComposer}
-        />
-      )}
+        <div className={styles.list}>
+          {shown.length === 0 && (
+            <p className={styles.empty}>
+              {view === 'active'
+                ? en.panel.nothingWorking
+                : en.panel.noSessions(settings?.listWindowHours ?? 24)}
+            </p>
+          )}
+          {shown.map((session) => (
+            <SessionRow
+              key={session.id}
+              session={session}
+              relay={relays.get(session.id)}
+              composing={session.id === compose?.sessionId}
+              now={now}
+              expanded={!picking && expanded === session.id}
+              onToggle={() => onRowClick(session)}
+              onContextMenu={(event) => openMenu(event, session)}
+            />
+          ))}
+        </div>
+
+        {target && compose && (
+          <Composer
+            key={`${target.id}:${compose.initialText ?? ''}`}
+            session={target}
+            relay={relays.get(target.id)}
+            stt={stt}
+            voiceState={voice.state}
+            level={voice.level}
+            onMic={() => void micToggle()}
+            heard={heard}
+            voiceError={voiceError}
+            initialText={compose.initialText}
+            countdownSeconds={compose.countdownSeconds}
+            cancelToken={cancelToken}
+            onClose={closeComposer}
+          />
+        )}
+      </div>
 
       {menu && (
         <ContextMenu

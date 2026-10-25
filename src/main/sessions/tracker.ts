@@ -35,15 +35,20 @@ const ORDER: Record<SessionState, number> = { working: 0, waiting: 1, idle: 2 }
 export class Tracker {
   private readers = new Map<string, TranscriptReader>()
   private appRecords: AppRecordIndex
-  private readonly windowMs: number
-  private readonly maxSessions: number
+  private windowMs = 0
+  private maxSessions = 0
   private readonly now: () => number
 
   constructor(private readonly options: TrackerOptions) {
     this.appRecords = new AppRecordIndex(options.paths.appSessionsDir)
-    this.windowMs = (options.windowHours ?? 24) * 60 * 60 * 1000
-    this.maxSessions = options.maxSessions ?? 10
+    this.configure(options.windowHours ?? 24, options.maxSessions ?? 10)
     this.now = options.now ?? Date.now
+  }
+
+  /** Applies the list settings; takes effect on the next scan. */
+  configure(windowHours: number, maxSessions: number): void {
+    this.windowMs = windowHours * 60 * 60 * 1000
+    this.maxSessions = maxSessions
   }
 
   /** Working sessions first, then waiting, then most recently active. */

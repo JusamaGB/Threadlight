@@ -1,10 +1,17 @@
 // The one contract between the UI (renderer) and the Node side (main).
 // Channel names and payload types live here so both sides stay in step.
 
+import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
 import type { RelayStatus, Session } from './types'
 
 export const IPC = {
+  getSettings: 'settings:get',
+  updateSettings: 'settings:update',
+  settingsChanged: 'settings:changed',
+  openSettings: 'settings:open',
+  hotkeyCapture: 'hotkey:capture',
+  resetDotPosition: 'dot:reset-position',
   getStt: 'stt:get',
   sttChanged: 'stt:changed',
   sttDownload: 'stt:download',
@@ -82,4 +89,16 @@ export interface ThreadlightApi {
   openPanelQuietly(): void
   /** The talk hotkey could not be registered (another app has it), or null when it is fine. */
   onHotkeyProblem(listener: (problem: string | null) => void): () => void
+
+  getSettings(): Promise<Settings>
+  /** Saves a change. Refused (with a reason) if invalid, or e.g. the hotkey is taken. */
+  updateSettings(
+    patch: SettingsPatch,
+  ): Promise<{ ok: true; settings: Settings } | { ok: false; reason: string }>
+  onSettings(listener: (settings: Settings) => void): () => void
+  /** The tray's "Settings" item: the panel switches to its settings view. Panel window only. */
+  onOpenSettings(listener: () => void): () => void
+  /** Pauses the talk hotkey while a new one is being typed in, so it can be captured. */
+  setHotkeyCapture(capturing: boolean): void
+  resetDotPosition(): void
 }

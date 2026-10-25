@@ -47,6 +47,17 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   while it transcribes it shows a spinner. If another app already owns the hotkey,
   Threadlight says so in the panel.
 
+- Settings, inside the panel itself: the gear in the header (or Settings in the tray) turns
+  the card into one compact list, and ‹ goes back. Changes save and apply at once. You can
+  set the talk hotkey (click it and press the keys; plain letters and keys another app
+  already owns are refused, and the old hotkey keeps working), the voice send countdown
+  (1–10 s, never zero), whether the dot opens the panel on hover or only on click, how far
+  back sessions are listed and how many, launch at sign-in, and reset the dot's position.
+  A message you were typing survives a trip into Settings.
+- A tray icon with Show sessions, Settings, Pause talk hotkey and Quit.
+- Settings are stored in `%APPDATA%\Threadlight\settings.json`; a damaged or partly
+  invalid file falls back to defaults field by field, never losing the rest.
+
 ### Fixed
 
 - A session whose Claude Code process ended (for example after a background reply) no

@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import type { TalkState } from '../shared/ipc'
 import { FloatingDot } from './dot/Dot'
 import { useSessions } from './hooks/useSessions'
+import { useSettings } from './hooks/useSettings'
 import { Panel } from './panel/Panel'
 import './theme.css'
 
@@ -12,9 +13,16 @@ const view = new URLSearchParams(window.location.search).get('view') ?? 'dot'
 
 function DotView() {
   const sessions = useSessions()
+  const settings = useSettings()
   const [talk, setTalk] = useState<TalkState>('idle')
   useEffect(() => window.threadlight.onTalkState(setTalk), [])
-  return <FloatingDot working={sessions.some((s) => s.state === 'working')} talk={talk} />
+  return (
+    <FloatingDot
+      working={sessions.some((s) => s.state === 'working')}
+      talk={talk}
+      openOn={settings?.openOn ?? 'hover'}
+    />
+  )
 }
 
 const root = document.getElementById('root')

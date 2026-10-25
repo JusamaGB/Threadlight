@@ -147,6 +147,16 @@ export class WindowManager {
     saveDotPosition({ x, y })
   }
 
+  /** Puts the dot back in the top-right corner of the main screen (Settings → Reset). */
+  resetDotPosition(): void {
+    const area = screen.getPrimaryDisplay().workArea
+    const x = area.x + area.width - DOT_SIZE - MARGIN
+    const y = area.y + MARGIN
+    this.dot.setPosition(x, y)
+    saveDotPosition({ x, y })
+    if (this.panel.isVisible()) this.placePanel(this.panel.getBounds().height)
+  }
+
   /** The panel's top-right corner sits where the dot is; it flips upward near the bottom edge. */
   private placePanel(height: number): void {
     const dot = this.dot.getBounds()

@@ -68,6 +68,51 @@
   color: var(--fg);
 }
 
+/* Settings: a small gear at the right of the header, and a back chevron while it is open. */
+.header > .gear,
+.header > .back {
+  cursor: pointer;
+}
+
+.gear {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  color: var(--faint);
+}
+
+.gear svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+}
+
+.gear:hover,
+.back:hover {
+  color: var(--fg);
+}
+
+.back {
+  width: 14px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+/* The sessions part of the card; hidden (not removed) while settings show. */
+.sessions {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sessions[hidden] {
+  display: none;
+}
+
 /* ---------- notices and picking a thread for speech ---------- */
 
 .notice {
