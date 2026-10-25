@@ -851,7 +851,8 @@
 .menu {
   position: absolute;
   z-index: 11;
-  min-width: 140px;
+  /* As wide as its longest item, no wider. */
+  width: max-content;
   padding: 3px;
   background: var(--raised);
   border: 1px solid var(--border);
@@ -1408,6 +1409,8 @@
   display: block;
   width: 100%;
   padding: 4px 8px;
+  white-space: nowrap;
+  text-align: left;
   border-radius: 4px;
   font-size: 11px;
 }
