@@ -24,4 +24,19 @@ The test starts a guest-loopback app server with capability-token authentication
 
 Three independently identified client trials test missing, incorrect and correct credentials. Only after the correct credential initializes successfully and both negative controls fail does the harness launch the actual desktop with its local WebSocket URL pointing at the same listener.
 
-The actual result and remaining test disposition will be recorded after the guest finishes.
+### Retrieved run disposition
+
+The subsequent implementation pass retrieved the saved worker result. The worker
+reported an elapsed time of 243 seconds for the authentication task and a null
+exit code. Its last progress record was `cleanup`; no final authentication result
+was exported. The worker's source imposes a 240-second task limit. The records
+therefore establish a timed-out/incomplete probe, not successful or failed desktop
+authentication. Missing and incorrect credential controls, actual desktop
+authentication and later lifecycle tests remain unverified.
+
+Read-only inspection of the copied installed build shows that the local WebSocket
+override selects a URL, while the inspected authentication-handshake callback is
+supplied on a different host path. This is evidence of a configuration gap, not a
+claim that every desktop version lacks an external route. No desktop launch change,
+new guest workload, host credential change or live message was performed during
+this follow-up. The independent desktop connection gate remains open.

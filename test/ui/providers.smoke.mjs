@@ -180,6 +180,7 @@ try {
   await page.addInitScript(
     ({ agent }) => {
       const listeners = new Map()
+      const drafts = new Map()
       const emit = (name, value) => {
         for (const fn of listeners.get(name) || []) fn(value)
       }
@@ -199,6 +200,17 @@ try {
       }
       window.threadlight = new Proxy(
         {
+          getComposerDraft: async (id) => ({
+            ok: true,
+            draft: drafts.get(id) || { text: '', revision: 0, updatedAt: 0 },
+          }),
+          saveComposerDraft: async (id, text, revision) => {
+            if ((drafts.get(id)?.revision || 0) !== revision)
+              return { ok: false, reason: 'Conflicting draft revision' }
+            const draft = { text, revision: revision + 1, updatedAt: Date.now() }
+            drafts.set(id, draft)
+            return { ok: true, draft }
+          },
           getSettings: async () => (await window.mockState()).settings,
           getSnapshot: async () => (await window.mockState()).snapshot,
           getSessions: async () => (await window.mockState()).snapshot.sessions,
@@ -575,8 +587,15 @@ try {
     'Blue pending answer',
   )
   await page.evaluate(() => window.proof.patch({ live: true }))
-  await box
-    .locator('../..')
+  await page
+    .getByText('Sending to this open Codex chat is not connected yet.', { exact: true })
+    .waitFor()
+  const beforeEnter = await page.evaluate(() => window.proof.calls.length)
+  await box.press('Enter')
+  assert.equal(await page.evaluate(() => window.proof.calls.length), beforeEnter)
+  assert.equal(await box.inputValue(), 'Codex draft')
+  await page
+    .getByRole('group', { name: 'Codex message composer' })
     .getByRole('button', { name: 'Copy and open Codex', exact: true })
     .click()
   assert.deepEqual(await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'send')), [])

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AgentApp, AgentModel } from '../../shared/agent'
+import type { AgentModel } from '../../shared/agent'
 import type { Settings, SettingsPatch } from '../../shared/settings'
 import { en } from '../i18n/en'
 import styles from './Settings.module.css'
@@ -12,7 +12,6 @@ export function AgentSettings({
   save: (patch: SettingsPatch) => Promise<boolean>
 }) {
   const [models, setModels] = useState<AgentModel[]>([])
-  const [apps, setApps] = useState<AgentApp[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [loading, setLoading] = useState(settings.agentProvider === 'codex')
@@ -28,17 +27,6 @@ export function AgentSettings({
   }
   useEffect(() => {
     let live = true
-    void window.threadlight
-      .agentApps(settings.agentProvider)
-      .then((found) => {
-        if (live) setApps(found)
-      })
-      .catch(() => {
-        if (live)
-          setApps([
-            { name: 'Connection', status: 'Could not discover connected apps.', unavailable: true },
-          ])
-      })
     if (settings.agentProvider === 'codex') {
       void window.threadlight
         .agentModels()
@@ -66,8 +54,6 @@ export function AgentSettings({
       (hidden || !m.hidden || m.id === selected?.id) &&
       (m.id === selected?.id || `${m.name} ${m.id}`.toLowerCase().includes(search.toLowerCase())),
   )
-  const off =
-    settings.agentProvider === 'codex' ? settings.agentCodexAppsOff : settings.agentAppsOff
   return (
     <section className={styles.group}>
       <h3 className={styles.groupLabel}>{en.settings.agent}</h3>
@@ -88,7 +74,7 @@ export function AgentSettings({
         </select>
       </label>
       <p className={styles.footer}>
-        Model and app choices apply to new conversations. Chat monitoring is separate.
+        Model choices apply to new conversations. Chat monitoring is separate.
       </p>
       {settings.agentProvider === 'claude' ? (
         <label className={styles.row}>
@@ -117,7 +103,6 @@ export function AgentSettings({
               onClick={() => {
                 setLoading(true)
                 setError(null)
-                setApps(null)
                 setRefresh((v) => v + 1)
               }}
             >
@@ -206,37 +191,6 @@ export function AgentSettings({
           ))}
         </select>
       </label>
-      <h4 className={styles.groupLabel}>Connected apps</h4>
-      {!apps && <p className={styles.footer}>{en.settings.appsChecking}</p>}
-      {apps?.length === 0 && <p className={styles.footer}>{en.settings.appsNone}</p>}
-      {apps?.map((app) => (
-        <div className={styles.row} key={app.name}>
-          <span className={styles.text}>
-            <span className={styles.label}>{app.name.replace(/^claude\.ai /, '')}</span>
-            <span className={styles.hint}>{app.status}</span>
-          </span>
-          {!app.unavailable && (
-            <button
-              className={styles.toggle}
-              role="switch"
-              aria-label={app.name}
-              aria-checked={!off.includes(app.name)}
-              onClick={() => {
-                const next = off.includes(app.name)
-                  ? off.filter((n) => n !== app.name)
-                  : [...off, app.name]
-                void save(
-                  settings.agentProvider === 'codex'
-                    ? { agentCodexAppsOff: next }
-                    : { agentAppsOff: next },
-                )
-              }}
-            >
-              <span />
-            </button>
-          )}
-        </div>
-      ))}
     </section>
   )
 }

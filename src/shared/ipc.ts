@@ -16,6 +16,7 @@ import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
 import type { Usage } from './usage'
 import type { LiveVoiceEvent, LiveVoiceResult } from './liveVoice'
+import type { DraftResult } from './messaging'
 import type {
   Changes,
   FileDiff,
@@ -50,6 +51,8 @@ export const IPC = {
   openPanelQuietly: 'panel:open-quietly',
   hotkeyProblem: 'hotkey:problem',
   sendMessage: 'relay:send',
+  getComposerDraft: 'composer:draft-get',
+  saveComposerDraft: 'composer:draft-save',
   getRelays: 'relay:get',
   relaysChanged: 'relay:changed',
   getVersion: 'app:get-version',
@@ -109,6 +112,8 @@ export type TalkState = 'idle' | 'listening' | 'transcribing'
 
 /** What the preload script exposes on `window.threadlight`. */
 export interface ThreadlightApi {
+  getComposerDraft(sessionId: string): Promise<DraftResult>
+  saveComposerDraft(sessionId: string, text: string, revision: number): Promise<DraftResult>
   answerCodex(
     sessionId: string,
     holdId: string,

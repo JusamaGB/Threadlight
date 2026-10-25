@@ -19,6 +19,9 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: ThreadlightApi = {
+  getComposerDraft: (id) => ipcRenderer.invoke(IPC.getComposerDraft, id),
+  saveComposerDraft: (id, text, revision) =>
+    ipcRenderer.invoke(IPC.saveComposerDraft, id, text, revision),
   answerCodex: (id, holdId, answer) => ipcRenderer.invoke(IPC.answerCodex, id, holdId, answer),
   getVersion: () => ipcRenderer.invoke(IPC.getVersion),
   getSessions: () => ipcRenderer.invoke(IPC.getSessions),

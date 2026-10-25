@@ -6,6 +6,7 @@ import type { CodexPaths } from '../sessions/paths'
 import { MAX_MESSAGE_LENGTH, type CliCommand, type RelayResult } from '../relay'
 import { codexId } from './identity'
 import { codexHeld } from './live'
+import { CODEX_DESKTOP_UNAVAILABLE } from '../../shared/messaging'
 
 export async function findCodexCli(paths: CodexPaths): Promise<CliCommand | null> {
   try {
@@ -177,8 +178,7 @@ export class CodexRelayService {
   send(id: string, text: string): { ok: true } | { ok: false; reason: string } {
     const target = this.lookup(id)
     if (!target) return { ok: false, reason: 'That Codex chat is no longer listed.' }
-    if (target.live)
-      return { ok: false, reason: 'Codex has this chat open. Copy and open it instead.' }
+    if (target.live) return { ok: false, reason: CODEX_DESKTOP_UNAVAILABLE }
     if (['sending', 'sent'].includes(this.statuses.get(id)?.state || ''))
       return { ok: false, reason: 'Still waiting for the last reply.' }
     if (!text.trim() || text.length > MAX_MESSAGE_LENGTH)

@@ -27,8 +27,8 @@ desktop chats may require reopening after their writer is released. See the
 In Threadlight, enable **Settings → Applications → Codex**. The Claude and Codex
 toggles are independent: both on shows a combined list with blue Codex and orange Claude edge tints;
 both off pauses chat monitoring. Upgrading preserves the previous selection;
-new installs default to Claude only. Drafts stay in memory with their chat;
-quitting Threadlight clears them. Claude, Codex and the combined view each keep
+new installs default to Claude only. Composer drafts are saved in Threadlight's
+own local recovery store; question-card drafts remain in memory. Claude, Codex and the combined view each keep
 their own workspace selection.
 
 The existing `scripts/install.mjs` still installs the Claude plugin. These Codex
@@ -46,6 +46,9 @@ steps are separate and are not run automatically by the provider toggle.
   checks before sending. Live chats offer **Copy and open Codex**. A writer race
   is refused by Codex; Threadlight reports the error and never retries it silently.
   Sent means a turn started; replied requires a successful completed turn.
+  Copy and open is explicitly labelled and requires a click; Enter and a voice
+  countdown cannot invoke it. Sending into the live desktop runtime is still
+  incomplete; the separate delivery coordinator is not connected to a live adapter.
 - Permission-request cards can allow once or deny. Stop hooks can hold a final
   paragraph ending in a question mark and continue with the user's answer.
   A card's nonce prevents a stale answer from resolving a different request.

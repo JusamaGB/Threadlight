@@ -2,6 +2,8 @@
 
 Status: proposed implementation plan. No integration has been built or enabled by this document.
 
+Completion update, 25 October 2026: the product now has Codex monitoring, independent provider toggles, unloaded-chat CLI delivery and a separate hosted Codex Agent. Sending from the composer into a loaded desktop chat remains incomplete. Section 28 maps that remaining feature against the current source; earlier baseline descriptions are historical and do not require rebuilding features already present.
+
 Date: 25 October 2026. Scope: the Windows Threadlight application, preserving its Claude integration and adding a selectable Codex provider.
 
 ## 1. Product outcome
@@ -845,3 +847,159 @@ Possible later work includes an All providers view, remote host adapters, explic
 The official references in section 2 describe available surfaces as inspected on 25 October 2026. Installed-version behaviour and the G0 evidence govern what Threadlight actually enables. Recheck references when implementation begins or the runtime changes; do not copy a current protocol example into an older runtime without checking compatibility.
 
 The architecture, state machines, thresholds, retention defaults, milestones and acceptance tests in this document are proposed Threadlight design decisions. They are not claims that Codex supplies those policies automatically. Update this specification when a gate changes the chosen route, keeping the unresolved capability visible until evidence closes it.
+
+## 28. Selected desktop chat messaging: completion roadmap
+
+Added 25 October 2026 following the composer review. This section narrows the implementation sequence to completing typed and dictated delivery to an existing local desktop chat. It retains section 12's delivery safeguards and the current independent provider toggles. It does not reopen provider selection, workspace UI or hosted Agent implementation.
+
+### 28.1 Outcome and current evidence
+
+The feature is complete when a user selects an existing Codex desktop chat, types or dictates a message, submits it from Threadlight, and sees that input and its resulting work in that same desktop chat. The delivery itself does not open or focus Codex. Working chats support an explicit, recoverable queue; a waiting structured question remains a separate request, not an ordinary-message substitute.
+
+| Existing component                                      | Current behavior                                                              | Required change                                                                                                                                                |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/renderer/composer/Composer.tsx`                    | Live Codex chats copy text and open the application before invoking send IPC. | Route submissions through capabilities and the delivery coordinator; make Copy and open a separate labelled action.                                            |
+| `src/main/codex/relay.ts`                               | Refuses live chats and resumes unloaded history through a new CLI process.    | Add an owning-runtime desktop adapter. Never fall back to this CLI path after an uncertain desktop submission.                                                 |
+| `src/main/codex/tracker.ts`, `live.ts`                  | Read-only history/status and writer detection.                                | Retain monitoring; get write eligibility and authoritative turn state from the verified runtime connection. A held writer alone cannot decide send capability. |
+| `src/main/agent/codexClient.ts`                         | Starts and owns an app server for the hosted Agent.                           | Keep its ownership separate. Reuse transport-neutral protocol handling only after separating connect/detach from spawn/kill.                                   |
+| `src/shared/ipc.ts`, `types.ts`, `src/preload/index.ts` | Boolean send result and four relay states; no durable operation identity.     | Add target capabilities, submission identity and explicit delivery/recovery states across all callers.                                                         |
+| `src/renderer/lib/drafts.ts`                            | In-memory drafts only.                                                        | Persist composer drafts and recoverable operations in Threadlight user data.                                                                                   |
+| `test/ui/providers.smoke.mjs`                           | Explicitly expects no send for a live Codex chat.                             | Replace that assumption for connected capable chats; preserve coverage for the explicit unavailable fallback.                                                  |
+
+The [default-runtime report](CODEX-STAGE0-RESULTS.md) did not find an independent connection. The [shared-runtime experiment](CODEX-STAGE0-SHARED-RUNTIME-EXPERIMENT.md) demonstrated synthetic protocol delivery but not production desktop integration. The [VM results](CODEX-STAGE0-VM-RESULTS.md) record an isolated guest and the authentication test design; they do not yet record its final authentication outcome. Retrieve the existing sanitized result before repeating the experiment. Unrecorded results remain unknown.
+
+The [official App Server reference](https://learn.chatgpt.com/docs/app-server), checked on this date, documents turn control and shared transports, but labels WebSocket experimental and unsupported for production workloads. It does not establish a supported external connection to this installed desktop. The roadmap below is Threadlight's proposed design; protocol availability alone does not complete its connection gate.
+
+### 28.2 Implementation order and dependencies
+
+| Work unit                       | Concrete deliverable                                                                                                         | Depends on                                                          | Completion evidence                                                                                                                                      |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0: truthful composer           | Visible unavailable reason; separate Copy and open; no automatic fallback from Send or a voice countdown.                    | Current source review.                                              | UI test verifies Enter/countdown cannot focus Codex when delivery is unavailable and the draft survives. This is an interim fix, not feature completion. |
+| M1: finish connection proof     | A recorded transport decision for the actual desktop, independent client authentication, shared ownership and desktop tools. | Existing VM result retrieval and VM0–VM5, VM8–VM10 evidence.        | Same desktop-created chat, visible input/reply, retained context/tools, authenticated connection, safe detach/restart.                                   |
+| M2: connection and capabilities | Version-aware desktop connection adapter with bounded reconnect and per-chat capabilities.                                   | M1 pass for the chosen route.                                       | Contract tests plus desktop attach/detach evidence; no second writer, default-setting override or owner-process termination.                             |
+| M3: durable submission          | Atomic draft/journal storage, operation IDs, serialization, correlated acceptance and recovery.                              | Contract can be built with fakes; enabling real writes requires M2. | Deterministic disconnect/crash/duplicate tests and full renderer-to-adapter caller coverage.                                                             |
+| M4: working-chat queue          | Explicit Queue after current work with edit/cancel, correct target and race handling.                                        | M2 and M3; verified busy behavior.                                  | Active-turn and competing desktop-send tests demonstrate the selected semantics without silent steering.                                                 |
+| M5: composer and dictation      | Both use the same submission coordinator; capabilities control actions and countdowns.                                       | M3 and M4.                                                          | Keyboard, click, dictation and countdown tests; target changes never redirect pending input.                                                             |
+| M6: packaged acceptance         | Install/setup, recovery, compatibility profile, truthful docs and real desktop demonstration.                                | M1–M5 and verified handling of requests raised by submitted work.   | Packaged Windows test matrix passes and the user-visible workflow is demonstrated.                                                                       |
+
+M0 and fake-backed M3 work can proceed while M1 is resolved. M2 must not be connected to production on the strength of synthetic tests. Changes to the running desktop's launch configuration are a later, explicit deployment operation, prepared with a reversible setup and rollback procedure.
+
+### 28.3 M1: settle the transport before wiring Send
+
+Continue the existing isolated guest investigation; do not repeat a second desktop-profile experiment on the host. The previous experiment demonstrated that profile separation did not isolate machine-wide sandbox setup.
+
+Evaluate these routes in order:
+
+1. A supported independently authenticated endpoint attached to the desktop-owned runtime, if the installed version exposes one. Record how to discover it and verify its installation/account identity.
+2. The experimental shared-runtime launch arrangement already demonstrated in the guest. Prove the real desktop can authenticate, open and subscribe to the chat, retain its tools and survive restarts. Record any launch changes and their support status. This can establish a version-scoped experimental preview; it cannot be relabelled supported production transport.
+3. If neither route meets the gate, record the exact upstream capability missing and keep the feature incomplete. A clipboard fallback, new hosted Agent, private executor impersonation or second writer does not close M1.
+
+The evidence must include a desktop-created synthetic chat that is actually open in the guest desktop, a normal user-message item, a resulting turn and a visible transcript update. A read-only desktop-provided tool must still resolve in the correct context. Demonstrate acceptance with correct credentials and rejection with missing/incorrect credentials for the actual arrangement. A probe authenticating successfully does not prove desktop authentication.
+
+Separate fixture evidence from signed-in real-model evidence. Record approved test-account setup as a prerequisite for the latter; never copy the host's credentials. Record question/approval ownership as well: at minimum they must remain answerable in the desktop after an external send. If attaching steals those requests or desktop tools, the route fails until ownership is resolved.
+
+M1 closes with a versioned decision record, sanitized evidence links, setup/rollback steps and explicit passed/failed/unverified entries. If it fails, the next engineering task is the identified transport blocker, not further composer polish. Do not give M2–M6 a firm delivery date before this decision.
+
+### 28.4 M2–M3: target identity and delivery architecture
+
+Proposed flow:
+
+```text
+Composer / dictated text
+    -> typed preload IPC (target, draft revision, operation ID, text, intent)
+    -> main-process delivery coordinator and durable journal
+    -> verified Codex desktop adapter
+    -> the runtime also used by the desktop
+    -> correlated acknowledgement/events -> journal -> composer status
+```
+
+Suggested new modules are `src/main/codex/desktopConnection.ts`, `desktopMessaging.ts`, `src/main/messaging/coordinator.ts` and `store.ts`, with contracts in `src/shared/messaging.ts`. Keep modules small; these names are a proposed implementation map, not claims that files already exist. Add storage paths through `src/main/sessions/paths.ts`.
+
+The connection adapter owns a client connection, not the shared runtime. Detach removes subscriptions and closes that connection only. Separate transport-neutral parsing/request correlation from the hosted Agent's process ownership; its current `close()` kills its child and cannot be reused as desktop disconnect behavior.
+
+Resolve a compound target in the main process: provider, canonical installation/account identity and thread ID. Validate the caller, payload, enabled provider, target registration and current connection generation. Titles and folders are display metadata, never routing keys. Preserve the thread's model, permissions, project and tool context; optional protocol defaults must be tested rather than assumed harmless.
+
+Capabilities distinguish `sendNow`, `queueAfterCurrent`, `answerRequest` and `open`, each with an unavailable reason. Runtime status distinguishes idle, working, waiting and unknown. Monitoring can remain available while sending is disconnected. Refresh capabilities after reconnect, version/account changes and target changes. Keep unloaded-history CLI continuation explicitly separate; it is not an automatic backup route for desktop delivery.
+
+Persist an operation intent before writing externally. Include the operation ID, target, draft revision, exact text, requested intent, connection generation, phase and any acknowledged turn/input IDs. The renderer's successful IPC return means the coordinator durably recorded the operation; it must not be called provider acceptance. A duplicate call for the same operation returns its recorded state; the same ID with different content is rejected.
+
+Use `draft -> queued/submitting -> accepted -> running -> completed`, with distinct rejected, execution-failed, cancelled-before-dispatch and delivery-unknown outcomes. A queued state is explicitly local until the provider acknowledges it. Retain a recoverable copy when clearing the composer and never clear newer edits because an earlier draft's acknowledgement arrived late. Use section 12.5's bounded retention and versioned atomic storage.
+
+Correlation must use verified provider identifiers and lifecycle evidence. A JSON-RPC request ID or identical text is insufficient to prove durable idempotency. Reconnect can repeat reads and subscriptions; it cannot blindly repeat writes. If acceptance cannot be resolved, show Delivery unknown, keep the text and offer inspection before a deliberate resend. An accepted operation that later fails remains distinguishable from a rejected send.
+
+### 28.5 M4–M5: exact composer behavior
+
+| Selected chat condition              | Primary action                                | Behavior                                                                                                                               |
+| ------------------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Connected and idle                   | Send                                          | Start one ordinary input on the verified thread; show acceptance and subsequent progress from correlated evidence.                     |
+| Connected and working                | Queue after current work                      | Persist locally with edit/cancel; dispatch only under the tested idle-transition rules. Label it Queued in Threadlight until accepted. |
+| Waiting for a question/approval      | Answer in its request card, where supported   | Retain ordinary composer text separately. Never treat its text as a permission decision or structured answer.                          |
+| Disconnected, unknown or unsupported | Unavailable reason and explicit Copy and open | Preserve draft. Enter and voice expiry cannot perform the fallback automatically.                                                      |
+| Acceptance uncertain                 | Delivery unknown                              | Preserve the operation, reconcile and prevent automatic resend.                                                                        |
+
+The screenshot's working-chat case is part of M4 acceptance, not a deferred enhancement. Prefer a verified native queue if it has usable receipt/cancel semantics; otherwise implement the labelled local queue. Serialize local submissions per target and revalidate identity, current turn and capabilities immediately before dispatch. A local mutex does not prevent a simultaneous desktop submission: test that race against the chosen runtime. If the runtime cannot enforce the intended idle-only behavior, retain the queued draft for explicit action rather than silently steering; record the unfulfilled queue requirement.
+
+After restart or reconnect, previously unsent queues are held for user resumption. Provider-accepted work continues without Threadlight. Editing/cancelling an unsent queue does not interrupt an active provider turn. Explicit Send now/steer can be a later capability, but is not the default action in this roadmap.
+
+Update `Composer.tsx`, `Panel.tsx`, preload/IPC, `index.ts`, relay status presentation and `AttentionCard.tsx` together where they submit ordinary follow-ups. Keep structured replies on their request channel. Typed input and transcription enter the same coordinator. Capture target identity at recording start; changing selection, losing capability or editing text cancels automatic sending and preserves the correct draft. Manual Send, repeated Enter and the final countdown tick share one operation identity for that draft revision.
+
+### 28.6 M6: proof required to close the feature
+
+Use this scenario-to-evidence checklist in the implementation change. Name the test or sanitized live result for every item; a planned test is not a pass.
+
+- [ ] Existing desktop-created chat receives exactly one normal user input and resulting reply while open; identity, model, project, permissions and desktop tools remain intact.
+- [ ] The same works while Codex is minimized and another application has focus; submission/reply cause no focus or pointer change.
+- [ ] A working chat queues the message, keeps its current work intact and receives the queued input once under the proven policy. Competing desktop input is covered.
+- [ ] Click, Enter, repeated Enter, dictation and countdown/manual-send collisions use the same actual IPC/coordinator/adapter path and do not duplicate delivery.
+- [ ] Rejection, archive/removal, account/home switch and capability loss retain the correct draft and give an accurate reason.
+- [ ] Disconnect/crash before write, after possible write and after acknowledgement produce correct recovery; identical later messages cannot falsely resolve an earlier unknown operation.
+- [ ] Threadlight exit does not kill accepted work; Codex and Threadlight restart independently without automatic queue replay or stale request reuse.
+- [ ] Questions and approvals raised by submitted work remain answerable through their verified owner. Unsupported Threadlight cards direct the user explicitly to Codex without guessing a response.
+- [ ] Packaged paths, installation upgrade, unsupported runtime version, disconnect and rollback are exercised; the running package contains the tested implementation.
+- [ ] Claude relay/holds, hosted Agent, provider toggles and voice routing retain their established behavior.
+
+Run fast structural, evidence and applicable coverage checks first, focused behavior and real-caller tests next, then relevant diff/build checks. Complete CONTRIBUTING's required preflight before publishing a PR without needlessly rerunning unchanged broad checks. Keep synthetic and live tests separate. Update README, plugin documentation and the changelog to describe the verified scope.
+
+The final demonstration is the user's actual workflow: select a desktop chat, compose a message, submit it, and inspect that same chat's input and response. Repeat while the chat is working and while Codex is minimized. Record the tested desktop/runtime/Threadlight versions and evidence. A passing fake CLI test, protocol experiment or newly created hosted Agent alone cannot mark this feature complete.
+
+### 28.7 Implementation status after the first build pass
+
+The full feature is **not complete**. M1 is still unresolved: the retrieved guest
+authentication task timed out without a final result, and no usable independent
+connection to the installed desktop has been established. See the updated
+[guest report](CODEX-STAGE0-VM-RESULTS.md). Real desktop control remains disabled.
+
+Implemented in the product: M0's labelled fallback, Enter/countdown refusal,
+submission-in-flight guard, preservation of edits arriving during submission,
+and durable composer drafts through validated main-process IPC. Draft writes are
+serialized and revision-checked; failed/unknown-schema stores are retained rather
+than overwritten. A normal exit drains pending main-process saves. Draft data is
+scoped to the canonical provider home and chat ID. Account-change handling still
+belongs to M2's future verified installation identity.
+
+Implemented as a tested foundation, **not wired to live sending**: the message
+journal and `MessageCoordinator` support persisted intent, duplicate operation
+rejection, explicit queue/edit/cancel/resume, connection-generation checks,
+acknowledgement states, identifier-based reconciliation and restart recovery.
+Unknown delivery is never retried automatically. The transport interface requires
+idle-only dispatch guarantees; a local state check is not sufficient proof of them.
+
+`test/messaging.test.ts` exercises actual file persistence and the composer draft
+controller plus synthetic delivery failures. The provider UI smoke exercises the
+built renderer with synthetic IPC, including explicit copy/open and Enter refusal.
+Neither test suite proves delivery to a real desktop-owned chat. M2, live M3/M4
+wiring, complete voice delivery acceptance and M6 remain outstanding behind M1.
+
+Unresolved drafts/operations are currently retained within a bounded 20 MiB,
+approximately 2,000-record store; capacity failures are visible. Completed or
+cancelled operation text is cleared on a later write after 24 hours. The proposed
+seven-day expiry UI is not implemented, so unresolved text is not silently expired.
+
+Validation for this pass: the full offline suite passed 245 tests with four live
+tests skipped, followed by 16 passing focused messaging tests after the final
+draft-loading fix. Type checks, lint, build and the built-renderer provider smoke
+passed. Formatting found one coordinator file, which was formatted and rechecked;
+the final whitespace check passed. The first parallel test run exceeded existing
+relay-test timing limits; a one-worker rerun passed without changing those limits.
+Concurrent voice work in the checkout was preserved. No application restart,
+Codex launch reconfiguration, live desktop send or release is claimed.

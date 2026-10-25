@@ -73,6 +73,20 @@
   color: var(--amber);
 }
 
+.unavailable {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 4px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.unavailable button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* The pill, matching the Claude app's own composer. */
 .pill {
   display: flex;

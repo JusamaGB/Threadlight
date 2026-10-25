@@ -6,7 +6,8 @@ import { providerName, sessionProvider } from '../../shared/providers'
 import type { VoiceState } from '../hooks/useVoice'
 import { en } from '../i18n/en'
 import { ticks } from '../lib/relay'
-import { useDraft } from '../lib/drafts'
+import { useComposerDraft } from '../lib/composerDraft'
+import { CODEX_DESKTOP_UNAVAILABLE, MESSAGE_LIMIT } from '../../shared/messaging'
 import styles from './Composer.module.css'
 import { VoiceWave } from './VoiceWave'
 
@@ -37,22 +38,27 @@ const RING = 2 * Math.PI * 7 // circumference of the countdown ring (r = 7)
 export function Composer(props: ComposerProps) {
   const { session, relay, stt, voiceState, level, onMic, heard, voiceError } = props
   const { initialText = '', countdownSeconds, cancelToken, onClose } = props
-  const [text, setText] = useDraft(`${session.id}:composer:${initialText}`, initialText)
+  const draft = useComposerDraft(session.id, initialText)
+  const { text, setText } = draft
+  const sendLocked = useRef(false)
+  const [submitting, setSubmitting] = useState(false)
+  const desktopUnavailable = session.provider === 'codex' && session.live
   const [error, setError] = useState<string | null>(null)
   const [askDownload, setAskDownload] = useState(false)
   const [countdownEnds, setCountdownEnds] = useState<number | null>(() =>
-    countdownSeconds ? Date.now() + countdownSeconds * 1000 : null,
+    countdownSeconds && !desktopUnavailable ? Date.now() + countdownSeconds * 1000 : null,
   )
   const [now, setNow] = useState(() => Date.now())
+  const countdownInvalidated = useRef(false)
   const box = useRef<HTMLTextAreaElement>(null)
   const mark = ticks(relay)
-  const busy = relay?.state === 'sending' || relay?.state === 'sent'
+  const busy = submitting || relay?.state === 'sending' || relay?.state === 'sent'
 
   // Opening the composer puts the cursor in the box (the panel remounts it per thread).
   // A voice send opens the panel without focus, so this only takes effect once clicked.
   useEffect(() => {
-    if (!box.current?.hidden) box.current?.focus()
-  }, [])
+    if (!draft.loading && !box.current?.hidden) box.current?.focus()
+  }, [draft.loading])
 
   // Grow with the text, up to a few lines, then scroll.
   useEffect(() => {
@@ -64,25 +70,38 @@ export function Composer(props: ComposerProps) {
   }, [text, voiceState])
 
   const send = async (message = text.trim()) => {
-    if (!message || busy) return
-    if (session.provider === 'codex' && session.live) {
-      window.threadlight.copyText(message)
-      if (session.appId) window.threadlight.openInClaude(session.appId)
-      return
-    }
-    const result = await window.threadlight.sendMessage(session.id, message)
-    if (result.ok) {
-      setText('')
-      setError(null)
-    } else {
-      setError(result.reason)
+    if (!message || busy || sendLocked.current || draft.loading) return
+    if (desktopUnavailable) return setError(CODEX_DESKTOP_UNAVAILABLE)
+    sendLocked.current = true
+    setSubmitting(true)
+    try {
+      await draft.flush()
+      const result = await window.threadlight.sendMessage(session.id, message)
+      if (result.ok) {
+        setText((current) => (current.trim() === message ? '' : current))
+        setError(null)
+      } else {
+        setError(result.reason)
+      }
+    } catch {
+      setError(
+        'Sending could not be confirmed. Your text is retained; check the chat before retrying.',
+      )
+    } finally {
+      sendLocked.current = false
+      setSubmitting(false)
     }
   }
 
   // The countdown: tick until it ends, then send what is in the box.
   useEffect(() => {
-    if (countdownEnds === null) return
+    if (countdownEnds === null || draft.loading) return
     const timer = window.setInterval(() => {
+      if (countdownInvalidated.current) {
+        window.clearInterval(timer)
+        setCountdownEnds(null)
+        return
+      }
       const t = Date.now()
       setNow(t)
       if (t >= countdownEnds) {
@@ -94,7 +113,12 @@ export function Composer(props: ComposerProps) {
     return () => window.clearInterval(timer)
     // send reads the latest text through its closure on each tick
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countdownEnds, text])
+  }, [countdownEnds, text, desktopUnavailable, draft.loading, draft.error])
+
+  useEffect(() => {
+    if (desktopUnavailable || draft.error || draft.reviewRequired)
+      countdownInvalidated.current = true
+  }, [desktopUnavailable, draft.error, draft.reviewRequired])
 
   const cancelCountdown = () => setCountdownEnds(null)
 
@@ -120,6 +144,7 @@ export function Composer(props: ComposerProps) {
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing) return
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       cancelCountdown()
@@ -136,7 +161,7 @@ export function Composer(props: ComposerProps) {
     : voiceState === 'transcribing'
       ? en.voice.transcribing
       : en.composer.placeholder
-  const shownError = error ?? voiceError
+  const shownError = error ?? draft.error ?? voiceError
   const remaining = countdownEnds === null ? 0 : Math.max(0, (countdownEnds - now) / 1000)
 
   return (
@@ -149,7 +174,7 @@ export function Composer(props: ComposerProps) {
       <div className={styles.head}>
         <span className={styles.to}>{en.composer.to}</span>
         <span className={styles.target}>{session.title}</span>
-        {countdownEnds !== null ? (
+        {countdownEnds !== null && !desktopUnavailable && !draft.error && !draft.reviewRequired ? (
           <button
             className={styles.countdown}
             onClick={cancelCountdown}
@@ -181,6 +206,22 @@ export function Composer(props: ComposerProps) {
       </div>
 
       {shownError && <p className={styles.error}>{shownError}</p>}
+      {desktopUnavailable && (
+        <div className={styles.unavailable}>
+          <span>Sending to this open Codex chat is not connected yet.</span>
+          <button
+            className={styles.primary}
+            disabled={!text.trim() || !session.appId}
+            onClick={() => {
+              cancelCountdown()
+              window.threadlight.copyText(text.trim())
+              if (session.appId) window.threadlight.openInClaude(session.appId)
+            }}
+          >
+            Copy and open Codex
+          </button>
+        </div>
+      )}
 
       {askDownload && stt.state !== 'ready' && (
         <div className={styles.download}>
@@ -214,6 +255,8 @@ export function Composer(props: ComposerProps) {
             className={styles.input}
             hidden={listening && !text.trim()}
             rows={1}
+            disabled={draft.loading}
+            maxLength={MESSAGE_LIMIT}
             value={text}
             placeholder={placeholder}
             onChange={(event) => {
@@ -224,24 +267,16 @@ export function Composer(props: ComposerProps) {
           />
           {listening && <VoiceWave level={level} />}
         </div>
-        {text.trim().length > 0 && (
+        {text.trim().length > 0 && !desktopUnavailable && (
           <button
             className={styles.send}
             onClick={() => {
               cancelCountdown()
               void send()
             }}
-            disabled={busy}
-            aria-label={
-              session.provider === 'codex' && session.live
-                ? 'Copy and open Codex'
-                : en.composer.send
-            }
-            title={
-              session.provider === 'codex' && session.live
-                ? 'Copy and open Codex'
-                : en.composer.send
-            }
+            disabled={busy || draft.loading || !!draft.error}
+            aria-label={en.composer.send}
+            title={en.composer.send}
           >
             ↵
           </button>
@@ -250,7 +285,7 @@ export function Composer(props: ComposerProps) {
           className={styles.mic}
           data-state={voiceState}
           onClick={toggleMic}
-          disabled={voiceState === 'transcribing'}
+          disabled={draft.loading || voiceState === 'transcribing'}
           aria-label={listening ? en.voice.stop : en.voice.start}
           title={listening ? en.voice.stop : en.voice.start}
         >

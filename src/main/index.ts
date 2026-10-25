@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, realpath } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { join, win32 } from 'node:path'
 
 import { app, clipboard, ipcMain, session, shell, type WebContents } from 'electron'
@@ -22,7 +23,9 @@ import { UsageWatcher } from './usage'
 import { findClaudeCli, isHeld, type CliCommand } from './relay'
 import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
-import { agentPaths, codexPaths, defaultPaths } from './sessions/paths'
+import { agentPaths, codexPaths, defaultPaths, messagingPaths } from './sessions/paths'
+import { MessageStore } from './messaging/store'
+import { MESSAGE_LIMIT } from '../shared/messaging'
 import { CodexTracker } from './codex/tracker'
 import { CodexHolds } from './codex/holds'
 import { CodexRelayService, findCodexCli } from './codex/relay'
@@ -89,6 +92,16 @@ async function start(): Promise<void> {
     if (enabled('claude')) publish()
   })
   const codex = codexPaths()
+  const messageStore = new MessageStore(messagingPaths(app.getPath('userData')).store)
+  await messageStore.load().catch(() => {
+    console.error('Message recovery storage is unavailable; existing data has been retained.')
+  })
+  const draftHomes = {
+    codex: await realpath(codex.home).catch(() => codex.home),
+    claude: await realpath(paths.projectsDir).catch(() => paths.projectsDir),
+  }
+  const draftKey = (id: string) =>
+    `${createHash('sha256').update(draftHomes[sessionProvider(id)]).digest('hex')}:${id}`
   const codexHolds = new CodexHolds(() => {
     if (enabled('codex')) void codexSessions.refresh()
   })
@@ -371,6 +384,45 @@ async function start(): Promise<void> {
   )
   ipcMain.handle(IPC.getRelays, () => [...relays.list(), ...codexRelays.list()])
 
+  const draftCaller = (event: Electron.IpcMainInvokeEvent, id: unknown): id is string =>
+    event.sender === windows.panel.webContents &&
+    event.senderFrame === event.sender.mainFrame &&
+    typeof id === 'string' &&
+    /^(codex:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  ipcMain.handle(IPC.getComposerDraft, (event, id: unknown) => {
+    if (!draftCaller(event, id)) return { ok: false, reason: 'Invalid draft request.' }
+    try {
+      return { ok: true, draft: messageStore.draft(draftKey(id)) }
+    } catch {
+      return {
+        ok: false,
+        reason: 'Draft storage is unavailable. Existing drafts have been retained.',
+      }
+    }
+  })
+  ipcMain.handle(
+    IPC.saveComposerDraft,
+    async (event, id: unknown, text: unknown, revision: unknown) => {
+      if (
+        !draftCaller(event, id) ||
+        typeof text !== 'string' ||
+        text.length > MESSAGE_LIMIT ||
+        typeof revision !== 'number' ||
+        !Number.isSafeInteger(revision) ||
+        revision < 0
+      )
+        return { ok: false, reason: 'Invalid draft request.' }
+      try {
+        return { ok: true, draft: await messageStore.saveDraft(draftKey(id), text, revision) }
+      } catch {
+        return {
+          ok: false,
+          reason: 'Could not save this draft. Keep a copy before closing Threadlight.',
+        }
+      }
+    },
+  )
+
   const agent = new AgentService({
     workspace: agentWorkspace,
     index: agentFiles.index,
@@ -545,7 +597,7 @@ async function start(): Promise<void> {
     event.preventDefault()
     if (retiringForQuit) return
     retiringForQuit = true
-    void agent.close().finally(() => {
+    void Promise.allSettled([agent.close(), messageStore.flush()]).finally(() => {
       agentRetiredForQuit = true
       app.quit()
     })
