@@ -42,6 +42,7 @@ const api: ThreadlightApi = {
   transcribe: (audio) => ipcRenderer.invoke(IPC.transcribe, audio),
 
   onTalkToggle: (listener) => subscribe<void>(IPC.talkToggle, listener),
+  onTalkHold: (listener) => subscribe<'down' | 'up'>(IPC.talkHold, listener),
   setTalkState: (state) => ipcRenderer.send(IPC.talkState, state),
   onTalkState: (listener) => subscribe<TalkState>(IPC.talkState, listener),
   openPanelQuietly: () => ipcRenderer.send(IPC.openPanelQuietly),

@@ -9,8 +9,12 @@ export const SETTINGS_VERSION = 1
 export const settingsSchema = z.object({
   /** Electron accelerator, e.g. "Control+Alt+Q". Press to start talking, again to stop. */
   talkHotkey: z.string().min(1).max(60).default('Control+Alt+Q'),
+  /** Toggle: press to start talking, press again to send. Hold: talk while held, send on release. */
+  talkMode: z.enum(['toggle', 'hold']).default('toggle'),
   /** Seconds a voice send waits before sending, so it can be cancelled. Never zero. */
-  voiceCountdownSeconds: z.number().int().min(1).max(10).default(3),
+  voiceCountdownSeconds: z.number().int().min(1).max(10).default(5),
+  /** Hold: a spoken message waits in the composer until you click Send (no countdown). */
+  voiceHold: z.boolean().default(false),
   /** Hover opens the panel straight away; click avoids opening it by accident in a game. */
   openOn: z.enum(['hover', 'click']).default('hover'),
   /** Start Threadlight when you sign in to Windows. Off until you turn it on. */
@@ -21,6 +25,8 @@ export const settingsSchema = z.object({
    * collapsible groups like the Claude sidebar.
    */
   listMode: z.enum(['recent', 'workspace', 'all']).default('recent'),
+  /** The workspace the Workspace list shows (its folder), or null to follow the Claude app. */
+  focusWorkspace: z.string().min(1).max(1000).nullable().default(null),
   /** Sessions active within this many hours are listed. */
   listWindowHours: z.number().int().min(1).max(168).default(24),
   /** At most this many sessions are listed. */

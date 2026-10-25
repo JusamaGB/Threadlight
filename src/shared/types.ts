@@ -8,6 +8,15 @@ export interface PlanItem {
   status: PlanStatus
 }
 
+/** A background shell command or agent a session started and has not heard back from yet. */
+export interface BackgroundTask {
+  /** The tool call that started it. */
+  id: string
+  label: string
+  /** When it started, in milliseconds since the epoch. */
+  startedAt: number
+}
+
 export interface CurrentStep {
   /** 1-based position in the plan. */
   index: number
@@ -43,6 +52,8 @@ export interface Session {
   recap: string | null
   lastReply: string | null
   lastAction: string | null
+  /** Running background tasks, oldest first. They can outlive the turn that started them. */
+  backgroundTasks: BackgroundTask[]
   permissionMode: string | null
   model: string | null
   /** Oldest first, so the last one is the latest. */
@@ -81,6 +92,11 @@ export interface Snapshot {
   /** Recent sessions, working first: the Active list and the counts. */
   sessions: Session[]
   workspaces: Workspace[]
+  /**
+   * Every workspace, ignoring the time window, for choosing one to focus on. (`workspaces` only
+   * has those with threads inside the window.)
+   */
+  allWorkspaces: { id: string; name: string }[]
   /** The workspace of the thread last open in Claude. */
   currentWorkspace: string | null
 }

@@ -20,6 +20,7 @@ export const IPC = {
   sttDownload: 'stt:download',
   transcribe: 'stt:transcribe',
   talkToggle: 'talk:toggle',
+  talkHold: 'talk:hold',
   talkState: 'talk:state',
   openPanelQuietly: 'panel:open-quietly',
   hotkeyProblem: 'hotkey:problem',
@@ -42,6 +43,8 @@ export const IPC = {
 export interface PanelOpened {
   /** Tallest the panel may grow on this display; the list scrolls beyond it. */
   maxHeight: number
+  /** Grows down from the dot (top half of the screen), or up from it (bottom half). */
+  opensDown: boolean
   /** Opened by a click: start fresh on the Active view. False when the talk hotkey opened it. */
   fresh: boolean
 }
@@ -69,7 +72,7 @@ export interface ThreadlightApi {
 
   resizePanel(height: number): void
   closePanel(): void
-  /** While on, clicking elsewhere does not close the panel (slim bar or pinned open). */
+  /** While on, clicking elsewhere does not close the panel (the active or full list pinned open). */
   setStayOpen(on: boolean): void
   openInClaude(appId: string): void
 
@@ -90,6 +93,8 @@ export interface ThreadlightApi {
 
   /** The talk hotkey was pressed (start or stop recording). Panel window only. */
   onTalkToggle(listener: () => void): () => void
+  /** Press-and-hold mode: the talk hotkey went down, or was released. Panel window only. */
+  onTalkHold(listener: (phase: 'down' | 'up') => void): () => void
   /** Tells the dot what the talk recording is doing. */
   setTalkState(state: TalkState): void
   onTalkState(listener: (state: TalkState) => void): () => void

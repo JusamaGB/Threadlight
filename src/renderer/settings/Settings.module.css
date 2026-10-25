@@ -68,6 +68,13 @@
 
 /* ---------- controls ---------- */
 
+/* Two controls side by side in one row (the hotkey and its Toggle / Push to talk choice). */
+.pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .small,
 .key,
 .stepper,
@@ -88,6 +95,22 @@
 .small:hover {
   color: var(--fg);
   background: var(--hover);
+}
+
+/* A small button that is switched on (Hold). */
+.small.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* A stepper that does not apply right now (the countdown while Hold is on). */
+.stepper.off {
+  opacity: 0.4;
+}
+
+/* A greyed-out row already dims everything in it. */
+.row[aria-disabled] .stepper.off {
+  opacity: 1;
 }
 
 .key {
@@ -155,6 +178,20 @@
 .segmented button[aria-checked='true'] {
   background: var(--hover);
   color: var(--fg);
+}
+
+/* With a separator ("Toggle / Push to talk"), the words sit closer to it. */
+.separated {
+  gap: 0;
+}
+
+.separated button {
+  padding: 0 5px;
+}
+
+.separator {
+  align-self: center;
+  color: var(--faint);
 }
 
 /* A small switch: grey off, accent on. */

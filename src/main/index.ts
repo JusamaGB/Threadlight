@@ -113,9 +113,13 @@ async function start(): Promise<void> {
   )
   allowMicrophoneOnly(windows)
 
-  // The talk hotkey toggles recording in the (possibly hidden) panel, which does the rest.
-  const hotkey = new TalkHotkey(() => windows.panel.webContents.send(IPC.talkToggle))
-  let hotkeyProblem = hotkey.set(initial.talkHotkey)
+  // The talk hotkey drives recording in the (possibly hidden) panel, which does the rest:
+  // toggle sends one event per press; press-and-hold sends "down" and, on release, "up".
+  const hotkey = new TalkHotkey({
+    toggle: () => windows.panel.webContents.send(IPC.talkToggle),
+    hold: (phase) => windows.panel.webContents.send(IPC.talkHold, phase),
+  })
+  let hotkeyProblem = hotkey.set(initial.talkHotkey) ?? hotkey.setMode(initial.talkMode)
   const reportHotkey = () => windows.panel.webContents.send(IPC.hotkeyProblem, hotkeyProblem)
   windows.panel.webContents.on('did-finish-load', reportHotkey)
   // While a new hotkey is typed into Settings, the current one must not swallow the keys.
@@ -145,7 +149,7 @@ async function start(): Promise<void> {
       next.talkHotkey === previous.talkHotkey ? null : hotkey.set(next.talkHotkey),
     )
     if (result.ok) {
-      hotkeyProblem = null
+      hotkeyProblem = hotkey.setMode(result.settings.talkMode)
       reportHotkey()
       applyLive(result.settings)
     }

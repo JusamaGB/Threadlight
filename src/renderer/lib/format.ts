@@ -9,6 +9,11 @@ export function ageText(sinceMs: number, nowMs: number): string {
   return en.age.days(Math.floor(seconds / 86400))
 }
 
+/** A "Show sessions from the last" window as the settings show it: "6h", "24h", "3d", "7d". */
+export function windowLabel(hours: number): string {
+  return hours % 24 === 0 && hours > 24 ? `${hours / 24}d` : `${hours}h`
+}
+
 /** Shortens long text to a word boundary with an ellipsis. Short text is returned as is. */
 export function clip(text: string, max: number): string {
   if (text.length <= max) return text

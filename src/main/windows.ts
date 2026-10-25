@@ -58,7 +58,7 @@ export class WindowManager {
   readonly panel: BrowserWindow
   private dragStart: Point | null = null
   private claudeRunning = false
-  /** The panel is kept up (as a slim bar, or pinned open), so clicking elsewhere must not close it. */
+  /** The panel is kept up (the active list or the full list pinned open), so clicking elsewhere must not close it. */
   private stayOpen = false
 
   constructor() {
@@ -96,7 +96,11 @@ export class WindowManager {
    * state, because the panel has just filled in the composer itself.
    */
   openPanel({ focus = true }: { focus?: boolean } = {}): void {
-    const info: PanelOpened = { maxHeight: this.maxPanelHeight(), fresh: focus }
+    const info: PanelOpened = {
+      maxHeight: this.maxPanelHeight(),
+      opensDown: this.opensDown(),
+      fresh: focus,
+    }
     this.panel.webContents.send(IPC.panelOpened, info)
     this.placePanel(this.panel.getBounds().height)
     this.dot.hide() // the panel takes the dot's place

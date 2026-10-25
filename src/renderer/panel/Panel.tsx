@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react'
 
 import { matchThread, parseVoiceCommand } from '../../shared/match'
 import type { Session } from '../../shared/types'
@@ -12,10 +20,13 @@ import { useSettings } from '../hooks/useSettings'
 import { useStt } from '../hooks/useStt'
 import { useVoice } from '../hooks/useVoice'
 import { en } from '../i18n/en'
+import { windowLabel } from '../lib/format'
 import { SettingsView } from '../settings/SettingsView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
+import { PanelRoomContext } from './room'
 import { SessionRow } from './SessionRow'
+import { WorkspacePicker } from './WorkspacePicker'
 import { sameFolder, WorkspaceTree } from './WorkspaceTree'
 
 type View = 'active' | 'all'
@@ -25,7 +36,7 @@ const FADE_MS = 150
 /** How long a double-click on the header waits to see whether it becomes a triple-click. */
 const TRIPLE_CLICK_WAIT_MS = 250
 
-type HoldMode = 'normal' | 'slim' | 'pinned'
+type HoldMode = 'normal' | 'active' | 'pinned'
 /** After a voice send is answered, an untouched panel turns back into the dot. */
 const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
@@ -61,6 +72,8 @@ export function Panel() {
   const [view, setView] = useState<View>('active')
   /** The settings list takes over the panel's card while this is true. */
   const [showSettings, setShowSettings] = useState(false)
+  /** Choosing which workspace the Workspace list shows; takes over the card like settings. */
+  const [pickingWorkspace, setPickingWorkspace] = useState(false)
   /** Open workspaces in the "All" list; null until changed means "just the current one". */
   const [openWorkspaces, setOpenWorkspaces] = useState<string[] | null>(null)
   /** Workspaces showing every thread, not just the most recent few. */
@@ -75,18 +88,19 @@ export function Panel() {
   const [notice, setNotice] = useState<string | null>(null)
   const [hotkeyProblem, setHotkeyProblem] = useState<string | null>(null)
   const [maxHeight, setMaxHeight] = useState(800)
+  const [opensDown, setOpensDown] = useState(true)
+  /** Extra window height a pop-up asked for (see room.ts). */
+  const [room, setRoom] = useState(0)
   const [heard, setHeard] = useState<{ text: string; n: number } | null>(null)
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [cancelToken, setCancelToken] = useState(0)
   const [closing, setClosing] = useState(false)
   /**
    * How the panel behaves when the pointer leaves. Normal: it fades away. Double-click the
-   * header's bare space for "slim": the active list stays up, shrinking to the header bar
-   * between hovers. Triple-click for "pinned": the full recent list stays open until
-   * triple-clicked again.
+   * header's bare space to pin the active list open ("active"); triple-click to pin the full
+   * list open ("pinned"). The same clicks again unpin it.
    */
   const [hold, setHold] = useState<HoldMode>('normal')
-  const [collapsed, setCollapsed] = useState(false)
   const pendingDoubleClick = useRef<number | undefined>(undefined)
   const card = useRef<HTMLDivElement>(null)
   const fade = useRef<number | undefined>(undefined)
@@ -110,11 +124,11 @@ export function Panel() {
   // A hover or click opens the panel fresh on Active; the talk hotkey keeps what it just filled in.
   useEffect(
     () =>
-      window.threadlight.onPanelOpened(({ maxHeight, fresh }) => {
+      window.threadlight.onPanelOpened(({ maxHeight, opensDown, fresh }) => {
         setMaxHeight(maxHeight)
+        setOpensDown(opensDown)
         window.clearTimeout(fade.current)
         setClosing(false)
-        setCollapsed(false)
         if (!fresh) return
         setView('active')
         setExpanded(null)
@@ -124,6 +138,7 @@ export function Panel() {
         setNotice(null)
         setHold('normal')
         setShowSettings(false)
+        setPickingWorkspace(false)
       }),
     [],
   )
@@ -136,16 +151,30 @@ export function Panel() {
   // The dot shows the talk hotkey's progress.
   useEffect(() => window.threadlight.setTalkState(voice.state), [voice.state])
 
-  // The window is sized to the card, so the card reports its height whenever it changes.
+  // The window is sized to the card (plus any room a pop-up asked for), so the card reports its
+  // height whenever it changes.
   useLayoutEffect(() => {
     const element = card.current
     if (!element) return
-    const observer = new ResizeObserver(() =>
-      window.threadlight.resizePanel(element.getBoundingClientRect().height),
-    )
+    const resize = () =>
+      window.threadlight.resizePanel(element.getBoundingClientRect().height + room)
+    resize()
+    const observer = new ResizeObserver(resize)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [])
+  }, [room])
+
+  const panelRoom = useMemo(
+    () => ({
+      opensDown,
+      extra: room,
+      reserve: (px: number) => {
+        const cardHeight = card.current?.getBoundingClientRect().height ?? 0
+        setRoom(Math.round(Math.max(0, Math.min(px, maxHeight - cardHeight))))
+      },
+    }),
+    [opensDown, room, maxHeight],
+  )
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -176,11 +205,14 @@ export function Panel() {
     setNotice(null)
     setShowSettings(false)
     if (command && match) {
-      // Voice sends always count down first, so a misheard sentence can be stopped.
-      const seconds = settingsRef.current?.voiceCountdownSeconds ?? 3
+      // Voice sends count down first, so a misheard sentence can be stopped; on Hold they
+      // wait in the composer until Send is clicked.
+      const seconds = settingsRef.current?.voiceHold
+        ? undefined
+        : (settingsRef.current?.voiceCountdownSeconds ?? 5)
       setPicking(null)
       setCompose({ sessionId: match.id, initialText: command.message, countdownSeconds: seconds })
-      countdownUntil.current = Date.now() + seconds * 1000
+      countdownUntil.current = seconds ? Date.now() + seconds * 1000 : 0
       setVoiceSendId(match.id)
     } else {
       setCompose(null)
@@ -242,6 +274,25 @@ export function Panel() {
   }, [voice, stt.state, finishTalk, micToggle])
 
   useEffect(() => window.threadlight.onTalkToggle(() => void onTalk()), [onTalk])
+
+  // Press and hold: down starts (or cancels a countdown, as a toggle press would); up sends.
+  // A quick tap can be released while the microphone is still opening; that is remembered and
+  // the recording finishes as soon as it has started, rather than running on to the time limit.
+  const holdReleased = useRef(false)
+  const onHold = useCallback(
+    async (phase: 'down' | 'up') => {
+      if (phase === 'down') {
+        holdReleased.current = false
+        if (voice.state !== 'listening') await onTalk()
+        if (holdReleased.current && startedBy.current === 'hotkey') await finishTalk()
+        return
+      }
+      holdReleased.current = true
+      if (voice.state === 'listening' && startedBy.current === 'hotkey') await finishTalk()
+    },
+    [voice.state, onTalk, finishTalk],
+  )
+  useEffect(() => window.threadlight.onTalkHold((phase) => void onHold(phase)), [onHold])
   useEffect(() => {
     limitHandler.current = () => void (startedBy.current === 'hotkey' ? finishTalk() : micToggle())
   }, [finishTalk, micToggle])
@@ -265,17 +316,12 @@ export function Panel() {
   }
 
   // The panel only shows while the pointer is over it: leaving fades it out, coming back cancels.
-  // Slim, leaving shrinks it to the header bar instead; pinned, leaving does nothing at all.
+  // Pinned (either list), leaving does nothing at all.
   const leave = () => {
-    if (drag.isDragging() || hold === 'pinned') return
+    if (drag.isDragging() || hold !== 'normal') return
     // Never hide the panel while the microphone is open or a voice send is counting down:
     // the recording or the send would carry on with nothing on screen to show or stop it.
     if (voice.state !== 'idle' || Date.now() < countdownUntil.current) return
-    if (hold === 'slim') {
-      setMenu(null)
-      setCollapsed(true)
-      return
-    }
     setClosing(true)
     window.clearTimeout(fade.current)
     fade.current = window.setTimeout(() => window.threadlight.closePanel(), FADE_MS)
@@ -283,23 +329,21 @@ export function Panel() {
   const enter = () => {
     window.clearTimeout(fade.current)
     setClosing(false)
-    setCollapsed(false)
   }
   const changeHold = (next: HoldMode) => {
-    // Pinned means the full recent list held open; leaving it goes back to the active list.
-    if (next === 'pinned') setView('all')
-    else if (hold === 'pinned') setView('active')
+    // Pinned holds the full list open, pinned active the active list; unpinning goes back to
+    // the active list.
+    setView(next === 'pinned' ? 'all' : 'active')
     setHold(next)
-    setCollapsed(false)
     window.threadlight.setStayOpen(next !== 'normal')
   }
-  // Clicks on the header's bare space: 2 toggles slim, 3 toggles pinned. A triple-click arrives
+  // Clicks on the header's bare space: 2 pins the active list, 3 pins the full list. A triple-click arrives
   // as a double-click first, so the double waits a moment in case a third click follows.
   const onHeaderClick = (event: MouseEvent) => {
     if (event.target !== event.currentTarget) return
     if (event.detail === 2) {
       pendingDoubleClick.current = window.setTimeout(
-        () => changeHold(hold === 'slim' ? 'normal' : 'slim'),
+        () => changeHold(hold === 'active' ? 'normal' : 'active'),
         TRIPLE_CLICK_WAIT_MS,
       )
     } else if (event.detail === 3) {
@@ -318,16 +362,34 @@ export function Panel() {
   // The full list: recent threads, or the same rows wrapped in workspaces (Settings → list).
   const listMode = settings?.listMode ?? 'recent'
   const tree = view === 'all' && listMode !== 'recent'
+  // The Workspace list shows the chosen workspace, or (Follow Claude) the one last open in Claude.
+  // A chosen folder that no longer has any threads falls back to following Claude.
+  const chosen = settings?.focusWorkspace ?? null
+  const focusId =
+    chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
+      ? chosen
+      : snapshot.currentWorkspace
+  const focus = focusId
+    ? (snapshot.allWorkspaces.find((w) => sameFolder(w.id, focusId)) ?? {
+        id: focusId,
+        name: focusId.split(/[\\/]/).filter(Boolean).pop() ?? focusId,
+      })
+    : null
+  const windowText = windowLabel(settings?.listWindowHours ?? 24)
   // The header tag names what the full list holds, number first (the pin replaces it).
-  const currentGroup = snapshot.workspaces.find(
-    (w) => snapshot.currentWorkspace && sameFolder(w.id, snapshot.currentWorkspace),
-  )
+  const focusGroup = snapshot.workspaces.find((w) => focusId && sameFolder(w.id, focusId))
   const listTag =
     listMode === 'workspace'
-      ? { count: currentGroup?.threadCount ?? 0, word: currentGroup?.name ?? en.panel.workspace }
+      ? { count: focusGroup?.threadCount ?? 0, word: focus?.name ?? en.panel.workspace }
       : listMode === 'all'
         ? { count: snapshot.workspaces.length, word: en.panel.workspaces }
         : { count: sessions.length, word: en.panel.recentWord }
+  const pickWorkspace = async (id: string | null) => {
+    await window.threadlight.updateSettings({ focusWorkspace: id, listMode: 'workspace' })
+    setPickingWorkspace(false)
+    setShowSettings(false)
+    setView('all') // straight to that workspace's threads
+  }
   const isOpen = (id: string) =>
     (openWorkspaces ?? (snapshot.currentWorkspace ? [snapshot.currentWorkspace] : [])).some((w) =>
       sameFolder(w, id),
@@ -338,15 +400,14 @@ export function Panel() {
   }
 
   // Tell the main process which workspaces can be seen, so it reads only their transcripts.
-  const current = snapshot.currentWorkspace
   useEffect(() => {
     if (!tree) return window.threadlight.setTreeView({ expanded: [], showAll: [] })
     if (listMode === 'workspace') {
-      const only = current ? [current] : []
+      const only = focusId ? [focusId] : []
       return window.threadlight.setTreeView({ expanded: only, showAll: only })
     }
     window.threadlight.setTreeView({ expanded: openWorkspaces, showAll: moreWorkspaces })
-  }, [tree, listMode, current, openWorkspaces, moreWorkspaces])
+  }, [tree, listMode, focusId, openWorkspaces, moreWorkspaces])
 
   const openMenu = (event: MouseEvent, session: Session) => {
     event.preventDefault()
@@ -386,133 +447,173 @@ export function Panel() {
   }
 
   return (
-    <div
-      ref={card}
-      className={[styles.card, closing && styles.closing, collapsed && styles.collapsed]
-        .filter(Boolean)
-        .join(' ')}
-      style={{ maxHeight }}
-      onMouseEnter={enter}
-      onMouseLeave={leave}
-    >
-      <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>
-        {showSettings ? (
-          <>
-            <button
-              className={styles.back}
-              onClick={() => setShowSettings(false)}
-              aria-label={en.settings.back}
-              title={en.settings.back}
-            >
-              ‹
-            </button>
-            <span className={styles.heading}>{en.settings.title}</span>
-          </>
-        ) : (
-          <>
-            <span className={styles.heading}>{en.panel.activeCount(active)}</span>
-            {/* "10 recent", "18 General" or "18 workspaces" opens the full list and closes it
+    <PanelRoomContext.Provider value={panelRoom}>
+      <div
+        ref={card}
+        data-card=""
+        className={[styles.card, closing && styles.closing].filter(Boolean).join(' ')}
+        // Room above the card, when opening upwards, keeps the card in place on screen.
+        style={{ maxHeight, marginTop: opensDown ? 0 : room }}
+        onMouseEnter={enter}
+        onMouseLeave={leave}
+      >
+        <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>
+          {pickingWorkspace ? (
+            <>
+              <button
+                className={styles.back}
+                onClick={() => setPickingWorkspace(false)}
+                aria-label={en.settings.back}
+                title={en.settings.back}
+              >
+                ‹
+              </button>
+              <span className={styles.heading}>{en.panel.chooseWorkspace}</span>
+            </>
+          ) : showSettings ? (
+            <>
+              <button
+                className={styles.back}
+                onClick={() => setShowSettings(false)}
+                aria-label={en.settings.back}
+                title={en.settings.back}
+              >
+                ‹
+              </button>
+              <span className={styles.heading}>{en.settings.title}</span>
+            </>
+          ) : (
+            <>
+              <span className={styles.heading}>
+                {/* Pinned open by a double-click; another double-click unpins. */}
+                {hold === 'active' && (
+                  <span className={styles.headingPin} title={en.panel.unpinActive}>
+                    <PinIcon />
+                  </span>
+                )}
+                {en.panel.activeCount(active)}
+              </span>
+              {/* "10 recent", "18 General" or "18 workspaces" opens the full list and closes it
                 again. Pinned, the pin takes the number's place, and clicking it unpins. */}
-            {hold === 'pinned' ? (
+              {hold === 'pinned' ? (
+                <button
+                  className={styles.recent}
+                  aria-pressed
+                  aria-label={en.panel.unpin}
+                  title={en.panel.unpin}
+                  onClick={() => changeHold('normal')}
+                >
+                  <PinIcon /> {listTag.word}
+                </button>
+              ) : (
+                <button
+                  className={styles.recent}
+                  aria-pressed={view === 'all'}
+                  title={view === 'all' ? en.panel.hideList : en.panel.showList}
+                  onClick={() => setView(view === 'active' ? 'all' : 'active')}
+                >
+                  {listTag.count} {listTag.word}
+                </button>
+              )}
               <button
-                className={styles.recent}
-                aria-pressed
-                aria-label={en.panel.unpin}
-                title={en.panel.unpin}
-                onClick={() => changeHold('normal')}
+                className={styles.gear}
+                onClick={() => setShowSettings(true)}
+                aria-label={en.settings.open}
+                title={en.settings.open}
               >
-                <PinIcon /> {listTag.word}
+                <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M6.6 1h2.8l.4 2 1.3.7 1.9-.7 1.4 2.4-1.5 1.3v1.6l1.5 1.3-1.4 2.4-1.9-.7-1.3.7-.4 2H6.6l-.4-2-1.3-.7-1.9.7L1.6 9.6l1.5-1.3V6.7L1.6 5.4 3 3l1.9.7L6.2 3z" />
+                  <circle cx="8" cy="8" r="2.2" />
+                </svg>
               </button>
-            ) : (
-              <button
-                className={styles.recent}
-                aria-pressed={view === 'all'}
-                title={view === 'all' ? en.panel.hideList : en.panel.showList}
-                onClick={() => setView(view === 'active' ? 'all' : 'active')}
-              >
-                {listTag.count} {listTag.word}
-              </button>
-            )}
-            <button
-              className={styles.gear}
-              onClick={() => setShowSettings(true)}
-              aria-label={en.settings.open}
-              title={en.settings.open}
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M6.6 1h2.8l.4 2 1.3.7 1.9-.7 1.4 2.4-1.5 1.3v1.6l1.5 1.3-1.4 2.4-1.9-.7-1.3.7-.4 2H6.6l-.4-2-1.3-.7-1.9.7L1.6 9.6l1.5-1.3V6.7L1.6 5.4 3 3l1.9.7L6.2 3z" />
-                <circle cx="8" cy="8" r="2.2" />
-              </svg>
-            </button>
-          </>
-        )}
-      </header>
+            </>
+          )}
+        </header>
 
-      {showSettings && settings && <SettingsView settings={settings} stt={stt} version={version} />}
-
-      {/* Kept mounted (just hidden) while settings show, so a half-typed message survives. */}
-      <div className={styles.sessions} hidden={showSettings}>
-        {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
-        {picking && (
-          <div className={styles.picking}>
-            <span className={styles.pickPrompt}>
-              {picking.heardThread ? en.voice.noMatch(picking.heardThread) : en.voice.pickThread}
-            </span>
-            <span className={styles.pickText}>“{picking.text}”</span>
+        {pickingWorkspace && (
+          <div className={styles.list}>
+            <WorkspacePicker
+              workspaces={snapshot.allWorkspaces}
+              chosen={chosen}
+              current={snapshot.currentWorkspace}
+              onPick={(id) => void pickWorkspace(id)}
+            />
           </div>
         )}
 
-        <div className={styles.list}>
-          {tree ? (
-            <WorkspaceTree
-              workspaces={snapshot.workspaces}
-              only={listMode === 'workspace' ? current : null}
-              isOpen={isOpen}
-              onToggle={toggleWorkspace}
-              onShowMore={(id) => setMoreWorkspaces((list) => [...list, id])}
-              renderRow={renderRow}
+        {showSettings && settings && !pickingWorkspace && (
+          <SettingsView
+            settings={settings}
+            stt={stt}
+            version={version}
+            onPickWorkspace={() => setPickingWorkspace(true)}
+          />
+        )}
+
+        {/* Kept mounted (just hidden) while settings show, so a half-typed message survives. */}
+        <div className={styles.sessions} hidden={showSettings || pickingWorkspace}>
+          {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
+          {picking && (
+            <div className={styles.picking}>
+              <span className={styles.pickPrompt}>
+                {picking.heardThread ? en.voice.noMatch(picking.heardThread) : en.voice.pickThread}
+              </span>
+              <span className={styles.pickText}>“{picking.text}”</span>
+            </div>
+          )}
+
+          <div className={styles.list}>
+            {tree ? (
+              <WorkspaceTree
+                workspaces={snapshot.workspaces}
+                only={listMode === 'workspace' ? focus : null}
+                isOpen={isOpen}
+                onToggle={toggleWorkspace}
+                onShowMore={(id) => setMoreWorkspaces((list) => [...list, id])}
+                onPickWorkspace={() => setPickingWorkspace(true)}
+                emptyMessage={en.nothingInWindow(windowText)}
+                renderRow={renderRow}
+              />
+            ) : (
+              <>
+                {shown.length === 0 && (
+                  <p className={styles.empty}>
+                    {view === 'active' ? en.panel.nothingWorking : en.nothingInWindow(windowText)}
+                  </p>
+                )}
+                {shown.map(renderRow)}
+              </>
+            )}
+          </div>
+
+          {target && compose && (
+            <Composer
+              key={`${target.id}:${compose.initialText ?? ''}`}
+              session={target}
+              relay={relays.get(target.id)}
+              stt={stt}
+              voiceState={voice.state}
+              level={voice.level}
+              onMic={() => void micToggle()}
+              heard={heard}
+              voiceError={voiceError}
+              initialText={compose.initialText}
+              countdownSeconds={compose.countdownSeconds}
+              cancelToken={cancelToken}
+              onClose={closeComposer}
             />
-          ) : (
-            <>
-              {shown.length === 0 && (
-                <p className={styles.empty}>
-                  {view === 'active'
-                    ? en.panel.nothingWorking
-                    : en.panel.noSessions(settings?.listWindowHours ?? 24)}
-                </p>
-              )}
-              {shown.map(renderRow)}
-            </>
           )}
         </div>
 
-        {target && compose && (
-          <Composer
-            key={`${target.id}:${compose.initialText ?? ''}`}
-            session={target}
-            relay={relays.get(target.id)}
-            stt={stt}
-            voiceState={voice.state}
-            level={voice.level}
-            onMic={() => void micToggle()}
-            heard={heard}
-            voiceError={voiceError}
-            initialText={compose.initialText}
-            countdownSeconds={compose.countdownSeconds}
-            cancelToken={cancelToken}
-            onClose={closeComposer}
+        {menu && (
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            items={menuItems(menu.session)}
+            onClose={() => setMenu(null)}
           />
         )}
       </div>
-
-      {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          items={menuItems(menu.session)}
-          onClose={() => setMenu(null)}
-        />
-      )}
-    </div>
+    </PanelRoomContext.Provider>
   )
 }

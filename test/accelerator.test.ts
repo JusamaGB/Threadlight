@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { acceleratorFrom, acceleratorLabel, type KeyPress } from '../src/shared/accelerator'
+import {
+  acceleratorFrom,
+  acceleratorLabel,
+  mainVirtualKey,
+  type KeyPress,
+} from '../src/shared/accelerator'
 
 const press = (code: string, mods: Partial<KeyPress> = {}, key = code): KeyPress => ({
   key,
@@ -39,6 +44,37 @@ describe('acceleratorFrom', () => {
     expect(acceleratorFrom(press('IntlRo', { ctrlKey: true }, 'ろ'))).toEqual({
       problem: 'unsupported',
     })
+  })
+})
+
+describe('mainVirtualKey', () => {
+  it('finds the Windows key code of the key that is held', () => {
+    expect(mainVirtualKey('Control+Alt+Q')).toBe(0x51)
+    expect(mainVirtualKey('Control+Shift+1')).toBe(0x31)
+    expect(mainVirtualKey('F8')).toBe(0x77)
+    expect(mainVirtualKey('F24')).toBe(0x87)
+    expect(mainVirtualKey('Super+Space')).toBe(0x20)
+    expect(mainVirtualKey('Alt+/')).toBe(0xbf)
+    expect(mainVirtualKey('Control+Nonsense')).toBeNull()
+  })
+
+  it('covers every key the hotkey field can produce', () => {
+    const codes = [
+      'KeyA',
+      'KeyZ',
+      'Digit0',
+      'F1',
+      'F24',
+      'Space',
+      'Enter',
+      'ArrowUp',
+      'Backquote',
+      'Slash',
+    ]
+    for (const code of codes) {
+      const made = acceleratorFrom(press(code, { ctrlKey: true }))
+      expect(made && 'accelerator' in made && mainVirtualKey(made.accelerator)).toBeTypeOf('number')
+    }
   })
 })
 

@@ -24,6 +24,8 @@ import { TranscriptReader, type TranscriptSummary } from './transcript'
 export const STALE_MS = 10 * 60 * 1000
 /** For sessions without hook events: a transcript this fresh counts as working. */
 export const FALLBACK_ACTIVE_MS = 30 * 1000
+/** A background task still unheard of after this long is assumed gone with its thread. */
+export const TASK_GIVE_UP_MS = 12 * 60 * 60 * 1000
 
 export interface TrackerOptions {
   paths: ClaudePaths
@@ -132,6 +134,14 @@ export class Tracker {
       return result
     }
 
+    const allWorkspaces = new Map<string, { id: string; name: string }>()
+    for (const app of records) {
+      const home = homeOf(app)
+      const key = workspaceKey(home)
+      if (!allWorkspaces.has(key))
+        allWorkspaces.set(key, { id: home, name: lastPathPart(home) ?? home })
+    }
+
     const groups = new Map<string, AppRecord[]>()
     for (const app of records.filter(keep)) {
       const key = workspaceKey(homeOf(app))
@@ -183,9 +193,16 @@ export class Tracker {
       }
       workspaces.push(workspace)
     }
-    workspaces.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
+    const byName = (a: { name: string }, b: { name: string }) =>
+      a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
+    workspaces.sort(byName)
 
-    return { sessions: recent.slice(0, this.maxSessions), workspaces, currentWorkspace }
+    return {
+      sessions: recent.slice(0, this.maxSessions),
+      workspaces,
+      allWorkspaces: [...allWorkspaces.values()].sort(byName),
+      currentWorkspace,
+    }
   }
 
   private async build(
@@ -225,6 +242,10 @@ export class Tracker {
       recap: summary?.recap ?? null,
       lastReply: summary?.lastReply ?? null,
       lastAction: summary?.lastAction ?? null,
+      // A task whose thread was closed never reports back; past a while, stop counting it.
+      backgroundTasks: (summary?.backgroundTasks ?? []).filter(
+        (task) => now - task.startedAt < TASK_GIVE_UP_MS,
+      ),
       permissionMode: app?.permissionMode ?? null,
       model: app?.model ?? null,
       pullRequests: app?.pullRequests ?? [],

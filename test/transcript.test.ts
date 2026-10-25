@@ -106,6 +106,66 @@ describe('plan replay', () => {
   })
 })
 
+describe('background tasks', () => {
+  const launch = (id: string, name: string, description: string, at: string) => ({
+    type: 'assistant',
+    timestamp: at,
+    message: { content: [{ type: 'tool_use', id, name, input: { description } }] },
+  })
+  const result = (id: string, text: string, toolUseResult: object = {}) => ({
+    type: 'user',
+    toolUseResult,
+    message: { content: [{ type: 'tool_result', tool_use_id: id, content: text }] },
+  })
+  const notification = (id: string, status: string) => ({
+    type: 'queue-operation',
+    content: `<task-notification>\n<tool-use-id>${id}</tool-use-id>\n<status>${status}</status>\n</task-notification>`,
+  })
+
+  it('counts a call as running from launch until its notification', async () => {
+    const shell = [
+      launch('toolu_a', 'Bash', 'Run the tests', '2026-01-01T10:00:00.000Z'),
+      result('toolu_a', 'Command running in background with ID: b1.', {
+        backgroundTaskId: 'b1',
+      }),
+    ]
+    const agent = [
+      launch('toolu_b', 'Agent', 'Map the code', '2026-01-01T10:01:00.000Z'),
+      result('toolu_b', 'Async agent launched successfully.', {
+        isAsync: true,
+        agentId: 'a1',
+      }),
+    ]
+    expect((await read([...shell, ...agent])).backgroundTasks).toEqual([
+      { id: 'toolu_a', label: 'Run the tests', startedAt: Date.parse('2026-01-01T10:00:00.000Z') },
+      { id: 'toolu_b', label: 'Map the code', startedAt: Date.parse('2026-01-01T10:01:00.000Z') },
+    ])
+    const done = await read([...shell, ...agent, notification('toolu_a', 'completed')])
+    expect(done.backgroundTasks.map((t) => t.id)).toEqual(['toolu_b'])
+  })
+
+  it('drops a task stopped by hand', async () => {
+    const summary = await read([
+      launch('toolu_a', 'Bash', 'Serve', '2026-01-01T10:00:00.000Z'),
+      result('toolu_a', 'Command running in background with ID: b1.', {
+        backgroundTaskId: 'b1',
+      }),
+      toolCall('TaskStop', { task_id: 'b1' }),
+    ])
+    expect(summary.backgroundTasks).toEqual([])
+  })
+
+  it('ignores foreground calls, even ones whose output mentions the background', async () => {
+    const summary = await read([
+      launch('toolu_a', 'Bash', 'Grep logs', '2026-01-01T10:00:00.000Z'),
+      result('toolu_a', 'log: Command running in background with ID: b9'),
+      launch('toolu_b', 'Agent', 'Quick look', '2026-01-01T10:00:00.000Z'),
+      result('toolu_b', 'Here is what I found', { status: 'completed', agentId: 'a2' }),
+    ])
+    expect(summary.backgroundTasks).toEqual([])
+  })
+})
+
 describe('interrupts', () => {
   it('flags a stopped session until something new happens', async () => {
     const stopped = await read([

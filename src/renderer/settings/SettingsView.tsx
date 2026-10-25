@@ -1,21 +1,24 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { acceleratorFrom, acceleratorLabel } from '../../shared/accelerator'
 import type { Settings, SettingsPatch } from '../../shared/settings'
 import type { SttStatus } from '../../shared/stt'
 import { en } from '../i18n/en'
+import { windowLabel } from '../lib/format'
 import styles from './Settings.module.css'
 
 interface SettingsViewProps {
   settings: Settings
   stt: SttStatus
   version: string
+  /** "Workspace" chosen (or tapped again): open the picker to choose which workspace. */
+  onPickWorkspace: () => void
 }
 
 const HOUR_CHOICES = [6, 12, 24, 72, 168]
 
 /** Every setting in one compact list, inside the panel's own card. Changes save immediately. */
-export function SettingsView({ settings, stt, version }: SettingsViewProps) {
+export function SettingsView({ settings, stt, version, onPickWorkspace }: SettingsViewProps) {
   const [errors, setErrors] = useState<Partial<Record<keyof Settings, string>>>({})
 
   const save = async (patch: SettingsPatch) => {
@@ -28,24 +31,43 @@ export function SettingsView({ settings, stt, version }: SettingsViewProps) {
   return (
     <div className={styles.view}>
       <Group label={en.settings.voice}>
-        <Row
-          label={en.settings.talkHotkey}
-          hint={en.settings.talkHotkeyHint}
-          error={errors.talkHotkey}
-        >
-          <HotkeyField
-            value={settings.talkHotkey}
-            onChange={(talkHotkey) => save({ talkHotkey })}
-          />
+        <Row label={en.settings.talkHotkey} error={errors.talkHotkey}>
+          <span className={styles.pair}>
+            <HotkeyField
+              value={settings.talkHotkey}
+              onChange={(talkHotkey) => save({ talkHotkey })}
+            />
+            <Segmented
+              value={settings.talkMode}
+              options={[
+                { value: 'toggle', label: en.settings.toggle, title: en.settings.toggleHint },
+                { value: 'hold', label: en.settings.hold, title: en.settings.holdHint },
+              ]}
+              separator="/"
+              onChange={(talkMode) => save({ talkMode })}
+            />
+          </span>
         </Row>
-        <Row label={en.settings.countdown} hint={en.settings.countdownHint}>
-          <Stepper
-            value={settings.voiceCountdownSeconds}
-            min={1}
-            max={10}
-            format={(n) => `${n} s`}
-            onChange={(voiceCountdownSeconds) => save({ voiceCountdownSeconds })}
-          />
+        <Row label={en.settings.countdown}>
+          <span className={styles.pair}>
+            {/* Hold switches the countdown off: the seconds grey out until it is let go. */}
+            <button
+              className={settings.voiceHold ? `${styles.small} ${styles.on}` : styles.small}
+              aria-pressed={settings.voiceHold}
+              title={en.settings.holdSendHint}
+              onClick={() => save({ voiceHold: !settings.voiceHold })}
+            >
+              {en.settings.holdSend}
+            </button>
+            <Stepper
+              value={settings.voiceCountdownSeconds}
+              min={1}
+              max={10}
+              format={(n) => `${n} s`}
+              disabled={settings.voiceHold}
+              onChange={(voiceCountdownSeconds) => save({ voiceCountdownSeconds })}
+            />
+          </span>
         </Row>
         <Row label={en.settings.speechModel}>
           <ModelStatus stt={stt} />
@@ -79,13 +101,17 @@ export function SettingsView({ settings, stt, version }: SettingsViewProps) {
               { value: 'workspace', label: en.settings.listWorkspace },
               { value: 'all', label: en.settings.listAll },
             ]}
-            onChange={(listMode) => save({ listMode })}
+            onChange={async (listMode) => {
+              // Workspace needs a workspace: go straight to choosing one.
+              if ((await save({ listMode })) && listMode === 'workspace') onPickWorkspace()
+            }}
+            onReselect={(listMode) => listMode === 'workspace' && onPickWorkspace()}
           />
         </Row>
         <Row label={en.settings.listWindow}>
           <Segmented
             value={settings.listWindowHours}
-            options={HOUR_CHOICES.map((hours) => ({ value: hours, label: hoursLabel(hours) }))}
+            options={HOUR_CHOICES.map((hours) => ({ value: hours, label: windowLabel(hours) }))}
             onChange={(listWindowHours) => save({ listWindowHours })}
           />
         </Row>
@@ -115,10 +141,6 @@ export function SettingsView({ settings, stt, version }: SettingsViewProps) {
       <p className={styles.footer}>{en.settings.footer(version)}</p>
     </div>
   )
-}
-
-function hoursLabel(hours: number): string {
-  return hours % 24 === 0 && hours > 24 ? `${hours / 24}d` : `${hours}h`
 }
 
 function Group({ label, children }: { label: string; children: ReactNode }) {
@@ -218,7 +240,7 @@ function Stepper(props: {
 }) {
   const { value, min, max, format, disabled = false, onChange } = props
   return (
-    <span className={styles.stepper}>
+    <span className={disabled ? `${styles.stepper} ${styles.off}` : styles.stepper}>
       <button
         disabled={disabled || value <= min}
         onClick={() => onChange(value - 1)}
@@ -240,20 +262,38 @@ function Stepper(props: {
 
 function Segmented<T extends string | number>(props: {
   value: T
-  options: { value: T; label: string }[]
+  options: { value: T; label: string; title?: string }[]
+  /** Drawn between the options, e.g. "Toggle / Push to talk". */
+  separator?: string
   onChange: (value: T) => void
+  /** Tapping the option that is already chosen. */
+  onReselect?: (value: T) => void
 }) {
   return (
-    <span className={styles.segmented} role="radiogroup">
-      {props.options.map((option) => (
-        <button
-          key={String(option.value)}
-          role="radio"
-          aria-checked={option.value === props.value}
-          onClick={() => option.value !== props.value && props.onChange(option.value)}
-        >
-          {option.label}
-        </button>
+    <span
+      className={props.separator ? `${styles.segmented} ${styles.separated}` : styles.segmented}
+      role="radiogroup"
+    >
+      {props.options.map((option, index) => (
+        <Fragment key={String(option.value)}>
+          {index > 0 && props.separator && (
+            <span className={styles.separator} aria-hidden="true">
+              {props.separator}
+            </span>
+          )}
+          <button
+            role="radio"
+            title={option.title}
+            aria-checked={option.value === props.value}
+            onClick={() =>
+              option.value === props.value
+                ? props.onReselect?.(option.value)
+                : props.onChange(option.value)
+            }
+          >
+            {option.label}
+          </button>
+        </Fragment>
       ))}
     </span>
   )

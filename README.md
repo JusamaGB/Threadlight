@@ -19,9 +19,10 @@ A small status dot and mini composer for the **Claude desktop app** on Windows.
 - **Right-click a session → Compose** to type or speak a message to that thread. It is
   delivered in the background, without opening the Claude window.
   ✓ means delivered, ✓✓ means the thread read it and replied.
-- **A talk hotkey** (default `Ctrl+Alt+Q`, press to start, press again to stop) works
-  anywhere, even in a game: say _"message docs site, check the build passed"_ and
-  Threadlight finds the thread, shows a short countdown you can cancel, and sends.
+- **A talk hotkey** (default `Ctrl+Alt+Q`, press to start and again to stop, or push to
+  talk) works anywhere, even in a game: say _"message docs site, check the build passed"_
+  and Threadlight finds the thread, shows a short countdown you can cancel, and sends. Or
+  turn on Hold, and the message waits for you to click Send.
 
 Everything runs on your PC. Speech is transcribed locally. Threadlight has no
 telemetry and no servers.

@@ -17,7 +17,8 @@ describe('parseSettings', () => {
     expect(parseSettings({ openOn: 'click', maxSessions: 15 })).toMatchObject({
       openOn: 'click',
       maxSessions: 15,
-      voiceCountdownSeconds: 3,
+      voiceCountdownSeconds: 5,
+      voiceHold: false,
     })
   })
 
@@ -28,7 +29,7 @@ describe('parseSettings', () => {
       maxSessions: 12,
       someFutureSetting: true,
     })
-    expect(settings.voiceCountdownSeconds).toBe(3)
+    expect(settings.voiceCountdownSeconds).toBe(5)
     expect(settings.openOn).toBe('hover')
     expect(settings.maxSessions).toBe(12)
     expect(settings).not.toHaveProperty('someFutureSetting')
@@ -37,6 +38,18 @@ describe('parseSettings', () => {
   it('copes with junk', () => {
     expect(parseSettings(null)).toEqual(DEFAULT_SETTINGS)
     expect(parseSettings('nonsense')).toEqual(DEFAULT_SETTINGS)
+  })
+})
+
+describe('focusWorkspace', () => {
+  it('defaults to following Claude and accepts a folder or null', () => {
+    expect(parseSettings({}).focusWorkspace).toBeNull()
+    expect(validatePatch({ focusWorkspace: 'C:\\demo\\ws' })).toEqual({
+      ok: true,
+      patch: { focusWorkspace: 'C:\\demo\\ws' },
+    })
+    expect(validatePatch({ focusWorkspace: null }).ok).toBe(true)
+    expect(validatePatch({ focusWorkspace: '' }).ok).toBe(false)
   })
 })
 

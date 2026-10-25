@@ -7,36 +7,59 @@ import styles from './Panel.module.css'
 interface WorkspaceTreeProps {
   workspaces: Workspace[]
   /** "all": every workspace, collapsible. "workspace": just this one, always open. */
-  only: string | null
+  only: { id: string; name: string } | null
   isOpen: (workspaceId: string) => boolean
   onToggle: (workspaceId: string) => void
   onShowMore: (workspaceId: string) => void
+  /** The Workspace list's header picks another workspace. */
+  onPickWorkspace: () => void
+  /** Shown when nothing falls inside the chosen time window. */
+  emptyMessage: string
   /** Renders a thread exactly as the recent list does. */
   renderRow: (session: Session) => ReactNode
 }
 
 /** The recent list's rows, wrapped in workspace groups like the Claude sidebar. */
 export function WorkspaceTree(props: WorkspaceTreeProps) {
-  const { workspaces, only, isOpen, onToggle, onShowMore, renderRow } = props
-  const shown = only ? workspaces.filter((w) => sameFolder(w.id, only)) : workspaces
+  const { workspaces, only, isOpen, onToggle, onShowMore, onPickWorkspace, renderRow } = props
+  const shown = only ? workspaces.filter((w) => sameFolder(w.id, only.id)) : workspaces
 
-  if (shown.length === 0) return <p className={styles.empty}>{en.workspaces.none}</p>
+  if (shown.length === 0) {
+    return (
+      <>
+        {/* The chosen workspace still heads the list, so it can be changed from here. */}
+        {only && <FixedHeader name={only.name} title={only.id} onPick={onPickWorkspace} />}
+        <p className={styles.empty}>{props.emptyMessage}</p>
+      </>
+    )
+  }
 
   return (
     <>
       {shown.map((workspace) => {
         const open = only !== null || isOpen(workspace.id)
+        if (only) {
+          return (
+            <section key={workspace.id} className={styles.workspace}>
+              <FixedHeader name={workspace.name} title={workspace.id} onPick={onPickWorkspace}>
+                <span className={styles.workspaceCount}>{workspace.threadCount}</span>
+              </FixedHeader>
+              <div className={styles.workspaceThreads}>
+                <Nodes nodes={workspace.threads} renderRow={renderRow} />
+              </div>
+            </section>
+          )
+        }
         return (
           <section key={workspace.id} className={styles.workspace}>
             <button
               className={styles.workspaceHeader}
-              onClick={() => only === null && onToggle(workspace.id)}
+              onClick={() => onToggle(workspace.id)}
               aria-expanded={open}
               title={workspace.id}
-              data-fixed={only !== null || undefined}
             >
               <span className={styles.workspaceName}>{workspace.name}</span>
-              {only === null && <span className={styles.caret}>{open ? '▾' : '▸'}</span>}
+              <span className={styles.caret}>{open ? '▾' : '▸'}</span>
               {/* Only a collapsed workspace needs the dot: an open one shows its threads' own. */}
               {!open && workspace.activeCount > 0 && (
                 <span
@@ -60,6 +83,26 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
         )
       })}
     </>
+  )
+}
+
+/** The Workspace list's heading: the chosen workspace, tapped to choose another. */
+function FixedHeader(props: {
+  name: string
+  title: string
+  onPick: () => void
+  children?: ReactNode
+}) {
+  return (
+    <button
+      className={styles.workspaceHeader}
+      onClick={props.onPick}
+      title={`${props.title} · ${en.workspaces.change}`}
+    >
+      <span className={styles.workspaceName}>{props.name}</span>
+      <span className={styles.caret}>▾</span>
+      {props.children}
+    </button>
   )
 }
 

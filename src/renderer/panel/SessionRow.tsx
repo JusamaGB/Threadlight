@@ -6,6 +6,7 @@ import { relayLine } from '../lib/relay'
 import styles from './Panel.module.css'
 import { PullRequestBadge } from './PullRequestBadge'
 import { SessionDetail } from './SessionDetail'
+import { TaskTimer } from './TaskTimer'
 
 interface SessionRowProps {
   session: Session
@@ -35,7 +36,11 @@ export function SessionRow(props: SessionRowProps) {
           <span className={composing ? `${styles.title} ${styles.composing}` : styles.title}>
             {session.title}
           </span>
-          <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
+          {session.backgroundTasks.length > 0 ? (
+            <TaskTimer tasks={session.backgroundTasks} />
+          ) : (
+            <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
+          )}
         </span>
         <span className={styles.rowBottom}>
           <PullRequestBadge pullRequests={session.pullRequests} />

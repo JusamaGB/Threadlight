@@ -131,6 +131,16 @@ describe('workspace tree', () => {
     expect(wide.map((w) => w.name)).toEqual(['fresh', 'stale'])
   })
 
+  it('still offers every workspace for choosing one, whatever the window', async () => {
+    await thread('C:\\demo\\fresh', 'Today', { agoMs: 2 * HOUR })
+    await thread('C:\\demo\\stale', 'Old only', { agoMs: 5 * 24 * HOUR })
+    const { allWorkspaces } = await tracker(10, 24).snapshot()
+    expect(allWorkspaces).toEqual([
+      { id: 'C:\\demo\\fresh', name: 'fresh' },
+      { id: 'C:\\demo\\stale', name: 'stale' },
+    ])
+  })
+
   it('keeps an old parent when one of its side threads is recent', async () => {
     const parent = await thread('C:\\demo\\ws', 'Old parent', { agoMs: 5 * 24 * HOUR })
     await thread('C:\\demo\\ws', 'Recent child', { agoMs: HOUR, parent })

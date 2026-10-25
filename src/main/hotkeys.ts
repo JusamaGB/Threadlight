@@ -1,15 +1,31 @@
-// The system-wide talk hotkey. Talk is a toggle (press to start, press again to stop), so key-down
-// is all that is needed and Electron's built-in globalShortcut is enough.
+// The system-wide talk hotkey. Electron's globalShortcut only reports the key going down, which is
+// all toggle needs. Press-and-hold also needs the release: once the hotkey fires, the held key is
+// checked every few milliseconds until it is let go (see keyState.ts).
 
 import { globalShortcut } from 'electron'
 
-import { acceleratorLabel } from '../shared/accelerator'
+import { acceleratorLabel, mainVirtualKey } from '../shared/accelerator'
+import type { Settings } from '../shared/settings'
+import { isKeyDown } from './keyState'
+
+const RELEASE_CHECK_MS = 25
+
+export type TalkMode = Settings['talkMode']
+
+export interface TalkHotkeyEvents {
+  /** Toggle mode: the hotkey was pressed (start, or stop and send). */
+  toggle: () => void
+  /** Hold mode: the hotkey went down, and later came back up. */
+  hold: (phase: 'down' | 'up') => void
+}
 
 export class TalkHotkey {
   private current: string | null = null
   private paused = false
+  private mode: TalkMode = 'toggle'
+  private releaseWatch: NodeJS.Timeout | null = null
 
-  constructor(private readonly onPress: () => void) {}
+  constructor(private readonly events: TalkHotkeyEvents) {}
 
   get accelerator(): string | null {
     return this.current
@@ -17,6 +33,17 @@ export class TalkHotkey {
 
   get isPaused(): boolean {
     return this.paused
+  }
+
+  /** Switches between toggle and press-and-hold. Returns a problem if hold cannot work here. */
+  setMode(mode: TalkMode): string | null {
+    this.stopWatching(true)
+    if (mode === 'hold' && isKeyDown(0x10) === null) {
+      this.mode = 'toggle'
+      return 'Press and hold is not available on this PC, so the talk hotkey toggles instead.'
+    }
+    this.mode = mode
+    return null
   }
 
   /**
@@ -32,7 +59,7 @@ export class TalkHotkey {
     const label = acceleratorLabel(accelerator)
     let registered: boolean
     try {
-      registered = globalShortcut.register(accelerator, this.onPress)
+      registered = globalShortcut.register(accelerator, () => this.pressed())
     } catch {
       return `${label} is not a valid shortcut.`
     }
@@ -48,6 +75,7 @@ export class TalkHotkey {
     this.paused = paused
     if (!this.current) return null
     if (paused) {
+      this.stopWatching(true)
       globalShortcut.unregister(this.current)
       return null
     }
@@ -57,6 +85,27 @@ export class TalkHotkey {
   }
 
   dispose(): void {
+    this.stopWatching(false)
     globalShortcut.unregisterAll()
+  }
+
+  private pressed(): void {
+    if (this.mode === 'toggle') return this.events.toggle()
+    // Windows repeats a held hotkey; while already holding, those repeats are ignored.
+    if (this.releaseWatch) return
+    const key = this.current ? mainVirtualKey(this.current) : null
+    if (key === null) return this.events.toggle() // a key we cannot watch: behave as toggle
+    this.events.hold('down')
+    this.releaseWatch = setInterval(() => {
+      if (isKeyDown(key) === false) this.stopWatching(true)
+    }, RELEASE_CHECK_MS)
+  }
+
+  /** Ends a hold in progress; `report` sends the release so the recording is sent. */
+  private stopWatching(report: boolean): void {
+    if (!this.releaseWatch) return
+    clearInterval(this.releaseWatch)
+    this.releaseWatch = null
+    if (report) this.events.hold('up')
   }
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import type { Snapshot } from '../../shared/types'
 
-const EMPTY: Snapshot = { sessions: [], workspaces: [], currentWorkspace: null }
+const EMPTY: Snapshot = { sessions: [], workspaces: [], allWorkspaces: [], currentWorkspace: null }
 
 /** Recent sessions plus the workspace tree, from the main process. */
 export function useSnapshot(): Snapshot {

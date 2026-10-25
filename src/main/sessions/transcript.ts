@@ -5,11 +5,24 @@
 import { open, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 
-import type { CurrentStep, PlanItem, PlanStatus } from '../../shared/types'
+import type { BackgroundTask, CurrentStep, PlanItem, PlanStatus } from '../../shared/types'
 import { isObject, oneLine, str, type JsonObject } from './json'
 
 /** Claude writes this as a user message when the user presses Stop. No hook fires for it. */
 const INTERRUPT_MARKER = '[Request interrupted'
+
+/**
+ * A finished background task is reported back as a `<task-notification>` naming the tool call
+ * that started it and a status (completed, failed, killed, stopped). It is copied into several
+ * record types, so the raw line is searched rather than one record shape.
+ */
+const TASK_NOTIFICATION = /<tool-use-id>(toolu_\w+)<\/tool-use-id>[\s\S]*?<status>\w+<\/status>/g
+
+/**
+ * A tool result that opens by saying the call carries on in the background. Anchored, so a
+ * command whose output merely mentions these words is not mistaken for one.
+ */
+const BACKGROUND_RESULT = /^\s*(Command running in background|Async agent launched)/
 
 export interface TranscriptSummary {
   title: string | null
@@ -21,8 +34,14 @@ export interface TranscriptSummary {
   recap: string | null
   lastReply: string | null
   lastAction: string | null
+  backgroundTasks: BackgroundTask[]
   /** The user pressed Stop and nothing has happened since. */
   interrupted: boolean
+}
+
+interface ToolCall {
+  label: string
+  startedAt: number
 }
 
 export class TranscriptReader {
@@ -41,6 +60,12 @@ export class TranscriptReader {
   private lastReply: string | null = null
   private lastAction: string | null = null
   private interrupted = false
+  /** Tool calls waiting for their result, in case the result says "running in background". */
+  private calls = new Map<string, ToolCall>()
+  /** Running background tasks by the tool call that started them. */
+  private tasks = new Map<string, BackgroundTask>()
+  /** A task's own id (e.g. a shell id, which TaskStop names) to its tool call. */
+  private taskIds = new Map<string, string>()
 
   constructor(readonly path: string) {}
 
@@ -76,6 +101,7 @@ export class TranscriptReader {
       recap: this.recap,
       lastReply: this.lastReply,
       lastAction: this.lastAction,
+      backgroundTasks: [...this.tasks.values()].map((task) => ({ ...task })),
       interrupted: this.interrupted,
     }
   }
@@ -98,6 +124,9 @@ export class TranscriptReader {
 
   private feedLine(line: string): void {
     if (!line.trim()) return
+    if (line.includes('task-notification')) {
+      for (const [, toolUseId] of line.matchAll(TASK_NOTIFICATION)) this.tasks.delete(toolUseId!)
+    }
     let record: unknown
     try {
       record = JSON.parse(line)
@@ -123,10 +152,12 @@ export class TranscriptReader {
         this.lastPrompt = str(record['lastPrompt']) ?? this.lastPrompt
         break
       case 'user':
-        if (!sidechain && record['isMeta'] !== true) this.feedUser(messageContent(record))
+        if (sidechain) break
+        this.feedResults(messageContent(record), record['toolUseResult'])
+        if (record['isMeta'] !== true) this.feedUser(messageContent(record))
         break
       case 'assistant':
-        if (!sidechain) this.feedAssistant(messageContent(record))
+        if (!sidechain) this.feedAssistant(messageContent(record), timeOf(record))
         break
     }
   }
@@ -156,7 +187,7 @@ export class TranscriptReader {
     this.lastPrompt = prompt
   }
 
-  private feedAssistant(content: unknown): void {
+  private feedAssistant(content: unknown, at: number): void {
     this.interrupted = false
     if (!Array.isArray(content)) return
     for (const block of content.filter(isObject)) {
@@ -164,12 +195,41 @@ export class TranscriptReader {
         const text = str(block['text'])
         if (text?.trim()) this.lastReply = text
       } else if (block['type'] === 'tool_use') {
-        this.feedTool(str(block['name']) ?? '', isObject(block['input']) ? block['input'] : {})
+        const name = str(block['name']) ?? ''
+        const input = isObject(block['input']) ? block['input'] : {}
+        const id = str(block['id'])
+        if (id) this.calls.set(id, { label: describeTool(name, input), startedAt: at })
+        this.feedTool(name, input)
       }
     }
   }
 
+  /** Tool results: one that says "running in background" turns its call into a running task. */
+  private feedResults(content: unknown, toolUseResult: unknown): void {
+    if (!Array.isArray(content)) return
+    for (const block of content.filter(isObject)) {
+      if (block['type'] !== 'tool_result') continue
+      const id = str(block['tool_use_id'])
+      const call = id ? this.calls.get(id) : undefined
+      if (!id || !call) continue
+      this.calls.delete(id)
+      const details = isObject(toolUseResult) ? toolUseResult : {}
+      // An agent that ran to the end in the foreground has an agentId too; only async ones count.
+      const async = details['isAsync'] === true || details['status'] === 'async_launched'
+      const taskId = str(details['backgroundTaskId']) ?? (async ? str(details['agentId']) : null)
+      if (taskId === null && !async && !BACKGROUND_RESULT.test(resultText(block))) continue
+      this.tasks.set(id, { id, ...call })
+      if (taskId) this.taskIds.set(taskId, id)
+    }
+  }
+
   private feedTool(name: string, input: JsonObject): void {
+    // Stopping a task by hand: its notification may never be written.
+    if (name === 'TaskStop' || name === 'KillShell') {
+      const taskId = str(input['task_id']) ?? str(input['shell_id'])
+      const toolUseId = taskId ? this.taskIds.get(taskId) : undefined
+      if (toolUseId) this.tasks.delete(toolUseId)
+    }
     // The Claude app's task list and end-of-turn summary arrive as tool calls.
     if (name.endsWith('update_plan')) {
       this.applyPlan(input)
@@ -224,6 +284,22 @@ export class TranscriptReader {
 function messageContent(record: JsonObject): unknown {
   const message = record['message']
   return isObject(message) ? message['content'] : undefined
+}
+
+/** When a record was written; records without a time count as now. */
+function timeOf(record: JsonObject): number {
+  const at = Date.parse(str(record['timestamp']) ?? '')
+  return Number.isNaN(at) ? Date.now() : at
+}
+
+function resultText(block: JsonObject): string {
+  const content = block['content']
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter(isObject)
+    .map((part) => str(part['text']) ?? '')
+    .join('\n')
 }
 
 function toPlanStatus(value: unknown): PlanStatus {

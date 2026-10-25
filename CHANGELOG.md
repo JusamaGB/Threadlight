@@ -55,8 +55,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   back sessions are listed and how many, launch at sign-in, and reset the dot's position.
   A message you were typing survives a trip into Settings.
 - A tray icon with Show sessions, Settings, Pause talk hotkey and Quit.
-- Header clicks on its bare space: double-click keeps the active list up as a slim bar
-  between hovers; triple-click pins the full recent list open (a pin icon then takes the
+- Header clicks on its bare space: double-click pins the active list open, threads and all
+  (a pin shows before "Active"); triple-click pins the full recent list open (a pin icon then takes the
   place of the count, next to "recent") until you triple-click again or click the pin or
   the word. Dragging the bare header moves the panel and
   its dot.
@@ -68,6 +68,19 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with "Show N more". Only threads you can see have their transcripts read. "Show
   sessions from the last" filters all three; an older thread stays when a side thread
   under it is recent.
+- Choosing Workspace in Settings opens a picker of every workspace (plus "Follow Claude",
+  the default); picking one goes straight to its threads, and tapping the workspace name
+  in the list reopens the picker. An empty list says "Nothing within your chosen time
+  frame" and names the window.
+- The talk hotkey can be Toggle (press to talk, press again to send) or Push to talk
+  (talk while held, send when you let go), chosen next to the hotkey in Settings.
+  Push to talk checks only the hotkey's own key, and only while it is held.
+- Background tasks: while a thread has a background command or agent running, its age
+  becomes "Task 42s" (counting up) or "Tasks ×3". Hovering lists each task and how long it
+  has been running. A task counts until its completion notice reaches the transcript, it is
+  stopped, or 12 hours pass.
+- Hold, next to the send countdown, keeps a spoken message in the composer until you click
+  Send; the countdown greys out while it is on. The countdown now defaults to 5 seconds.
 - The panel can now grow to the full height of the screen from wherever the dot is.
 - Threads with pull requests show the Claude sidebar's branch icon, coloured by the
   latest PR's state, with a count when there are several.

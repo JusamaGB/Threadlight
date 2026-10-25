@@ -5,7 +5,12 @@ import type { Session, Snapshot, TreeView } from '../../shared/types'
 import type { Tracker } from './tracker'
 
 export class SessionService {
-  private latest: Snapshot = { sessions: [], workspaces: [], currentWorkspace: null }
+  private latest: Snapshot = {
+    sessions: [],
+    workspaces: [],
+    allWorkspaces: [],
+    currentWorkspace: null,
+  }
   private latestJson = ''
   private view: TreeView = { expanded: null, showAll: [] }
   private timer: NodeJS.Timeout | null = null
