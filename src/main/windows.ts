@@ -58,8 +58,8 @@ export class WindowManager {
   readonly panel: BrowserWindow
   private dragStart: Point | null = null
   private claudeRunning = false
-  /** The panel stays up as a slim bar, so clicking elsewhere must not close it. */
-  private semiOpen = false
+  /** The panel is kept up (as a slim bar, or pinned open), so clicking elsewhere must not close it. */
+  private stayOpen = false
 
   constructor() {
     // The dot never takes focus, so clicking it does not pull focus from a game.
@@ -68,7 +68,7 @@ export class WindowManager {
     // The panel is created up front (hidden) so it opens instantly.
     this.panel = createWindow('panel', { width: PANEL_WIDTH, height: 120 }, true)
     this.panel.on('blur', () => {
-      if (!this.semiOpen) this.closePanel()
+      if (!this.stayOpen) this.closePanel()
     })
   }
 
@@ -108,12 +108,12 @@ export class WindowManager {
     }
   }
 
-  setSemiOpen(on: boolean): void {
-    this.semiOpen = on
+  setStayOpen(on: boolean): void {
+    this.stayOpen = on
   }
 
   closePanel(): void {
-    this.semiOpen = false
+    this.stayOpen = false
     if (!this.panel.isVisible()) return
     this.panel.hide()
     if (this.claudeRunning) this.dot.showInactive()

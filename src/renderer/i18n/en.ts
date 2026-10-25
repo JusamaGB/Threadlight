@@ -14,6 +14,7 @@ export const en = {
     noSessions: (hours: number) => `No sessions in the last ${hours} h`,
     showRecent: 'Show recent sessions',
     hideRecent: 'Show only active sessions',
+    unpin: 'Pinned open. Click (or triple-click the bar) to unpin',
   },
   state: {
     working: 'Working',

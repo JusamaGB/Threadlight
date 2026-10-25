@@ -55,6 +55,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   back sessions are listed and how many, launch at sign-in, and reset the dot's position.
   A message you were typing survives a trip into Settings.
 - A tray icon with Show sessions, Settings, Pause talk hotkey and Quit.
+- Header clicks on its bare space: double-click keeps the panel as a slim bar between
+  hovers; triple-click pins it fully open (a small pin shows) until you triple-click
+  again or click the pin. Dragging the bare header moves the panel and its dot.
+- Threads with pull requests show the Claude sidebar's branch icon, coloured by the
+  latest PR's state, with a count when there are several.
 - Settings are stored in `%APPDATA%\Threadlight\settings.json`; a damaged or partly
   invalid file falls back to defaults field by field, never losing the rest.
 

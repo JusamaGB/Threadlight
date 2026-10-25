@@ -74,6 +74,32 @@
   cursor: pointer;
 }
 
+/* Pinned open: a small accent pin, which also unpins on click. */
+.header > .pin {
+  cursor: pointer;
+}
+
+.pin {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 18px;
+  margin-left: 4px;
+  color: var(--accent);
+}
+
+.pin svg {
+  fill: currentColor;
+}
+
+.pin:hover {
+  color: var(--fg);
+}
+
+.pushRight {
+  margin-left: auto;
+}
+
 .gear {
   display: grid;
   place-items: center;

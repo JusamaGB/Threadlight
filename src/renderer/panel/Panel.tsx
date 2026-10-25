@@ -20,9 +20,29 @@ type View = 'active' | 'all'
 
 /** How long the panel takes to fade out once the pointer leaves it. Matches `.closing` in the CSS. */
 const FADE_MS = 150
+/** How long a double-click on the header waits to see whether it becomes a triple-click. */
+const TRIPLE_CLICK_WAIT_MS = 250
+
+type HoldMode = 'normal' | 'slim' | 'pinned'
 /** After a voice send is answered, an untouched panel turns back into the dot. */
 const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
+
+/** Shown only while pinned, so it is clear why the panel is not closing. Clicking it unpins. */
+function PinButton({ onUnpin, pushRight = false }: { onUnpin: () => void; pushRight?: boolean }) {
+  return (
+    <button
+      className={pushRight ? `${styles.pin} ${styles.pushRight}` : styles.pin}
+      onClick={onUnpin}
+      aria-label={en.panel.unpin}
+      title={en.panel.unpin}
+    >
+      <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M10.5 1.5 14.5 5.5 12 6.5 9.5 9l.5 3.5-1.5 1.5-3-3-3.5 3.5-.5-.5L5.5 10.5l-3-3L4 6l3.5.5L10 4z" />
+      </svg>
+    </button>
+  )
+}
 
 interface MenuState {
   x: number
@@ -59,9 +79,14 @@ export function Panel() {
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [cancelToken, setCancelToken] = useState(0)
   const [closing, setClosing] = useState(false)
-  /** Double-clicking the header's bare space keeps the panel up as a slim bar between hovers. */
-  const [semiOpen, setSemiOpen] = useState(false)
+  /**
+   * How the panel behaves when the pointer leaves. Normal: it fades away. Double-click the
+   * header's bare space for "slim": it shrinks to the header bar between hovers. Triple-click
+   * for "pinned": it stays fully open until triple-clicked again.
+   */
+  const [hold, setHold] = useState<HoldMode>('normal')
   const [collapsed, setCollapsed] = useState(false)
+  const pendingDoubleClick = useRef<number | undefined>(undefined)
   const card = useRef<HTMLDivElement>(null)
   const fade = useRef<number | undefined>(undefined)
   const drag = useDotDrag()
@@ -96,7 +121,7 @@ export function Panel() {
         setCompose(null)
         setPicking(null)
         setNotice(null)
-        setSemiOpen(false)
+        setHold('normal')
         setShowSettings(false)
       }),
     [],
@@ -239,13 +264,13 @@ export function Panel() {
   }
 
   // The panel only shows while the pointer is over it: leaving fades it out, coming back cancels.
-  // Semi-open, leaving shrinks it to the header bar instead, and hovering the bar expands it.
+  // Slim, leaving shrinks it to the header bar instead; pinned, leaving does nothing at all.
   const leave = () => {
-    if (drag.isDragging()) return
+    if (drag.isDragging() || hold === 'pinned') return
     // Never hide the panel while the microphone is open or a voice send is counting down:
     // the recording or the send would carry on with nothing on screen to show or stop it.
     if (voice.state !== 'idle' || Date.now() < countdownUntil.current) return
-    if (semiOpen) {
+    if (hold === 'slim') {
       setMenu(null)
       setCollapsed(true)
       return
@@ -259,10 +284,24 @@ export function Panel() {
     setClosing(false)
     setCollapsed(false)
   }
-  const toggleSemiOpen = (event: MouseEvent) => {
+  const changeHold = (next: HoldMode) => {
+    setHold(next)
+    setCollapsed(false)
+    window.threadlight.setStayOpen(next !== 'normal')
+  }
+  // Clicks on the header's bare space: 2 toggles slim, 3 toggles pinned. A triple-click arrives
+  // as a double-click first, so the double waits a moment in case a third click follows.
+  const onHeaderClick = (event: MouseEvent) => {
     if (event.target !== event.currentTarget) return
-    setSemiOpen(!semiOpen)
-    window.threadlight.setSemiOpen(!semiOpen)
+    if (event.detail === 2) {
+      pendingDoubleClick.current = window.setTimeout(
+        () => changeHold(hold === 'slim' ? 'normal' : 'slim'),
+        TRIPLE_CLICK_WAIT_MS,
+      )
+    } else if (event.detail === 3) {
+      window.clearTimeout(pendingDoubleClick.current)
+      changeHold(hold === 'pinned' ? 'normal' : 'pinned')
+    }
   }
 
   const active = sessions.filter(isActive).length
@@ -304,7 +343,7 @@ export function Panel() {
       onMouseEnter={enter}
       onMouseLeave={leave}
     >
-      <header className={styles.header} onDoubleClick={toggleSemiOpen} {...drag.handlers}>
+      <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>
         {showSettings ? (
           <>
             <button
@@ -316,6 +355,7 @@ export function Panel() {
               ‹
             </button>
             <span className={styles.heading}>{en.settings.title}</span>
+            {hold === 'pinned' && <PinButton onUnpin={() => changeHold('normal')} pushRight />}
           </>
         ) : (
           <>
@@ -329,6 +369,7 @@ export function Panel() {
             >
               {en.panel.recentCount(sessions.length)}
             </button>
+            {hold === 'pinned' && <PinButton onUnpin={() => changeHold('normal')} />}
             <button
               className={styles.gear}
               onClick={() => setShowSettings(true)}

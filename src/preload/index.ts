@@ -26,7 +26,7 @@ const api: ThreadlightApi = {
 
   resizePanel: (height) => ipcRenderer.send(IPC.panelResize, height),
   closePanel: () => ipcRenderer.send(IPC.panelClose),
-  setSemiOpen: (on) => ipcRenderer.send(IPC.panelSemiOpen, on),
+  setStayOpen: (on) => ipcRenderer.send(IPC.panelStayOpen, on),
   openInClaude: (appId) => ipcRenderer.send(IPC.openInClaude, appId),
 
   sendMessage: (sessionId, text) => ipcRenderer.invoke(IPC.sendMessage, sessionId, text),
