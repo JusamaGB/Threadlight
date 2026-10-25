@@ -67,7 +67,12 @@ export interface TranscriptSummary {
 interface ToolCall {
   label: string
   startedAt: number
+  /** A shell command: listed as a task while it runs, as the Claude app does. */
+  shell: boolean
 }
+
+/** Tools that run a command, which the Claude app lists among its tasks while they run. */
+const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
 
 export class TranscriptReader {
   private offset = 0
@@ -133,7 +138,20 @@ export class TranscriptReader {
       lastReply: this.lastReply,
       lastAction: this.lastAction,
       turnStartedAt: this.turnStartedAt,
-      backgroundTasks: [...this.tasks.values()].map((task) => ({ ...task })),
+      backgroundTasks: [
+        ...[...this.tasks.values()].map(({ id, label, startedAt }) => ({ id, label, startedAt })),
+        // Commands still running in the foreground; an interrupted turn leaves none running.
+        ...(this.interrupted
+          ? []
+          : [...this.calls.entries()]
+              .filter(([, call]) => call.shell)
+              .map(([id, { label, startedAt }]) => ({
+                id,
+                label,
+                startedAt,
+                foreground: true as const,
+              }))),
+      ],
       pendingQuestion: this.pendingQuestion?.questions ?? null,
       nextStep: this.nextStep,
       contextTokens: this.contextTokens,
@@ -257,7 +275,10 @@ export class TranscriptReader {
         const name = str(block['name']) ?? ''
         const input = isObject(block['input']) ? block['input'] : {}
         const id = str(block['id'])
-        if (id) this.calls.set(id, { label: describeTool(name, input), startedAt: at })
+        if (id) {
+          const shell = SHELL_TOOLS.has(name)
+          this.calls.set(id, { label: describeTool(name, input), startedAt: at, shell })
+        }
         this.feedTool(name, input, id)
       }
     }
@@ -278,7 +299,7 @@ export class TranscriptReader {
       const async = details['isAsync'] === true || details['status'] === 'async_launched'
       const taskId = str(details['backgroundTaskId']) ?? (async ? str(details['agentId']) : null)
       if (taskId === null && !async && !BACKGROUND_RESULT.test(resultText(block))) continue
-      this.tasks.set(id, { id, ...call })
+      this.tasks.set(id, { id, label: call.label, startedAt: call.startedAt })
       if (taskId) this.taskIds.set(taskId, id)
     }
   }

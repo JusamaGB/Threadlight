@@ -15,6 +15,11 @@ export interface BackgroundTask {
   label: string
   /** When it started, in milliseconds since the epoch. */
   startedAt: number
+  /**
+   * A command still running in the foreground (the Claude app lists these with its background
+   * tasks too). It ends with its result, so it only counts while the thread is working.
+   */
+  foreground?: true
 }
 
 /** One question from a question card (Claude's AskUserQuestion). */

@@ -31,6 +31,15 @@ export const settingsSchema = z.object({
   listWindowHours: z.number().int().min(1).max(168).default(24),
   /** At most this many sessions are listed. */
   maxSessions: z.number().int().min(3).max(25).default(10),
+  /**
+   * How long an agent conversation stays open after its last reply, in minutes; then the next
+   * message starts a fresh one (the old one stays on disk). 0: until it is ended by hand.
+   */
+  agentLifetimeMinutes: z.number().int().min(0).max(1440).default(60),
+  /** The model that does the agent's real work (the conversation itself stays on Haiku). */
+  agentWorker: z.enum(['opus', 'sonnet']).default('opus'),
+  /** Connected apps (MCP servers, by name) the agent may not use at all. */
+  agentAppsOff: z.array(z.string().min(1).max(200)).max(100).default([]),
 })
 
 export type Settings = z.infer<typeof settingsSchema>

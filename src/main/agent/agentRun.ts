@@ -7,13 +7,14 @@
 //   out: {"type":"assistant",...}                    what it says, and the tools it calls
 //        {"type":"system","subtype":"task_summary"}  a short progress line
 //        {"type":"control_request","request":{"subtype":"can_use_tool",...}}
+//        {"type":"rate_limit_event",...}             the plan's usage limits, with each request
 //        {"type":"result",...}                       the turn is over (with the cost so far)
 //
 // The stream format is Claude Code's own (the one its SDK speaks); it is not a public API.
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 
-import type { AgentApproval, AgentState } from '../../shared/agent'
+import type { AgentApproval, AgentItem, AgentState } from '../../shared/agent'
 import { IDLE_AGENT } from '../../shared/agent'
 import type { CliCommand } from '../relay'
 import { isObject, oneLine, str, type JsonObject } from '../sessions/json'
@@ -30,6 +31,14 @@ export interface AgentOptions {
   briefing?: () => string
   /** Folders it may read and run read-only git in without asking: the threads' own. */
   readable?: () => string[]
+  /** The worker's model for the next conversation ("opus" or "sonnet"). */
+  workerModel?: () => string
+  /** Connected apps (MCP server names) it may not use at all. */
+  blockedApps?: () => string[]
+  /** Minutes a conversation stays open after its last reply; 0 means until ended. */
+  lifetimeMinutes?: () => number
+  /** Each usage-limit report on the stream (usage.ts reads it). */
+  onRateLimit?: (info: unknown) => void
   /** Starts the process; tests swap in a fake. */
   start?: (command: string, args: string[], cwd: string) => ChildProcessWithoutNullStreams
 }
@@ -109,14 +118,17 @@ const WORKER_PROMPT = [
   'In a thread\'s folder you may read files and run read-only git without asking; run git as one plain command with -C, e.g. git -C "Z:\\path" status, never chained with other commands.',
 ].join(' ')
 
-const AGENTS = {
+const agents = (model: string) => ({
   [WORKER]: {
     description:
       'Does any task that needs looking things up or acting: mail, calendar, files, the web, commands.',
     prompt: WORKER_PROMPT,
-    model: WORKER_MODEL,
+    model,
   },
-}
+})
+
+/** A connected app's tools are named "mcp__<server>__<tool>", the server's name made safe. */
+export const appToolPrefix = (server: string) => `mcp__${server.replace(/[^A-Za-z0-9_-]/g, '_')}`
 
 export class AgentRun {
   private state: AgentState = { ...IDLE_AGENT }
@@ -125,6 +137,12 @@ export class AgentRun {
   private pending: { id: string; input: JsonObject } | null = null
   private closing = false
   private stderr = ''
+  /** Ends the conversation once its time after the last reply is up. */
+  private expiry: ReturnType<typeof setTimeout> | null = null
+  /** The worker's model as steps name it ("Opus"), from when this conversation started. */
+  private worker = 'Opus'
+  /** The apps switched off when this conversation started. */
+  private blocked: string[] = []
 
   constructor(private readonly options: AgentOptions) {}
 
@@ -139,6 +157,9 @@ export class AgentRun {
     if (this.state.status === 'working' || this.state.status === 'waiting') {
       return { ok: false, reason: 'It is still working on the last message.' }
     }
+    this.clearExpiry()
+    // Its time ran out: this message starts a fresh conversation.
+    if (this.state.ended) this.state = { ...IDLE_AGENT }
     if (!this.child) this.launch()
     this.update({
       status: 'working',
@@ -165,8 +186,23 @@ export class AgentRun {
     })
   }
 
+  /**
+   * Picks up a past conversation: shows its lines, and the next message continues it (Claude
+   * Code resumes the transcript). Refused while the current one is working.
+   */
+  resume(sessionId: string, items: AgentItem[]): { ok: true } | { ok: false; reason: string } {
+    if (this.state.status === 'working' || this.state.status === 'waiting') {
+      return { ok: false, reason: 'It is still working on the last message.' }
+    }
+    this.close()
+    this.state = { ...IDLE_AGENT, items, sessionId }
+    this.options.onChange(this.state)
+    return { ok: true }
+  }
+
   /** Ends the conversation: the process exits, its transcript stays on disk. */
   close(): void {
+    this.clearExpiry()
     this.closing = true
     this.child?.stdin.end()
     this.child?.kill()
@@ -178,6 +214,9 @@ export class AgentRun {
 
   private launch(): void {
     const { cli, workspace, model } = this.options
+    this.blocked = (this.options.blockedApps?.() ?? []).map(appToolPrefix)
+    const worker = this.options.workerModel?.() ?? WORKER_MODEL
+    this.worker = worker.charAt(0).toUpperCase() + worker.slice(1)
     const args = [
       ...cli.prefixArgs,
       '-p',
@@ -193,11 +232,15 @@ export class AgentRun {
       '--model',
       model,
       '--agents',
-      JSON.stringify(AGENTS),
+      JSON.stringify(agents(worker)),
       '--append-system-prompt',
       FRONT_DESK,
+      // A conversation already under way (continued from Earlier, or after the process
+      // stopped) carries on in the same transcript.
+      ...(this.state.sessionId ? ['--resume', this.state.sessionId] : []),
       '--disallowedTools',
       ...DISALLOWED,
+      ...this.blocked,
     ]
     const start =
       this.options.start ??
@@ -243,6 +286,8 @@ export class AgentRun {
       case 'system':
         if (message['subtype'] === 'task_summary') {
           this.update({ progress: str(message['detail']) })
+        } else if (message['subtype'] === 'init' && str(message['session_id'])) {
+          this.update({ sessionId: str(message['session_id']) })
         }
         break
       case 'assistant':
@@ -250,6 +295,9 @@ export class AgentRun {
         break
       case 'control_request':
         this.permission(message)
+        break
+      case 'rate_limit_event':
+        this.options.onRateLimit?.(message['rate_limit_info'])
         break
       case 'result': {
         const cost = message['total_cost_usd']
@@ -259,6 +307,7 @@ export class AgentRun {
           costUsd: typeof cost === 'number' ? cost : this.state.costUsd,
           ...(message['is_error'] === true && { error: str(message['result']) }),
         })
+        this.startExpiry()
         break
       }
     }
@@ -280,7 +329,7 @@ export class AgentRun {
       } else if (block['type'] === 'tool_use') {
         const name = str(block['name']) ?? ''
         const input = isObject(block['input']) ? block['input'] : {}
-        items.push({ kind: 'step', text: stepText(name, input) })
+        items.push({ kind: 'step', text: stepText(name, input, this.worker) })
       }
     }
     if (items.length !== this.state.items.length) this.update({ items })
@@ -293,6 +342,11 @@ export class AgentRun {
     if (!id || !isObject(request) || request['subtype'] !== 'can_use_tool') return
     const name = str(request['tool_name']) ?? ''
     const input = isObject(request['input']) ? request['input'] : {}
+    // A switched-off app is refused outright, even for reading.
+    if (this.blocked.some((prefix) => name === prefix || name.startsWith(`${prefix}__`))) {
+      this.write(deny(id, 'That app is switched off for the agent in Threadlight.'))
+      return
+    }
     if (READS.test(name) || onlyLooks(name, input, this.options.readable?.() ?? [])) {
       this.write(allow(id, input))
       return
@@ -300,6 +354,26 @@ export class AgentRun {
     this.pending = { id, input }
     const approval: AgentApproval = { id, title: toolLabel(name), detail: readable(input) }
     this.update({ status: 'waiting', approval })
+  }
+
+  /** After a reply, the conversation stays open for the set time, then ends (kept readable). */
+  private startExpiry(): void {
+    this.clearExpiry()
+    const minutes = this.options.lifetimeMinutes?.() ?? 0
+    if (minutes <= 0) return
+    this.expiry = setTimeout(() => {
+      this.expiry = null
+      this.closing = true
+      this.child?.stdin.end()
+      this.child?.kill()
+      this.child = null
+      this.update({ status: 'idle', ended: true, progress: null })
+    }, minutes * 60_000)
+  }
+
+  private clearExpiry(): void {
+    if (this.expiry) clearTimeout(this.expiry)
+    this.expiry = null
   }
 
   private stopped(reason: string): void {
@@ -330,22 +404,18 @@ function allow(id: string, input: JsonObject): object {
 }
 
 /** One step as the agent view lists it; a hand-over says who takes it. */
-function stepText(name: string, input: JsonObject): string {
+export function stepText(name: string, input: JsonObject, worker = 'Opus'): string {
   if (name === 'Task' || name === 'Agent') {
-    return `Opus · ${oneLine(str(input['description']) ?? 'working on it')}`
+    return `${worker} · ${oneLine(str(input['description']) ?? 'working on it')}`
   }
   if (name === 'ToolSearch') return 'Finding the right tools'
   return describeTool(toolLabel(name), input)
 }
 
-function deny(id: string): object {
+function deny(id: string, message = 'The user denied this in Threadlight.'): object {
   return {
     type: 'control_response',
-    response: {
-      subtype: 'success',
-      request_id: id,
-      response: { behavior: 'deny', message: 'The user denied this in Threadlight.' },
-    },
+    response: { subtype: 'success', request_id: id, response: { behavior: 'deny', message } },
   }
 }
 

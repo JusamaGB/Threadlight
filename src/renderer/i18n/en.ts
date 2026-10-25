@@ -25,6 +25,12 @@ export const en = {
     idle: 'Idle',
     guessed: 'state guessed',
   },
+  usage: {
+    fiveHour: '5-hour limit',
+    week: 'Weekly limit',
+    part: (label: string, percent: number, resets: string) =>
+      `${label} ${percent}%, resets ${resets}`,
+  },
   detail: {
     asked: 'Asked',
     plan: (done: number, total: number) => `Plan  ${done}/${total}`,
@@ -107,7 +113,13 @@ export const en = {
     deny: 'Deny',
     end: 'End',
     endHint: 'End this conversation (it is kept on disk)',
+    ended: 'This conversation has ended. Your next message starts a new one.',
     busy: 'Agent: working on it (open to see)',
+    earlier: (count: number) => `Earlier · ${count}`,
+    noEarlier: 'No earlier conversations yet.',
+    back: 'Back',
+    continue: 'Continue',
+    continueHint: 'Make this the current conversation; your next message carries it on',
   },
   tasks: {
     one: 'Task',
@@ -190,6 +202,15 @@ export const en = {
     listWindow: 'Show sessions from the last',
     maxSessions: 'Sessions listed',
     launchAtSignIn: 'Launch at sign-in',
+    agent: 'Agent',
+    agentLifetime: 'Conversation lasts',
+    agentLifetimeHint: 'After its last reply, then it starts afresh',
+    lifetime: (minutes: number) =>
+      minutes === 0 ? 'Until ended' : minutes < 60 ? `${minutes} min` : `${minutes / 60} h`,
+    agentWorker: 'Worker',
+    agentWorkerHint: 'Sonnet uses less of your limits',
+    appsChecking: 'Checking connected apps…',
+    appsNone: 'No connected apps found.',
     less: 'Less',
     more: 'More',
     footer: (version: string) => `Threadlight ${version} · Unofficial, not made by Anthropic`,

@@ -1261,3 +1261,118 @@
   color: var(--faint);
   cursor: default;
 }
+
+/* The plan's usage along the card's foot (UsageBar.tsx): a 2px line in a taller hover strip. */
+.usage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  display: flex;
+  align-items: flex-end;
+  z-index: 2;
+}
+
+.usageTrack {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: var(--border);
+}
+
+.usageFill {
+  display: block;
+  height: 100%;
+  background: var(--muted);
+  transition: width 300ms ease;
+}
+
+.usageFill[data-level='amber'] {
+  background: var(--amber);
+}
+
+.usageFill[data-level='red'] {
+  background: var(--red);
+}
+
+/* The agent's past conversations (AgentView.tsx): a collapsed row, then one line each. */
+.agentEarlier {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  margin: 2px -10px 0;
+  padding: 4px 10px 0;
+}
+
+.agentEarlierHead {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.agentEarlierHead:hover {
+  color: var(--fg);
+}
+
+.agentChevron {
+  display: inline-block;
+  width: 8px;
+  transition: transform 150ms ease;
+}
+
+.agentChevron[data-open] {
+  transform: rotate(90deg);
+}
+
+.agentPast {
+  display: flex;
+  flex-direction: column;
+  max-height: 180px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.agentPastRow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agentPastRow:hover {
+  background: var(--hover);
+}
+
+.agentPastTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agentSpacer {
+  flex: 1;
+}
+
+.agentContinue {
+  color: var(--fg);
+}

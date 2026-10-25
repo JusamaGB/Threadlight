@@ -27,8 +27,21 @@ export interface AgentState {
   progress: string | null
   /** Why the run stopped, when it stopped on its own. */
   error: string | null
+  /** Its time ran out (settings): the next message starts a fresh conversation. */
+  ended: boolean
   /** Spent so far in this conversation, in US dollars. */
   costUsd: number
+  /** Claude Code's id for this conversation, once it has started (or the one continued). */
+  sessionId: string | null
+}
+
+/** A past conversation, listed under Earlier. */
+export interface AgentConversation {
+  id: string
+  /** What you asked first. */
+  title: string
+  /** When it last changed, in ms since the epoch. */
+  at: number
 }
 
 export const IDLE_AGENT: AgentState = {
@@ -37,5 +50,14 @@ export const IDLE_AGENT: AgentState = {
   approval: null,
   progress: null,
   error: null,
+  ended: false,
   costUsd: 0,
+  sessionId: null,
+}
+
+/** A connected app the agent can use (an MCP server Claude Code sees). */
+export interface AgentApp {
+  name: string
+  /** "connected", "needs sign-in", or why it failed. */
+  status: string
 }

@@ -1,9 +1,10 @@
 // The one contract between the UI (renderer) and the Node side (main).
 // Channel names and payload types live here so both sides stay in step.
 
-import type { AgentState } from './agent'
+import type { AgentApp, AgentConversation, AgentItem, AgentState } from './agent'
 import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
+import type { Usage } from './usage'
 import type { Changes, FileDiff, RelayStatus, Session, Snapshot, TreeView } from './types'
 
 export const IPC = {
@@ -51,6 +52,12 @@ export const IPC = {
   agentSend: 'agent:send',
   agentDecide: 'agent:decide',
   agentClose: 'agent:close',
+  agentApps: 'agent:apps',
+  agentHistory: 'agent:history',
+  agentReadPast: 'agent:read-past',
+  agentResume: 'agent:resume',
+  usageGet: 'usage:get',
+  usageChanged: 'usage:changed',
 } as const
 
 export interface PanelOpened {
@@ -133,7 +140,19 @@ export interface ThreadlightApi {
   agentDecide(id: string, allow: boolean): void
   /** Ends the conversation. */
   agentClose(): void
+  /** The connected apps the agent could use (for the Settings switches). */
+  agentApps(): Promise<AgentApp[]>
+  /** Past conversations, newest first (agentHistory.ts). */
+  agentHistory(): Promise<AgentConversation[]>
+  /** One past conversation's lines, to read. */
+  agentReadPast(id: string): Promise<AgentItem[]>
+  /** Continues a past conversation: it becomes the current one. */
+  agentResume(id: string): Promise<{ ok: true } | { ok: false; reason: string }>
   onRelays(listener: (statuses: RelayStatus[]) => void): () => void
+
+  /** The plan's usage limits as last read (usage.ts); checks again when the reading is old. */
+  getUsage(): Promise<Usage | null>
+  onUsage(listener: (usage: Usage) => void): () => void
 
   getStt(): Promise<SttStatus>
   onStt(listener: (status: SttStatus) => void): () => void

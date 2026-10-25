@@ -10,11 +10,14 @@ import type { Session, Snapshot, ThreadNode } from '../shared/types'
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { TalkHotkey } from './hotkeys'
+import { listConversations, readConversation, transcriptsFolder } from './agent/agentHistory'
 import { AgentRun } from './agent/agentRun'
+import { connectedApps } from './agent/agentApps'
 import { briefing, readableFolders } from './agent/briefing'
 import { foregroundTitle } from './keyState'
 import { setLaunchAtSignIn } from './loginItem'
 import { Holds } from './holds'
+import { UsageWatcher } from './usage'
 import { findClaudeCli, isHeld, type CliCommand } from './relay'
 import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
@@ -52,6 +55,8 @@ async function start(): Promise<void> {
 
   const hooks = new HookStateStore()
   const windows = new WindowManager()
+  // The agent's own folder; its conversations stay out of the thread list unless shown.
+  const agentWorkspace = join(app.getPath('userData'), 'agent')
   // Cards held so they can be answered here (holds.ts); any change is shown at once.
   const holds = new Holds(() => void sessions.refresh())
   // Each folder's git state, counted in the background; a new count is shown at once.
@@ -63,6 +68,7 @@ async function start(): Promise<void> {
     maxSessions: initial.maxSessions,
     held: (id) => holds.held(id),
     gitFor: (folder) => gitStates.get(folder),
+    hiddenFolder: () => agentWorkspace,
   })
   const sessions = new SessionService(tracker, (snapshot) => {
     letHeldCardsGo(holds, snapshot)
@@ -202,8 +208,7 @@ async function start(): Promise<void> {
   ipcMain.handle(IPC.getRelays, () => relays.list())
 
   // The agent: one conversation Threadlight hosts itself (agent/agentRun.ts), working in its
-  // own folder. The spike runs on Haiku to keep test runs cheap; a setting comes later.
-  const agentWorkspace = join(app.getPath('userData'), 'agent')
+  // own folder. It talks on Haiku and hands real work to its worker (settings: Opus or Sonnet).
   let agent: AgentRun | null = null
   const sendAgent = (state: unknown) => windows.panel.webContents.send(IPC.agentChanged, state)
   const getAgent = async () => {
@@ -218,6 +223,11 @@ async function start(): Promise<void> {
       // What it knows about the threads, fresh with each question, and where it may look.
       briefing: () => briefing(sessions.snapshot),
       readable: () => readableFolders(sessions.snapshot),
+      // Settings are read as each conversation starts (and after each reply, for its length).
+      workerModel: () => settings.settings.agentWorker,
+      blockedApps: () => settings.settings.agentAppsOff,
+      lifetimeMinutes: () => settings.settings.agentLifetimeMinutes,
+      onRateLimit: (info) => usage.note(info),
     })
     return agent
   }
@@ -231,6 +241,38 @@ async function start(): Promise<void> {
     if (typeof id === 'string') agent?.decide(id, allow === true)
   })
   ipcMain.on(IPC.agentClose, () => agent?.close())
+  // Past conversations, from Claude Code's own transcripts of the agent's folder.
+  const agentPast = transcriptsFolder(paths.projectsDir, agentWorkspace)
+  ipcMain.handle(IPC.agentHistory, () => listConversations(agentPast))
+  ipcMain.handle(IPC.agentReadPast, (_event, id: unknown) =>
+    typeof id === 'string' ? readConversation(agentPast, id) : [],
+  )
+  ipcMain.handle(IPC.agentResume, async (_event, id: unknown) => {
+    if (typeof id !== 'string') return { ok: false, reason: 'No conversation.' }
+    const items = await readConversation(agentPast, id)
+    if (items.length === 0) return { ok: false, reason: 'That conversation is gone.' }
+    const run = await getAgent()
+    return run
+      ? run.resume(id, items)
+      : { ok: false, reason: 'Claude Code was not found on this PC.' }
+  })
+  ipcMain.handle(IPC.agentApps, async () => {
+    const found = (cli ??= await findClaudeCli(paths))
+    return found ? connectedApps(found) : []
+  })
+
+  // The plan's usage limits, for the bar along the panel's foot: from the agent's runs, or a
+  // tiny check of its own when the panel asks and the last reading is old (usage.ts).
+  const usage = new UsageWatcher({
+    cli: async () => (cli ??= await findClaudeCli(paths)),
+    cwd: agentWorkspace,
+    onChange: (reading) => windows.panel.webContents.send(IPC.usageChanged, reading),
+  })
+  ipcMain.handle(IPC.usageGet, async () => {
+    await mkdir(agentWorkspace, { recursive: true })
+    void usage.refresh()
+    return usage.current
+  })
 
   // Voice: the model loads in the background if it is already downloaded; it is only ever
   // downloaded after the user agrees in the composer.

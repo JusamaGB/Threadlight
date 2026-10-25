@@ -165,7 +165,24 @@ describe('background tasks', () => {
     expect(summary.backgroundTasks).toEqual([])
   })
 
-  it('ignores foreground calls, even ones whose output mentions the background', async () => {
+  it('counts a foreground command while it runs, as the Claude app lists it', async () => {
+    const running = [
+      launch('toolu_a', 'Bash', 'Build the app', '2026-01-01T10:00:00.000Z'),
+      launch('toolu_b', 'Read', 'Reading a file', '2026-01-01T10:00:00.000Z'),
+    ]
+    expect((await read(running)).backgroundTasks).toEqual([
+      {
+        id: 'toolu_a',
+        label: 'Build the app',
+        startedAt: Date.parse('2026-01-01T10:00:00.000Z'),
+        foreground: true,
+      },
+    ])
+    const finished = await read([...running, result('toolu_a', 'built')])
+    expect(finished.backgroundTasks).toEqual([])
+  })
+
+  it('ignores finished foreground calls, even ones whose output mentions the background', async () => {
     const summary = await read([
       launch('toolu_a', 'Bash', 'Grep logs', '2026-01-01T10:00:00.000Z'),
       result('toolu_a', 'log: Command running in background with ID: b9'),

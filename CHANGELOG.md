@@ -85,6 +85,15 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
   moment as the Claude app's own timer (the thread record's turn start), or from the
   prompt's time for sessions the app does not track.
+- Agent settings: how long a conversation lasts after its last reply (10 min, 1 h, 4 h or
+  until ended; then the next message starts a fresh one, the old one kept readable), the
+  worker's model (Opus or Sonnet), a switch for each connected app Claude Code sees (off: the
+  agent cannot use it at all).
+- The task timer also counts a command while it runs in the foreground, as the Claude app's
+  Background tasks list now does; it drops off when the command finishes.
+- The Agent view keeps its history: past conversations sit under a collapsed "Earlier"
+  row, newest first, each opening read-only with Continue to pick it up again (Claude Code
+  resumes the same transcript). The agent's conversations never show in the thread list.
 - Settings, Agent, Changes and the workspace picker put "‹ Title" on the right of the header,
   where the button that opens them is. The agent no longer shows a running cost, and while it
   works on another page its ✦ button turns purple with a blue shimmer about once a second.
@@ -171,6 +180,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   latest PR's state, with a count when there are several.
 - Settings are stored in `%APPDATA%\Threadlight\settings.json`; a damaged or partly
   invalid file falls back to defaults field by field, never losing the rest.
+- A usage bar, 2px, along the panel's foot: the 5-hour limit on the Active list and open
+  threads, the weekly limit while the full list is open; hovering it shows both, with when
+  each resets. The numbers come from the agent's runs, or else from a one-word Haiku check
+  (no tools, settings or saved session; about a thousand tokens) at most every five
+  minutes while the panel is open.
 
 ### Fixed
 

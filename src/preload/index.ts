@@ -6,6 +6,7 @@ import { IPC, type PanelOpened, type TalkState, type ThreadlightApi } from '../s
 import type { Settings } from '../shared/settings'
 import type { SttStatus } from '../shared/stt'
 import type { RelayStatus, Session, Snapshot } from '../shared/types'
+import type { Usage } from '../shared/usage'
 
 // The renderer has no Node access. This object is the only door between them,
 // and each method maps to exactly one IPC channel.
@@ -49,7 +50,13 @@ const api: ThreadlightApi = {
   agentSend: (text) => ipcRenderer.invoke(IPC.agentSend, text),
   agentDecide: (id, allow) => ipcRenderer.send(IPC.agentDecide, id, allow),
   agentClose: () => ipcRenderer.send(IPC.agentClose),
+  agentApps: () => ipcRenderer.invoke(IPC.agentApps),
+  agentHistory: () => ipcRenderer.invoke(IPC.agentHistory),
+  agentReadPast: (id) => ipcRenderer.invoke(IPC.agentReadPast, id),
+  agentResume: (id) => ipcRenderer.invoke(IPC.agentResume, id),
   onRelays: (listener) => subscribe<RelayStatus[]>(IPC.relaysChanged, listener),
+  getUsage: () => ipcRenderer.invoke(IPC.usageGet),
+  onUsage: (listener) => subscribe<Usage>(IPC.usageChanged, listener),
 
   getStt: () => ipcRenderer.invoke(IPC.getStt),
   onStt: (listener) => subscribe<SttStatus>(IPC.sttChanged, listener),

@@ -19,6 +19,7 @@ import { findInSnapshot } from '../../shared/snapshot'
 import { useSnapshot } from '../hooks/useSnapshot'
 import { useSettings } from '../hooks/useSettings'
 import { useStt } from '../hooks/useStt'
+import { useUsage } from '../hooks/useUsage'
 import { useVoice } from '../hooks/useVoice'
 import { en } from '../i18n/en'
 import { windowLabel } from '../lib/format'
@@ -29,6 +30,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
 import { PanelRoomContext } from './room'
 import { SessionRow } from './SessionRow'
+import { UsageBar } from './UsageBar'
 import { WorkspacePicker } from './WorkspacePicker'
 import { sameFolder, WorkspaceTree } from './WorkspaceTree'
 
@@ -76,6 +78,7 @@ export function Panel() {
   // Ticks often enough for a thread to leave the Active list close to its 30 seconds.
   const now = useNow(5000)
   const [view, setView] = useState<View>('active')
+  const usage = useUsage()
   /** The settings list takes over the panel's card while this is true. */
   const [showSettings, setShowSettings] = useState(false)
   /** The agent conversation takes over the card, like settings. */
@@ -474,6 +477,8 @@ export function Panel() {
     setExpanded(expanded === session.id ? null : session.id)
   }
 
+  const listHidden = showSettings || pickingWorkspace || showAgent || changesFor !== null
+
   return (
     <PanelRoomContext.Provider value={panelRoom}>
       <div
@@ -623,10 +628,7 @@ export function Panel() {
         )}
 
         {/* Kept mounted (just hidden) while settings show, so a half-typed message survives. */}
-        <div
-          className={styles.sessions}
-          hidden={showSettings || pickingWorkspace || showAgent || changesFor !== null}
-        >
+        <div className={styles.sessions} hidden={listHidden}>
           {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
           {picking && (
             <div className={styles.picking}>
@@ -679,6 +681,9 @@ export function Panel() {
             />
           )}
         </div>
+
+        {/* Weekly while the full list itself shows; the 5-hour limit everywhere else. */}
+        {usage && <UsageBar usage={usage} weekly={view === 'all' && !listHidden} />}
 
         {menu && (
           <ContextMenu

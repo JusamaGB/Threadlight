@@ -38,6 +38,8 @@ export interface TrackerOptions {
   /** The recent list's length, and how many threads an expanded workspace shows at first. */
   maxSessions?: number
   now?: () => number
+  /** Threads working in this folder stay out of the lists (the agent's own, unless shown). */
+  hiddenFolder?: () => string | null
   /** Where a folder's repository stands (gitDiff.ts); counted in the background. */
   gitFor?: (folder: string) => GitState | null
   /** A card Threadlight is holding for the user to answer here (holds.ts). */
@@ -94,9 +96,12 @@ export class Tracker {
     const recentIds = new Set(hooks.keys())
     for (const [id, file] of files) if (file.mtimeMs > cutoff) recentIds.add(id)
     const recent: Session[] = []
+    const hidden = this.options.hiddenFolder?.()?.toLowerCase() ?? null
     for (const id of recentIds) {
       if (apps.get(id)?.archived) continue
-      recent.push(await build(id))
+      const session = await build(id)
+      if (hidden && session.cwd.toLowerCase() === hidden) continue
+      recent.push(session)
     }
     recent.sort(byStateThenActivity)
 
@@ -261,8 +266,11 @@ export class Tracker {
       // The Claude app's own turn timer when it tracks the thread; else the prompt's time.
       turnStartedAt: app?.lastTurnEdgeAt || summary?.turnStartedAt || null,
       // A task whose thread was closed never reports back; past a while, stop counting it.
+      // A foreground command counts only while its thread works: one whose result never came
+      // (the thread stopped) is not still running.
       backgroundTasks: (summary?.backgroundTasks ?? []).filter(
-        (task) => now - task.startedAt < TASK_GIVE_UP_MS,
+        (task) =>
+          now - task.startedAt < TASK_GIVE_UP_MS && (!task.foreground || state === 'working'),
       ),
       git: this.options.gitFor?.(gitFolder(app, summary, cwd)) ?? null,
       live: live.has(id),

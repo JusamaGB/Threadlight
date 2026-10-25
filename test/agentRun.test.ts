@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentState } from '../src/shared/agent'
 import { AgentRun, onlyLooks, readable, toolLabel } from '../src/main/agent/agentRun'
@@ -149,6 +149,28 @@ describe('AgentRun', () => {
     expect(latest()).toMatchObject({ status: 'error', error: 'Not signed in' })
   })
 
+  it('continues a past conversation: shows its lines, then resumes its transcript', async () => {
+    fake.say({ type: 'system', subtype: 'init', session_id: 'abc' })
+    run.resume('past-id', [{ kind: 'you', text: 'Earlier question' }])
+    expect(latest()).toMatchObject({ status: 'idle', sessionId: 'past-id' })
+    run.send('And now?')
+    await settle()
+    expect(args[args.indexOf('--resume') + 1]).toBe('past-id')
+    expect(latest().items).toEqual([
+      { kind: 'you', text: 'Earlier question' },
+      { kind: 'you', text: 'And now?' },
+    ])
+  })
+
+  it('learns its session id as it starts; a fresh one has no --resume', async () => {
+    run.send('Go')
+    await settle()
+    expect(args).not.toContain('--resume')
+    fake.say({ type: 'system', subtype: 'init', session_id: 'new-id' })
+    await settle()
+    expect(latest().sessionId).toBe('new-id')
+  })
+
   it('ends the conversation on close, back to idle', () => {
     run.send('Go')
     run.close()
@@ -247,6 +269,61 @@ describe('the briefing', () => {
       },
     })
     expect(latest().items).toEqual([{ kind: 'you', text: 'What is the +847?' }])
+  })
+})
+
+describe('settings', () => {
+  const withSettings = (over: Partial<ConstructorParameters<typeof AgentRun>[0]>) =>
+    new AgentRun({
+      cli: { command: 'claude.exe', prefixArgs: [] },
+      workspace: 'agent',
+      model: 'claude-haiku-5-5',
+      onChange: (state) => states.push(state),
+      start: (_command, argv) => {
+        args = argv
+        return fake.child as never
+      },
+      ...over,
+    })
+
+  it('starts with the chosen worker and without switched-off apps', async () => {
+    const agent = withSettings({
+      workerModel: () => 'sonnet',
+      blockedApps: () => ['claude.ai Gmail'],
+    })
+    agent.send('Hi')
+    await settle()
+    expect(JSON.parse(args[args.indexOf('--agents') + 1]!).worker.model).toBe('sonnet')
+    expect(args).toContain('mcp__claude_ai_Gmail')
+  })
+
+  it('refuses a switched-off app outright, even for reading', async () => {
+    const agent = withSettings({ blockedApps: () => ['claude.ai Gmail'] })
+    agent.send('Read my mail')
+    fake.say(canUse('r1', 'mcp__claude_ai_Gmail__search_threads', {}))
+    await settle()
+    expect(fake.written[1]).toMatchObject({
+      response: { request_id: 'r1', response: { behavior: 'deny' } },
+    })
+    expect(latest().approval).toBeNull()
+  })
+
+  it('ends a conversation its set time after the last reply; the next message starts fresh', async () => {
+    vi.useFakeTimers()
+    try {
+      const agent = withSettings({ lifetimeMinutes: () => 10 })
+      agent.send('First')
+      fake.say({ type: 'result', total_cost_usd: 0 })
+      await vi.advanceTimersByTimeAsync(10)
+      expect(latest().status).toBe('ready')
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(latest()).toMatchObject({ status: 'idle', ended: true }) // kept readable
+      expect(latest().items).toHaveLength(1)
+      agent.send('Second')
+      expect(latest()).toMatchObject({ ended: false, items: [{ kind: 'you', text: 'Second' }] })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
