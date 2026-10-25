@@ -30,6 +30,8 @@ export const en = {
     plan: (done: number, total: number) => `Plan  ${done}/${total}`,
     inProgress: 'In progress',
     context: (percent: number) => `Context ${percent}%`,
+    diff: (added: number, removed: number) =>
+      `Since the last commit: ${added} lines added, ${removed} removed`,
     now: 'Now',
     result: 'Result',
     lastReply: 'Last reply',
@@ -61,6 +63,7 @@ export const en = {
     typeOther: 'Type your answer first.',
     otherPlaceholder: 'Type your answer',
     holdNote: (seconds: number) => `Answering here · Claude shows its own card in ${seconds} s`,
+    holdStepNote: (seconds: number) => `Answering here · the turn finishes in ${seconds} s`,
     next: 'Next',
     previous: 'Previous question',
     answerInClaude: 'Answer in Claude ↗',

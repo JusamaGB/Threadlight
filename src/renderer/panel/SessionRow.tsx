@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react'
 
-import type { RelayStatus, Session } from '../../shared/types'
+import type { DiffStat, RelayStatus, Session } from '../../shared/types'
 import { en } from '../i18n/en'
 import { ageText } from '../lib/format'
 import { relayLine } from '../lib/relay'
@@ -23,6 +23,21 @@ interface SessionRowProps {
   /** Opens the composer on this thread (a waiting thread's card uses it for Other). */
   onCompose: () => void
 }
+
+/** Its folder's changes since the last commit, as Claude shows them: "+22 −1". */
+function DiffCount({ diff }: { diff: DiffStat }) {
+  if (diff.added === 0 && diff.removed === 0) return null
+  return (
+    <span className={styles.diff} title={en.detail.diff(diff.added, diff.removed)}>
+      {diff.added > 0 && <span className={styles.added}>+{compact(diff.added)}</span>}
+      {diff.removed > 0 && <span className={styles.removed}>−{compact(diff.removed)}</span>}
+    </span>
+  )
+}
+
+/** 1234 → "1.2k", so a big change still fits beside the title. */
+const compact = (n: number) =>
+  n < 1000 ? String(n) : `${(n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, '')}k`
 
 export function SessionRow(props: SessionRowProps) {
   const { session, relay, composing, now, expanded, onToggle, onContextMenu, onCompose } = props
@@ -57,6 +72,7 @@ export function SessionRow(props: SessionRowProps) {
             />
           </span>
           <span className={titleClass}>{session.title}</span>
+          {session.diff && <DiffCount diff={session.diff} />}
           {/* A long title fades out behind this, so it always shows. */}
           {attention && <span className={styles.needsYou}>{en.attention.needsYou}</span>}
           {/* Expanded, Open ↗ takes the age's place (drawn outside this button, below). */}

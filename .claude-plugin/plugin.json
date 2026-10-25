@@ -1,7 +1,7 @@
 {
   "name": "threadlight",
   "displayName": "Threadlight",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "An unofficial status dot and mini composer for the Claude desktop app's Claude Code sessions on Windows. Ships the hooks that tell Threadlight which sessions are working.",
   "author": { "name": "Julius Deane" },
   "license": "MIT",

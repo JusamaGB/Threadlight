@@ -85,6 +85,14 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
   moment as the Claude app's own timer (the thread record's turn start), or from the
   prompt's time for sessions the app does not track.
+- Each thread shows its folder's changes since the last commit beside its title, "+22 −1" in
+  green and red, as Claude does; it goes back to nothing when the work is committed, and new
+  files git does not track yet count as added lines. Threads outside a git folder show
+  nothing. Each folder is counted in the background, at most every 5 seconds.
+- Next steps can be answered here too: when a turn ends on a question, the plugin's Stop hook
+  waits and Threadlight shows the card with a countdown. Send hands back the picked answer,
+  and Other your own words, and the same turn carries on with it. Threadlight lets go on the
+  same rules as question cards.
 - A card answered from Threadlight locks at once ("✓ Sent") so it cannot be sent twice, and a
   next-step box a Stop hook has answered (recorded as "Stop hook feedback") no longer shows.
 - Fixed: sending in the background could start a second Claude Code process on a thread the

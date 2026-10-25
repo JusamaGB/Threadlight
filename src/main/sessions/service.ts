@@ -15,8 +15,9 @@ export class SessionService {
   private latestJson = ''
   private view: TreeView = { expanded: null, showAll: [] }
   private timer: NodeJS.Timeout | null = null
-  private running = false
-  private again = false
+  /** The scan under way, and the one queued behind it for every call made meanwhile. */
+  private running: Promise<void> | null = null
+  private queued: Promise<void> | null = null
 
   constructor(
     private readonly tracker: Tracker,
@@ -52,13 +53,26 @@ export class SessionService {
     this.timer = null
   }
 
-  async refresh(): Promise<void> {
-    // A slow scan must not pile up behind itself; one more run afterwards is enough.
-    if (this.running) {
-      this.again = true
-      return
+  /**
+   * Rescans, resolving once a scan that started after this call has finished, so the caller
+   * sees everything that happened before it asked (the Stop hook relies on this). A slow scan
+   * never piles up behind itself: every call made meanwhile shares one more run afterwards.
+   */
+  refresh(): Promise<void> {
+    if (!this.running) {
+      this.running = this.scan().finally(() => {
+        this.running = null
+      })
+      return this.running
     }
-    this.running = true
+    this.queued ??= this.running.then(() => {
+      this.queued = null
+      return this.refresh()
+    })
+    return this.queued
+  }
+
+  private async scan(): Promise<void> {
     try {
       const snapshot = await this.tracker.snapshot(this.view)
       const json = JSON.stringify(snapshot)
@@ -69,12 +83,6 @@ export class SessionService {
       }
     } catch (error) {
       console.error('Session scan failed', error)
-    } finally {
-      this.running = false
-    }
-    if (this.again) {
-      this.again = false
-      await this.refresh()
     }
   }
 }

@@ -8,6 +8,7 @@ import { join } from 'node:path'
 
 import type {
   Attention,
+  DiffStat,
   Session,
   SessionState,
   Snapshot,
@@ -36,8 +37,10 @@ export interface TrackerOptions {
   /** The recent list's length, and how many threads an expanded workspace shows at first. */
   maxSessions?: number
   now?: () => number
-  /** A question card Threadlight is holding for the user to answer here (questionHolds.ts). */
-  heldQuestion?: (sessionId: string) => { releasesAt: number } | null
+  /** A folder's changes since its last commit (gitDiff.ts); counted in the background. */
+  diffFor?: (folder: string) => DiffStat | null
+  /** A card Threadlight is holding for the user to answer here (holds.ts). */
+  held?: (sessionId: string) => { kind: 'question' | 'next-step'; releasesAt: number } | null
 }
 
 interface TranscriptFile {
@@ -253,8 +256,9 @@ export class Tracker {
       backgroundTasks: (summary?.backgroundTasks ?? []).filter(
         (task) => now - task.startedAt < TASK_GIVE_UP_MS,
       ),
+      diff: this.options.diffFor?.(cwd) ?? null,
       contextUsed: contextUsed(summary, app?.model ?? null),
-      attention: attentionFor(state, summary, this.options.heldQuestion?.(id) ?? null),
+      attention: attentionFor(state, summary, this.options.held?.(id) ?? null),
       permissionMode: app?.permissionMode ?? null,
       model: app?.model ?? null,
       pullRequests: app?.pullRequests ?? [],
@@ -369,18 +373,21 @@ export function contextUsed(
 export function attentionFor(
   state: SessionState,
   summary: TranscriptSummary | null,
-  held: { releasesAt: number } | null = null,
+  held: { kind: 'question' | 'next-step'; releasesAt: number } | null = null,
 ): Attention | null {
+  const until = (kind: 'question' | 'next-step') => (held?.kind === kind ? held.releasesAt : null)
   if (!summary || summary.interrupted) return null
   if (summary.pendingQuestion) {
     return {
       kind: 'question',
       questions: summary.pendingQuestion,
-      answerableUntil: held?.releasesAt ?? null,
+      answerableUntil: until('question'),
     }
   }
   if (state === 'waiting') return { kind: 'approval', action: summary.lastAction }
-  if (state === 'idle' && summary.nextStep) return { kind: 'next-step', ...summary.nextStep }
+  if (state === 'idle' && summary.nextStep) {
+    return { kind: 'next-step', ...summary.nextStep, answerableUntil: until('next-step') }
+  }
   return null
 }
 

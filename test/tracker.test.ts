@@ -115,14 +115,24 @@ describe('attentionFor', () => {
       kind: 'approval',
       action: 'Running tests',
     })
-    expect(attentionFor('idle', summary({ nextStep }))).toEqual({ kind: 'next-step', ...nextStep })
+    expect(attentionFor('idle', summary({ nextStep }))).toEqual({
+      kind: 'next-step',
+      ...nextStep,
+      answerableUntil: null,
+    })
   })
 
   it('marks a question card answerable while Threadlight holds it', () => {
     const held = attentionFor('working', summary({ pendingQuestion: question }), {
+      kind: 'question',
       releasesAt: 123,
     })
     expect(held).toMatchObject({ kind: 'question', answerableUntil: 123 })
+    // A next step held at the end of its turn is answerable too, but only by its own kind.
+    const step = attentionFor('idle', summary({ nextStep }), { kind: 'next-step', releasesAt: 9 })
+    expect(step).toMatchObject({ kind: 'next-step', answerableUntil: 9 })
+    const other = attentionFor('idle', summary({ nextStep }), { kind: 'question', releasesAt: 9 })
+    expect(other).toMatchObject({ kind: 'next-step', answerableUntil: null })
   })
 
   it('needs nothing while working, after Stop, or with nothing asked', () => {

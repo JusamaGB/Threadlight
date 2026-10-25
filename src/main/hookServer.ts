@@ -2,8 +2,8 @@
 // piping the event JSON Claude Code gave it. This endpoint can only update session state;
 // it has no way to send messages, so the worst a stray request can do is mislabel a dot.
 // `GET /status` answers with a few counts, for the installer's check.
-// `POST /ask` is the one route that answers with a body: the question-card hook waits on it,
-// and gets either the user's answers or nothing (questionHolds.ts).
+// `POST /ask` and `POST /stop` are the routes that answer with a body: the question-card and
+// Stop hooks wait on them, and get either the user's answer or nothing (holds.ts).
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -18,16 +18,21 @@ export interface HookServerOptions {
   onEvent: (payload: unknown) => void
   /** Answer to `GET /status`; nothing private, only that it runs and how many events arrived. */
   status?: () => object
-  /**
-   * A question card the hook is waiting on. Call `reply` once, with the hook's output or null
-   * for none; `dropped` runs if the hook stops waiting first. Return false to reply empty now.
-   */
-  onAsk?: (
-    payload: unknown,
-    reply: (body: string | null) => void,
-    dropped: (listener: () => void) => void,
-  ) => boolean
+  /** A question card the hook is waiting on (`POST /ask`). */
+  onAsk?: HoldHandler
+  /** The end of a turn the Stop hook is waiting on (`POST /stop`). */
+  onStop?: HoldHandler
 }
+
+/**
+ * Call `reply` once, with the hook's output or null for none; `dropped` runs if the hook stops
+ * waiting first. Return false to reply empty at once.
+ */
+export type HoldHandler = (
+  payload: unknown,
+  reply: (body: string | null) => void,
+  dropped: (listener: () => void) => void,
+) => boolean
 
 export interface HookServer {
   port: number
@@ -52,12 +57,13 @@ export function startHookServer(options: HookServerOptions): Promise<HookServer>
 function handle(
   request: IncomingMessage,
   response: ServerResponse,
-  { onEvent, status, onAsk }: HookServerOptions,
+  { onEvent, status, onAsk, onStop }: HookServerOptions,
   server: Server,
 ): void {
-  if (request.method === 'POST' && request.url === '/ask' && onAsk) {
+  const holder = request.url === '/ask' ? onAsk : request.url === '/stop' ? onStop : undefined
+  if (request.method === 'POST' && holder) {
     if (!fromLocalTool(request, server)) return finish(response, 403)
-    return readJson(request, (payload) => ask(payload, response, onAsk))
+    return readJson(request, (payload) => ask(payload, response, holder))
   }
   if (request.method === 'GET' && request.url === '/status' && status) {
     if (!fromLocalTool(request, server)) return finish(response, 403)
@@ -104,11 +110,7 @@ function fromLocalTool(request: IncomingMessage, server: Server): boolean {
 }
 
 /** Holds the response open until the user answers here or the card is let go. */
-function ask(
-  payload: unknown,
-  response: ServerResponse,
-  onAsk: NonNullable<HookServerOptions['onAsk']>,
-): void {
+function ask(payload: unknown, response: ServerResponse, onAsk: HoldHandler): void {
   let done = false
   const reply = (body: string | null) => {
     if (done) return

@@ -60,7 +60,12 @@ function useCtrlEnter(action: () => void) {
   }, [])
 }
 
-/** The end-of-turn question: pick an answer and Send puts its message into the thread. */
+/**
+ * The end-of-turn question. While Threadlight holds the turn's end (`answerableUntil`), Send
+ * hands the picked answer (or Other's own words) back and the same turn carries on with it.
+ * Otherwise Send puts the answer's message into the thread in the background, and Other opens
+ * the composer.
+ */
 function NextStepCard({
   session,
   attention,
@@ -74,21 +79,30 @@ function NextStepCard({
 }) {
   const OTHER = -1
   const [picked, setPicked] = useState(0) // the first answer is the recommended one
+  const [other, setOther] = useState('')
   const [sending, setSending] = useState(false)
   /** Answered from here: locked, so it cannot be sent twice before the thread moves on. */
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const action: NextStepAction | undefined = attention.actions[picked]
+  const answerable = attention.answerableUntil !== null
 
   const go = async () => {
     if (sending || sent) return
-    if (picked === OTHER || !action) return onCompose()
+    const own = picked === OTHER || !action
+    if (own && !answerable) return onCompose()
+    if (own && !other.trim()) return setError(en.attention.typeOther)
     // An app action (commit, open a PR…) can only be done in the Claude app itself.
-    if (action.message === null) return onOpen()
+    if (!own && action.message === null) return onOpen()
     setSending(true)
-    const result = await window.threadlight.sendMessage(session.id, action.message)
+    const result = answerable
+      ? await window.threadlight.answerNextStep(
+          session.id,
+          own ? { text: other } : { label: action.label },
+        )
+      : await window.threadlight.sendMessage(session.id, action!.message!)
     setSending(false)
-    // On success the thread's next turn clears this card; the row's ticks show progress.
+    // On success the thread carries on and this card clears; the row's line shows progress.
     setSent(result.ok)
     setError(result.ok ? null : result.reason)
   }
@@ -97,7 +111,9 @@ function NextStepCard({
   const label = sent
     ? en.attention.sent
     : picked === OTHER || !action
-      ? en.attention.writeReply
+      ? answerable
+        ? en.attention.send
+        : en.attention.writeReply
       : action.message === null
         ? en.attention.doInClaude
         : en.attention.send
@@ -129,9 +145,26 @@ function NextStepCard({
         disabled={sent}
         onPick={() => setPicked(OTHER)}
       />
+      {answerable && picked === OTHER && (
+        <input
+          className={styles.qOther}
+          data-answer=""
+          autoFocus
+          disabled={sent}
+          placeholder={en.attention.otherPlaceholder}
+          value={other}
+          onChange={(event) => {
+            setOther(event.target.value)
+            setError(null)
+          }}
+        />
+      )}
       <Buttons>
         <MainButton label={label} disabled={sending || sent} onClick={() => void go()} />
         {error && <p className={styles.qError}>{error}</p>}
+        {attention.answerableUntil !== null && !sent && (
+          <HoldNote until={attention.answerableUntil} kind="next-step" />
+        )}
       </Buttons>
     </div>
   )
@@ -294,17 +327,20 @@ function QuestionCard({
           onClick={() => forward()}
         />
         {error && <p className={styles.qError}>{error}</p>}
-        {answerableUntil !== null && <HoldNote until={answerableUntil} />}
+        {answerableUntil !== null && !submitted && (
+          <HoldNote until={answerableUntil} kind="question" />
+        )}
       </Buttons>
     </div>
   )
 }
 
-/** While Threadlight holds the card: Claude shows its own after this many seconds. */
-function HoldNote({ until }: { until: number }) {
+/** While Threadlight holds the card: Claude carries on by itself after this many seconds. */
+function HoldNote({ until, kind }: { until: number; kind: 'question' | 'next-step' }) {
   const now = useNow(1000)
   const seconds = Math.max(0, Math.ceil((until - now) / 1000))
-  return <p className={styles.qNote}>{en.attention.holdNote(seconds)}</p>
+  const note = kind === 'question' ? en.attention.holdNote : en.attention.holdStepNote
+  return <p className={styles.qNote}>{note(seconds)}</p>
 }
 
 /** A tool waiting for approval: what it wants to do, answered in Claude. */

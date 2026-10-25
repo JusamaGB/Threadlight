@@ -50,13 +50,26 @@ export type Attention =
       answerableUntil: number | null
     }
   | { kind: 'approval'; action: string | null }
-  | { kind: 'next-step'; recap: string | null; ask: string; actions: NextStepAction[] }
+  | {
+      kind: 'next-step'
+      recap: string | null
+      ask: string
+      actions: NextStepAction[]
+      /** Set while Threadlight holds the turn's end so it can be answered here; as above. */
+      answerableUntil: number | null
+    }
 
 export interface CurrentStep {
   /** 1-based position in the plan. */
   index: number
   total: number
   content: string
+}
+
+/** Lines added and removed in a folder since its last commit. */
+export interface DiffStat {
+  added: number
+  removed: number
 }
 
 /** A pull request the Claude app linked to a thread, shown as the branch icon in its sidebar. */
@@ -93,6 +106,8 @@ export interface Session {
   turnStartedAt: number | null
   /** Running background tasks, oldest first. They can outlive the turn that started them. */
   backgroundTasks: BackgroundTask[]
+  /** Its folder's changes since the last commit; null outside git, or before the first count. */
+  diff: DiffStat | null
   /** How full its context is, 0 to 1, as the Claude app's Context ring shows; null if unknown. */
   contextUsed: number | null
   /** Set while the thread is waiting on the user; its card replaces the usual details. */

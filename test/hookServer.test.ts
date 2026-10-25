@@ -102,6 +102,22 @@ describe('hook server', () => {
     expect(await released).toEqual({ status: 204, body: '' })
   })
 
+  it('sends POST /stop to its own handler', async () => {
+    await server.close()
+    const seen: string[] = []
+    server = await startHookServer({
+      port: 0,
+      onEvent: () => {},
+      onAsk: () => (seen.push('ask'), false),
+      onStop: (_payload, reply) => (seen.push('stop'), reply('{"decision":"block"}'), true),
+    })
+    expect(await send({ path: '/stop', body: '{}' })).toEqual({
+      status: 200,
+      body: '{"decision":"block"}',
+    })
+    expect(seen).toEqual(['stop'])
+  })
+
   it('answers /ask with nothing at once when there is nothing to hold, or no handler', async () => {
     expect(await send({ path: '/ask', body: '{}' })).toEqual({ status: 404, body: '' })
     await server.close()

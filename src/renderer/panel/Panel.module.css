@@ -369,6 +369,23 @@
   color: var(--amber);
 }
 
+/* The folder's changes since its last commit, beside the title: "+22 −1". */
+.diff {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.added {
+  color: var(--green);
+}
+
+.removed {
+  color: var(--red);
+}
+
 .age {
   color: var(--faint);
   font-size: 11px;

@@ -36,7 +36,8 @@ const api: ThreadlightApi = {
   getRelays: () => ipcRenderer.invoke(IPC.getRelays),
   answerQuestion: (sessionId, answers) =>
     ipcRenderer.invoke(IPC.answerQuestion, sessionId, answers),
-  releaseQuestion: (sessionId) => ipcRenderer.send(IPC.releaseQuestion, sessionId),
+  answerNextStep: (sessionId, choice) => ipcRenderer.invoke(IPC.answerNextStep, sessionId, choice),
+  releaseHold: (sessionId) => ipcRenderer.send(IPC.releaseHold, sessionId),
   onRelays: (listener) => subscribe<RelayStatus[]>(IPC.relaysChanged, listener),
 
   getStt: () => ipcRenderer.invoke(IPC.getStt),

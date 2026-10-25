@@ -38,8 +38,9 @@ export const IPC = {
   panelClose: 'panel:close',
   panelStayOpen: 'panel:stay-open',
   openInClaude: 'claude:open-thread',
-  answerQuestion: 'question:answer',
-  releaseQuestion: 'question:release',
+  answerQuestion: 'hold:answer-question',
+  answerNextStep: 'hold:answer-next-step',
+  releaseHold: 'hold:release',
 } as const
 
 export interface PanelOpened {
@@ -92,8 +93,16 @@ export interface ThreadlightApi {
     sessionId: string,
     answers: Record<string, string>,
   ): Promise<{ ok: true } | { ok: false; reason: string }>
-  /** Lets a held question card go, so the Claude app shows its own. */
-  releaseQuestion(sessionId: string): void
+  /**
+   * Answers a next step Threadlight is holding: one of its buttons (by label) or words of the
+   * user's own. The turn carries on with it. Refused once the hold has ended.
+   */
+  answerNextStep(
+    sessionId: string,
+    choice: { label: string } | { text: string },
+  ): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Lets a held card go, so the Claude app carries on with it as usual. */
+  releaseHold(sessionId: string): void
   onRelays(listener: (statuses: RelayStatus[]) => void): () => void
 
   getStt(): Promise<SttStatus>

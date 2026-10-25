@@ -10,12 +10,13 @@ import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { TalkHotkey } from './hotkeys'
 import { foregroundTitle } from './keyState'
 import { setLaunchAtSignIn } from './loginItem'
-import { QuestionHolds } from './questionHolds'
+import { Holds } from './holds'
 import { findClaudeCli, isHeld, type CliCommand } from './relay'
 import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
 import { defaultPaths } from './sessions/paths'
 import { SessionService } from './sessions/service'
+import { GitDiffs } from './sessions/gitDiff'
 import { Tracker } from './sessions/tracker'
 import { SettingsStore } from './settings'
 import { runSetup, setupArgs } from './setupMode'
@@ -45,14 +46,17 @@ async function start(): Promise<void> {
 
   const hooks = new HookStateStore()
   const windows = new WindowManager()
-  // Question cards held so they can be answered here; any change is shown at once.
-  const holds = new QuestionHolds(() => void sessions.refresh())
+  // Cards held so they can be answered here (holds.ts); any change is shown at once.
+  const holds = new Holds(() => void sessions.refresh())
+  // Each folder's uncommitted changes, counted in the background; a new count is shown at once.
+  const diffs = new GitDiffs(() => void sessions.refresh())
   const tracker = new Tracker({
     paths,
     hooks,
     windowHours: initial.listWindowHours,
     maxSessions: initial.maxSessions,
-    heldQuestion: (id) => holds.held(id),
+    held: (id) => holds.held(id),
+    diffFor: (folder) => diffs.get(folder),
   })
   const sessions = new SessionService(tracker, (snapshot) => {
     letHeldCardsGo(holds, snapshot)
@@ -73,9 +77,28 @@ async function start(): Promise<void> {
     },
     // The question-card hook waits here for an answer (or to be let go).
     onAsk: (payload, reply, dropped) => {
-      const held = holds.hold(payload, reply)
+      const held = holds.holdQuestion(payload, reply)
       if (held) dropped(() => holds.dropped(reply))
       return held
+    },
+    // The Stop hook waits here when a turn ends, in case it asked a next-step question.
+    onStop: (payload, reply, dropped) => {
+      const event = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<
+        string,
+        unknown
+      >
+      const sessionId = typeof event['session_id'] === 'string' ? event['session_id'] : null
+      // A turn already carried on by an answer is let finish; so is anything unrecognised.
+      if (!sessionId || event['stop_hook_active'] === true) return false
+      dropped(() => holds.dropped(reply))
+      hooks.apply(payload) // the turn has ended: idle, so the next-step card can show
+      void sessions.refresh().then(() => {
+        const attention = everySession(sessions.snapshot).find((s) => s.id === sessionId)?.attention
+        const answerable = attention?.kind === 'next-step' && attention.actions.length > 0
+        if (answerable) holds.holdNextStep(sessionId, attention, reply)
+        else reply(null) // nothing asked: the turn ends straight away
+      })
+      return true
     },
   }).catch((error: unknown) => {
     // Most likely another program holds the port. Threadlight still works on transcripts alone.
@@ -112,10 +135,15 @@ async function start(): Promise<void> {
   })
   ipcMain.handle(IPC.answerQuestion, (_event, sessionId: unknown, answers: unknown) =>
     typeof sessionId === 'string'
-      ? holds.answer(sessionId, answers)
+      ? holds.answerQuestion(sessionId, answers)
       : { ok: false, reason: 'Invalid answer.' },
   )
-  ipcMain.on(IPC.releaseQuestion, (_event, sessionId: unknown) => {
+  ipcMain.handle(IPC.answerNextStep, (_event, sessionId: unknown, choice: unknown) =>
+    typeof sessionId === 'string'
+      ? holds.answerNextStep(sessionId, choice)
+      : { ok: false, reason: 'Invalid answer.' },
+  )
+  ipcMain.on(IPC.releaseHold, (_event, sessionId: unknown) => {
     if (typeof sessionId === 'string') holds.release(sessionId)
   })
 
@@ -211,7 +239,7 @@ async function start(): Promise<void> {
   })
 
   app.on('will-quit', () => {
-    holds.releaseAll() // Claude shows every held card itself from here on
+    holds.releaseAll() // Claude carries on with every held card itself from here on
     hotkey.dispose()
     stt.stop()
     tray.destroy()
@@ -233,7 +261,7 @@ async function start(): Promise<void> {
  * has opened that thread in Claude since it was asked, when Claude is in front showing it, or
  * when Threadlight no longer lists the thread at all.
  */
-function letHeldCardsGo(holds: QuestionHolds, snapshot: Snapshot): void {
+function letHeldCardsGo(holds: Holds, snapshot: Snapshot): void {
   const ids = holds.sessionIds()
   if (ids.length === 0) return
   const all = everySession(snapshot)
