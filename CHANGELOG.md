@@ -202,6 +202,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it here offers are held before Claude shows them, and the choice goes back to the thread,
   which starts the session or does the work itself. A next-step box's app buttons (Commit,
   Open PR…) ask the thread to do that itself.
+- A thread's plan steps can be clicked to see what was done on each: how long it took, the
+  files it edited (with lines added and removed), the commands it ran (✗ for a failed one),
+  the other tools it used and what it last said. It is read from the thread's transcript, so
+  it works on old threads too; a step in progress keeps up as it goes. Files changed by a
+  shell command show only as that command.
 
 ### Changed
 

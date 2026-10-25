@@ -9,6 +9,21 @@ export interface PlanItem {
   status: PlanStatus
 }
 
+/** What a thread did while one of its plan steps was in progress, read from its transcript. */
+export interface StepActivity {
+  /** When the step was started and finished; null if it never was (or is still going). */
+  startedAt: number | null
+  endedAt: number | null
+  /** Files it edited or wrote, with lines added and removed (approximate, from the edits). */
+  files: { path: string; added: number; removed: number }[]
+  /** Shell commands, in order; `failed` is null while one has no result yet. */
+  commands: { label: string; command: string; failed: boolean | null }[]
+  /** Every other tool it used, by name, with how often. */
+  tools: { name: string; count: number }[]
+  /** What it said to the user while on the step, in order. */
+  said: string[]
+}
+
 /** A background shell command or agent a session started and has not heard back from yet. */
 export interface BackgroundTask {
   /** The tool call that started it. */

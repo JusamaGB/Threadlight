@@ -284,6 +284,11 @@ export class Tracker {
     }
   }
 
+  /** The transcript a session was last read from, if any. */
+  transcriptPath(id: string): string | null {
+    return this.readers.get(id)?.path ?? null
+  }
+
   private async read(id: string, path: string): Promise<TranscriptSummary> {
     let reader = this.readers.get(id)
     if (!reader || reader.path !== path) {

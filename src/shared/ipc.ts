@@ -5,7 +5,15 @@ import type { AgentApp, AgentConversation, AgentItem, AgentState } from './agent
 import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
 import type { Usage } from './usage'
-import type { Changes, FileDiff, RelayStatus, Session, Snapshot, TreeView } from './types'
+import type {
+  Changes,
+  FileDiff,
+  RelayStatus,
+  Session,
+  Snapshot,
+  StepActivity,
+  TreeView,
+} from './types'
 
 export const IPC = {
   getSnapshot: 'sessions:get-snapshot',
@@ -48,6 +56,7 @@ export const IPC = {
   releaseHold: 'hold:release',
   copyText: 'clipboard:copy',
   getChanges: 'changes:get',
+  getStepActivity: 'plan:step-activity',
   getFileDiff: 'changes:file',
   openChangedFile: 'changes:open',
   agentGet: 'agent:get',
@@ -144,6 +153,8 @@ export interface ThreadlightApi {
 
   /** A thread's changed files since the last commit (the Changes view); null outside git. */
   getChanges(sessionId: string): Promise<Changes | null>
+  /** What a thread did on one of its plan steps (named by its text); null if unreadable. */
+  getStepActivity(sessionId: string, step: string): Promise<StepActivity | null>
   /** One changed file's diff, fetched when it is opened. */
   getFileDiff(sessionId: string, path: string): Promise<FileDiff>
   /** Opens a changed file in its own app. */

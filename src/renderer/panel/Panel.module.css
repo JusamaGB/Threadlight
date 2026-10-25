@@ -641,9 +641,83 @@
 }
 
 .plan li {
+  color: var(--muted);
+}
+
+/* A plan step: click it to see what was done on it (StepView). */
+.planStep {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.planStep:hover {
+  color: var(--fg);
+}
+
+/* What was done on a step, indented under it. */
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 3px 0 6px 16px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.stepNote {
+  margin: 3px 0 6px 16px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.step .stepNote {
+  margin: 0;
+}
+
+.stepList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+}
+
+.stepList li {
   display: flex;
   gap: 6px;
   color: var(--muted);
+}
+
+.stepList li[data-failed] {
+  color: var(--amber);
+}
+
+.stepName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+
+.stepMark {
+  flex: none;
+  width: 10px;
+  text-align: center;
+}
+
+.stepSaid {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: pre-wrap;
 }
 
 .plan li[data-status='completed'] {

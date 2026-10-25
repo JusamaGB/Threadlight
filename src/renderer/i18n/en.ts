@@ -43,6 +43,16 @@ export const en = {
     open: 'Open ↗',
     yourMessage: 'Your message',
   },
+  step: {
+    notStarted: 'Not started yet.',
+    reading: 'Reading what happened…',
+    unreadable: "This thread's transcript could not be read.",
+    nothing: 'Nothing was recorded on this step.',
+    took: (time: string) => `Took ${time}`,
+    running: (time: string) => `Running for ${time}`,
+    files: 'Files changed',
+    commands: 'Commands run',
+  },
   workspaces: {
     showMore: (n: number) => `Show ${n} more`,
     choose: 'Which workspace should the list show?',

@@ -46,6 +46,7 @@ const api: ThreadlightApi = {
   releaseHold: (sessionId) => ipcRenderer.send(IPC.releaseHold, sessionId),
   copyText: (text) => ipcRenderer.send(IPC.copyText, text),
   getChanges: (sessionId) => ipcRenderer.invoke(IPC.getChanges, sessionId),
+  getStepActivity: (sessionId, step) => ipcRenderer.invoke(IPC.getStepActivity, sessionId, step),
   getFileDiff: (sessionId, path) => ipcRenderer.invoke(IPC.getFileDiff, sessionId, path),
   openChangedFile: (sessionId, path) => ipcRenderer.send(IPC.openChangedFile, sessionId, path),
   getAgent: () => ipcRenderer.invoke(IPC.agentGet),
