@@ -64,3 +64,6 @@
     animation: none;
   }
 }
+.paused {
+  opacity: 0.4;
+}

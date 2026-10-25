@@ -3,7 +3,7 @@ import styles from './Panel.module.css'
 import { sameFolder } from './WorkspaceTree'
 
 interface WorkspacePickerProps {
-  provider?: 'claude' | 'codex'
+  provider?: 'claude' | 'codex' | 'both' | 'none'
   /** Every workspace, whether or not it has threads inside the time window. */
   workspaces: { id: string; name: string }[]
   /** The workspace now in focus, or null when following the Claude app. */
@@ -31,7 +31,11 @@ export function WorkspacePicker({
         onClick={() => onPick(null)}
       >
         <span className={styles.workspaceName}>
-          {provider === 'codex' ? 'Follow Codex activity' : en.workspaces.followClaude}
+          {provider === 'both'
+            ? 'Follow recent activity'
+            : provider === 'codex'
+              ? 'Follow Codex activity'
+              : en.workspaces.followClaude}
         </span>
         {currentName && <span className={styles.workspaceCount}>{currentName}</span>}
       </button>

@@ -63,6 +63,26 @@ describe('validatePatch', () => {
 })
 
 describe('SettingsStore', () => {
+  it('persists both enabled and paused states without forgetting legacy workspace choices', async () => {
+    await writeFile(
+      join(box.root, 'settings.json'),
+      JSON.stringify({
+        provider: 'codex',
+        focusWorkspace: 'claude-folder',
+        codexFocusWorkspace: 'codex-folder',
+      }),
+    )
+    const store = new SettingsStore(box.root)
+    expect((await store.load()).enabledProviders).toEqual(['codex'])
+    await store.update({ enabledProviders: ['claude', 'codex'] })
+    expect((await new SettingsStore(box.root).load()).enabledProviders).toEqual(['claude', 'codex'])
+    await store.update({ enabledProviders: [] })
+    expect(await new SettingsStore(box.root).load()).toMatchObject({
+      enabledProviders: [],
+      focusWorkspace: 'claude-folder',
+      codexFocusWorkspace: 'codex-folder',
+    })
+  })
   it('saves changes and reads them back', async () => {
     const store = new SettingsStore(box.root)
     await store.load()

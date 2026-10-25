@@ -9,6 +9,7 @@ import {
 } from 'react'
 
 import { matchThread, parseVoiceCommand } from '../../shared/match'
+import { DEFAULT_ENABLED_PROVIDERS, sessionProvider } from '../../shared/providers'
 import type { Session } from '../../shared/types'
 import { Composer } from '../composer/Composer'
 import { useDotDrag } from '../hooks/useDotDrag'
@@ -75,9 +76,10 @@ export function Panel() {
   const relays = useRelays()
   const stt = useStt()
   const settings = useSettings()
-  const provider = settings?.provider ?? 'claude'
+  const enabled = settings?.enabledProviders ?? DEFAULT_ENABLED_PROVIDERS
+  const provider = enabled.length === 2 ? 'both' : (enabled[0] ?? 'none')
   const providerCompose = useRef<Partial<Record<'claude' | 'codex', ComposeState | null>>>({})
-  const previousProvider = useRef(provider)
+  const previousProviders = useRef(enabled)
   // Ticks often enough for a thread to leave the Active list close to its 30 seconds.
   const now = useNow(5000)
   const [view, setView] = useState<View>('active')
@@ -141,26 +143,47 @@ export function Panel() {
 
   const limitHandler = useRef<() => void>(() => {})
   const voice = useVoice(useCallback(() => limitHandler.current(), []))
+  const enabledKey = enabled.join()
   useEffect(() => {
-    if (previousProvider.current === provider) return
-    providerCompose.current[previousProvider.current] = compose
-      ? { ...compose, countdownSeconds: undefined }
-      : null
-    setCompose(providerCompose.current[provider] ?? null)
-    previousProvider.current = provider
-    setExpanded(null)
-    setMenu(null)
-    setPicking(null)
-    setChangesFor(null)
-    setShowAgent(false)
-    setOpenWorkspaces(null)
-    setMoreWorkspaces([])
-    setHeard(null)
-    countdownUntil.current = 0
-    setCancelToken((n) => n + 1)
-    // Only the provider change switches the saved target; ordinary typing keeps it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider])
+    previousProviders.current = enabled
+  }, [enabled])
+  // Respond to the settings event as one transition, retaining targets for still-enabled apps.
+  useEffect(
+    () =>
+      window.threadlight.onSettings((next) => {
+        const enabled = next.enabledProviders
+        if (previousProviders.current.join() === enabled.join()) return
+        if (compose)
+          providerCompose.current[sessionProvider(compose.sessionId)] = {
+            ...compose,
+            countdownSeconds: undefined,
+          }
+        if (compose && enabled.includes(sessionProvider(compose.sessionId))) {
+          setCompose({ ...compose, countdownSeconds: undefined })
+        } else {
+          const restored = !compose
+            ? enabled
+                .filter((p) => !previousProviders.current.includes(p))
+                .map((p) => providerCompose.current[p])
+                .find(Boolean)
+            : null
+          setCompose(restored ?? null)
+        }
+        previousProviders.current = enabled
+        if (expanded && !enabled.includes(sessionProvider(expanded))) setExpanded(null)
+        setMenu(null)
+        setPicking(null)
+        setChangesFor(null)
+        if (!enabled.includes('claude')) setShowAgent(false)
+        setOpenWorkspaces(null)
+        setMoreWorkspaces([])
+        setHeard(null)
+        countdownUntil.current = 0
+        setCancelToken((n) => n + 1)
+        // A saved voice countdown must never restart when a source is enabled again.
+      }),
+    [compose, expanded],
+  )
 
   // A hover or click opens the panel fresh on Active; the talk hotkey keeps what it just filled in.
   useEffect(
@@ -299,6 +322,12 @@ export function Panel() {
       return
     }
     if (voice.state !== 'idle') return
+    if (settingsRef.current?.enabledProviders.length === 0) {
+      setNotice(en.sources.paused)
+      setShowSettings(true)
+      window.threadlight.openPanelQuietly()
+      return
+    }
     if (stt.state !== 'ready') {
       setNotice(en.voice.hotkeyNeedsModel)
       window.threadlight.openPanelQuietly()
@@ -351,6 +380,7 @@ export function Panel() {
   }, [voiceDone])
 
   const closeComposer = () => {
+    if (compose) providerCompose.current[sessionProvider(compose.sessionId)] = null
     setCompose(null)
     // Opened by voice and never clicked: nothing else will close it.
     if (!document.hasFocus()) window.threadlight.closePanel()
@@ -407,11 +437,15 @@ export function Panel() {
 
   // The full list: recent threads, or the same rows wrapped in workspaces (Settings → list).
   const listMode = settings?.listMode ?? 'recent'
-  const tree = view === 'all' && listMode !== 'recent'
+  const tree = provider !== 'none' && view === 'all' && listMode !== 'recent'
   // The Workspace list shows the chosen workspace, or (Follow Claude) the one last open in Claude.
   // A chosen folder that no longer has any threads falls back to following Claude.
   const chosen =
-    (provider === 'codex' ? settings?.codexFocusWorkspace : settings?.focusWorkspace) ?? null
+    (provider === 'both'
+      ? settings?.combinedFocusWorkspace
+      : provider === 'codex'
+        ? settings?.codexFocusWorkspace
+        : settings?.focusWorkspace) ?? null
   const focusId =
     chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
       ? chosen
@@ -438,7 +472,11 @@ export function Panel() {
     : en.changes.title
   const pickWorkspace = async (id: string | null) => {
     await window.threadlight.updateSettings({
-      ...(provider === 'codex' ? { codexFocusWorkspace: id } : { focusWorkspace: id }),
+      ...(provider === 'both'
+        ? { combinedFocusWorkspace: id }
+        : provider === 'codex'
+          ? { codexFocusWorkspace: id }
+          : { focusWorkspace: id }),
       listMode: 'workspace',
     })
     setPickingWorkspace(false)
@@ -462,7 +500,7 @@ export function Panel() {
       return window.threadlight.setTreeView({ expanded: only, showAll: only })
     }
     window.threadlight.setTreeView({ expanded: openWorkspaces, showAll: moreWorkspaces })
-  }, [tree, listMode, focusId, openWorkspaces, moreWorkspaces])
+  }, [tree, listMode, focusId, openWorkspaces, moreWorkspaces, enabledKey])
 
   const openMenu = (event: MouseEvent, session: Session) => {
     event.preventDefault()
@@ -482,6 +520,7 @@ export function Panel() {
     <SessionRow
       key={session.id}
       session={session}
+      showProvider={provider === 'both'}
       relay={relays.get(session.id)}
       composing={session.id === compose?.sessionId}
       now={now}
@@ -599,12 +638,16 @@ export function Panel() {
                   {listTag.count} {listTag.word}
                 </button>
               )}
-              {provider === 'claude' && (
+              {enabled.includes('claude') && (
                 <button
                   className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
                   onClick={() => setShowAgent(true)}
-                  aria-label={agentBusy ? en.agent.busy : en.agent.open}
-                  title={agentBusy ? en.agent.busy : en.agent.open}
+                  aria-label={
+                    provider === 'both' ? 'Claude agent' : agentBusy ? en.agent.busy : en.agent.open
+                  }
+                  title={
+                    provider === 'both' ? 'Claude agent' : agentBusy ? en.agent.busy : en.agent.open
+                  }
                 >
                   <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z" />
@@ -686,7 +729,11 @@ export function Panel() {
               <>
                 {shown.length === 0 && (
                   <p className={styles.empty}>
-                    {view === 'active' ? en.panel.nothingWorking : en.nothingInWindow(windowText)}
+                    {provider === 'none'
+                      ? en.sources.paused
+                      : view === 'active'
+                        ? en.panel.nothingWorking
+                        : en.nothingInWindow(windowText)}
                   </p>
                 )}
                 {shown.map(renderRow)}
@@ -698,6 +745,7 @@ export function Panel() {
             <Composer
               key={`${target.id}:${compose.initialText ?? ''}`}
               session={target}
+              showProvider={provider === 'both'}
               relay={relays.get(target.id)}
               stt={stt}
               voiceState={voice.state}
@@ -714,8 +762,12 @@ export function Panel() {
         </div>
 
         {/* Weekly while the full list itself shows; the 5-hour limit everywhere else. */}
-        {usage && provider === 'claude' && (
-          <UsageBar usage={usage} weekly={view === 'all' && !listHidden} />
+        {usage && enabled.includes('claude') && (
+          <UsageBar
+            usage={usage}
+            weekly={view === 'all' && !listHidden}
+            source={provider === 'both' ? 'Claude' : undefined}
+          />
         )}
 
         {menu && (

@@ -8,6 +8,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Independent Claude and Codex toggles: enable both for a combined activity list
+  with subtle blue Codex and orange Claude right-edge tints, or disable both to pause monitoring. Existing selections
+  migrate unchanged. Workspace groups and saved choices stay separate; drafts remain
+  chat-scoped, disabled applications release held cards, and sends keep their exact target.
+
 - Codex provider: separate hook plugin and read-only session/database tracking,
   background `codex exec resume` for unloaded chats, writer-lock detection and
   copy-and-open for live chats. Permission and Stop cards can be held and answered;

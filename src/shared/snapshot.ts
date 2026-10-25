@@ -4,6 +4,8 @@ import type { Session, Snapshot, ThreadNode } from './types'
 export function findInSnapshot(snapshot: Snapshot, id: string): Session | undefined {
   const recent = snapshot.sessions.find((s) => s.id === id)
   if (recent) return recent
+  const retained = snapshot.lookupSessions?.find((s) => s.id === id)
+  if (retained) return retained
   const search = (nodes: ThreadNode[]): Session | undefined => {
     for (const node of nodes) {
       if (node.session.id === id) return node.session

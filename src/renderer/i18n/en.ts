@@ -1,6 +1,11 @@
 // Every user-facing string, in one place, so wording stays consistent and can be translated later.
 
 export const en = {
+  sources: {
+    title: 'Applications',
+    hint: 'Show chats from either application, or both.',
+    paused: 'Chat monitoring is paused. Enable Claude or Codex in Settings.',
+  },
   dot: {
     working: 'A Claude session is working',
     idle: 'No Claude session is working',

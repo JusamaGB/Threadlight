@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { acceleratorFrom, acceleratorLabel } from '../../shared/accelerator'
 import type { AgentApp } from '../../shared/agent'
 import type { Settings, SettingsPatch } from '../../shared/settings'
+import { PROVIDERS, providerName } from '../../shared/providers'
 import type { SttStatus } from '../../shared/stt'
 import { en } from '../i18n/en'
 import { windowLabel } from '../lib/format'
@@ -66,6 +67,7 @@ export function SettingsView({
   providerLocked,
 }: SettingsViewProps) {
   const [errors, setErrors] = useState<Partial<Record<keyof Settings, string>>>({})
+  const [savingProviders, setSavingProviders] = useState(false)
 
   const save = async (patch: SettingsPatch) => {
     const key = Object.keys(patch)[0] as keyof Settings
@@ -76,19 +78,40 @@ export function SettingsView({
 
   return (
     <div className={styles.view}>
-      <Group label="Application">
-        <Row label="Threads from" error={errors.provider}>
-          <Segmented
-            disabled={providerLocked}
-            value={settings.provider}
-            options={[
-              { value: 'claude', label: 'Claude' },
-              { value: 'codex', label: 'Codex' },
-            ]}
-            onChange={(provider) => save({ provider })}
-          />
+      <Group label={en.sources.title}>
+        <Row label="Threads from" error={errors.enabledProviders}>
+          <span className={styles.segmented} role="group" aria-label={en.sources.title}>
+            {PROVIDERS.map((provider) => (
+              <button
+                key={provider}
+                role="switch"
+                aria-checked={settings.enabledProviders.includes(provider)}
+                disabled={providerLocked || savingProviders}
+                onClick={async () => {
+                  setSavingProviders(true)
+                  try {
+                    await save({
+                      enabledProviders: settings.enabledProviders.includes(provider)
+                        ? settings.enabledProviders.filter((p) => p !== provider)
+                        : [...settings.enabledProviders, provider],
+                    })
+                  } finally {
+                    setSavingProviders(false)
+                  }
+                }}
+              >
+                <span className={styles.providerCheck} aria-hidden="true">
+                  {settings.enabledProviders.includes(provider) ? '✓' : ''}
+                </span>
+                {providerName(provider)}
+              </button>
+            ))}
+          </span>
         </Row>
-        {settings.provider === 'codex' && (
+        <p className={styles.footer}>
+          {settings.enabledProviders.length ? en.sources.hint : en.sources.paused}
+        </p>
+        {settings.enabledProviders.includes('codex') && (
           <p className={styles.footer}>
             Live chats open in Codex. Install and trust the Threadlight Codex plugin to answer held
             cards here.
@@ -193,7 +216,7 @@ export function SettingsView({
         </Row>
       </Group>
 
-      {settings.provider === 'claude' && (
+      {settings.enabledProviders.includes('claude') && (
         <Group label={en.settings.agent}>
           <Row label={en.settings.agentLifetime} hint={en.settings.agentLifetimeHint}>
             <Segmented
@@ -233,9 +256,11 @@ export function SettingsView({
       </Group>
 
       <p className={styles.footer}>
-        {settings.provider === 'codex'
-          ? `Threadlight ${version} · Unofficial, not made by OpenAI`
-          : en.settings.footer(version)}
+        {settings.enabledProviders.length === 2
+          ? `Threadlight ${version} · Unofficial, not made by Anthropic or OpenAI`
+          : settings.enabledProviders.includes('codex')
+            ? `Threadlight ${version} · Unofficial, not made by OpenAI`
+            : en.settings.footer(version)}
       </p>
     </div>
   )

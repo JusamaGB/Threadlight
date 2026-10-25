@@ -180,6 +180,12 @@
   color: var(--fg);
 }
 
+.providerCheck {
+  display: inline-block;
+  width: 12px;
+  color: var(--accent);
+}
+
 /* With a separator ("Toggle / Push to talk"), the words sit closer to it. */
 .separated {
   gap: 0;

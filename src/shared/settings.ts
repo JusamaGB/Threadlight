@@ -3,11 +3,18 @@
 // Every setting here has a control in the panel's settings view.
 
 import { z } from 'zod'
+import { DEFAULT_ENABLED_PROVIDERS, PROVIDERS } from './providers'
 
 export const SETTINGS_VERSION = 1
 
 export const settingsSchema = z.object({
-  provider: z.enum(['claude', 'codex']).default('claude'),
+  enabledProviders: z
+    .array(z.enum(['claude', 'codex']))
+    .max(2)
+    .refine((list) => new Set(list).size === list.length, 'Choose each application once')
+    .transform((list) => PROVIDERS.filter((provider) => list.includes(provider)))
+    .default(DEFAULT_ENABLED_PROVIDERS),
+  combinedFocusWorkspace: z.string().min(1).max(1100).nullable().default(null),
   codexFocusWorkspace: z.string().min(1).max(1000).nullable().default(null),
   /** Electron accelerator, e.g. "Control+Alt+Q". Press to start talking, again to stop. */
   talkHotkey: z.string().min(1).max(60).default('Control+Alt+Q'),
@@ -56,8 +63,14 @@ export const DEFAULT_SETTINGS: Settings = settingsSchema.parse({})
 export function parseSettings(raw: unknown): Settings {
   const stored = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
   const result: Record<string, unknown> = {}
+  // Migrate the old exclusive selector without turning on another app unexpectedly.
+  const migrated: Record<string, unknown> = {
+    ...stored,
+    enabledProviders:
+      stored['enabledProviders'] ?? (stored['provider'] === 'codex' ? ['codex'] : ['claude']),
+  }
   for (const [key, field] of Object.entries(settingsSchema.shape)) {
-    const parsed = field.safeParse(stored[key])
+    const parsed = field.safeParse(migrated[key])
     result[key] = parsed.success ? parsed.data : DEFAULT_SETTINGS[key as keyof Settings]
   }
   return result as Settings

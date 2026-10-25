@@ -25,7 +25,15 @@ function part(label: string, limit: UsageWindow | null, now: Date): string | nul
  * A thin bar along the panel's foot: how much of the 5-hour limit is used, or the weekly one
  * while the full list is open. Hovering it tells both, with when each resets.
  */
-export function UsageBar({ usage, weekly }: { usage: Usage; weekly: boolean }) {
+export function UsageBar({
+  usage,
+  weekly,
+  source,
+}: {
+  usage: Usage
+  weekly: boolean
+  source?: string
+}) {
   const shown = weekly ? (usage.week ?? usage.fiveHour) : (usage.fiveHour ?? usage.week)
   if (!shown) return null
   const now = new Date()
@@ -34,7 +42,7 @@ export function UsageBar({ usage, weekly }: { usage: Usage; weekly: boolean }) {
     .join(' · ')
   const level = shown.used >= RED_FROM ? 'red' : shown.used >= AMBER_FROM ? 'amber' : 'normal'
   return (
-    <Tip text={text} className={styles.usage}>
+    <Tip text={source ? `${source} · ${text}` : text} className={styles.usage}>
       <span className={styles.usageTrack}>
         <span
           className={styles.usageFill}

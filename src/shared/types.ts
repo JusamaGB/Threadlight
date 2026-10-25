@@ -228,6 +228,9 @@ export interface TreeView {
 /** Everything one scan produces. */
 export interface Snapshot {
   provider?: Provider
+  providers?: Provider[]
+  /** Retained for an open composer when the combined list's limit hides its row. */
+  lookupSessions?: Session[]
   /** Recent sessions, working first: the Active list and the counts. */
   sessions: Session[]
   workspaces: Workspace[]

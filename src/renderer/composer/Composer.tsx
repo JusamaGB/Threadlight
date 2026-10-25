@@ -6,9 +6,11 @@ import type { VoiceState } from '../hooks/useVoice'
 import { en } from '../i18n/en'
 import { ticks } from '../lib/relay'
 import { useDraft } from '../lib/drafts'
+import { ProviderBadge } from '../panel/ProviderBadge'
 import styles from './Composer.module.css'
 
 interface ComposerProps {
+  showProvider?: boolean
   session: Session
   relay: RelayStatus | undefined
   stt: SttStatus
@@ -139,6 +141,7 @@ export function Composer(props: ComposerProps) {
     <div className={styles.composer}>
       <div className={styles.head}>
         <span className={styles.to}>{en.composer.to}</span>
+        {props.showProvider && <ProviderBadge id={session.id} />}
         <span className={styles.target}>{session.title}</span>
         {countdownEnds !== null ? (
           <button

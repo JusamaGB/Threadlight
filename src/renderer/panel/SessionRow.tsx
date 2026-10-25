@@ -12,8 +12,10 @@ import { PullRequestBadge } from './PullRequestBadge'
 import { SessionDetail } from './SessionDetail'
 import { TaskTimer } from './TaskTimer'
 import { Tip } from './Tip'
+import { providerName, sessionProvider } from '../../shared/providers'
 
 interface SessionRowProps {
+  showProvider?: boolean
   session: Session
   relay: RelayStatus | undefined
   /** This is the thread the composer is writing to. */
@@ -65,6 +67,11 @@ export function SessionRow(props: SessionRowProps) {
     <div className={expanded ? `${styles.row} ${styles.expanded}` : styles.row}>
       <button
         className={styles.rowButton}
+        data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
+        title={props.showProvider ? `${providerName(sessionProvider(session.id))} chat` : undefined}
+        aria-description={
+          props.showProvider ? `${providerName(sessionProvider(session.id))} chat` : undefined
+        }
         onClick={onToggle}
         onContextMenu={onContextMenu}
         aria-expanded={expanded}

@@ -28,7 +28,7 @@
   align-items: center;
   gap: 4px;
   padding: 0 10px;
-  min-height: 30px;
+  min-height: 24px;
   border-bottom: 1px solid var(--border);
   flex: none;
   /* The bare header moves the panel; its text and dot do not. */
@@ -195,7 +195,6 @@
 
 .list {
   overflow-y: auto;
-  padding-bottom: 4px;
   scrollbar-width: thin;
   scrollbar-color: var(--faint) transparent;
 }
@@ -296,6 +295,16 @@
   position: relative;
 }
 
+.providerBadge {
+  flex: none;
+  font-size: 9px;
+  line-height: 14px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted);
+}
+
 .row.expanded,
 .row:hover {
   background: var(--hover);
@@ -305,6 +314,30 @@
   display: block;
   width: 100%;
   padding: 6px 10px;
+}
+
+/* A quiet identity cue under the age/open area; the title and status colours keep their meaning. */
+.rowButton[data-provider] {
+  background-image: linear-gradient(
+    to left,
+    color-mix(in srgb, var(--provider-tint) 20%, transparent),
+    transparent
+  );
+  background-size: 40px 100%;
+  background-position: right;
+  background-repeat: no-repeat;
+}
+
+.rowButton[data-provider='codex'] {
+  --provider-tint: var(--provider-codex);
+}
+
+.rowButton[data-provider='claude'] {
+  --provider-tint: var(--provider-claude);
+}
+
+.rowButton[data-provider] .age {
+  color: var(--muted);
 }
 
 .rowTop {
@@ -554,7 +587,7 @@
 /* ---------- detail ---------- */
 
 .detail {
-  margin: 0 10px 8px;
+  margin: 0 10px;
   padding: 6px 8px 8px;
   background: var(--raised);
   border-radius: 6px;

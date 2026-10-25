@@ -29,6 +29,26 @@ telemetry and no servers.
 
 ## Requirements
 
+### Show one application or both
+
+**Settings → Applications** has independent **Claude** and **Codex** toggles. Enable
+both for one list, ordered by working/waiting state and then recent activity. Each
+row has a subtle right-edge tint (Codex blue, Claude orange); hovering identifies
+the application, and the composer keeps its text label. The time window and session
+limit apply to the combined recent list; workspace groups stay separate and are
+labelled with their application, even when they share a folder.
+
+Upgrading preserves the application you had selected. New installs keep Claude on
+and Codex off until changed. Your choices are saved, with separate workspace
+selections for Claude, Codex and the combined view.
+
+Both off pauses chat monitoring. The dimmed dot and Settings remain accessible.
+Disabling an application releases its held cards and prevents new background sends;
+already accepted work continues. Drafts and pending answer text stay with their
+chat in memory, and changing the toggles cancels any voice-send countdown.
+
+### Installed applications
+
 - Windows 10 (1803 or later) or Windows 11
 - The Claude desktop app with Claude Code sessions
 - The Claude Code CLI signed in (`claude auth login`) for background sending
@@ -66,8 +86,8 @@ speech model (76 MB) downloads the first time you use voice, after you agree to 
 
 ### Codex
 
-Choose **Settings → Application → Codex** for local Codex chats. The list, workspaces
-and composer switch together; drafts remain with their chat. Read
+Enable **Settings → Applications → Codex** for local Codex chats. Leave Claude on
+to see both together; drafts remain with their chat. Read
 [Codex setup and behavior](codex-plugin/README.md) for plugin installation and trust,
 live-chat copy-and-open, held questions/approvals, and compatibility limits.
 Codex users need the signed-in Codex desktop app and native CLI instead of Claude.

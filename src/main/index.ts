@@ -6,7 +6,8 @@ import { app, clipboard, ipcMain, session, shell, type WebContents } from 'elect
 import { IDLE_AGENT } from '../shared/agent'
 import { IPC } from '../shared/ipc'
 import type { Settings } from '../shared/settings'
-import type { Session, Snapshot, ThreadNode } from '../shared/types'
+import type { Provider, Session, Snapshot, ThreadNode } from '../shared/types'
+import { combinedSnapshot, PROVIDERS, providerView, sessionProvider } from '../shared/providers'
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { TalkHotkey } from './hotkeys'
@@ -59,13 +60,16 @@ async function start(): Promise<void> {
   const paths = defaultPaths()
   const settings = new SettingsStore(app.getPath('userData'))
   const initial = await settings.load()
+  const enabled = (provider: Provider) => settings.settings.enabledProviders.includes(provider)
 
   const hooks = new HookStateStore()
   const windows = new WindowManager()
   // The agent's own folder; its conversations stay out of the thread list unless shown.
   const agentWorkspace = join(app.getPath('userData'), 'agent')
   // Cards held so they can be answered here (holds.ts); any change is shown at once.
-  const holds = new Holds(() => void claudeSessions.refresh())
+  const holds = new Holds(() => {
+    if (enabled('claude')) void claudeSessions.refresh()
+  })
   // Each folder's git state, counted in the background; a new count is shown at once.
   const gitStates = new GitStates(() => void sessions.refresh())
   const tracker = new Tracker({
@@ -79,40 +83,57 @@ async function start(): Promise<void> {
   })
   const claudeSessions = new SessionService(tracker, (snapshot) => {
     letHeldCardsGo(holds, snapshot)
-    if (settings.settings.provider === 'claude') publish(snapshot)
+    if (enabled('claude')) publish()
   })
   const codex = codexPaths()
   const codexHolds = new CodexHolds(() => {
-    if (settings.settings.provider === 'codex') void codexSessions.refresh()
+    if (enabled('codex')) void codexSessions.refresh()
   })
   const codexTracker = new CodexTracker(codex, codexHolds, (folder) => gitStates.get(folder))
   codexTracker.configure(initial.listWindowHours, initial.maxSessions)
-  const codexSessions = new SessionService(codexTracker, (snapshot) => {
-    if (settings.settings.provider === 'codex') publish(snapshot)
+  const codexSessions = new SessionService(codexTracker, () => {
+    if (enabled('codex')) publish()
   })
-  const selected = () => (settings.settings.provider === 'codex' ? codexSessions : claudeSessions)
-  function publish(snapshot: Snapshot) {
+  const sources = { claude: claudeSessions, codex: codexSessions }
+  const polling = new Set<Provider>()
+  function syncPolling(ms: number) {
+    for (const provider of PROVIDERS) {
+      if (enabled(provider) && !polling.has(provider)) {
+        sources[provider].start(ms)
+        polling.add(provider)
+      } else if (!enabled(provider) && polling.has(provider)) {
+        sources[provider].stop()
+        polling.delete(provider)
+      }
+    }
+  }
+  function publish() {
+    const snapshot = sessions.snapshot
     windows.send(IPC.sessionsChanged, snapshot.sessions)
-    windows.panel.webContents.send(IPC.snapshotChanged, {
-      ...snapshot,
-      provider: snapshot.provider ?? 'claude',
-    })
+    windows.panel.webContents.send(IPC.snapshotChanged, snapshot)
   }
   const sessions = {
     get snapshot() {
-      return { ...selected().snapshot, provider: settings.settings.provider }
+      return combinedSnapshot(
+        settings.settings.enabledProviders,
+        { claude: claudeSessions.snapshot, codex: codexSessions.snapshot },
+        settings.settings.maxSessions,
+      )
     },
     get sessions() {
-      return selected().sessions
+      return this.snapshot.sessions
     },
     find: (id: string) =>
-      id.startsWith('codex:') ? codexSessions.find(id) : claudeSessions.find(id),
-    setView: (view: Parameters<SessionService['setView']>[0]) => selected().setView(view),
-    refresh: () => selected().refresh(),
-    start: (ms: number) => {
-      claudeSessions.start(ms)
-      if (settings.settings.provider === 'codex') codexSessions.start(ms)
+      enabled(sessionProvider(id)) ? sources[sessionProvider(id)].find(id) : undefined,
+    setView: (view: Parameters<SessionService['setView']>[0]) => {
+      for (const provider of settings.settings.enabledProviders)
+        sources[provider].setView(providerView(settings.settings.enabledProviders, provider, view))
     },
+    refresh: () =>
+      Promise.all(
+        settings.settings.enabledProviders.map((provider) => sources[provider].refresh()),
+      ),
+    start: syncPolling,
   }
   // Codex hooks use a separate port and contracts. Claude's routes and plugin stay intact.
   startHookServer({
@@ -121,22 +142,14 @@ async function start(): Promise<void> {
     onEvent: (payload) => codexHolds.event(payload),
     onAsk: (payload, reply, dropped) => {
       codexHolds.event(payload)
-      if (
-        settings.settings.provider !== 'codex' ||
-        /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')
-      )
-        return false
+      if (!enabled('codex') || /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')) return false
       const held = codexHolds.hold(payload, reply)
       if (held) dropped(() => codexHolds.dropped(reply))
       return held
     },
     onStop: (payload, reply, dropped) => {
       codexHolds.event(payload)
-      if (
-        settings.settings.provider !== 'codex' ||
-        /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')
-      )
-        return false
+      if (!enabled('codex') || /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')) return false
       const held = codexHolds.hold(payload, reply)
       if (held) dropped(() => codexHolds.dropped(reply))
       return held
@@ -151,31 +164,34 @@ async function start(): Promise<void> {
     status: () => ({ app: 'threadlight', version: app.getVersion(), hookEvents }),
     onEvent: (payload) => {
       hookEvents += 1
+      if (!enabled('claude')) return
       hooks.apply(payload)
       void claudeSessions.refresh()
     },
     // The question-card hook waits here for an answer (or to be let go).
     onAsk: (payload, reply, dropped) => {
-      if (settings.settings.provider !== 'claude') return false
+      if (!enabled('claude')) return false
       const held = holds.holdQuestion(payload, reply)
       if (held) dropped(() => holds.dropped(reply))
       return held
     },
     // A tool waiting for permission (a plan to approve included) waits here to be allowed.
     onPermission: (payload, reply, dropped) => {
+      if (!enabled('claude')) return false
       const held = holds.holdApproval(payload, reply)
       if (held) dropped(() => holds.dropped(reply))
       return held
     },
     // A New session / Do it here offer waits here, before Claude shows its own card.
     onOffer: (payload, reply, dropped) => {
+      if (!enabled('claude')) return false
       const held = holds.holdOffer(payload, reply)
       if (held) dropped(() => holds.dropped(reply))
       return held
     },
     // The Stop hook waits here when a turn ends, in case it asked a next-step question.
     onStop: (payload, reply, dropped) => {
-      if (settings.settings.provider !== 'claude') return false
+      if (!enabled('claude')) return false
       const event = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<
         string,
         unknown
@@ -186,6 +202,7 @@ async function start(): Promise<void> {
       dropped(() => holds.dropped(reply))
       hooks.apply(payload) // the turn has ended: idle, so the next-step card can show
       void claudeSessions.refresh().then(() => {
+        if (!enabled('claude')) return reply(null)
         const attention = everySession(claudeSessions.snapshot).find(
           (s) => s.id === sessionId,
         )?.attention
@@ -322,9 +339,11 @@ async function start(): Promise<void> {
   }
   ipcMain.handle(IPC.sendMessage, (_event, sessionId: unknown, text: unknown) =>
     typeof sessionId === 'string' && typeof text === 'string'
-      ? sessionId.startsWith('codex:')
-        ? codexRelays.send(sessionId, text)
-        : relays.send(sessionId, text)
+      ? !enabled(sessionProvider(sessionId))
+        ? { ok: false, reason: 'Enable this application in Settings before sending.' }
+        : sessionId.startsWith('codex:')
+          ? codexRelays.send(sessionId, text)
+          : relays.send(sessionId, text)
       : { ok: false, reason: 'Invalid message.' },
   )
   ipcMain.handle(IPC.getRelays, () => [...relays.list(), ...codexRelays.list()])
@@ -391,7 +410,7 @@ async function start(): Promise<void> {
     onChange: (reading) => windows.panel.webContents.send(IPC.usageChanged, reading),
   })
   ipcMain.handle(IPC.usageGet, async () => {
-    if (settings.settings.provider === 'codex') return null
+    if (!enabled('claude')) return null
     await mkdir(agentWorkspace, { recursive: true })
     void usage.refresh()
     return usage.current
@@ -437,23 +456,23 @@ async function start(): Promise<void> {
   const applyLive = (next: Settings) => {
     tracker.configure(next.listWindowHours, next.maxSessions)
     codexTracker.configure(next.listWindowHours, next.maxSessions)
-    publish({ ...selected().snapshot, provider: next.provider })
+    publish()
     void sessions.refresh()
+    void checkProviders()
     setLaunchAtSignIn(next.launchAtSignIn)
     windows.send(IPC.settingsChanged, next)
   }
   ipcMain.handle(IPC.getSettings, () => settings.settings)
   ipcMain.handle(IPC.updateSettings, async (_event, patch: unknown) => {
-    const previousProvider = settings.settings.provider
+    const previousProviders = settings.settings.enabledProviders
     const result = await settings.update(patch, (next, previous) =>
       next.talkHotkey === previous.talkHotkey ? null : hotkey.set(next.talkHotkey),
     )
     if (result.ok) {
-      if (result.settings.provider !== previousProvider) {
-        holds.releaseAll()
-        codexHolds.releaseAll()
-        codexSessions.stop()
-        if (result.settings.provider === 'codex') codexSessions.start(SCAN_INTERVAL_MS)
+      if (result.settings.enabledProviders.join() !== previousProviders.join()) {
+        if (!enabled('claude')) holds.releaseAll()
+        if (!enabled('codex')) codexHolds.releaseAll()
+        syncPolling(SCAN_INTERVAL_MS)
       }
       hotkeyProblem = hotkey.setMode(result.settings.talkMode)
       reportHotkey()
@@ -490,15 +509,21 @@ async function start(): Promise<void> {
 
   sessions.start(SCAN_INTERVAL_MS)
 
-  // The dot only shows while the Claude desktop app is running.
-  const checkClaude = async () =>
-    windows.setClaudeRunning(
-      settings.settings.provider === 'codex'
-        ? (await codexProcesses()).running
-        : await isClaudeAppRunning(paths.appLockFile),
+  // Keep a paused dot accessible when both sources are off, so Settings is still one click away.
+  const checkProviders = async () => {
+    const selected = [...settings.settings.enabledProviders]
+    const running = await Promise.all(
+      selected.map((provider) =>
+        provider === 'codex'
+          ? codexProcesses().then((result) => result.running)
+          : isClaudeAppRunning(paths.appLockFile),
+      ),
     )
-  void checkClaude()
-  setInterval(() => void checkClaude(), CLAUDE_CHECK_INTERVAL_MS)
+    if (selected.join() === settings.settings.enabledProviders.join())
+      windows.setClaudeRunning(selected.length === 0 || running.some(Boolean))
+  }
+  void checkProviders()
+  setInterval(() => void checkProviders(), CLAUDE_CHECK_INTERVAL_MS)
 
   // Each time another window comes to the front, the dot is raised again (windows.ts keepOnTop).
   let inFront: bigint | null = null
@@ -538,7 +563,11 @@ function letHeldCardsGo(holds: Holds, snapshot: Snapshot): void {
 function everySession(snapshot: Snapshot): Session[] {
   const walk = (nodes: ThreadNode[]): Session[] =>
     nodes.flatMap((node) => [node.session, ...walk(node.children)])
-  return [...snapshot.sessions, ...snapshot.workspaces.flatMap((w) => walk(w.threads))]
+  return [
+    ...snapshot.sessions,
+    ...(snapshot.lookupSessions ?? []),
+    ...snapshot.workspaces.flatMap((w) => walk(w.threads)),
+  ]
 }
 
 /**

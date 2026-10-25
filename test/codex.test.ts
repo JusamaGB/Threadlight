@@ -321,8 +321,11 @@ describe('read-only Codex discovery', () => {
     ).toBe(null)
   })
   it('keeps default Claude settings and separate workspace choices', () => {
-    expect(parseSettings({}).provider).toBe('claude')
-    expect(validatePatch({ provider: 'codex' })).toEqual({ ok: true, patch: { provider: 'codex' } })
+    expect(parseSettings({}).enabledProviders).toEqual(['claude'])
+    expect(validatePatch({ enabledProviders: ['codex'] })).toEqual({
+      ok: true,
+      patch: { enabledProviders: ['codex'] },
+    })
     expect(
       parseSettings({
         provider: 'codex',
