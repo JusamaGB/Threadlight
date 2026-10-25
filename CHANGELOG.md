@@ -85,6 +85,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
   moment as the Claude app's own timer (the thread record's turn start), or from the
   prompt's time for sessions the app does not track.
+- The plan step in progress spins, as in Claude's own task list (still with reduced motion).
+- A thread that has just gone idle stays in the Active list for 30 seconds, so its reply can
+  be read; the thread the composer is open on stays for as long as the composer is open.
 - Threads waiting on you say "Needs your input" beside their age (a long title fades out
   behind it), with Claude's amber double circle for a dot and the question on the line
   below. Expanded, they show only a card drawn like Claude's own question card: the

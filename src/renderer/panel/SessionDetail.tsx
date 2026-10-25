@@ -53,7 +53,14 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
           <ul className={styles.plan}>
             {session.plan.map((item, index) => (
               <li key={index} data-status={item.status}>
-                <span className={styles.mark}>{MARKS[item.status]}</span>
+                {item.status === 'in_progress' ? (
+                  // The step being worked on spins, as in Claude's own task list.
+                  <span className={styles.mark} aria-label={en.detail.inProgress}>
+                    <span className={styles.spinner} />
+                  </span>
+                ) : (
+                  <span className={styles.mark}>{MARKS[item.status]}</span>
+                )}
                 {item.content}
               </li>
             ))}

@@ -498,8 +498,35 @@
 
 .mark {
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 10px;
+  height: 1lh;
   text-align: center;
+}
+
+/* The step in progress: a ring with one bright edge, turning. */
+.spinner {
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--fg);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
 
 /* ---------- context menu ---------- */

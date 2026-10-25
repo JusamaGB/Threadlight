@@ -40,6 +40,8 @@ type HoldMode = 'normal' | 'active' | 'pinned'
 /** After a voice send is answered, an untouched panel turns back into the dot. */
 const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
+/** A thread that has just gone idle stays in the Active list this long, so its reply can be read. */
+const LINGER_MS = 30_000
 
 /** While pinned, this icon takes the place of the thread count, next to the word "recent". */
 function PinIcon() {
@@ -68,7 +70,8 @@ export function Panel() {
   const relays = useRelays()
   const stt = useStt()
   const settings = useSettings()
-  const now = useNow()
+  // Ticks often enough for a thread to leave the Active list close to its 30 seconds.
+  const now = useNow(5000)
   const [view, setView] = useState<View>('active')
   /** The settings list takes over the panel's card while this is true. */
   const [showSettings, setShowSettings] = useState(false)
@@ -353,9 +356,14 @@ export function Panel() {
   }
 
   const active = sessions.filter(isActive).length
-  // The thread being written to stays listed even after it goes idle.
+  // A thread that just went idle stays listed for a while, and the one being written to for as
+  // long as the composer is open on it.
   const shown =
-    view === 'all' ? sessions : sessions.filter((s) => isActive(s) || s.id === compose?.sessionId)
+    view === 'all'
+      ? sessions
+      : sessions.filter(
+          (s) => isActive(s) || now - s.lastActiveAt < LINGER_MS || s.id === compose?.sessionId,
+        )
   // The composer's thread may come from the workspace tree, not just the recent list.
   const target = compose ? findInSnapshot(snapshot, compose.sessionId) : undefined
 

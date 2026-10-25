@@ -28,6 +28,7 @@ export const en = {
   detail: {
     asked: 'Asked',
     plan: (done: number, total: number) => `Plan  ${done}/${total}`,
+    inProgress: 'In progress',
     now: 'Now',
     result: 'Result',
     lastReply: 'Last reply',
