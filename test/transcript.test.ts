@@ -176,6 +176,76 @@ describe('background tasks', () => {
   })
 })
 
+describe('attention cards', () => {
+  const ask = {
+    type: 'assistant',
+    message: {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'toolu_q',
+          name: 'AskUserQuestion',
+          input: {
+            questions: [
+              {
+                header: 'Auth method',
+                question: 'Which sign-in should the login page use?',
+                multiSelect: false,
+                options: [
+                  { label: 'Email link (Recommended)', description: 'No passwords to store.' },
+                  { label: 'Password', description: 'Needs reset flows.' },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    },
+  }
+  const answer = {
+    type: 'user',
+    message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_q', content: 'answered' }] },
+  }
+
+  it('keeps a question card until it is answered, tagging the recommended option', async () => {
+    const pending = (await read([prompt('Build login'), ask])).pendingQuestion
+    expect(pending).toEqual([
+      {
+        header: 'Auth method',
+        question: 'Which sign-in should the login page use?',
+        multiSelect: false,
+        options: [
+          { label: 'Email link', description: 'No passwords to store.', recommended: true },
+          { label: 'Password', description: 'Needs reset flows.', recommended: false },
+        ],
+      },
+    ])
+    expect((await read([prompt('Build login'), ask, answer])).pendingQuestion).toBeNull()
+  })
+
+  it('keeps the next-step box until the user says something', async () => {
+    const wrap = toolCall('mcp__app_turn__wrap_up', {
+      recap: 'Built and checked.',
+      ask: 'Publish it?',
+      actions: [
+        { label: 'Yes, publish', message: 'Yes, publish it.' },
+        { label: 'Not yet' },
+        { label: 'Commit', action: 'commit' },
+      ],
+    })
+    expect((await read([prompt('Make the page'), wrap])).nextStep).toEqual({
+      recap: 'Built and checked.',
+      ask: 'Publish it?',
+      actions: [
+        { label: 'Yes, publish', message: 'Yes, publish it.' },
+        { label: 'Not yet', message: 'Not yet' },
+        { label: 'Commit', message: null },
+      ],
+    })
+    expect((await read([prompt('Make the page'), wrap, prompt('Yes')])).nextStep).toBeNull()
+  })
+})
+
 describe('interrupts', () => {
   it('flags a stopped session until something new happens', async () => {
     const stopped = await read([

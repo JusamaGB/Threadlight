@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { HookStateStore } from '../src/main/sessions/hookState'
-import { FALLBACK_ACTIVE_MS, resolveState, STALE_MS, Tracker } from '../src/main/sessions/tracker'
+import {
+  attentionFor,
+  FALLBACK_ACTIVE_MS,
+  resolveState,
+  STALE_MS,
+  Tracker,
+} from '../src/main/sessions/tracker'
+import type { TranscriptSummary } from '../src/main/sessions/transcript'
 import {
   interrupt,
   plan,
@@ -72,6 +79,46 @@ describe('resolveState', () => {
     expect(resolveState({ ...base, transcriptChangedAt: NOW - FALLBACK_ACTIVE_MS - 1 })).toBe(
       'idle',
     )
+  })
+})
+
+describe('attentionFor', () => {
+  const summary = (over: Partial<TranscriptSummary> = {}): TranscriptSummary => ({
+    title: null,
+    cwd: null,
+    lastPrompt: null,
+    plan: [],
+    currentStep: null,
+    recap: null,
+    lastReply: null,
+    lastAction: 'Running tests',
+    turnStartedAt: null,
+    backgroundTasks: [],
+    pendingQuestion: null,
+    nextStep: null,
+    interrupted: false,
+    ...over,
+  })
+  const question = [{ header: '', question: 'Which?', multiSelect: false, options: [] }]
+  const nextStep = { recap: null, ask: 'Publish?', actions: [] }
+
+  it('puts a question first, then an approval, then the question a finished turn asked', () => {
+    expect(attentionFor('working', summary({ pendingQuestion: question, nextStep }))).toEqual({
+      kind: 'question',
+      questions: question,
+    })
+    expect(attentionFor('waiting', summary({ nextStep }))).toEqual({
+      kind: 'approval',
+      action: 'Running tests',
+    })
+    expect(attentionFor('idle', summary({ nextStep }))).toEqual({ kind: 'next-step', ...nextStep })
+  })
+
+  it('needs nothing while working, after Stop, or with nothing asked', () => {
+    expect(attentionFor('working', summary({ nextStep }))).toBeNull()
+    expect(attentionFor('idle', summary({ nextStep, interrupted: true }))).toBeNull()
+    expect(attentionFor('idle', summary())).toBeNull()
+    expect(attentionFor('idle', null)).toBeNull()
   })
 })
 

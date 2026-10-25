@@ -42,6 +42,20 @@ export const en = {
   },
   /** Shown wherever the chosen "Show sessions from the last" window holds nothing. */
   nothingInWindow: (window: string) => `Nothing within your chosen time frame · ${window}`,
+  attention: {
+    needsYou: 'Needs your input',
+    approval: 'Waiting for your approval',
+    recommended: 'Recommended',
+    position: (n: number, total: number) => `${n} of ${total}`,
+    other: 'Other',
+    send: 'Send',
+    writeReply: 'Write a reply',
+    doInClaude: 'Do it in Claude ↗',
+    skip: 'Skip',
+    next: 'Next',
+    previous: 'Previous question',
+    answerInClaude: 'Answer in Claude ↗',
+  },
   tasks: {
     one: 'Task',
     many: (n: number) => `Tasks ×${n}`,

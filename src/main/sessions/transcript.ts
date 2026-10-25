@@ -5,7 +5,14 @@
 import { open, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 
-import type { BackgroundTask, CurrentStep, PlanItem, PlanStatus } from '../../shared/types'
+import type {
+  BackgroundTask,
+  CardQuestion,
+  CurrentStep,
+  NextStepAction,
+  PlanItem,
+  PlanStatus,
+} from '../../shared/types'
 import { isObject, oneLine, str, type JsonObject } from './json'
 
 /** Claude writes this as a user message when the user presses Stop. No hook fires for it. */
@@ -37,6 +44,10 @@ export interface TranscriptSummary {
   /** When the current turn began (the prompt that started it), in milliseconds since the epoch. */
   turnStartedAt: number | null
   backgroundTasks: BackgroundTask[]
+  /** A question card still waiting for its answer. */
+  pendingQuestion: CardQuestion[] | null
+  /** The last turn ended asking the user something, and nothing has been said since. */
+  nextStep: { recap: string | null; ask: string; actions: NextStepAction[] } | null
   /** The user pressed Stop and nothing has happened since. */
   interrupted: boolean
 }
@@ -69,6 +80,8 @@ export class TranscriptReader {
   private tasks = new Map<string, BackgroundTask>()
   /** A task's own id (e.g. a shell id, which TaskStop names) to its tool call. */
   private taskIds = new Map<string, string>()
+  private pendingQuestion: { id: string; questions: CardQuestion[] } | null = null
+  private nextStep: TranscriptSummary['nextStep'] = null
 
   constructor(readonly path: string) {}
 
@@ -106,6 +119,8 @@ export class TranscriptReader {
       lastAction: this.lastAction,
       turnStartedAt: this.turnStartedAt,
       backgroundTasks: [...this.tasks.values()].map((task) => ({ ...task })),
+      pendingQuestion: this.pendingQuestion?.questions ?? null,
+      nextStep: this.nextStep,
       interrupted: this.interrupted,
     }
   }
@@ -187,6 +202,7 @@ export class TranscriptReader {
     this.turn += 1
     this.turnStartedAt = at
     this.recap = null
+    this.nextStep = null // whatever was asked, the user has now said something
     this.interrupted = false
     this.firstPrompt ??= prompt
     this.lastPrompt = prompt
@@ -204,7 +220,7 @@ export class TranscriptReader {
         const input = isObject(block['input']) ? block['input'] : {}
         const id = str(block['id'])
         if (id) this.calls.set(id, { label: describeTool(name, input), startedAt: at })
-        this.feedTool(name, input)
+        this.feedTool(name, input, id)
       }
     }
   }
@@ -215,6 +231,7 @@ export class TranscriptReader {
     for (const block of content.filter(isObject)) {
       if (block['type'] !== 'tool_result') continue
       const id = str(block['tool_use_id'])
+      if (id && id === this.pendingQuestion?.id) this.pendingQuestion = null // answered
       const call = id ? this.calls.get(id) : undefined
       if (!id || !call) continue
       this.calls.delete(id)
@@ -228,7 +245,7 @@ export class TranscriptReader {
     }
   }
 
-  private feedTool(name: string, input: JsonObject): void {
+  private feedTool(name: string, input: JsonObject, id: string | null): void {
     // Stopping a task by hand: its notification may never be written.
     if (name === 'TaskStop' || name === 'KillShell') {
       const taskId = str(input['task_id']) ?? str(input['shell_id'])
@@ -241,6 +258,11 @@ export class TranscriptReader {
     } else if (name.endsWith('wrap_up')) {
       this.recap = str(input['recap'])
       for (const item of this.plan) item.status = 'completed'
+      this.nextStep = parseNextStep(input, this.recap)
+    } else if (name === 'AskUserQuestion') {
+      const questions = parseQuestions(input)
+      this.pendingQuestion = id && questions.length > 0 ? { id, questions } : null
+      this.lastAction = describeTool(name, input)
     } else {
       this.lastAction = describeTool(name, input)
     }
@@ -305,6 +327,42 @@ function resultText(block: JsonObject): string {
     .filter(isObject)
     .map((part) => str(part['text']) ?? '')
     .join('\n')
+}
+
+/** Claude marks its pick by ending the label with "(Recommended)"; the card shows a tag instead. */
+const RECOMMENDED = /\s*\(recommended\)\s*$/i
+
+function parseQuestions(input: JsonObject): CardQuestion[] {
+  const questions = Array.isArray(input['questions']) ? input['questions'].filter(isObject) : []
+  return questions.map((q) => ({
+    header: oneLine(str(q['header'])),
+    question: str(q['question']) ?? '',
+    multiSelect: q['multiSelect'] === true,
+    options: (Array.isArray(q['options']) ? q['options'].filter(isObject) : []).map((o) => {
+      const label = str(o['label']) ?? ''
+      return {
+        label: label.replace(RECOMMENDED, ''),
+        description: str(o['description']) ?? '',
+        recommended: RECOMMENDED.test(label),
+      }
+    }),
+  }))
+}
+
+/** A wrap_up with a question: the box Claude shows under its last message. */
+function parseNextStep(input: JsonObject, recap: string | null): TranscriptSummary['nextStep'] {
+  const ask = str(input['ask'])
+  if (!ask) return null
+  const actions = (Array.isArray(input['actions']) ? input['actions'].filter(isObject) : [])
+    .map((a) => {
+      const label = str(a['label'])
+      if (!label) return null
+      // An app action (commit, create a PR…) has no message: only the Claude app can do it.
+      const appAction = str(a['action'])
+      return { label, message: appAction ? null : (str(a['message']) ?? label) }
+    })
+    .filter((a): a is NextStepAction => a !== null)
+  return { recap, ask, actions }
 }
 
 function toPlanStatus(value: unknown): PlanStatus {

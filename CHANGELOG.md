@@ -85,6 +85,16 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
   moment as the Claude app's own timer (the thread record's turn start), or from the
   prompt's time for sessions the app does not track.
+- Threads waiting on you say "Needs your input" beside their age (a long title fades out
+  behind it), with Claude's amber double circle for a dot and the question on the line
+  below. Expanded, they show only a card drawn like Claude's own question card: the
+  question on top, radio rows with the recommended answer picked, Other, then the buttons
+  (Ctrl+Enter presses the main one).
+  - A next-step box (the question a finished turn asks) shows each answer with the message
+    it sends; Send puts the picked one into the thread, Other opens the composer, and an
+    app action (commit, open a PR) opens the thread in Claude.
+  - A question card has "‹ 1 of 2 ›", Skip and Next. The paused turn can only take its
+    answer in Claude, so the last Next opens the thread there, as does an approval.
 - An expanded thread shows Open ↗ on its title line, in place of the age, and its workspace
   folder on the status line where Open used to be.
 - Background tasks: while a thread has a background command or agent running, its age

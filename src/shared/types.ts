@@ -17,6 +17,33 @@ export interface BackgroundTask {
   startedAt: number
 }
 
+/** One question from a question card (Claude's AskUserQuestion). */
+export interface CardQuestion {
+  /** A short chip, e.g. "Auth method". */
+  header: string
+  question: string
+  /** Several options may be picked. */
+  multiSelect: boolean
+  /** The recommended option, when there is one, comes first. */
+  options: { label: string; description: string; recommended: boolean }[]
+}
+
+/** A button in a next-step box: sends `message`, or is one of the app's own actions. */
+export interface NextStepAction {
+  label: string
+  /** What clicking it sends to the thread; null for an app action (commit, open a PR…). */
+  message: string | null
+}
+
+/**
+ * Why a thread is waiting on the user, with what its card shows. A question card pauses the
+ * turn until it is answered in Claude; a next-step box comes after the turn has ended.
+ */
+export type Attention =
+  | { kind: 'question'; questions: CardQuestion[] }
+  | { kind: 'approval'; action: string | null }
+  | { kind: 'next-step'; recap: string | null; ask: string; actions: NextStepAction[] }
+
 export interface CurrentStep {
   /** 1-based position in the plan. */
   index: number
@@ -56,6 +83,8 @@ export interface Session {
   turnStartedAt: number | null
   /** Running background tasks, oldest first. They can outlive the turn that started them. */
   backgroundTasks: BackgroundTask[]
+  /** Set while the thread is waiting on the user; its card replaces the usual details. */
+  attention: Attention | null
   permissionMode: string | null
   model: string | null
   /** Oldest first, so the last one is the latest. */

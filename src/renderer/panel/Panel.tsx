@@ -433,6 +433,7 @@ export function Panel() {
       expanded={!picking && expanded === session.id}
       onToggle={() => onRowClick(session)}
       onContextMenu={(event) => openMenu(event, session)}
+      onCompose={() => setCompose({ sessionId: session.id })}
     />
   )
 

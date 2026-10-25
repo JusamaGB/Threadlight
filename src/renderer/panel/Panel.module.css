@@ -521,6 +521,203 @@
   box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
 }
 
+/* ---------- a thread waiting on the user ---------- */
+
+.needsYou {
+  flex: none;
+  color: var(--amber);
+  font-size: 11px;
+}
+
+/* Instead of an ellipsis, a long title fades out before "Needs you". */
+.fadeTitle {
+  text-overflow: clip;
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+
+/* Waiting on the user: Claude's amber double circle, still and slightly larger. */
+.stateDot[data-attention] {
+  width: 11px;
+  height: 11px;
+  margin: 0 -2.5px;
+  background: radial-gradient(
+    circle,
+    var(--amber) 0 2.5px,
+    transparent 3px 3.5px,
+    var(--amber) 4px 5px,
+    transparent 5.5px
+  );
+  animation: none;
+}
+
+/* The question card, as the Claude app draws it. */
+.cardSlot {
+  margin: 0 10px 8px;
+}
+
+.qCard {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 11px;
+}
+
+.qHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--raised);
+}
+
+.qHeadText {
+  flex: 1;
+  min-width: 0;
+}
+
+.qRecap {
+  margin: 0 0 5px;
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.qError {
+  margin: 0;
+  color: var(--amber);
+}
+
+.qText {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.qPager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--muted);
+}
+
+.qPager button {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.qPager button:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.qOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  text-align: left;
+}
+
+.qOption:hover {
+  background: var(--hover);
+}
+
+/* A radio circle; the picked one fills with the accent. Square for pick-any questions. */
+.qMark {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 1px;
+  border: 1px solid var(--faint);
+  border-radius: 50%;
+}
+
+.qMark.square {
+  border-radius: 3px;
+}
+
+.qOption[aria-checked='true'] .qMark {
+  border-color: var(--accent);
+  background: radial-gradient(circle, var(--accent) 0 3px, transparent 3.5px);
+}
+
+.qOption[aria-checked='true'] .qMark.square {
+  background: var(--accent);
+}
+
+.qBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.qLabel {
+  color: var(--fg);
+}
+
+.qDesc {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.qButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.qSkip,
+.qNext {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* The Ctrl ⏎ hint on Next, small key caps as in Claude's card. */
+.qKeys {
+  padding: 0 3px;
+  border: 1px solid color-mix(in srgb, var(--bg) 35%, transparent);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 400;
+  line-height: 13px;
+}
+
+.qSkip {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.qNext {
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.qSkip:hover {
+  background: var(--border);
+}
+
+.qNext:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* The Now line's timer: how long the turn has run, "Reading hookServer.ts  41s". */
 .elapsed {
   margin-left: 6px;

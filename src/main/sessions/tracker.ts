@@ -7,6 +7,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type {
+  Attention,
   Session,
   SessionState,
   Snapshot,
@@ -248,6 +249,7 @@ export class Tracker {
       backgroundTasks: (summary?.backgroundTasks ?? []).filter(
         (task) => now - task.startedAt < TASK_GIVE_UP_MS,
       ),
+      attention: attentionFor(state, summary),
       permissionMode: app?.permissionMode ?? null,
       model: app?.model ?? null,
       pullRequests: app?.pullRequests ?? [],
@@ -335,6 +337,21 @@ export interface StateInputs {
   transcriptChangedAt: number
   interrupted: boolean
   now: number
+}
+
+/**
+ * Whether the thread is waiting on the user, and with which card: a question it asked mid-turn
+ * comes first, then a tool waiting for approval, then the question its last turn ended on.
+ */
+export function attentionFor(
+  state: SessionState,
+  summary: TranscriptSummary | null,
+): Attention | null {
+  if (!summary || summary.interrupted) return null
+  if (summary.pendingQuestion) return { kind: 'question', questions: summary.pendingQuestion }
+  if (state === 'waiting') return { kind: 'approval', action: summary.lastAction }
+  if (state === 'idle' && summary.nextStep) return { kind: 'next-step', ...summary.nextStep }
+  return null
 }
 
 /** The rules for what state a session is in. Pure, so it is easy to test. */
