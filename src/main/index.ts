@@ -211,8 +211,9 @@ function allowMicrophoneOnly(windows: WindowManager): void {
 
 /**
  * Development-only flags for screenshots and testing without driving the mouse:
- * `--open-panel` opens the panel on start; add `--expand-first`, `--menu-first` or
- * `--settings` to also expand the first row, open its right-click menu or show settings.
+ * `--open-panel` opens the panel on start; add `--recent-first` to show the recent list, and
+ * `--expand-first`, `--menu-first` or `--settings` to also expand the first row, open its
+ * right-click menu or show settings.
  */
 function devAids(windows: WindowManager): void {
   const flag = (name: string) => process.argv.includes(name)
@@ -222,6 +223,9 @@ function devAids(windows: WindowManager): void {
       windows.openPanel()
       const contents = windows.panel.webContents
       const row = "document.querySelector('[aria-expanded]')"
+      if (flag('--recent-first')) {
+        void contents.executeJavaScript("document.querySelector('[aria-pressed]')?.click()")
+      }
       if (flag('--expand-first')) void contents.executeJavaScript(`${row}?.click()`)
       // After the panel's own "just opened" reset, which would otherwise undo these.
       setTimeout(() => {

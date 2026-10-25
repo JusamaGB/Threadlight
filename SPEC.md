@@ -195,7 +195,7 @@ Stored as JSON in `%APPDATA%/Threadlight/settings.json` (with a `version`), vali
 ## 11. Design
 
 Tokens (from the Pascal-style dark theme the prototype used), defined once in `theme.css`:
-`--bg #171717  --raised #1e1e1e  --hover #212121  --border rgba(255,255,255,.10)  --fg #fafafa  --muted #a1a1a1  --faint #6b6b6b  --green #2ecc71  --red #e74c3c  --amber #f0ad4e  --accent #7fb2ff  --radius 10px`.
+`--bg #171717  --raised #1e1e1e  --hover #212121  --border rgba(255,255,255,.10)  --fg #fafafa  --muted #a1a1a1  --faint #6b6b6b  --green #2ecc71  --red #e74c3c  --amber #f0ad4e  --accent #7fb2ff  --purple #a371f7  --radius 10px`.
 Composer mirrors Claude's: `#2f2f2f` pill, `#454545` edge, blue mic disc. Font stack: `"Segoe UI Variable", "Segoe UI", system-ui`. Animations respect `prefers-reduced-motion`. Tight spacing: 10 px gutters, 6 px row padding.
 
 ## 12. Public-repo hygiene checklist

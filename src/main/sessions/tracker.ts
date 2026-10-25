@@ -92,6 +92,7 @@ export class Tracker {
         lastAction: summary?.lastAction ?? null,
         permissionMode: app?.permissionMode ?? null,
         model: app?.model ?? null,
+        pullRequests: app?.pullRequests ?? [],
       })
     }
     sessions.sort((a, b) => ORDER[a.state] - ORDER[b.state] || b.lastActiveAt - a.lastActiveAt)

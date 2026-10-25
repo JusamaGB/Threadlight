@@ -4,6 +4,7 @@ import type { RelayStatus, Session } from '../../shared/types'
 import { ageText } from '../lib/format'
 import { relayLine } from '../lib/relay'
 import styles from './Panel.module.css'
+import { PullRequestBadge } from './PullRequestBadge'
 import { SessionDetail } from './SessionDetail'
 
 interface SessionRowProps {
@@ -36,8 +37,11 @@ export function SessionRow(props: SessionRowProps) {
           </span>
           <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
         </span>
-        <span className={styles.stage} data-tone={line?.tone}>
-          {line?.text ?? session.stage}
+        <span className={styles.rowBottom}>
+          <PullRequestBadge pullRequests={session.pullRequests} />
+          <span className={styles.stage} data-tone={line?.tone}>
+            {line?.text ?? session.stage}
+          </span>
         </span>
       </button>
       {expanded && <SessionDetail session={session} relay={relay} now={now} />}

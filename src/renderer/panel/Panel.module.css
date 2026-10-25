@@ -228,14 +228,65 @@
   flex: none;
 }
 
+.rowBottom {
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+}
+
+/* Sits under the state dot, in the gutter the stage line is indented by. */
+.pr {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+  /* Centres the icon under the 6 px dot and keeps the text lined up with rows without one. */
+  min-width: 16.5px;
+  margin-left: -2.5px;
+  padding-right: 4px;
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.pr svg {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.pr[data-state='open'] {
+  color: var(--green);
+}
+
+.pr[data-state='merged'] {
+  color: var(--purple);
+}
+
+.pr[data-state='closed'] {
+  color: var(--red);
+}
+
+.prCount {
+  line-height: 1;
+}
+
 .stage {
   display: block;
-  margin: 2px 0 0 14px;
+  flex: 1;
+  min-width: 0;
+  margin-left: 14px;
   color: var(--muted);
   font-size: 11px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The badge already fills the gutter. */
+.pr + .stage {
+  margin-left: 0;
 }
 
 /* ---------- detail ---------- */

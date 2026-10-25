@@ -100,6 +100,26 @@ describe('Tracker', () => {
     })
   })
 
+  it('carries the pull requests the app linked, skipping dismissed ones', async () => {
+    await addSession('cli-1', [prompt('ship it')], MINUTE)
+    await writeAppRecord(box.paths, {
+      sessionId: 'local_app-1',
+      cliSessionId: 'cli-1',
+      isArchived: false,
+      prs: [
+        { prNumber: 3, state: 'CLOSED', dismissed: true },
+        { prNumber: 4, state: 'MERGED' },
+        { prNumber: 5, state: 'OPEN', isDraft: true },
+        { prNumber: 'six', state: 'OPEN' },
+      ],
+    })
+    const [session] = await tracker().snapshot()
+    expect(session?.pullRequests).toEqual([
+      { number: 4, state: 'merged' },
+      { number: 5, state: 'draft' },
+    ])
+  })
+
   it('hides archived threads and anything outside the time window', async () => {
     await addSession('cli-archived', [prompt('old work')], MINUTE)
     await writeAppRecord(box.paths, {

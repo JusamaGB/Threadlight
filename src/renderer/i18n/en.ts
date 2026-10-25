@@ -30,6 +30,13 @@ export const en = {
     open: 'Open ↗',
     yourMessage: 'Your message',
   },
+  pr: {
+    state: { open: 'open', draft: 'draft', merged: 'merged', closed: 'closed' },
+    tooltip: (number: number, state: string, count: number) =>
+      count > 1
+        ? `${count} pull requests · latest #${number} ${state}`
+        : `Pull request #${number} ${state}`,
+  },
   menu: {
     compose: 'Compose',
     openInClaude: 'Open in Claude',

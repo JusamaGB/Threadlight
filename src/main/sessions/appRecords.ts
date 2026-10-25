@@ -4,6 +4,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import type { PullRequest } from '../../shared/types'
 import { isObject, str } from './json'
 
 export interface AppRecord {
@@ -16,6 +17,7 @@ export interface AppRecord {
   cwd: string | null
   permissionMode: string | null
   model: string | null
+  pullRequests: PullRequest[]
 }
 
 /** Caches parsed records by file modification time, so a refresh only re-reads changed files. */
@@ -64,7 +66,29 @@ export function parseAppRecord(raw: unknown): AppRecord | null {
     cwd: str(raw['cwd']),
     permissionMode: str(raw['permissionMode']),
     model: str(raw['model']),
+    pullRequests: parsePullRequests(raw['prs']),
   }
+}
+
+const PR_STATES: Record<string, PullRequest['state']> = {
+  OPEN: 'open',
+  DRAFT: 'draft',
+  MERGED: 'merged',
+  CLOSED: 'closed',
+}
+
+/** `prs: [{ prNumber, state: 'OPEN' | 'MERGED' | …, isDraft?, dismissed? }]`. Dismissed ones are hidden in the app too. */
+function parsePullRequests(raw: unknown): PullRequest[] {
+  if (!Array.isArray(raw)) return []
+  const list: PullRequest[] = []
+  for (const item of raw) {
+    if (!isObject(item) || item['dismissed'] === true) continue
+    const number = item['prNumber']
+    const state = PR_STATES[str(item['state']) ?? '']
+    if (typeof number !== 'number' || !state) continue
+    list.push({ number, state: state === 'open' && item['isDraft'] === true ? 'draft' : state })
+  }
+  return list
 }
 
 /** `<dir>/<account>/<org>/local_*.json` */

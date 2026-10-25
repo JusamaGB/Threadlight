@@ -15,6 +15,12 @@ export interface CurrentStep {
   content: string
 }
 
+/** A pull request the Claude app linked to a thread, shown as the branch icon in its sidebar. */
+export interface PullRequest {
+  number: number
+  state: 'open' | 'draft' | 'merged' | 'closed'
+}
+
 /** One Claude Code session as Threadlight shows it. Plain data, safe to send over IPC. */
 export interface Session {
   /** Claude Code session id (the transcript's file name). */
@@ -39,6 +45,8 @@ export interface Session {
   lastAction: string | null
   permissionMode: string | null
   model: string | null
+  /** Oldest first, so the last one is the latest. */
+  pullRequests: PullRequest[]
 }
 
 /**
