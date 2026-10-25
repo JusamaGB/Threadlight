@@ -148,7 +148,11 @@ let browser, memoryProof, testPage
 try {
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 460, height: 900 } })
-  memoryProof = await setupMemory(page, require(join(root, 'src/main/memory/store.ts')).MemoryStore)
+  memoryProof = await setupMemory(
+    page,
+    require(join(root, 'src/main/memory/store.ts')).MemoryStore,
+    require(join(root, 'src/main/memory/connections.ts')).MemoryConnections,
+  )
   testPage = page
   page.setDefaultTimeout(10000)
   const errors = []

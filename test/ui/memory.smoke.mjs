@@ -3,27 +3,40 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, randomBytes } from 'node:crypto'
 
-export async function setupMemory(page, MemoryStore) {
+export async function setupMemory(page, MemoryStore, MemoryConnections) {
   const directory = mkdtempSync(join(tmpdir(), 'threadlight-ui-memory-')),
     store = new MemoryStore(join(directory, 'memory.sqlite'))
-  const snapshot = () => ({ ...store.snapshot(), endpoint: 'http://127.0.0.1:47618/mcp' })
+  const connections = new MemoryConnections(store)
+  const snapshot = () => {
+    const pending = connections.list()
+    return { ...store.snapshot(), endpoint: 'http://127.0.0.1:47618/mcp', connections: pending }
+  }
   store.onChange = () => {
     void page.evaluate((data) => window.proof?.emit('onMemory', data), snapshot()).catch(() => {})
   }
+  connections.onChange = store.onChange
   const execute = (input) => store.execute({ ...input, operationId: randomUUID() })
   await page.exposeFunction('mockMemory', (input) => {
     try {
-      return { ok: true, value: store.execute(input), snapshot: snapshot() }
+      const value =
+        input.action === 'create_grant' && input.connectionId
+          ? connections.approve(input.connectionId, input)
+          : input.action === 'reject_connection'
+            ? connections.reject(input.id)
+            : store.execute(input)
+      return { ok: true, value, snapshot: snapshot() }
     } catch (error) {
       return { ok: false, code: error.code ?? 'error', reason: error.message }
     }
   })
   return {
     store,
+    connections,
     execute,
     close: () => {
+      connections.close()
       store.close()
       if (resolve(directory).startsWith(resolve(tmpdir()) + sep + 'threadlight-ui-memory-'))
         rmSync(directory, { recursive: true, force: true })
@@ -64,6 +77,30 @@ export async function checkMemory(page, proof, capture) {
   await view.getByRole('button', { name: /Open questions 0 items/ }).waitFor()
   assert.equal(Math.round((await page.locator('#root > div').boundingBox()).width), 342)
   await capture('memory-map')
+  const pairing = {
+    action: 'request',
+    id: randomUUID(),
+    secret: randomBytes(32).toString('hex'),
+    provider: 'codex',
+    label: 'Synthetic plugin review',
+  }
+  const pending = proof.connections.request(pairing)
+  await view.getByRole('button', { name: 'Agent access', exact: true }).click()
+  await view.getByText(pending.code, { exact: true }).waitFor()
+  await view.getByRole('button', { name: 'Review connection', exact: true }).click()
+  const research = proof.store.snapshot().folders.find((f) => f.title === 'Research')
+  await view.getByLabel('Access scope', { exact: true }).selectOption(research.id)
+  assert.equal(await view.getByLabel('Allow publishing drafts').isChecked(), false)
+  await capture('memory-plugin-approval')
+  await view.getByRole('button', { name: 'Save', exact: true }).click()
+  await view.getByText(/Approved · awaiting tool use/).waitFor()
+  const actor = proof.connections.authenticate(pairing.id, pairing.secret)
+  assert.equal(proof.store.briefing(actor).enrollment.folderId, research.id)
+  await view.getByText(/Read only.*Connected/).waitFor()
+  await view.getByRole('button', { name: 'Revoke', exact: true }).click()
+  await view.getByRole('button', { name: 'Confirm', exact: true }).click()
+  assert.throws(() => proof.connections.authenticate(pairing.id, pairing.secret))
+  await view.getByRole('button', { name: 'Back in shared memory' }).click()
   await view.getByRole('button', { name: /Research 0 items/ }).click()
   await view.getByRole('button', { name: 'New note', exact: true }).click()
   await view.getByLabel('Title', { exact: true }).fill('Shared context contract')

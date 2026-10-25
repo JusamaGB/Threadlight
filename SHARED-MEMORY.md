@@ -13,11 +13,12 @@ The Settings entry is provisional and does not require a larger window.
 3. Open an item to inspect versions, author/source, discuss it, accept a version or
    request review. Edits retain their starting revision and fail on a concurrent change.
    An accepted version remains accepted when someone proposes a newer version.
-4. Agent access → Enroll agent: select the intended chat, scope and permissions.
-   Read-only is the default. Folder creation and automatic follow-up delegation are
-   separate permissions. Background assignments receive temporary tools automatically.
-   For tools inside an already open native chat, copy the displayed configuration
-   into its provider's MCP settings. Enrollment does not silently install it globally.
+4. Install the provider plugin and ask the chat to connect to Threadlight memory.
+   Match its verification code in Agent access → Review connection; select scope,
+   permissions and optionally the enrolled native chat. Read-only is the default.
+   Folder creation and automatic follow-up delegation are separate permissions.
+   Background assignments receive temporary tools automatically. Manual enrollment
+   and copied MCP configuration remain available as an advanced fallback.
 5. Delegate: choose recipient, exact input versions, objective/acceptance criteria and
    output folder. Authorise the draft, then permit dispatch under Coordination.
 6. Review the submitted output versions and Accept result. A provider saying it has
@@ -33,6 +34,52 @@ Output-folder changes block unsent assignments and mark in-flight outcomes uncer
 New folders update quietly in place. The compact map shows six at a level, then More;
 List shows the rest. Drafts are stored by item/task/form destination. Native thread
 composer drafts and provider toggles retain their existing behaviour.
+
+## Plugin setup
+
+Use Node 22.16+ on PATH and a Threadlight build that includes the memory bridge.
+Install the plugin for each application you use. These commands are explicit setup
+steps; Threadlight does not run them or edit global provider settings on your behalf.
+From the repository folder, install Claude's local plugin:
+
+```powershell
+claude plugin marketplace add .
+claude plugin install threadlight@threadlight
+```
+
+For an existing Claude installation, update the local marketplace then run
+`claude plugin update threadlight@threadlight`. Reopen the provider conversation or
+reconnect its tools so the updated MCP server and skill are loaded.
+For Codex, follow [its plugin setup](codex-plugin/README.md). Both packages include
+the same shared-memory skill and MCP initialization guidance. Hook trust is separate
+from memory access; the existing activity/held-card hooks are unchanged.
+
+Ask: **“Connect this chat to Threadlight shared memory, then read its briefing.”**
+The chat returns a verification code. In Threadlight, open Shared memory, select or
+create a space, open Agent access, match the code and choose Review connection.
+Approve only the intended folder subtree and contribution permissions. Tell the chat
+it is approved; it checks that connection ID once and reads the scoped briefing.
+There is no token to paste. A plugin connection's native-chat association is optional
+and declared by the human; it is not authenticated by the provider.
+
+The connection ID is public routing metadata. Every tool call must name it, so a
+provider sharing one MCP process across chats does not implicitly change their target.
+Private secrets stay in the bridge/app processes. Access lasts eight hours, can be
+revoked in Agent access and ends when the bridge disconnects or Threadlight exits.
+A crash, restart or expiry requires a fresh request and explicit human approval.
+Pending requests expire after five minutes. No automatic reconnection or polling
+occurs. Opening a chat in its provider does not revoke memory access.
+
+An installed plugin teaches the workflow but does not force a model to use it or
+make every existing chat aware of new tools instantly. Invoke the shared-memory skill
+when needed. During work, agents read exact input versions, publish attributed
+findings, check changes at task boundaries and submit saved outputs for human review.
+These are shared records, not automatic synchronization of private chat histories.
+
+If tools are missing, check plugin/MCP enablement and Node availability, then reconnect
+the provider's tools. If the app is offline, start Threadlight. If access was revoked,
+do not re-request until the human directs it. Keep unsaved output in the current chat;
+never claim it was shared. The service does not bypass native provider permissions.
 
 ## Storage, retrieval and attachments
 
@@ -61,8 +108,9 @@ rejected; it is not exposed on network interfaces. Tokens are shown once, stored
 as hashes and checked for revocation on each operation. Local applications running
 as the same OS user remain inside the machine's trust boundary.
 
-Tools: snapshot, read, search, changes, ensure_folder, create_item, revise_item,
+Tools: briefing, snapshot, read, search, changes, ensure_folder, create_item, revise_item,
 import_attachment, create_task, submit_result and post_message, prefixed `memory_`.
+Plugin bridges additionally expose memory_connect and memory_disconnect; these do not grant access.
 Their schemas declare required arguments. Changes include a cursor and a resnapshot
 signal if the bounded event window no longer covers the caller. Metadata, content,
 search results and counts are filtered by scope before they leave the store.
@@ -119,6 +167,20 @@ already sent to native provider transcripts are separate copies and remain outsi
 this deletion. No claim of forensic erasure of previously written storage is made.
 
 ## Verification
+
+`test/memoryPlugins.test.ts` exercises both actual packaged stdio bridges, explicit
+connection IDs, approval, wrong secrets, scope isolation, conflicts, expiry, restart,
+restore and revocation. Plugin asset drift is checked before lint/tests. The UI smoke
+suite tests a real pending request → read-only approval → connected → revoke flow
+using synthetic IPC in the compact panel.
+
+`test/live/memory-plugins.proof.mjs` is an explicit opt-in proof
+(`THREADLIGHT_MEMORY_LIVE=1`). On 2026-10-25, fresh Claude and Codex chats both read
+a scoped briefing and pinned input, created a permitted folder and saved a verified
+note. Claude loaded the native plugin via --plugin-dir. Codex used the packaged bridge
+through invocation-only MCP configuration; native Codex marketplace installation,
+skill discovery and tool discovery were verified separately in an isolated CODEX_HOME.
+No installed user plugins, global provider settings or existing chats were changed.
 
 `test/memory.test.ts` covers authority, scopes, stale writes, idempotency, reorganisation,
 restore rollback, subscriptions, budgets, delivery correlation and uncertain outcomes.

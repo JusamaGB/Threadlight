@@ -6,6 +6,8 @@ const text = z.string().max(100_000)
 export const memoryInput = z
   .object({
     action: z.enum([
+      'briefing',
+      'reject_connection',
       'snapshot',
       'read',
       'search',
@@ -38,6 +40,7 @@ export const memoryInput = z
     ]),
     spaceId: id.optional(),
     id: id.optional(),
+    connectionId: id.optional(),
     parentId: id.nullable().optional(),
     folderId: id.optional(),
     targetId: id.optional(),
@@ -122,6 +125,7 @@ export interface MemoryRevision extends MemoryBase {
   filename?: string
 }
 export interface MemoryGrant extends MemoryBase {
+  pluginConnectionId?: string
   label: string
   folderId: string | null
   readOnly: boolean
@@ -185,6 +189,7 @@ export interface MemoryEvent {
   at: number
 }
 export interface MemorySnapshot {
+  connections?: import('./memoryPlugins').MemoryPluginConnection[]
   subscriptions: MemorySubscription[]
   participants: { label: string; assignee: string; folderId: string | null; spaceId: string }[]
   spaces: MemorySpace[]

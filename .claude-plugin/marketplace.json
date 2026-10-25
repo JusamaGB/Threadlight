@@ -6,7 +6,7 @@
     {
       "name": "threadlight",
       "source": "./",
-      "description": "Hooks that report session activity to the Threadlight app running on this PC."
+      "description": "Local activity hooks and scoped shared-memory tools for Threadlight."
     }
   ]
 }

@@ -3,7 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { backup } from 'node:sqlite'
 import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { IPC } from '../../shared/ipc'
-import { MEMORY_ATTACHMENT_LIMIT, type MemoryReply } from '../../shared/memory'
+import { MEMORY_ATTACHMENT_LIMIT, memoryInput, type MemoryReply } from '../../shared/memory'
 import { MemoryStore, MemoryError } from './store'
 import { MemoryServer } from './server'
 import { MemoryDispatcher, type MemoryDelivery } from './dispatcher'
@@ -28,10 +28,19 @@ export async function startMemory(
   }
   const snapshot = () => {
     if (!store) throw new Error(issue)
-    return { ...store.snapshot(), endpoint: server?.endpoint ?? null }
+    const connections = server?.connections.list() ?? []
+    return {
+      ...store.snapshot(),
+      endpoint: server?.endpoint ?? null,
+      connections,
+    }
   }
   if (store)
     store.onChange = () => {
+      if (!panel.isDestroyed()) panel.webContents.send(IPC.memoryChanged, snapshot())
+    }
+  if (server)
+    server.connections.onChange = () => {
       if (!panel.isDestroyed()) panel.webContents.send(IPC.memoryChanged, snapshot())
     }
   const safely = async (fn: () => unknown | Promise<unknown>): Promise<MemoryReply> => {
@@ -53,7 +62,16 @@ export async function startMemory(
     return store
   }
   ipcMain.handle(IPC.memoryRequest, (event, input: unknown) =>
-    safely(() => ours(event.sender).execute(input)),
+    safely(() => {
+      const memory = ours(event.sender),
+        parsed = memoryInput.parse(input)
+      if (parsed.action === 'reject_connection') return server?.connections.reject(parsed.id ?? '')
+      if (parsed.action === 'create_grant' && parsed.connectionId) {
+        if (!server?.endpoint) throw new Error('Plugin connections are offline.')
+        return server.connections.approve(parsed.connectionId, parsed)
+      }
+      return memory.execute(parsed)
+    }),
   )
   ipcMain.handle(IPC.memoryImport, (event, folderId: unknown) =>
     safely(async () => {
@@ -122,6 +140,7 @@ export async function startMemory(
     : null
   const timer = setInterval(() => {
     try {
+      server?.connections.sweep()
       dispatcher?.tick()
     } catch (error) {
       console.error(

@@ -371,6 +371,37 @@ export class MemoryStore {
       endpoint: null,
     }
   }
+  briefing(actor: MemoryActor = {}) {
+    const s = this.snapshot(actor),
+      g = this.grant(actor)
+    const relevant = s.tasks.filter((t) =>
+      g?.taskId ? t.id === g.taskId : g?.assignee ? t.assignee === g.assignee : false,
+    )
+    return {
+      enrollment: g
+        ? {
+            label: g.label,
+            spaceId: g.spaceId,
+            folderId: g.folderId,
+            assignee: g.assignee,
+            taskId: g.taskId,
+            readOnly: g.readOnly,
+            createFolders: g.createFolders,
+            delegate: g.delegate,
+          }
+        : null,
+      cursor: s.cursor,
+      spaces: s.spaces.map(({ id, title, description }) => ({ id, title, description })),
+      sectors: s.folders
+        .filter((f) => !f.archived)
+        .slice(0, 40)
+        .map(({ id, parentId, title, description }) => ({ id, parentId, title, description })),
+      assignments: relevant.slice(0, 10),
+      omittedSectors: Math.max(0, s.folders.filter((f) => !f.archived).length - 40),
+      omittedAssignments: Math.max(0, relevant.length - 10),
+      next: 'Search to locate relevant material; read each pinned input by item ID and revision. Snapshot lists remaining metadata. Check changes after this cursor at the next task boundary. Only submit saved outputs; the human accepts results.',
+    }
+  }
   private preference(key: string) {
     return this.db.prepare('SELECT value FROM preferences WHERE key=?').get(key)?.value as
       string | undefined
@@ -407,6 +438,7 @@ export class MemoryStore {
   }
   execute(raw: unknown, actor: MemoryActor = {}): unknown {
     const input = memoryInput.parse(raw)
+    if (input.action === 'briefing') return this.briefing(actor)
     if (input.action === 'snapshot') return this.snapshot(actor)
     if (input.action === 'read') return this.read(actor, required(input.id, 'item'), input.revision)
     if (input.action === 'search') {
@@ -663,6 +695,7 @@ export class MemoryStore {
         const grant: MemoryGrant = {
           ...this.base(space(), actor),
           label: required(i.title, 'capability label'),
+          pluginConnectionId: i.connectionId,
           folderId: i.folderId ?? null,
           readOnly: i.readOnly ?? true,
           createFolders: i.createFolders ?? false,

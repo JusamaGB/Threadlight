@@ -34,8 +34,8 @@ If they only want to know whether it works, skip to **Checking an install**. To 
 ## 1. Check the PC
 
 Run `node scripts/install.mjs --check`. Its first block confirms Windows 10 1803+ or 11,
-Node 20+, `curl.exe`, the Claude desktop app and the Claude Code CLI. If any of those shows ✗,
-stop and explain the fix (for example: install Node 20 or later from nodejs.org; install the
+Node 22.16+, `curl.exe`, the Claude desktop app and the Claude Code CLI. If any of those shows ✗,
+stop and explain the fix (for example: install Node 22.16 or later from nodejs.org; install the
 Claude desktop app). The rest of the output says what is already set up, which helps with
 step 2.
 
