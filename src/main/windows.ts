@@ -108,6 +108,19 @@ export class WindowManager {
   }
 
   /**
+   * Puts the dot (or the open panel) back above everything. Windows lets the stay-on-top window
+   * activated last go above the others, so a full-screen app or Show desktop can cover the dot
+   * until it is raised again. Raising never takes focus.
+   */
+  keepOnTop(): void {
+    if (!this.claudeRunning) return
+    const win = this.panel.isVisible() ? this.panel : this.dot
+    if (!win.isVisible()) win.showInactive()
+    win.setAlwaysOnTop(true, 'screen-saver')
+    win.moveTop()
+  }
+
+  /**
    * Opens the panel in the dot's place. A click opens it fresh and focused. The talk hotkey
    * opens it without focus (so a full-screen game is not minimised) and keeps the panel's
    * state, because the panel has just filled in the composer itself.

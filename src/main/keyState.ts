@@ -36,6 +36,18 @@ export function isKeyDown(virtualKey: number): boolean | null {
   return lib ? (lib.keyState(virtualKey) & 0x8000) !== 0 : null
 }
 
+/**
+ * Which window is in front, as a number that changes whenever another window comes forward;
+ * null if this PC cannot tell.
+ */
+export function foregroundWindowId(): bigint | null {
+  const lib = load()
+  if (!lib) return null
+  const window = lib.foregroundWindow()
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return window ? (require('koffi') as typeof import('koffi')).address(window) : 0n
+}
+
 /** The title of the window in front, or null if this PC cannot tell. */
 export function foregroundTitle(): string | null {
   const lib = load()

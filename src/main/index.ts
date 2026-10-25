@@ -14,7 +14,7 @@ import { listConversations, readConversation, transcriptsFolder } from './agent/
 import { AgentRun } from './agent/agentRun'
 import { connectedApps } from './agent/agentApps'
 import { briefing, readableFolders } from './agent/briefing'
-import { foregroundTitle } from './keyState'
+import { foregroundTitle, foregroundWindowId } from './keyState'
 import { setLaunchAtSignIn } from './loginItem'
 import { Holds } from './holds'
 import { UsageWatcher } from './usage'
@@ -35,6 +35,8 @@ import { WindowManager } from './windows'
 const SCAN_INTERVAL_MS = 1000
 const AGENT_MODEL = 'claude-haiku-5-5'
 const CLAUDE_CHECK_INTERVAL_MS = 2000
+/** How often to look for a new window in front, to raise the dot above it. */
+const ON_TOP_CHECK_MS = 500
 
 const setup = setupArgs()
 if (setup) {
@@ -362,6 +364,15 @@ async function start(): Promise<void> {
     windows.setClaudeRunning(await isClaudeAppRunning(paths.appLockFile))
   void checkClaude()
   setInterval(() => void checkClaude(), CLAUDE_CHECK_INTERVAL_MS)
+
+  // Each time another window comes to the front, the dot is raised again (windows.ts keepOnTop).
+  let inFront: bigint | null = null
+  setInterval(() => {
+    const now = foregroundWindowId()
+    if (now === inFront) return
+    inFront = now
+    windows.keepOnTop()
+  }, ON_TOP_CHECK_MS)
 
   if (!app.isPackaged) devAids(windows)
 }
