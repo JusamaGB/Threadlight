@@ -10,6 +10,8 @@ import type {
 import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
+import { useDraft } from '../lib/drafts'
+import { CodexCard } from './CodexCard'
 import styles from './Panel.module.css'
 
 interface AttentionCardProps {
@@ -28,6 +30,14 @@ interface AttentionCardProps {
  * a question card and an approval can only be answered inside Claude, so they open it there.
  */
 export function AttentionCard({ session, attention, relay, onCompose }: AttentionCardProps) {
+  if (session.provider === 'codex')
+    return (
+      <CodexCard
+        key={`${session.id}:${attention.kind === 'question' ? JSON.stringify(attention.questions) : attention.holdId || JSON.stringify(attention)}`}
+        session={session}
+        attention={attention}
+      />
+    )
   const open = () => session.appId && window.threadlight.openInClaude(session.appId)
   switch (attention.kind) {
     case 'next-step':
@@ -97,8 +107,8 @@ function NextStepCard({
   onCompose: () => void
 }) {
   const OTHER = -1
-  const [picked, setPicked] = useState(0) // the first answer is the recommended one
-  const [other, setOther] = useState('')
+  const [picked, setPicked] = useDraft(`${session.id}:${attention.ask}:picked`, 0) // the first answer is the recommended one
+  const [other, setOther] = useDraft(`${session.id}:${attention.ask}:other`, '')
   const [sending, setSending] = useState(false)
   /** Handed back to the held turn, or copied: done from here. */
   const [done, setDone] = useState<'answered' | 'copied' | null>(null)
@@ -220,10 +230,11 @@ function QuestionCard({
   answerableUntil: number | null
   onOpen: () => void
 }) {
-  const [index, setIndex] = useState(0)
-  const [picks, setPicks] = useState<Record<number, string[]>>({})
-  const [others, setOthers] = useState<Record<number, string>>({})
-  const [skipped, setSkipped] = useState<Record<number, boolean>>({})
+  const cardKey = `${session.id}:${JSON.stringify(questions)}`
+  const [index, setIndex] = useDraft(`${cardKey}:index`, 0)
+  const [picks, setPicks] = useDraft<Record<number, string[]>>(`${cardKey}:picks`, {})
+  const [others, setOthers] = useDraft<Record<number, string>>(`${cardKey}:others`, {})
+  const [skipped, setSkipped] = useDraft<Record<number, boolean>>(`${cardKey}:skipped`, {})
   const [sending, setSending] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)

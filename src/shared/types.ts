@@ -1,5 +1,6 @@
 /** What a session is doing right now. */
 export type SessionState = 'working' | 'waiting' | 'idle'
+export type Provider = 'claude' | 'codex'
 
 export type PlanStatus = 'pending' | 'in_progress' | 'completed'
 
@@ -54,7 +55,7 @@ export type Attention =
        */
       answerableUntil: number | null
     }
-  | { kind: 'approval'; action: string | null }
+  | { kind: 'approval'; action: string | null; answerableUntil?: number; holdId?: string }
   | {
       kind: 'next-step'
       recap: string | null
@@ -62,6 +63,7 @@ export type Attention =
       actions: NextStepAction[]
       /** Set while Threadlight holds the turn's end so it can be answered here; as above. */
       answerableUntil: number | null
+      holdId?: string
     }
 
 export interface CurrentStep {
@@ -133,6 +135,8 @@ export interface PullRequest {
 
 /** One Claude Code session as Threadlight shows it. Plain data, safe to send over IPC. */
 export interface Session {
+  /** Absent on existing Claude records for backwards compatibility. */
+  provider?: Provider
   /** Claude Code session id (the transcript's file name). */
   id: string
   /** The Claude app's own thread id (`local_…`), used for "Open in Claude". */
@@ -204,6 +208,7 @@ export interface TreeView {
 
 /** Everything one scan produces. */
 export interface Snapshot {
+  provider?: Provider
   /** Recent sessions, working first: the Active list and the counts. */
   sessions: Session[]
   workspaces: Workspace[]

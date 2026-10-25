@@ -8,6 +8,13 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Codex provider: separate hook plugin and read-only session/database tracking,
+  background `codex exec resume` for unloaded chats, writer-lock detection and
+  copy-and-open for live chats. Permission and Stop cards can be held and answered;
+  native question cards use copy-and-open. Settings switches the list, workspaces
+  and composer between Claude and Codex, preserving chat drafts in memory.
+  See `codex-plugin/README.md` for installation and compatibility limits.
+
 - Project scaffold: Electron, TypeScript (strict), React, electron-vite, ESLint,
   Prettier, Vitest and Windows CI.
 - Status dot window (always on top, transparent, not in the taskbar).

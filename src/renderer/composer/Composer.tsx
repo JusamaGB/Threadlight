@@ -5,6 +5,7 @@ import type { RelayStatus, Session } from '../../shared/types'
 import type { VoiceState } from '../hooks/useVoice'
 import { en } from '../i18n/en'
 import { ticks } from '../lib/relay'
+import { useDraft } from '../lib/drafts'
 import styles from './Composer.module.css'
 
 interface ComposerProps {
@@ -34,7 +35,7 @@ const RING = 2 * Math.PI * 7 // circumference of the countdown ring (r = 7)
 export function Composer(props: ComposerProps) {
   const { session, relay, stt, voiceState, level, onMic, heard, voiceError } = props
   const { initialText = '', countdownSeconds, cancelToken, onClose } = props
-  const [text, setText] = useState(initialText)
+  const [text, setText] = useDraft(`${session.id}:composer:${initialText}`, initialText)
   const [error, setError] = useState<string | null>(null)
   const [askDownload, setAskDownload] = useState(false)
   const [countdownEnds, setCountdownEnds] = useState<number | null>(() =>
@@ -60,6 +61,11 @@ export function Composer(props: ComposerProps) {
 
   const send = async (message = text.trim()) => {
     if (!message || busy) return
+    if (session.provider === 'codex' && session.live) {
+      window.threadlight.copyText(message)
+      if (session.appId) window.threadlight.openInClaude(session.appId)
+      return
+    }
     const result = await window.threadlight.sendMessage(session.id, message)
     if (result.ok) {
       setText('')
@@ -101,7 +107,7 @@ export function Composer(props: ComposerProps) {
     lastHeard.current = heard.n
     setText((current) => (current.trim() ? `${current.trimEnd()} ${heard.text}` : heard.text))
     box.current?.focus()
-  }, [heard])
+  }, [heard, setText])
 
   const toggleMic = () => {
     setError(null)
@@ -213,8 +219,12 @@ export function Composer(props: ComposerProps) {
             void send()
           }}
           disabled={!text.trim() || busy}
-          aria-label={en.composer.send}
-          title={en.composer.send}
+          aria-label={
+            session.provider === 'codex' && session.live ? 'Copy and open Codex' : en.composer.send
+          }
+          title={
+            session.provider === 'codex' && session.live ? 'Copy and open Codex' : en.composer.send
+          }
         >
           ↵
         </button>

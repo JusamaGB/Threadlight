@@ -18,6 +18,7 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: ThreadlightApi = {
+  answerCodex: (id, holdId, answer) => ipcRenderer.invoke(IPC.answerCodex, id, holdId, answer),
   getVersion: () => ipcRenderer.invoke(IPC.getVersion),
   getSessions: () => ipcRenderer.invoke(IPC.getSessions),
   onSessions: (listener) => subscribe<Session[]>(IPC.sessionsChanged, listener),

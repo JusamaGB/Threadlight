@@ -36,3 +36,26 @@ export function defaultPaths(env: NodeJS.ProcessEnv = process.env, home = homedi
 export function appDeepLink(appId: string): string {
   return `claude://claude.ai/epitaxy/${appId}`
 }
+
+export interface CodexPaths {
+  home: string
+  state: string
+  history: string
+  sessions: string
+  locks: string
+  desktopState: string
+  cliRoot: string
+}
+
+export function codexPaths(env: NodeJS.ProcessEnv = process.env, home = homedir()): CodexPaths {
+  const root = env['CODEX_HOME'] || join(home, '.codex')
+  return {
+    home: root,
+    state: join(root, 'state_5.sqlite'),
+    history: join(root, 'thread_history_1.sqlite'),
+    sessions: join(root, 'sessions'),
+    locks: join(root, 'thread-writer-locks'),
+    desktopState: join(root, '.codex-global-state.json'),
+    cliRoot: join(env['LOCALAPPDATA'] || join(home, 'AppData', 'Local'), 'OpenAI', 'Codex', 'bin'),
+  }
+}

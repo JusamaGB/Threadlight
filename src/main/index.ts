@@ -21,7 +21,12 @@ import { UsageWatcher } from './usage'
 import { findClaudeCli, isHeld, type CliCommand } from './relay'
 import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
-import { defaultPaths } from './sessions/paths'
+import { codexPaths, defaultPaths } from './sessions/paths'
+import { CodexTracker } from './codex/tracker'
+import { CodexHolds } from './codex/holds'
+import { CodexRelayService } from './codex/relay'
+import { codexDeepLink } from './codex/identity'
+import { codexProcesses } from './codex/live'
 import { SessionService } from './sessions/service'
 import { listChanges, readFileDiff } from './sessions/gitChanges'
 import { GitStates } from './sessions/gitDiff'
@@ -60,7 +65,7 @@ async function start(): Promise<void> {
   // The agent's own folder; its conversations stay out of the thread list unless shown.
   const agentWorkspace = join(app.getPath('userData'), 'agent')
   // Cards held so they can be answered here (holds.ts); any change is shown at once.
-  const holds = new Holds(() => void sessions.refresh())
+  const holds = new Holds(() => void claudeSessions.refresh())
   // Each folder's git state, counted in the background; a new count is shown at once.
   const gitStates = new GitStates(() => void sessions.refresh())
   const tracker = new Tracker({
@@ -72,11 +77,71 @@ async function start(): Promise<void> {
     gitFor: (folder) => gitStates.get(folder),
     hiddenFolder: () => agentWorkspace,
   })
-  const sessions = new SessionService(tracker, (snapshot) => {
+  const claudeSessions = new SessionService(tracker, (snapshot) => {
     letHeldCardsGo(holds, snapshot)
-    windows.send(IPC.sessionsChanged, snapshot.sessions)
-    windows.panel.webContents.send(IPC.snapshotChanged, snapshot)
+    if (settings.settings.provider === 'claude') publish(snapshot)
   })
+  const codex = codexPaths()
+  const codexHolds = new CodexHolds(() => {
+    if (settings.settings.provider === 'codex') void codexSessions.refresh()
+  })
+  const codexTracker = new CodexTracker(codex, codexHolds, (folder) => gitStates.get(folder))
+  codexTracker.configure(initial.listWindowHours, initial.maxSessions)
+  const codexSessions = new SessionService(codexTracker, (snapshot) => {
+    if (settings.settings.provider === 'codex') publish(snapshot)
+  })
+  const selected = () => (settings.settings.provider === 'codex' ? codexSessions : claudeSessions)
+  function publish(snapshot: Snapshot) {
+    windows.send(IPC.sessionsChanged, snapshot.sessions)
+    windows.panel.webContents.send(IPC.snapshotChanged, {
+      ...snapshot,
+      provider: snapshot.provider ?? 'claude',
+    })
+  }
+  const sessions = {
+    get snapshot() {
+      return { ...selected().snapshot, provider: settings.settings.provider }
+    },
+    get sessions() {
+      return selected().sessions
+    },
+    find: (id: string) =>
+      id.startsWith('codex:') ? codexSessions.find(id) : claudeSessions.find(id),
+    setView: (view: Parameters<SessionService['setView']>[0]) => selected().setView(view),
+    refresh: () => selected().refresh(),
+    start: (ms: number) => {
+      claudeSessions.start(ms)
+      if (settings.settings.provider === 'codex') codexSessions.start(ms)
+    },
+  }
+  // Codex hooks use a separate port and contracts. Claude's routes and plugin stay intact.
+  startHookServer({
+    port: 47616,
+    status: () => ({ app: 'threadlight-codex', version: app.getVersion() }),
+    onEvent: (payload) => codexHolds.event(payload),
+    onAsk: (payload, reply, dropped) => {
+      codexHolds.event(payload)
+      if (
+        settings.settings.provider !== 'codex' ||
+        /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')
+      )
+        return false
+      const held = codexHolds.hold(payload, reply)
+      if (held) dropped(() => codexHolds.dropped(reply))
+      return held
+    },
+    onStop: (payload, reply, dropped) => {
+      codexHolds.event(payload)
+      if (
+        settings.settings.provider !== 'codex' ||
+        /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')
+      )
+        return false
+      const held = codexHolds.hold(payload, reply)
+      if (held) dropped(() => codexHolds.dropped(reply))
+      return held
+    },
+  }).catch((error) => console.error('Codex hooks unavailable', error))
 
   // Hook events make state exact and immediate: apply, then rescan straight away.
   let hookEvents = 0
@@ -87,16 +152,18 @@ async function start(): Promise<void> {
     onEvent: (payload) => {
       hookEvents += 1
       hooks.apply(payload)
-      void sessions.refresh()
+      void claudeSessions.refresh()
     },
     // The question-card hook waits here for an answer (or to be let go).
     onAsk: (payload, reply, dropped) => {
+      if (settings.settings.provider !== 'claude') return false
       const held = holds.holdQuestion(payload, reply)
       if (held) dropped(() => holds.dropped(reply))
       return held
     },
     // The Stop hook waits here when a turn ends, in case it asked a next-step question.
     onStop: (payload, reply, dropped) => {
+      if (settings.settings.provider !== 'claude') return false
       const event = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<
         string,
         unknown
@@ -106,8 +173,10 @@ async function start(): Promise<void> {
       if (!sessionId || event['stop_hook_active'] === true) return false
       dropped(() => holds.dropped(reply))
       hooks.apply(payload) // the turn has ended: idle, so the next-step card can show
-      void sessions.refresh().then(() => {
-        const attention = everySession(sessions.snapshot).find((s) => s.id === sessionId)?.attention
+      void claudeSessions.refresh().then(() => {
+        const attention = everySession(claudeSessions.snapshot).find(
+          (s) => s.id === sessionId,
+        )?.attention
         const answerable = attention?.kind === 'next-step' && attention.actions.length > 0
         if (answerable) holds.holdNextStep(sessionId, attention, reply)
         else reply(null) // nothing asked: the turn ends straight away
@@ -142,8 +211,17 @@ async function start(): Promise<void> {
   ipcMain.on(IPC.panelStayOpen, (_event, on: unknown) => windows.setStayOpen(on === true))
   ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
     if (typeof appId !== 'string') return
+    if (appId.startsWith('codex:')) {
+      const link = codexDeepLink(appId)
+      if (link && codexSessions.find(appId)) {
+        codexHolds.release(appId)
+        void shell.openExternal(link)
+        windows.closePanel()
+      }
+      return
+    }
     // Going to the thread in Claude means answering there: let a held card go first.
-    const session = everySession(sessions.snapshot).find((s) => s.appId === appId)
+    const session = everySession(claudeSessions.snapshot).find((s) => s.appId === appId)
     if (session) holds.release(session.id)
     if (openThread(appId)) windows.closePanel()
   })
@@ -188,8 +266,16 @@ async function start(): Promise<void> {
     if (typeof text === 'string' && text.length <= 20_000) clipboard.writeText(text)
   })
   ipcMain.on(IPC.releaseHold, (_event, sessionId: unknown) => {
-    if (typeof sessionId === 'string') holds.release(sessionId)
+    if (typeof sessionId === 'string') {
+      if (sessionId.startsWith('codex:')) codexHolds.release(sessionId)
+      else holds.release(sessionId)
+    }
   })
+  ipcMain.handle(IPC.answerCodex, (_event, id: unknown, holdId: unknown, answer: unknown) =>
+    typeof id === 'string' && codexSessions.find(id)
+      ? codexHolds.answer(id, holdId, answer)
+      : { ok: false, reason: 'That Codex card is no longer listed.' },
+  )
 
   // The UI passes only a session id and text; folder, permission mode and model come from
   // Threadlight's own scan, so a misbehaving page cannot choose them.
@@ -200,14 +286,24 @@ async function start(): Promise<void> {
       isHeld: (id) => isHeld(paths.liveSessionsDir, id),
     }),
     (id) => sessions.find(id),
-    (list) => windows.send(IPC.relaysChanged, list),
+    () => publishRelays(),
   )
+  const codexRelays = new CodexRelayService(
+    codex,
+    (id) => codexSessions.find(id),
+    () => publishRelays(),
+  )
+  function publishRelays() {
+    windows.send(IPC.relaysChanged, [...relays.list(), ...codexRelays.list()])
+  }
   ipcMain.handle(IPC.sendMessage, (_event, sessionId: unknown, text: unknown) =>
     typeof sessionId === 'string' && typeof text === 'string'
-      ? relays.send(sessionId, text)
+      ? sessionId.startsWith('codex:')
+        ? codexRelays.send(sessionId, text)
+        : relays.send(sessionId, text)
       : { ok: false, reason: 'Invalid message.' },
   )
-  ipcMain.handle(IPC.getRelays, () => relays.list())
+  ipcMain.handle(IPC.getRelays, () => [...relays.list(), ...codexRelays.list()])
 
   // The agent: one conversation Threadlight hosts itself (agent/agentRun.ts), working in its
   // own folder. It talks on Haiku and hands real work to its worker (settings: Opus or Sonnet).
@@ -223,8 +319,8 @@ async function start(): Promise<void> {
       model: AGENT_MODEL,
       onChange: sendAgent,
       // What it knows about the threads, fresh with each question, and where it may look.
-      briefing: () => briefing(sessions.snapshot),
-      readable: () => readableFolders(sessions.snapshot),
+      briefing: () => briefing(claudeSessions.snapshot),
+      readable: () => readableFolders(claudeSessions.snapshot),
       // Settings are read as each conversation starts (and after each reply, for its length).
       workerModel: () => settings.settings.agentWorker,
       blockedApps: () => settings.settings.agentAppsOff,
@@ -271,6 +367,7 @@ async function start(): Promise<void> {
     onChange: (reading) => windows.panel.webContents.send(IPC.usageChanged, reading),
   })
   ipcMain.handle(IPC.usageGet, async () => {
+    if (settings.settings.provider === 'codex') return null
     await mkdir(agentWorkspace, { recursive: true })
     void usage.refresh()
     return usage.current
@@ -315,16 +412,25 @@ async function start(): Promise<void> {
   // change is refused and the old hotkey keeps working.
   const applyLive = (next: Settings) => {
     tracker.configure(next.listWindowHours, next.maxSessions)
+    codexTracker.configure(next.listWindowHours, next.maxSessions)
+    publish({ ...selected().snapshot, provider: next.provider })
     void sessions.refresh()
     setLaunchAtSignIn(next.launchAtSignIn)
     windows.send(IPC.settingsChanged, next)
   }
   ipcMain.handle(IPC.getSettings, () => settings.settings)
   ipcMain.handle(IPC.updateSettings, async (_event, patch: unknown) => {
+    const previousProvider = settings.settings.provider
     const result = await settings.update(patch, (next, previous) =>
       next.talkHotkey === previous.talkHotkey ? null : hotkey.set(next.talkHotkey),
     )
     if (result.ok) {
+      if (result.settings.provider !== previousProvider) {
+        holds.releaseAll()
+        codexHolds.releaseAll()
+        codexSessions.stop()
+        if (result.settings.provider === 'codex') codexSessions.start(SCAN_INTERVAL_MS)
+      }
       hotkeyProblem = hotkey.setMode(result.settings.talkMode)
       reportHotkey()
       applyLive(result.settings)
@@ -352,6 +458,7 @@ async function start(): Promise<void> {
   app.on('will-quit', () => {
     agent?.close()
     holds.releaseAll() // Claude carries on with every held card itself from here on
+    codexHolds.releaseAll()
     hotkey.dispose()
     stt.stop()
     tray.destroy()
@@ -361,7 +468,11 @@ async function start(): Promise<void> {
 
   // The dot only shows while the Claude desktop app is running.
   const checkClaude = async () =>
-    windows.setClaudeRunning(await isClaudeAppRunning(paths.appLockFile))
+    windows.setClaudeRunning(
+      settings.settings.provider === 'codex'
+        ? (await codexProcesses()).running
+        : await isClaudeAppRunning(paths.appLockFile),
+    )
   void checkClaude()
   setInterval(() => void checkClaude(), CLAUDE_CHECK_INTERVAL_MS)
 
@@ -369,6 +480,9 @@ async function start(): Promise<void> {
   let inFront: bigint | null = null
   setInterval(() => {
     const now = foregroundWindowId()
+    // Codex does not persist a reliable foreground-chat identifier. Release conservatively
+    // when its app comes forward, as well as immediately for our own Open actions.
+    if (/^(Codex|ChatGPT)$/.test(foregroundTitle() || '')) codexHolds.releaseAll()
     if (now === inFront) return
     inFront = now
     windows.keepOnTop()
