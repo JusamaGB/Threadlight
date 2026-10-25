@@ -11,7 +11,7 @@ import { TalkHotkey } from './hotkeys'
 import { foregroundTitle } from './keyState'
 import { setLaunchAtSignIn } from './loginItem'
 import { QuestionHolds } from './questionHolds'
-import { findClaudeCli, isHeldByRunningProcess, type CliCommand } from './relay'
+import { findClaudeCli, isHeld, type CliCommand } from './relay'
 import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
 import { defaultPaths } from './sessions/paths'
@@ -123,7 +123,10 @@ async function start(): Promise<void> {
   // Threadlight's own scan, so a misbehaving page cannot choose them.
   let cli: CliCommand | null = null
   const relays = new RelayService(
-    async () => ({ cli: (cli ??= await findClaudeCli(paths)), isHeld: isHeldByRunningProcess }),
+    async () => ({
+      cli: (cli ??= await findClaudeCli(paths)),
+      isHeld: (id) => isHeld(paths.liveSessionsDir, id),
+    }),
     (id) => sessions.find(id),
     (list) => windows.send(IPC.relaysChanged, list),
   )

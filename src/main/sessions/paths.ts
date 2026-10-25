@@ -16,6 +16,8 @@ export interface ClaudePaths {
   appCliRoot: string
   /** Where Claude Code's own native installer puts it. */
   nativeCli: string
+  /** Every running Claude Code process registers here as `<pid>.json`, naming its session. */
+  liveSessionsDir: string
 }
 
 export function defaultPaths(env: NodeJS.ProcessEnv = process.env, home = homedir()): ClaudePaths {
@@ -26,6 +28,7 @@ export function defaultPaths(env: NodeJS.ProcessEnv = process.env, home = homedi
     appLockFile: join(appData, 'Claude', 'lockfile'),
     appCliRoot: join(appData, 'Claude', 'claude-code'),
     nativeCli: join(home, '.local', 'bin', 'claude.exe'),
+    liveSessionsDir: join(home, '.claude', 'sessions'),
   }
 }
 

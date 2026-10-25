@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   compareVersions,
   interpretOutput,
+  isInLiveRegistry,
   MAX_MESSAGE_LENGTH,
   relayArgs,
   relayMessage,
@@ -102,6 +103,20 @@ describe('relayMessage', () => {
       ok: false,
       reason: 'fatal: not json',
     })
+  })
+})
+
+describe('isInLiveRegistry', () => {
+  it('finds a session a running process registered, ignoring leftovers and other sessions', async () => {
+    const dir = join(box.root, 'sessions')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, '111.json'), JSON.stringify({ pid: 111, sessionId: SESSION }))
+    await writeFile(join(dir, '222.json'), JSON.stringify({ pid: 222, sessionId: 'other' }))
+    await writeFile(join(dir, 'notes.txt'), SESSION)
+    const running = (alive: number[]) => (pid: number) => alive.includes(pid)
+    expect(await isInLiveRegistry(dir, SESSION, running([111, 222]))).toBe(true)
+    expect(await isInLiveRegistry(dir, SESSION, running([222]))).toBe(false) // exited: a leftover
+    expect(await isInLiveRegistry(join(box.root, 'missing'), SESSION, running([111]))).toBe(false)
   })
 })
 

@@ -85,6 +85,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
   moment as the Claude app's own timer (the thread record's turn start), or from the
   prompt's time for sessions the app does not track.
+- Fixed: sending in the background could start a second Claude Code process on a thread the
+  Claude app had open, because the app's processes no longer name their session on the
+  command line. The check now reads Claude Code's own registry of live sessions
+  (`~/.claude/sessions`) as well, and refuses such a send.
 - Each thread's dot has a context ring like the Claude app's: it fills clockwise as the
   thread's context fills, grey, then amber from 60% and red from 80%, and stands on its own
   where an idle thread has no dot. Hovering shows "Context 52%". It counts the latest

@@ -20,6 +20,7 @@ export async function sandbox(): Promise<Sandbox> {
     appLockFile: join(root, 'lockfile'),
     appCliRoot: join(root, 'claude-code'),
     nativeCli: join(root, 'bin', 'claude.exe'),
+    liveSessionsDir: join(root, 'sessions'),
   }
   await mkdir(paths.projectsDir, { recursive: true })
   await mkdir(paths.appSessionsDir, { recursive: true })
