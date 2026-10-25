@@ -8,6 +8,7 @@ import { createRequire } from 'node:module'
 import { join, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkVoiceRouting } from './voice-routing.smoke.mjs'
+import { checkAgentSelection } from './agent-selection.smoke.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(import.meta.url)
@@ -938,6 +939,8 @@ try {
     await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'agentResume').at(-1)),
     ['agentResume', 'codex:past'],
   )
+  assert.deepEqual(errors, [])
+  await checkAgentSelection(page, capture)
   assert.deepEqual(errors, [])
   console.log(
     'PASS: provider lists, drafts, sends, plans, usage, composer waveform and mic divider; Agent model settings, questions, queued approvals, Stop/End and history; no browser errors.',

@@ -543,6 +543,8 @@ it('runs Codex without Claude installed or monitoring enabled, pins settings, an
   expect((await service.send('Duplicate')).ok).toBe(false)
   expect(await first).toEqual({ ok: true })
   settings.agentCodexModel = 'future-deep'
+  service.refreshDefaults()
+  expect(service.current.model).toBe('future-fast')
   fake.complete()
   await expect.poll(() => service.current.status).toBe('ready')
   expect(await service.send('Follow up')).toEqual({ ok: true })
@@ -553,6 +555,16 @@ it('runs Codex without Claude installed or monitoring enabled, pins settings, an
   await expect.poll(() => service.current.status).toBe('ready')
   const conversation = (await service.history())[0]!
   await service.close()
+  expect(service.current.model).toBe('future-deep')
+  const retained = service.current.items
+  settings.agentCodexReasoning = 'ultra'
+  service.refreshDefaults()
+  expect(service.current).toMatchObject({
+    model: 'future-deep',
+    reasoning: 'ultra',
+    ended: true,
+    items: retained,
+  })
   expect((await service.history())[0]?.id).toBe(conversation.id)
   expect(service.store.get(conversation.id)?.archiveState).toBe('archived')
   fake.history = [{ item: { type: 'agentMessage', id: 'reply', text: 'Saved reply' } }]

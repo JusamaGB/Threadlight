@@ -63,7 +63,7 @@ export class AgentService {
     this.past = transcriptsFolder(options.claudeProjects, options.workspace)
   }
   get current(): AgentState {
-    if (this.state.provider) return this.state
+    if (this.run && !this.state.ended && this.state.provider) return this.state
     const settings = this.options.settings()
     return {
       ...this.state,
@@ -77,7 +77,8 @@ export class AgentService {
     }
   }
   refreshDefaults(): void {
-    if (!this.run) this.publish({ ...IDLE_AGENT })
+    // Ended transcripts remain readable, but the next send uses the saved selection.
+    if (!this.run || this.state.ended) this.publish({ ...this.state })
   }
 
   async send(value: unknown): Promise<AgentResult> {

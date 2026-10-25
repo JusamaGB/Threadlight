@@ -8,6 +8,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Agent shows when an existing conversation differs from the saved provider/model,
+  with a Use selected model action. Ended conversations display the selection for
+  the next message while retaining their history.
+
 - Codex Agent conversations archive on End, inactivity expiry and normal app exit,
   while remaining readable in Agent → Earlier. Continue restores the original thread.
   Archive failures retain a cleanup marker for retry. The dedicated Agent workspace

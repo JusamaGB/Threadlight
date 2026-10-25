@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { agentBusy, type AgentConversation, type AgentItem } from '../../shared/agent'
 import { AgentRequestCard } from './AgentRequestCard'
 import { useAgent } from '../hooks/useAgent'
+import { useSettings } from '../hooks/useSettings'
 import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { ageText } from '../lib/format'
@@ -85,6 +86,7 @@ function Earlier({ current, onOpen }: { current: string | null; onOpen: (id: str
  */
 export function AgentView() {
   const agent = useAgent()
+  const settings = useSettings()
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [reading, setReading] = useState<Reading | null>(null)
@@ -92,6 +94,30 @@ export function AgentView() {
   const busy = agentBusy(agent)
   const [sending, setSending] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const hasConversation =
+    !agent.ended && (!!agent.sessionId || !!agent.conversationId || agent.status !== 'idle')
+  const selectedProvider = settings?.agentProvider ?? agent.provider
+  const selectedModel = settings
+    ? settings.agentProvider === 'codex'
+      ? settings.agentCodexModel
+      : `Haiku / ${settings.agentWorker}`
+    : agent.model
+  const selectedReasoning = settings
+    ? settings.agentProvider === 'codex'
+      ? settings.agentCodexReasoning
+      : null
+    : agent.reasoning
+  const selectionChanged =
+    hasConversation &&
+    settings &&
+    (agent.provider !== selectedProvider ||
+      (selectedProvider === 'codex'
+        ? (!!settings.agentCodexModel && agent.model !== settings.agentCodexModel) ||
+          (!!settings.agentCodexReasoning && agent.reasoning !== settings.agentCodexReasoning)
+        : agent.model?.split('/').at(-1)?.trim().toLowerCase() !== settings.agentWorker))
+  const provider = hasConversation ? agent.provider : selectedProvider
+  const model = hasConversation ? agent.model : selectedModel
+  const reasoning = hasConversation ? agent.reasoning : selectedReasoning
 
   // Keep the newest line in view.
   useEffect(() => {
@@ -177,10 +203,32 @@ export function AgentView() {
   return (
     <div className={styles.agent}>
       <p className={styles.agentIdentity}>
-        {agent.provider === 'codex' ? 'Codex' : 'Claude'} ·{' '}
-        {agent.model ?? (agent.conversationId ? 'Model not recorded' : 'Runtime default')}
-        {agent.reasoning ? ` · ${agent.reasoning}` : ''}
+        {provider === 'codex' ? 'Codex' : 'Claude'} ·{' '}
+        {model ?? (hasConversation ? 'Model not recorded' : 'Runtime default')}
+        {reasoning ? ` · ${reasoning}` : ''}
       </p>
+      {selectionChanged && (
+        <div className={styles.agentSelection} role="status">
+          <p>
+            This conversation keeps its original model. Your next conversation will use{' '}
+            {selectedProvider === 'codex' ? 'Codex' : 'Claude'} ·{' '}
+            {selectedModel ?? 'Runtime default'}
+            {selectedReasoning ? ` · ${selectedReasoning}` : ''}.
+          </p>
+          <button
+            className={styles.agentEnd}
+            disabled={busy || sending}
+            onClick={() => window.threadlight.agentClose()}
+          >
+            Use selected model
+          </button>
+          <span>
+            {busy
+              ? 'Stop or finish this turn first.'
+              : 'Ends this conversation; its history stays in Earlier.'}
+          </span>
+        </div>
+      )}
       <div className={styles.agentLog} ref={log}>
         {agent.items.length === 0 && <p className={styles.agentEmpty}>{en.agent.empty}</p>}
         <Lines items={agent.items} />

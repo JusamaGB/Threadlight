@@ -1636,6 +1636,19 @@ span.planStep {
   }
 }
 /* Agent requests retain the complete action detail in a scrollable preview. */
+.agentSelection {
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.agentSelection p {
+  margin: 0 0 6px;
+}
+.agentSelection span {
+  display: block;
+  margin-top: 4px;
+  opacity: 0.7;
+}
 .agentIdentity {
   margin: 4px 10px;
   font-size: 11px;
