@@ -106,6 +106,8 @@ export function Panel() {
   const [version, setVersion] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  /** The list button's right-click menu of the other kinds of full list, where it opened. */
+  const [listMenu, setListMenu] = useState<{ x: number; y: number } | null>(null)
   /** The composer is hidden while this is null. */
   const [compose, setCompose] = useState<ComposeState | null>(null)
   /** Speech that needs a thread picked before it can be sent. */
@@ -505,6 +507,25 @@ export function Panel() {
       : listMode === 'all'
         ? { count: snapshot.workspaces.length, word: en.panel.workspaces }
         : { count: sessions.length, word: en.panel.recentWord }
+  // Right-clicking the list button offers the other kinds of full list, so the choice in
+  // Settings → "Full list shows" is a click away. A plain click still opens and closes it.
+  const onListMenu = (event: MouseEvent) => {
+    event.preventDefault()
+    setListMenu({ x: event.clientX, y: event.clientY })
+  }
+  const LIST_MODES = [
+    { mode: 'recent', label: en.settings.listRecent },
+    { mode: 'workspace', label: en.settings.listWorkspace },
+    { mode: 'all', label: en.settings.listAll },
+  ] as const
+  const listMenuItems = LIST_MODES.filter((m) => m.mode !== listMode).map(({ mode, label }) => ({
+    label,
+    onSelect: () => {
+      void window.threadlight.updateSettings({ listMode: mode })
+      setView('all') // straight to the list it now shows
+    },
+  }))
+
   // The Changes view's heading: "main · 3 files".
   const changesThread = changesFor ? findInSnapshot(snapshot, changesFor) : undefined
   const changesHeading = changesThread?.git
@@ -663,7 +684,9 @@ export function Panel() {
                   className={styles.recent}
                   aria-pressed
                   aria-label={en.panel.unpin}
+                  aria-haspopup="menu"
                   title={en.panel.unpin}
+                  onContextMenu={onListMenu}
                   onClick={() => changeHold('normal')}
                 >
                   <PinIcon /> {listTag.word}
@@ -672,7 +695,9 @@ export function Panel() {
                 <button
                   className={styles.recent}
                   aria-pressed={view === 'all'}
+                  aria-haspopup="menu"
                   title={view === 'all' ? en.panel.hideList : en.panel.showList}
+                  onContextMenu={onListMenu}
                   onClick={() => setView(view === 'active' ? 'all' : 'active')}
                 >
                   {listTag.count} {listTag.word}
@@ -857,6 +882,14 @@ export function Panel() {
             y={menu.y}
             items={menuItems(menu.session)}
             onClose={() => setMenu(null)}
+          />
+        )}
+        {listMenu && (
+          <ContextMenu
+            x={listMenu.x}
+            y={listMenu.y}
+            items={listMenuItems}
+            onClose={() => setListMenu(null)}
           />
         )}
       </div>

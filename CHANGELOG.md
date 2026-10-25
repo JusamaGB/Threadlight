@@ -230,6 +230,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   discard it, and scrolls a long transcript instead of filling the panel.
 - Long recordings are transcribed in 30-second chunks, and a phrase Whisper gets stuck
   repeating is cut back to one.
+- Right-click the header's list button (recent, workspace or all) to switch the full list
+  to one of the other kinds, without going into Settings.
 
 ### Changed
 
