@@ -70,11 +70,9 @@ export function SessionRow(props: SessionRowProps) {
       data-session-id={session.id}
       data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
     >
-      <Tip
-        as="button"
+      <button
         className={styles.rowButton}
         data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
-        text={props.showProvider ? `${providerName(sessionProvider(session.id))} chat` : ''}
         aria-description={
           props.showProvider ? `${providerName(sessionProvider(session.id))} chat` : undefined
         }
@@ -119,7 +117,7 @@ export function SessionRow(props: SessionRowProps) {
             {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
           </span>
         </span>
-      </Tip>
+      </button>
       {expanded && appId && (
         <button className={styles.rowOpen} onClick={() => window.threadlight.openInClaude(appId)}>
           {en.detail.open}

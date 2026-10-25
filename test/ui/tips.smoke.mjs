@@ -11,6 +11,12 @@ export async function checkTips(page, row) {
     await page.mouse.move(point.x, point.y)
     return point
   }
+  const context = async (provider) => {
+    const bounds = await row(provider).getByLabel('Context 20%', { exact: true }).boundingBox()
+    const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }
+    await page.mouse.move(point.x, point.y)
+    return point
+  }
   const beside = async (point, side = 'right') => {
     const box = await tip.boundingBox()
     assert.ok(box, 'the bubble is visible')
@@ -23,39 +29,26 @@ export async function checkTips(page, row) {
   try {
     for (const provider of ['Claude', 'Codex']) {
       assert.equal(await row(provider).getAttribute('title'), null)
-      const pointer = await move(row(provider))
+      await move(row(provider))
+      await page.clock.runFor(1100)
+      assert.equal(await tip.count(), 0, 'thread rows have no provider bubble')
+      const at = await context(provider)
       await page.clock.runFor(999)
-      assert.equal(await tip.count(), 0, 'no bubble before the one-second delay')
+      assert.equal(await tip.count(), 0, 'no context bubble before the one-second delay')
       await page.clock.runFor(1)
-      await page.getByRole('tooltip', { name: `${provider} chat`, exact: true }).waitFor()
-      await beside(pointer)
-
-      // A context target cancels its parent row's bubble and starts its own delay.
-      const context = row(provider).getByLabel('Context 20%', { exact: true })
-      const bounds = await context.boundingBox()
-      const at = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }
-      await page.mouse.move(at.x, at.y)
-      assert.equal(await tip.count(), 0)
-      await page.clock.runFor(1000)
       await page.getByRole('tooltip', { name: 'Context 20%', exact: true }).waitFor()
       await beside(at)
+      await move(row(provider))
+      assert.equal(await tip.count(), 0, 'moving away from the ring hides context immediately')
     }
-    const edge = await move(row('Codex'), 325)
-    await page.clock.runFor(1000)
-    await page.getByRole('tooltip', { name: 'Codex chat', exact: true }).waitFor()
-    await beside(edge, 'left')
-    // Moving a visible bubble keeps it beside this pointer, rather than on the previous row.
-    await page.mouse.move(edge.x - 15, edge.y + 2)
-    await beside({ x: edge.x - 15, y: edge.y + 2 }, 'left')
-
-    await move(row('Claude'))
+    await context('Claude')
     assert.equal(await tip.count(), 0, 'old row disappears immediately')
     await page.clock.runFor(500)
-    await move(row('Codex'))
+    await context('Codex')
     await page.clock.runFor(500)
     assert.equal(await tip.count(), 0, 'crossing rows cancels the previous timer')
     await page.clock.runFor(500)
-    await page.getByRole('tooltip', { name: 'Codex chat', exact: true }).waitFor()
+    await page.getByRole('tooltip', { name: 'Context 20%', exact: true }).waitFor()
 
     // Scrolling must clear a bubble even when the mouse has not moved.
     await page.evaluate(() => {
@@ -72,9 +65,9 @@ export async function checkTips(page, row) {
     await page.mouse.move(5, 5)
     await page.clock.runFor(1100)
     assert.equal(await tip.count(), 0, 'leaving cannot reopen an old bubble')
-    await move(row('Claude'))
+    await context('Claude')
     await page.clock.runFor(1000)
-    await page.getByRole('tooltip', { name: 'Claude chat', exact: true }).waitFor()
+    await page.getByRole('tooltip', { name: 'Context 20%', exact: true }).waitFor()
     await page.evaluate(async () => {
       const snapshot = await window.threadlight.getSnapshot()
       window.proof.emit('onSnapshot', { ...snapshot, sessions: [...snapshot.sessions].reverse() })
@@ -84,15 +77,15 @@ export async function checkTips(page, row) {
       window.proof.emit('onSnapshot', await window.threadlight.getSnapshot()),
     )
     await page.mouse.move(5, 5)
-    const pointer = await move(row('Claude'))
+    const pointer = await context('Claude')
     await page.clock.runFor(1000)
-    await page.getByRole('tooltip', { name: 'Claude chat', exact: true }).waitFor()
+    await page.getByRole('tooltip', { name: 'Context 20%', exact: true }).waitFor()
     await page.mouse.down()
     assert.equal(await tip.count(), 0, 'clicking dismisses the bubble')
     await page.mouse.move(pointer.x, 5)
     await page.mouse.up()
     console.log(
-      'PASS: delayed pointer-side tips, nested targets, edge flip, row changes, reorder and scroll.',
+      'PASS: context-only thread tips, one-second delay, immediate leave, row changes, reorder and scroll.',
     )
   } finally {
     await page.clock.resume()

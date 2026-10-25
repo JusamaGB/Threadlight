@@ -305,8 +305,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Thread provider and context hovers use the panel's styled tooltips instead of native
-  system boxes. Context and git tooltips take precedence over the row's provider label.
+- Thread context hovers use the panel's styled tooltips instead of native system boxes.
+  Provider-name bubbles have been removed from thread rows.
 
 - Hide Connected apps from Agent settings for both providers and stop discovering
   apps when opening settings. Existing integration policies and preferences remain intact.
@@ -316,7 +316,7 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Thread provider and context bubbles wait one second and sit beside the pointer,
+- Thread context bubbles wait one second and sit beside the pointer,
   switching sides at the window edge. Leaving, clicking or scrolling clears stale tips.
 
 - Expanded thread lists recalculate available height while moving the panel, including
