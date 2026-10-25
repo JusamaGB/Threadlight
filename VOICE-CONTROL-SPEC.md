@@ -10,11 +10,23 @@ fresh session. The first completed sentence chooses its mode:
 
 - Exactly “open”, ignoring case and punctuation, followed by a one-second pause:
   expand and pin the thread list and latch command mode. Other speech cannot
-  switch to the Agent, including the word “agent”. Only “open” is implemented as
-  a command so far.
+  switch to the Agent, including the word “agent”.
+- “Open [thread name]”, where the name matches a known title: enter command mode,
+  expand that thread in Threadlight, scroll it into view and focus its row. After
+  “open” and a pause, the bare thread name works too. Repeating a name keeps it open.
+  Matching ignores case and punctuation, prefers full titles, and otherwise accepts
+  a unique whole-word phrase within a title. Ambiguous matches show the matching
+  titles and ask for more of the name; they never choose a thread or call the Agent.
+  Candidates come from recent threads and loaded workspace rows, including children.
+  Selection does not send a message or launch the provider app. Workspace selection
+  for voice is temporary and does not change saved list preferences.
 - Other speech: choose Agent mode and deliver each completed sentence to the
   existing Agent send interface after a natural pause. The microphone stays open.
   A later “open” is part of the Agent conversation, not a UI command.
+
+An unmatched “open …” on the first utterance still follows the ordinary-speech
+Agent route. Say “open” and pause first when unsure of the title: unmatched speech
+then stays in command mode and is ignored.
 
 Closing the mic ends that mode; reopening starts undecided. Closing also discards
 unfinished/pending transcription, so no delayed command or send escapes a closed

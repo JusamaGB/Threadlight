@@ -10,7 +10,7 @@ import {
 
 import { matchThread, parseVoiceCommand } from '../../shared/match'
 import { DEFAULT_ENABLED_PROVIDERS, sessionProvider } from '../../shared/providers'
-import type { Session } from '../../shared/types'
+import type { Session, ThreadNode } from '../../shared/types'
 import { agentBusy as isAgentBusy } from '../../shared/agent'
 import { Composer } from '../composer/Composer'
 import { useDotDrag } from '../hooks/useDotDrag'
@@ -109,6 +109,9 @@ export function Panel() {
   const [moreWorkspaces, setMoreWorkspaces] = useState<string[]>([])
   const [version, setVersion] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [voiceSelection, setVoiceSelection] = useState<string | null>(null)
+  const [voiceWorkspace, setVoiceWorkspace] = useState<string | null>(null)
+  const voiceFocusPending = useRef<string | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   /** The list button's right-click menu of the other kinds of full list, where it opened. */
   const [listMenu, setListMenu] = useState<{ x: number; y: number } | null>(null)
@@ -225,6 +228,9 @@ export function Panel() {
         if (!fresh) return
         setView('active')
         setExpanded(null)
+        setVoiceSelection(null)
+        setVoiceWorkspace(null)
+        voiceFocusPending.current = null
         setMenu(null)
         setCompose(null)
         setPicking(null)
@@ -475,6 +481,32 @@ export function Panel() {
     }
   }
 
+  // Recent titles plus loaded workspace rows, including child threads. Deduplicate by ID.
+  const voiceThreads = new Map(sessions.map((s) => [s.id, s]))
+  const voiceFolders = new Map<string, string>()
+  for (const workspace of snapshot.workspaces) {
+    const collect = (nodes: ThreadNode[]) => {
+      for (const node of nodes) {
+        voiceThreads.set(node.session.id, node.session)
+        voiceFolders.set(node.session.id, workspace.id)
+        collect(node.children)
+      }
+    }
+    collect(workspace.threads)
+  }
+  // Focus only after the chosen row has rendered; repeat commands never collapse it.
+  useLayoutEffect(() => {
+    if (!voiceFocusPending.current) return
+    const row = [...document.querySelectorAll<HTMLElement>('[data-session-id]')].find(
+      (element) => element.dataset.sessionId === voiceFocusPending.current,
+    )
+    const button = row?.querySelector<HTMLButtonElement>('button[aria-expanded]')
+    if (!button) return
+    button.focus({ preventScroll: true })
+    button.scrollIntoView({ block: 'nearest' })
+    voiceFocusPending.current = null
+  })
+
   // The first completed sentence chooses a route until this microphone session closes.
   const {
     state: openMic,
@@ -483,12 +515,13 @@ export function Panel() {
   } = useOpenMic({
     enabled: micLive && stt.state === 'ready',
     paused: voice.state !== 'idle',
+    threads: [...voiceThreads.values()],
     onSentence: (route) => {
       if (route.kind === 'agent') {
         void sendAgentVoice(route.text)
         return
       }
-      if (route.kind !== 'command' || route.command.kind !== 'open') return
+      if (route.kind !== 'command') return
       setShowSettings(false)
       setShowAgent(false)
       setPickingWorkspace(false)
@@ -496,6 +529,33 @@ export function Panel() {
       setPicking(null)
       window.threadlight.openPanelQuietly()
       changeHold('pinned')
+      const command = route.command
+      if (command.kind === 'ambiguous') {
+        setNotice(en.openMic.ambiguous(command.titles))
+        return
+      }
+      setNotice(null)
+      if (command.kind === 'open') {
+        setVoiceSelection(null)
+        setVoiceWorkspace(null)
+        voiceFocusPending.current = null
+        return
+      }
+      const selected = voiceThreads.get(command.threadId)
+      if (!selected) return
+      const folder =
+        voiceFolders.get(selected.id) ??
+        snapshot.workspaces.find((w) => sameFolder(w.id, selected.cwd))?.id ??
+        null
+      setVoiceSelection(selected.id)
+      setVoiceWorkspace(folder)
+      if (folder) {
+        setOpenWorkspaces((open) => [...new Set([...(open ?? []), folder])])
+        setMoreWorkspaces((more) => [...new Set([...more, folder])])
+      }
+      setExpanded(selected.id)
+      setMenu(null)
+      voiceFocusPending.current = selected.id
     },
   })
   const openMicListening = openMic === 'listening' || openMic === 'hearing'
@@ -519,10 +579,15 @@ export function Panel() {
   const active = sessions.filter(isActive).length
   // A thread that just went idle stays listed for a while, and the one being written to for as
   // long as the composer is open on it.
+  const selectedByVoice = voiceSelection ? voiceThreads.get(voiceSelection) : undefined
+  const listed =
+    selectedByVoice && !sessions.some((s) => s.id === selectedByVoice.id)
+      ? [selectedByVoice, ...sessions]
+      : sessions
   const shown =
     view === 'all'
-      ? sessions
-      : sessions.filter(
+      ? listed
+      : listed.filter(
           (s) => isActive(s) || now - s.lastActiveAt < LINGER_MS || s.id === compose?.sessionId,
         )
   // The composer's thread may come from the workspace tree, not just the recent list.
@@ -530,7 +595,11 @@ export function Panel() {
 
   // The full list: recent threads, or the same rows wrapped in workspaces (Settings → list).
   const listMode = settings?.listMode ?? 'recent'
-  const tree = provider !== 'none' && view === 'all' && listMode !== 'recent'
+  const tree =
+    provider !== 'none' &&
+    view === 'all' &&
+    listMode !== 'recent' &&
+    (!voiceSelection || voiceWorkspace !== null)
   // The Workspace list shows the chosen workspace, or (Follow Claude) the one last open in Claude.
   // A chosen folder that no longer has any threads falls back to following Claude.
   const chosen =
@@ -540,9 +609,10 @@ export function Panel() {
         ? settings?.codexFocusWorkspace
         : settings?.focusWorkspace) ?? null
   const focusId =
-    chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
+    voiceWorkspace ??
+    (chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
       ? chosen
-      : snapshot.currentWorkspace
+      : snapshot.currentWorkspace)
   const focus = focusId
     ? (snapshot.allWorkspaces.find((w) => sameFolder(w.id, focusId)) ?? {
         id: focusId,
@@ -572,6 +642,8 @@ export function Panel() {
   const listMenuItems = LIST_MODES.filter((m) => m.mode !== listMode).map(({ mode, label }) => ({
     label,
     onSelect: () => {
+      setVoiceSelection(null)
+      setVoiceWorkspace(null)
       void window.threadlight.updateSettings({ listMode: mode })
       setView('all') // straight to the list it now shows
     },
@@ -583,6 +655,8 @@ export function Panel() {
     ? `${changesThread.git.branch ?? en.git.noBranch} · ${en.changes.files(changesThread.git.files)}`
     : en.changes.title
   const pickWorkspace = async (id: string | null) => {
+    setVoiceSelection(null)
+    setVoiceWorkspace(null)
     await window.threadlight.updateSettings({
       ...(provider === 'both'
         ? { combinedFocusWorkspace: id }

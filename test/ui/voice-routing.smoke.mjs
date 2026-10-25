@@ -37,6 +37,16 @@ export async function checkVoiceRouting(page) {
   await say('agent')
   assert.equal((await agentSends()).length, before)
 
+  const codexRow = page.locator(
+    '[data-session-id="codex:11111111-1111-4111-8111-111111111111"] button[aria-expanded]',
+  )
+  await say('Synthetic Codex')
+  assert.equal(await codexRow.getAttribute('aria-expanded'), 'true')
+  assert.equal(await codexRow.evaluate((node) => node === document.activeElement), true)
+  await say('open Synthetic Codex')
+  assert.equal(await codexRow.getAttribute('aria-expanded'), 'true')
+  assert.equal((await agentSends()).length, before)
+
   // Composer dictation stays dictation even while command mode is latched.
   await page.getByRole('button', { name: 'Talk', exact: true }).click()
   await page.evaluate(() => {
@@ -47,11 +57,40 @@ export async function checkVoiceRouting(page) {
   await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
   await page.evaluate(() => window.proof.finishTranscript('Composer words'))
   await page.waitForFunction(() =>
-    document.querySelector('textarea')?.value.includes('Composer words'),
+    document
+      .querySelector('textarea[placeholder="Type a message…"]')
+      ?.value.includes('Composer words'),
   )
   await page.locator('[data-mic-mode="commands"]').waitFor()
   assert.equal((await agentSends()).length, before)
   await close()
+
+  // A single utterance also chooses commands from a fresh session.
+  await open()
+  await say('Open Synthetic Codex.')
+  await page.locator('[data-mic-mode="commands"]').waitFor()
+  assert.equal(await codexRow.getAttribute('aria-expanded'), 'true')
+  assert.equal((await agentSends()).length, before)
+  await close()
+
+  // Names from both providers can be ambiguous; disambiguation never sends a message.
+  await page.evaluate(() =>
+    window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
+  )
+  await open()
+  await say('Open Synthetic')
+  await page.getByText(/^Several threads match:/).waitFor()
+  await page.locator('[data-mic-mode="commands"]').waitFor()
+  await say('Synthetic Claude')
+  const claudeRow = page.locator('[data-session-id="synthetic-claude"] button[aria-expanded]')
+  assert.equal(await claudeRow.getAttribute('aria-expanded'), 'true')
+  await say('Synthetic Codex')
+  assert.equal(await codexRow.getAttribute('aria-expanded'), 'true')
+  assert.equal(await claudeRow.getAttribute('aria-expanded'), 'false')
+  assert.equal(await page.getByText(/^Several threads match:/).count(), 0)
+  assert.equal((await agentSends()).length, before)
+  await close()
+  await page.evaluate(() => window.threadlight.updateSettings({ enabledProviders: ['codex'] }))
 
   // A fresh mic session chooses the agent and sends on a pause without closing the mic.
   await open()

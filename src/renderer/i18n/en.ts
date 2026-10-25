@@ -19,10 +19,12 @@ export const en = {
     blocked: 'The microphone is blocked',
     mode: (mode: 'undecided' | 'commands' | 'agent') =>
       mode === 'commands'
-        ? 'Command mode · Close and reopen the mic to talk to the agent'
+        ? 'Command mode · Say a thread name to focus it; close and reopen the mic for the agent'
         : mode === 'agent'
           ? 'Agent mode · Pause to send; the mic stays open'
-          : 'Say “open” and pause for commands, or speak to the agent',
+          : 'Say “open” or “open [thread name]” for commands, or speak to the agent',
+    ambiguous: (titles: string[]) =>
+      `Several threads match: ${titles.join(' · ')}. Say more of the name, or click the thread.`,
     agentBusy: 'Speech kept here. Send it when the agent is ready.',
     agentFailed: 'Could not send speech to the agent. Check the conversation before retrying.',
     retryAgent: 'Send to agent',

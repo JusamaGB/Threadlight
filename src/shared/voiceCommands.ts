@@ -1,13 +1,35 @@
-// What the open mic acts on. Deterministic on purpose: an utterance is a command only when its
-// words are exactly a command's words (case and punctuation aside), so ordinary talk near the
-// microphone, or Whisper hearing words in noise, never does anything.
+// Deterministic commands: exact keywords and title phrases, without model calls or fuzzy scores.
 
-export type OpenMicCommand = { kind: 'open' }
+import type { Candidate } from './match'
+
+export type OpenMicCommand =
+  { kind: 'open' } | { kind: 'focus'; threadId: string } | { kind: 'ambiguous'; titles: string[] }
+
+const normalise = (text: string) => (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).join(' ')
+
+/** Exact titles win; otherwise require a unique, whole-word phrase within a title. */
+function namedThread(text: string, threads: Candidate[]): OpenMicCommand | null {
+  const name = normalise(text)
+  if (!name) return null
+  const unique = [...new Map(threads.map((thread) => [thread.id, thread])).values()]
+  const exact = unique.filter((thread) => normalise(thread.title) === name)
+  const matches = exact.length
+    ? exact
+    : unique.filter((thread) => ` ${normalise(thread.title)} `.includes(` ${name} `))
+  if (matches.length === 1) return { kind: 'focus', threadId: matches[0]!.id }
+  if (matches.length > 1)
+    return { kind: 'ambiguous', titles: matches.map((thread) => thread.title) }
+  return null
+}
 
 /** The command `text` is, or null for anything else. */
-export function parseOpenMicCommand(text: string): OpenMicCommand | null {
-  const words = text.toLowerCase().match(/[a-z']+/g) ?? []
-  if (words.length === 1 && words[0] === 'open') return { kind: 'open' }
+export function parseOpenMicCommand(
+  text: string,
+  threads: Candidate[] = [],
+): OpenMicCommand | null {
+  const words = normalise(text)
+  if (words === 'open') return { kind: 'open' }
+  if (words.startsWith('open ')) return namedThread(words.slice(5), threads)
   return null
 }
 
@@ -21,10 +43,12 @@ export type MicRoute =
 export class MicSessionRouter {
   mode: MicSessionMode = 'undecided'
 
-  route(text: string): MicRoute {
+  route(text: string, threads: Candidate[] = []): MicRoute {
     const sentence = text.trim()
     if (!sentence) return { kind: 'ignored' }
-    const command = parseOpenMicCommand(sentence)
+    const command =
+      parseOpenMicCommand(sentence, threads) ??
+      (this.mode === 'commands' ? namedThread(sentence, threads) : null)
     if (this.mode === 'undecided') this.mode = command ? 'commands' : 'agent'
     if (this.mode === 'agent') return { kind: 'agent', text: sentence }
     return command ? { kind: 'command', command } : { kind: 'ignored' }

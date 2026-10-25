@@ -67,6 +67,7 @@ export function SessionRow(props: SessionRowProps) {
   return (
     <div
       className={expanded ? `${styles.row} ${styles.expanded}` : styles.row}
+      data-session-id={session.id}
       data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
     >
       <button

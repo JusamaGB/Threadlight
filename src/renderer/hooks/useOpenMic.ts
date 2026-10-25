@@ -4,6 +4,7 @@ import { STT_SAMPLE_RATE } from '../../shared/stt'
 import { Segmenter } from '../../shared/vad'
 import { SentenceAssembler } from '../../shared/voiceTurns'
 import { MicSessionRouter, type MicRoute, type MicSessionMode } from '../../shared/voiceCommands'
+import type { Candidate } from '../../shared/match'
 
 /** 32 ms frames at 16 kHz: fine enough for the level rules, light on the main thread. */
 const FRAME = 512
@@ -15,6 +16,8 @@ interface OpenMicOptions {
   enabled: boolean
   /** Push-to-talk is recording: the open mic ignores the room until it is done. */
   paused: boolean
+  /** Current list titles; refreshed without resetting the microphone session. */
+  threads: Candidate[]
   /** Each finished sentence: words joined across short pauses, after a long enough one. */
   onSentence: (route: MicRoute) => void
 }
@@ -28,14 +31,14 @@ interface OpenMicOptions {
  * The page's root carries `data-open-mic` with the state, set when the microphone is actually
  * taken and released, so a check can see that switching off really lets the microphone go.
  */
-export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions) {
+export function useOpenMic({ enabled, paused, threads, onSentence }: OpenMicOptions) {
   const [state, setState] = useState<OpenMicState>('off')
   const [mode, setMode] = useState<MicSessionMode>('undecided')
   // A visual-only level shared with the divider; audio callbacks need not rerender the panel.
   const level = useRef(0)
-  const latest = useRef({ paused, onSentence })
+  const latest = useRef({ paused, threads, onSentence })
   useEffect(() => {
-    latest.current = { paused, onSentence }
+    latest.current = { paused, threads, onSentence }
   })
 
   useEffect(() => {
@@ -117,7 +120,7 @@ export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions) {
         }
         const sentence = sentences.take(segmenter.now)
         if (sentence !== null && !stopped) {
-          const route = routing.route(sentence)
+          const route = routing.route(sentence, latest.current.threads)
           setMode(routing.mode)
           latest.current.onSentence(route)
         }
