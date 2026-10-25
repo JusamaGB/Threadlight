@@ -521,6 +521,11 @@ export function Panel() {
         void sendAgentVoice(route.text)
         return
       }
+      if (route.kind === 'unmatched') {
+        setNotice(en.openMic.unmatched(route.text))
+        window.threadlight.openPanelQuietly()
+        return
+      }
       if (route.kind !== 'command') return
       setShowSettings(false)
       setShowAgent(false)

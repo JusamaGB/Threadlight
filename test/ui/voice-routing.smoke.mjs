@@ -34,6 +34,12 @@ export async function checkVoiceRouting(page) {
     .getByTitle('Pinned open. Click (or triple-click the bar) to unpin', { exact: true })
     .waitFor()
   await say('Please check the build')
+  await page
+    .getByText(
+      'No thread matched “Please check the build”. Say the title shown in the list, or click the thread.',
+      { exact: true },
+    )
+    .waitFor()
   await say('agent')
   assert.equal((await agentSends()).length, before)
 
@@ -41,6 +47,7 @@ export async function checkVoiceRouting(page) {
     '[data-session-id="codex:11111111-1111-4111-8111-111111111111"] button[aria-expanded]',
   )
   await say('Synthetic Codex')
+  assert.equal(await page.getByText(/^No thread matched/).count(), 0)
   assert.equal(await codexRow.getAttribute('aria-expanded'), 'true')
   assert.equal(await codexRow.evaluate((node) => node === document.activeElement), true)
   await say('open Synthetic Codex')
@@ -66,12 +73,19 @@ export async function checkVoiceRouting(page) {
   await close()
 
   // A single utterance also chooses commands from a fresh session.
+  await page.evaluate(() => window.proof.patch({ title: 'Review Threadlight' }))
+  await codexRow.getByText('Review Threadlight', { exact: true }).waitFor()
   await open()
-  await say('Open Synthetic Codex.')
+  await say('Open review thread light.')
   await page.locator('[data-mic-mode="commands"]').waitFor()
   assert.equal(await codexRow.getAttribute('aria-expanded'), 'true')
   assert.equal((await agentSends()).length, before)
+  await codexRow.click()
+  assert.equal(await codexRow.getAttribute('aria-expanded'), 'false')
+  await say('review thread light')
+  assert.equal(await codexRow.getAttribute('aria-expanded'), 'true')
   await close()
+  await page.evaluate(() => window.proof.patch({ title: 'Synthetic Codex' }))
 
   // Names from both providers can be ambiguous; disambiguation never sends a message.
   await page.evaluate(() =>

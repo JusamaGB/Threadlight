@@ -25,6 +25,8 @@ export const en = {
           : 'Say “open” or “open [thread name]” for commands, or speak to the agent',
     ambiguous: (titles: string[]) =>
       `Several threads match: ${titles.join(' · ')}. Say more of the name, or click the thread.`,
+    unmatched: (text: string) =>
+      `No thread matched “${text}”. Say the title shown in the list, or click the thread.`,
     agentBusy: 'Speech kept here. Send it when the agent is ready.',
     agentFailed: 'Could not send speech to the agent. Check the conversation before retrying.',
     retryAgent: 'Send to agent',

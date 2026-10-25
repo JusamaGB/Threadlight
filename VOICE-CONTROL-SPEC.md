@@ -15,7 +15,9 @@ fresh session. The first completed sentence chooses its mode:
   expand that thread in Threadlight, scroll it into view and focus its row. After
   “open” and a pause, the bare thread name works too. Repeating a name keeps it open.
   Matching ignores case and punctuation, prefers full titles, and otherwise accepts
-  a unique whole-word phrase within a title. Ambiguous matches show the matching
+  a unique whole-word phrase within a title. Speech-recognition word splits such as
+  “thread light” for “Threadlight” are equivalent; partial title words still do not match.
+  Ambiguous matches show the matching
   titles and ask for more of the name; they never choose a thread or call the Agent.
   Candidates come from recent threads and loaded workspace rows, including children.
   Selection does not send a message or launch the provider app. Workspace selection
@@ -26,7 +28,7 @@ fresh session. The first completed sentence chooses its mode:
 
 An unmatched “open …” on the first utterance still follows the ordinary-speech
 Agent route. Say “open” and pause first when unsure of the title: unmatched speech
-then stays in command mode and is ignored.
+then stays in command mode and shows a no-match notice without sending anything.
 
 Closing the mic ends that mode; reopening starts undecided. Closing also discards
 unfinished/pending transcription, so no delayed command or send escapes a closed

@@ -15,7 +15,10 @@ describe('microphone session routing', () => {
       command: { kind: 'focus', threadId: 'one' },
     })
     expect(session.mode).toBe('commands')
-    expect(session.route('Please send a message', threads)).toEqual({ kind: 'ignored' })
+    expect(session.route('Please send a message', threads)).toEqual({
+      kind: 'unmatched',
+      text: 'Please send a message',
+    })
     expect(session.route('Café release 2!', threads)).toEqual({
       kind: 'command',
       command: { kind: 'focus', threadId: 'three' },
@@ -33,7 +36,7 @@ describe('microphone session routing', () => {
       kind: 'command',
       command: { kind: 'focus', threadId: 'new' },
     })
-    expect(session.route('Codex support', [])).toEqual({ kind: 'ignored' })
+    expect(session.route('Codex support', [])).toEqual({ kind: 'unmatched', text: 'Codex support' })
   })
 
   it('keeps ambiguous names in commands without choosing a thread', () => {
@@ -61,7 +64,46 @@ describe('microphone session routing', () => {
       kind: 'command',
       command: { kind: 'ambiguous', titles: ['Codex', 'Codex'] },
     })
-    expect(session.route('code', threads)).toEqual({ kind: 'ignored' })
+    expect(session.route('code', threads)).toEqual({ kind: 'unmatched', text: 'code' })
+  })
+
+  it('treats spoken compound-word spacing as equivalent and prefers the complete title', () => {
+    const names = [
+      { id: 'review', title: 'Review Threadlight' },
+      { id: 'support', title: 'Review ThreadLight Codex support' },
+    ]
+    const session = new MicSessionRouter()
+    expect(session.route('Open review thread light.', names)).toEqual({
+      kind: 'command',
+      command: { kind: 'focus', threadId: 'review' },
+    })
+    expect(session.route('review thread light', names)).toEqual({
+      kind: 'command',
+      command: { kind: 'focus', threadId: 'review' },
+    })
+    expect(session.route('thread light codex', names)).toEqual({
+      kind: 'command',
+      command: { kind: 'focus', threadId: 'support' },
+    })
+    expect(session.route('review thread', names)).toEqual({
+      kind: 'unmatched',
+      text: 'review thread',
+    })
+    expect(
+      session.route('reviewthreadlight', [{ id: 'split', title: 'Review Thread Light' }]),
+    ).toEqual({
+      kind: 'command',
+      command: { kind: 'focus', threadId: 'split' },
+    })
+    expect(
+      session.route('review thread light', [
+        ...names,
+        { id: 'duplicate', title: 'Review Thread Light' },
+      ]),
+    ).toEqual({
+      kind: 'command',
+      command: { kind: 'ambiguous', titles: ['Review Threadlight', 'Review Thread Light'] },
+    })
   })
 
   it('requires open before a bare title and preserves agent routing once chosen', () => {
@@ -79,8 +121,11 @@ describe('microphone session routing', () => {
   it('keeps commands latched until a new microphone session', () => {
     const session = new MicSessionRouter()
     expect(session.route('Open.')).toEqual({ kind: 'command', command: { kind: 'open' } })
-    expect(session.route('Please review the build')).toEqual({ kind: 'ignored' })
-    expect(session.route('agent')).toEqual({ kind: 'ignored' })
+    expect(session.route('Please review the build')).toEqual({
+      kind: 'unmatched',
+      text: 'Please review the build',
+    })
+    expect(session.route('agent')).toEqual({ kind: 'unmatched', text: 'agent' })
     expect(session.mode).toBe('commands')
     expect(session.route('open')).toEqual({ kind: 'command', command: { kind: 'open' } })
     const reopened = new MicSessionRouter()

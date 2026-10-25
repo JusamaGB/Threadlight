@@ -6,16 +6,31 @@ export type OpenMicCommand =
   { kind: 'open' } | { kind: 'focus'; threadId: string } | { kind: 'ambiguous'; titles: string[] }
 
 const normalise = (text: string) => (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).join(' ')
+const spokenKey = (text: string) => normalise(text).replaceAll(' ', '')
+
+/** Ignore speech-recognition word splits, while retaining the title's phrase boundaries. */
+function containsSpokenName(title: string, name: string): boolean {
+  const words = normalise(title).split(' ')
+  for (let start = 0; start < words.length; start++) {
+    let phrase = ''
+    for (let end = start; end < words.length; end++) {
+      phrase += words[end]
+      if (phrase === name) return true
+      if (phrase.length >= name.length) break
+    }
+  }
+  return false
+}
 
 /** Exact titles win; otherwise require a unique, whole-word phrase within a title. */
 function namedThread(text: string, threads: Candidate[]): OpenMicCommand | null {
-  const name = normalise(text)
+  const name = spokenKey(text)
   if (!name) return null
   const unique = [...new Map(threads.map((thread) => [thread.id, thread])).values()]
-  const exact = unique.filter((thread) => normalise(thread.title) === name)
+  const exact = unique.filter((thread) => spokenKey(thread.title) === name)
   const matches = exact.length
     ? exact
-    : unique.filter((thread) => ` ${normalise(thread.title)} `.includes(` ${name} `))
+    : unique.filter((thread) => containsSpokenName(thread.title, name))
   if (matches.length === 1) return { kind: 'focus', threadId: matches[0]!.id }
   if (matches.length > 1)
     return { kind: 'ambiguous', titles: matches.map((thread) => thread.title) }
@@ -37,6 +52,7 @@ export type MicSessionMode = 'undecided' | 'commands' | 'agent'
 export type MicRoute =
   | { kind: 'command'; command: OpenMicCommand }
   | { kind: 'agent'; text: string }
+  | { kind: 'unmatched'; text: string }
   | { kind: 'ignored' }
 
 /** One microphone session. Only a completed sentence can choose its route. */
@@ -51,6 +67,6 @@ export class MicSessionRouter {
       (this.mode === 'commands' ? namedThread(sentence, threads) : null)
     if (this.mode === 'undecided') this.mode = command ? 'commands' : 'agent'
     if (this.mode === 'agent') return { kind: 'agent', text: sentence }
-    return command ? { kind: 'command', command } : { kind: 'ignored' }
+    return command ? { kind: 'command', command } : { kind: 'unmatched', text: sentence }
   }
 }
