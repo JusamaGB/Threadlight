@@ -73,9 +73,6 @@ export function AgentSettings({
           <option value="codex">Codex</option>
         </select>
       </label>
-      <p className={styles.footer}>
-        Model choices apply to new conversations. Chat monitoring is separate.
-      </p>
       {settings.agentProvider === 'claude' ? (
         <label className={styles.row}>
           <span className={styles.text}>Worker · Haiku handles conversation</span>
@@ -171,10 +168,6 @@ export function AgentSettings({
               </select>
             </label>
           )}
-          <p className={styles.footer}>
-            The selected model handles the conversation directly. Availability depends on your Codex
-            sign-in.
-          </p>
         </>
       )}
       <label className={styles.row}>

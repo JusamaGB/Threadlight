@@ -305,6 +305,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Removed the application-selection, Codex plugin and model-selection explanatory copy from Settings.
+
 - The workspace picker header uses a centered title and left-hand back arrow, matching Settings and Agent.
 
 - Thread toolbar separates view, application and workspace controls. Click the view label

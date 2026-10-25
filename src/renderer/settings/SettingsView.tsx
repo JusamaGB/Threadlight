@@ -71,15 +71,7 @@ export function SettingsView({
             ))}
           </span>
         </Row>
-        <p className={styles.footer}>
-          {settings.enabledProviders.length ? en.sources.hint : en.sources.paused}
-        </p>
-        {settings.enabledProviders.includes('codex') && (
-          <p className={styles.footer}>
-            Live chats open in Codex. Install and trust the Threadlight Codex plugin to answer held
-            cards here.
-          </p>
-        )}
+        {!settings.enabledProviders.length && <p className={styles.footer}>{en.sources.paused}</p>}
       </Group>
       <Group label="Shared memory">
         <Row label="Notes, sectors and assignments">
