@@ -1,8 +1,8 @@
 # Threadlight
 
-A small status dot and mini composer for the **Claude desktop app** on Windows.
+A small status dot and mini composer for **Claude and Codex desktop chats** on Windows.
 
-> **Unofficial.** Threadlight is not made by, affiliated with or endorsed by Anthropic.
+> **Unofficial.** Threadlight is not made by, affiliated with or endorsed by Anthropic or OpenAI.
 > It reads files the Claude app and Claude Code keep on your PC, some of which are
 > undocumented, so a Claude update can break it. See [What it reads](#what-it-reads).
 
@@ -36,7 +36,7 @@ telemetry and no servers.
 ## Install
 
 Until the first release, Threadlight runs from a copy of this repository. You need
-[Node 20 or later](https://nodejs.org) as well as the requirements above.
+[Node 22.13 or later](https://nodejs.org) as well as the requirements above.
 
 **Ask Claude to do it.** Open Claude Code in the folder and say _"set up Threadlight"_. It
 follows [skills/setup/SKILL.md](skills/setup/SKILL.md): checks your PC, tells you what will
@@ -63,6 +63,16 @@ The hooks only reach Claude Code sessions started after the plugin is installed.
 speech model (76 MB) downloads the first time you use voice, after you agree to it.
 
 ## What it reads
+
+### Codex
+
+Choose **Settings → Application → Codex** for local Codex chats. The list, workspaces
+and composer switch together; drafts remain with their chat. Read
+[Codex setup and behavior](codex-plugin/README.md) for plugin installation and trust,
+live-chat copy-and-open, held questions/approvals, and compatibility limits.
+Codex users need the signed-in Codex desktop app and native CLI instead of Claude.
+
+### Claude
 
 All read-only, all on your PC:
 

@@ -7,6 +7,8 @@ import { z } from 'zod'
 export const SETTINGS_VERSION = 1
 
 export const settingsSchema = z.object({
+  provider: z.enum(['claude', 'codex']).default('claude'),
+  codexFocusWorkspace: z.string().min(1).max(1000).nullable().default(null),
   /** Electron accelerator, e.g. "Control+Alt+Q". Press to start talking, again to stop. */
   talkHotkey: z.string().min(1).max(60).default('Control+Alt+Q'),
   /** Toggle: press to start talking, press again to send. Hold: talk while held, send on release. */

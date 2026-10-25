@@ -20,7 +20,7 @@ export class SessionService {
   private queued: Promise<void> | null = null
 
   constructor(
-    private readonly tracker: Tracker,
+    private readonly tracker: Pick<Tracker, 'snapshot'>,
     private readonly onChange: (snapshot: Snapshot) => void,
   ) {}
 

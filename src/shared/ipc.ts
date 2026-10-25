@@ -44,6 +44,7 @@ export const IPC = {
   answerNextStep: 'hold:answer-next-step',
   answerApproval: 'hold:answer-approval',
   answerOffer: 'hold:answer-offer',
+  answerCodex: 'codex:answer',
   releaseHold: 'hold:release',
   copyText: 'clipboard:copy',
   getChanges: 'changes:get',
@@ -76,6 +77,11 @@ export type TalkState = 'idle' | 'listening' | 'transcribing'
 
 /** What the preload script exposes on `window.threadlight`. */
 export interface ThreadlightApi {
+  answerCodex(
+    sessionId: string,
+    holdId: string,
+    answer: string,
+  ): Promise<{ ok: true } | { ok: false; reason: string }>
   getVersion(): Promise<string>
   getSessions(): Promise<Session[]>
   /** Called whenever the session list changes. Returns an unsubscribe function. */

@@ -18,6 +18,7 @@ function DotView() {
   useEffect(() => window.threadlight.onTalkState(setTalk), [])
   return (
     <FloatingDot
+      provider={settings?.provider}
       working={sessions.some((s) => s.state === 'working')}
       talk={talk}
       openOn={settings?.openOn ?? 'hover'}

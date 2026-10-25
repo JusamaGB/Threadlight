@@ -3,6 +3,7 @@ import styles from './Panel.module.css'
 import { sameFolder } from './WorkspaceTree'
 
 interface WorkspacePickerProps {
+  provider?: 'claude' | 'codex'
   /** Every workspace, whether or not it has threads inside the time window. */
   workspaces: { id: string; name: string }[]
   /** The workspace now in focus, or null when following the Claude app. */
@@ -13,7 +14,13 @@ interface WorkspacePickerProps {
 }
 
 /** Choosing which workspace the Workspace list shows: one row per workspace, all collapsed. */
-export function WorkspacePicker({ workspaces, chosen, current, onPick }: WorkspacePickerProps) {
+export function WorkspacePicker({
+  workspaces,
+  chosen,
+  current,
+  onPick,
+  provider,
+}: WorkspacePickerProps) {
   const currentName = workspaces.find((w) => current && sameFolder(w.id, current))?.name
   return (
     <>
@@ -23,7 +30,9 @@ export function WorkspacePicker({ workspaces, chosen, current, onPick }: Workspa
         aria-pressed={chosen === null}
         onClick={() => onPick(null)}
       >
-        <span className={styles.workspaceName}>{en.workspaces.followClaude}</span>
+        <span className={styles.workspaceName}>
+          {provider === 'codex' ? 'Follow Codex activity' : en.workspaces.followClaude}
+        </span>
         {currentName && <span className={styles.workspaceCount}>{currentName}</span>}
       </button>
       {workspaces.map((workspace) => (

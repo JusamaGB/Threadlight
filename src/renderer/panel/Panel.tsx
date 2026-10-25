@@ -75,6 +75,9 @@ export function Panel() {
   const relays = useRelays()
   const stt = useStt()
   const settings = useSettings()
+  const provider = settings?.provider ?? 'claude'
+  const providerCompose = useRef<Partial<Record<'claude' | 'codex', ComposeState | null>>>({})
+  const previousProvider = useRef(provider)
   // Ticks often enough for a thread to leave the Active list close to its 30 seconds.
   const now = useNow(5000)
   const [view, setView] = useState<View>('active')
@@ -138,6 +141,26 @@ export function Panel() {
 
   const limitHandler = useRef<() => void>(() => {})
   const voice = useVoice(useCallback(() => limitHandler.current(), []))
+  useEffect(() => {
+    if (previousProvider.current === provider) return
+    providerCompose.current[previousProvider.current] = compose
+      ? { ...compose, countdownSeconds: undefined }
+      : null
+    setCompose(providerCompose.current[provider] ?? null)
+    previousProvider.current = provider
+    setExpanded(null)
+    setMenu(null)
+    setPicking(null)
+    setChangesFor(null)
+    setShowAgent(false)
+    setOpenWorkspaces(null)
+    setMoreWorkspaces([])
+    setHeard(null)
+    countdownUntil.current = 0
+    setCancelToken((n) => n + 1)
+    // Only the provider change switches the saved target; ordinary typing keeps it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider])
 
   // A hover or click opens the panel fresh on Active; the talk hotkey keeps what it just filled in.
   useEffect(
@@ -387,7 +410,8 @@ export function Panel() {
   const tree = view === 'all' && listMode !== 'recent'
   // The Workspace list shows the chosen workspace, or (Follow Claude) the one last open in Claude.
   // A chosen folder that no longer has any threads falls back to following Claude.
-  const chosen = settings?.focusWorkspace ?? null
+  const chosen =
+    (provider === 'codex' ? settings?.codexFocusWorkspace : settings?.focusWorkspace) ?? null
   const focusId =
     chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
       ? chosen
@@ -413,7 +437,10 @@ export function Panel() {
     ? `${changesThread.git.branch ?? en.git.noBranch} · ${en.changes.files(changesThread.git.files)}`
     : en.changes.title
   const pickWorkspace = async (id: string | null) => {
-    await window.threadlight.updateSettings({ focusWorkspace: id, listMode: 'workspace' })
+    await window.threadlight.updateSettings({
+      ...(provider === 'codex' ? { codexFocusWorkspace: id } : { focusWorkspace: id }),
+      listMode: 'workspace',
+    })
     setPickingWorkspace(false)
     setShowSettings(false)
     setView('all') // straight to that workspace's threads
@@ -444,7 +471,7 @@ export function Panel() {
   const menuItems = (session: Session): MenuItem[] => [
     { label: en.menu.compose, onSelect: () => setCompose({ sessionId: session.id }) },
     {
-      label: en.menu.openInClaude,
+      label: session.provider === 'codex' ? 'Open in Codex' : en.menu.openInClaude,
       disabled: !session.appId,
       onSelect: () => session.appId && window.threadlight.openInClaude(session.appId),
     },
@@ -572,16 +599,18 @@ export function Panel() {
                   {listTag.count} {listTag.word}
                 </button>
               )}
-              <button
-                className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
-                onClick={() => setShowAgent(true)}
-                aria-label={agentBusy ? en.agent.busy : en.agent.open}
-                title={agentBusy ? en.agent.busy : en.agent.open}
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z" />
-                </svg>
-              </button>
+              {provider === 'claude' && (
+                <button
+                  className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
+                  onClick={() => setShowAgent(true)}
+                  aria-label={agentBusy ? en.agent.busy : en.agent.open}
+                  title={agentBusy ? en.agent.busy : en.agent.open}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z" />
+                  </svg>
+                </button>
+              )}
               <button
                 className={styles.gear}
                 onClick={() => setShowSettings(true)}
@@ -600,6 +629,7 @@ export function Panel() {
         {pickingWorkspace && (
           <div className={styles.list}>
             <WorkspacePicker
+              provider={provider}
               workspaces={snapshot.allWorkspaces}
               chosen={chosen}
               current={snapshot.currentWorkspace}
@@ -620,6 +650,7 @@ export function Panel() {
 
         {showSettings && settings && !pickingWorkspace && !showAgent && (
           <SettingsView
+            providerLocked={voice.state !== 'idle'}
             settings={settings}
             stt={stt}
             version={version}
@@ -683,7 +714,9 @@ export function Panel() {
         </div>
 
         {/* Weekly while the full list itself shows; the 5-hour limit everywhere else. */}
-        {usage && <UsageBar usage={usage} weekly={view === 'all' && !listHidden} />}
+        {usage && provider === 'claude' && (
+          <UsageBar usage={usage} weekly={view === 'all' && !listHidden} />
+        )}
 
         {menu && (
           <ContextMenu

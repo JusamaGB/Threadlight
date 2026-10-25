@@ -1,0 +1,6 @@
+{
+  "name": "threadlight-codex",
+  "version": "0.1.0",
+  "description": "Codex status and bounded card answers in Threadlight.",
+  "hooks": "./hooks/hooks.json"
+}

@@ -9,6 +9,7 @@ import { windowLabel } from '../lib/format'
 import styles from './Settings.module.css'
 
 interface SettingsViewProps {
+  providerLocked?: boolean
   settings: Settings
   stt: SttStatus
   version: string
@@ -57,7 +58,13 @@ function AgentApps({ off, onChange }: { off: string[]; onChange: (off: string[])
 }
 
 /** Every setting in one compact list, inside the panel's own card. Changes save immediately. */
-export function SettingsView({ settings, stt, version, onPickWorkspace }: SettingsViewProps) {
+export function SettingsView({
+  settings,
+  stt,
+  version,
+  onPickWorkspace,
+  providerLocked,
+}: SettingsViewProps) {
   const [errors, setErrors] = useState<Partial<Record<keyof Settings, string>>>({})
 
   const save = async (patch: SettingsPatch) => {
@@ -69,6 +76,25 @@ export function SettingsView({ settings, stt, version, onPickWorkspace }: Settin
 
   return (
     <div className={styles.view}>
+      <Group label="Application">
+        <Row label="Threads from" error={errors.provider}>
+          <Segmented
+            disabled={providerLocked}
+            value={settings.provider}
+            options={[
+              { value: 'claude', label: 'Claude' },
+              { value: 'codex', label: 'Codex' },
+            ]}
+            onChange={(provider) => save({ provider })}
+          />
+        </Row>
+        {settings.provider === 'codex' && (
+          <p className={styles.footer}>
+            Live chats open in Codex. Install and trust the Threadlight Codex plugin to answer held
+            cards here.
+          </p>
+        )}
+      </Group>
       <Group label={en.settings.voice}>
         <Row label={en.settings.talkHotkey} error={errors.talkHotkey}>
           <span className={styles.pair}>
@@ -167,32 +193,34 @@ export function SettingsView({ settings, stt, version, onPickWorkspace }: Settin
         </Row>
       </Group>
 
-      <Group label={en.settings.agent}>
-        <Row label={en.settings.agentLifetime} hint={en.settings.agentLifetimeHint}>
-          <Segmented
-            value={settings.agentLifetimeMinutes}
-            options={LIFETIME_CHOICES.map((minutes) => ({
-              value: minutes,
-              label: en.settings.lifetime(minutes),
-            }))}
-            onChange={(agentLifetimeMinutes) => save({ agentLifetimeMinutes })}
+      {settings.provider === 'claude' && (
+        <Group label={en.settings.agent}>
+          <Row label={en.settings.agentLifetime} hint={en.settings.agentLifetimeHint}>
+            <Segmented
+              value={settings.agentLifetimeMinutes}
+              options={LIFETIME_CHOICES.map((minutes) => ({
+                value: minutes,
+                label: en.settings.lifetime(minutes),
+              }))}
+              onChange={(agentLifetimeMinutes) => save({ agentLifetimeMinutes })}
+            />
+          </Row>
+          <Row label={en.settings.agentWorker} hint={en.settings.agentWorkerHint}>
+            <Segmented
+              value={settings.agentWorker}
+              options={[
+                { value: 'opus', label: 'Opus' },
+                { value: 'sonnet', label: 'Sonnet' },
+              ]}
+              onChange={(agentWorker) => save({ agentWorker })}
+            />
+          </Row>
+          <AgentApps
+            off={settings.agentAppsOff}
+            onChange={(agentAppsOff) => save({ agentAppsOff })}
           />
-        </Row>
-        <Row label={en.settings.agentWorker} hint={en.settings.agentWorkerHint}>
-          <Segmented
-            value={settings.agentWorker}
-            options={[
-              { value: 'opus', label: 'Opus' },
-              { value: 'sonnet', label: 'Sonnet' },
-            ]}
-            onChange={(agentWorker) => save({ agentWorker })}
-          />
-        </Row>
-        <AgentApps
-          off={settings.agentAppsOff}
-          onChange={(agentAppsOff) => save({ agentAppsOff })}
-        />
-      </Group>
+        </Group>
+      )}
 
       <Group label={en.settings.app}>
         <Row label={en.settings.launchAtSignIn} error={errors.launchAtSignIn}>
@@ -204,7 +232,11 @@ export function SettingsView({ settings, stt, version, onPickWorkspace }: Settin
         </Row>
       </Group>
 
-      <p className={styles.footer}>{en.settings.footer(version)}</p>
+      <p className={styles.footer}>
+        {settings.provider === 'codex'
+          ? `Threadlight ${version} · Unofficial, not made by OpenAI`
+          : en.settings.footer(version)}
+      </p>
     </div>
   )
 }
@@ -327,6 +359,7 @@ function Stepper(props: {
 }
 
 function Segmented<T extends string | number>(props: {
+  disabled?: boolean
   value: T
   options: { value: T; label: string; title?: string }[]
   /** Drawn between the options, e.g. "Toggle / Push to talk". */
@@ -349,6 +382,7 @@ function Segmented<T extends string | number>(props: {
           )}
           <button
             role="radio"
+            disabled={props.disabled}
             title={option.title}
             aria-checked={option.value === props.value}
             onClick={() =>
