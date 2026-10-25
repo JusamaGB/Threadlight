@@ -24,6 +24,7 @@ import { discoverModels } from './agentModels'
 import { codexPolicy } from './codexPolicy'
 import { connectedApps } from './agentApps'
 import { briefing, readableFolders } from './briefing'
+import { archiveAgentConversation } from './agentArchive'
 
 type Run = AgentRun | CodexAgentRun
 const responseSchema = z.discriminatedUnion('action', [
@@ -53,6 +54,7 @@ export class AgentService {
   private run: Run | null = null
   private state: AgentState = { ...IDLE_AGENT }
   private locked = false
+  private retirement: Promise<void> = Promise.resolve()
   private operation = 0
   private past: string
   private claudeWrites: Promise<void> = Promise.resolve()
@@ -87,8 +89,9 @@ export class AgentService {
     const operation = this.operation
     try {
       await this.store.load()
+      await this.retirement
       if (!this.run || this.state.ended) {
-        this.run?.close()
+        await this.run?.close()
         this.run = null
         this.publish({ ...IDLE_AGENT, status: 'starting' })
         const next = await this.create()
@@ -123,12 +126,17 @@ export class AgentService {
   async interrupt(): Promise<AgentResult> {
     return this.run ? await this.run.interrupt() : { ok: true }
   }
-  close(): void {
+  close(): Promise<void> {
     this.operation++
+    const operation = this.operation
     const previous = this.state
     const run = this.run
     this.run = null
-    run?.close()
+    if (run)
+      this.retirement = Promise.resolve(run.close()).then(() => {
+        if (operation === this.operation && run.current.error)
+          this.publish({ ...this.state, error: run.current.error })
+      })
     this.publish({
       ...previous,
       status: 'idle',
@@ -137,6 +145,24 @@ export class AgentService {
       approval: null,
       progress: null,
     })
+    return this.retirement
+  }
+
+  /** Only previously requested retirements are retried; unrelated chats are never archived. */
+  async retryArchives(): Promise<void> {
+    await this.store.load()
+    for (const record of this.store.all()) {
+      if (record.provider !== 'codex' || record.archiveState !== 'pending') continue
+      try {
+        await archiveAgentConversation(this.store, record.id, () => this.connect())
+      } catch {
+        this.publish({
+          ...this.state,
+          error:
+            'Some agent conversations could not be archived. Their history is still saved in Earlier.',
+        })
+      }
+    }
   }
 
   async models() {
@@ -226,10 +252,15 @@ export class AgentService {
     try {
       await this.store.load()
       await this.claudeWrites
+      await this.retirement
       const page = await this.read(id)
       if (page.error || !page.items.length)
         throw new Error(page.error ?? 'That conversation is gone.')
-      const record = this.store.get(id)
+      let record = this.store.get(id)
+      if (record?.archiveState === 'pending') {
+        await archiveAgentConversation(this.store, record.id, () => this.connect())
+        record = this.store.get(id)
+      }
       if (!record && !id.startsWith('claude:')) throw new Error('Unknown conversation.')
       const next = await this.create(
         record ?? {
@@ -252,7 +283,11 @@ export class AgentService {
       }
       const previous = this.run
       this.run = null
-      previous?.close()
+      await previous?.close()
+      if (operation !== this.operation) {
+        await next.close()
+        throw new Error('The conversation was ended.')
+      }
       this.run = next
       if (next instanceof CodexAgentRun) await next.prepareResume()
       else next.resume(id.slice(7), page.items)

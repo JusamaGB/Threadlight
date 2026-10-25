@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 
 import { app, clipboard, ipcMain, session, shell, type WebContents } from 'electron'
 
@@ -94,7 +94,10 @@ async function start(): Promise<void> {
     codex,
     codexHolds,
     (folder) => gitStates.get(folder),
-    (id) => agentSessionIds.has(id),
+    (id, cwd) =>
+      agentSessionIds.has(id) ||
+      win32.normalize(cwd.replace(/^\\\\\?\\/, '')).toLowerCase() ===
+        win32.normalize(agentWorkspace.replace(/^\\\\\?\\/, '')).toLowerCase(),
   )
   codexTracker.configure(initial.listWindowHours, initial.maxSessions)
   const codexSessions = new SessionService(codexTracker, () => {
@@ -392,6 +395,8 @@ async function start(): Promise<void> {
     agentSessionIds.add(
       record.provider === 'codex' ? `codex:${record.providerId}` : record.providerId,
     )
+  // Complete previously requested cleanup before allowing a history continuation to race it.
+  await agent.retryArchives().catch(() => {})
   ipcMain.handle(IPC.agentGet, () => agent.current)
   ipcMain.handle(IPC.agentSend, (_event, text: unknown) => agent.send(text))
   ipcMain.handle(IPC.agentRespond, (_event, id: unknown, response: unknown) =>
@@ -517,8 +522,19 @@ async function start(): Promise<void> {
     quit: () => app.quit(),
   })
 
+  let agentRetiredForQuit = false
+  let retiringForQuit = false
+  app.on('before-quit', (event) => {
+    if (agentRetiredForQuit) return
+    event.preventDefault()
+    if (retiringForQuit) return
+    retiringForQuit = true
+    void agent.close().finally(() => {
+      agentRetiredForQuit = true
+      app.quit()
+    })
+  })
   app.on('will-quit', () => {
-    agent?.close()
     holds.releaseAll() // Claude carries on with every held card itself from here on
     codexHolds.releaseAll()
     hotkey.dispose()

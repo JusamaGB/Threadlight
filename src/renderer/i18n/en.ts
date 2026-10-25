@@ -17,6 +17,15 @@ export const en = {
     on: 'Open mic is listening: click to close it',
     off: 'Open the mic for voice commands',
     blocked: 'The microphone is blocked',
+    mode: (mode: 'undecided' | 'commands' | 'agent') =>
+      mode === 'commands'
+        ? 'Command mode · Close and reopen the mic to talk to the agent'
+        : mode === 'agent'
+          ? 'Agent mode · Pause to send; the mic stays open'
+          : 'Say “open” and pause for commands, or speak to the agent',
+    agentBusy: 'Speech kept here. Send it when the agent is ready.',
+    agentFailed: 'Could not send speech to the agent. Check the conversation before retrying.',
+    retryAgent: 'Send to agent',
   },
   panel: {
     activeCount: (n: number) => `Active · ${n}`,
@@ -222,7 +231,8 @@ export const en = {
     holdSendHint: 'Hold spoken messages until you click Send',
     speechModel: 'Speech model',
     openMic: 'Open mic',
-    openMicHint: 'The talk hotkey opens a live mic for commands, until pressed again',
+    openMicHint:
+      'Say “open” and pause for command mode; otherwise speak to the agent. Close and reopen to reset.',
     openMicNeedsToggle: 'Works with the Toggle talk mode',
     openMicNeedsModel: 'Needs the speech model: talk once with the hotkey to get it',
     modelReady: 'Ready',

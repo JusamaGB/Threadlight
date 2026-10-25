@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CodexAgentRun, readCodexHistory } from '../src/main/agent/codexAgentRun'
 import type { CodexTransport, RpcId } from '../src/main/agent/codexClient'
 import { chooseModel, discoverModels } from '../src/main/agent/agentModels'
@@ -11,6 +11,7 @@ import { AgentStore } from '../src/main/agent/agentStore'
 import { AgentService } from '../src/main/agent/agentService'
 import { DEFAULT_SETTINGS } from '../src/shared/settings'
 import type { JsonObject } from '../src/main/sessions/json'
+import { archiveAgentConversation } from '../src/main/agent/agentArchive'
 
 const models = [
   {
@@ -105,6 +106,116 @@ async function fixture() {
 const settle = async (run: CodexAgentRun) => expect.poll(() => run.current.status).toBe('ready')
 
 describe('Codex agent', () => {
+  it('archives once on End, retains Agent history and restores the same conversation on Continue', async () => {
+    const { run, fake, store, options } = await fixture()
+    await run.send('Keep my history')
+    fake.complete()
+    await settle(run)
+    const id = run.current.conversationId!
+    await Promise.all([run.close(), run.close()])
+    expect(fake.calls.filter((c) => c.method === 'thread/archive')).toEqual([
+      { method: 'thread/archive', params: { threadId: 'owned-thread' } },
+    ])
+    expect(store.get(id)).toMatchObject({
+      title: 'Keep my history',
+      archiveState: 'archived',
+      pending: null,
+    })
+    expect(run.current.ended).toBe(true)
+    expect((await run.send('Too late')).ok).toBe(false)
+    const next = new Fake()
+    const resumed = new CodexAgentRun({
+      ...options,
+      record: store.get(id)!,
+      client: async () => next,
+    })
+    await resumed.prepareResume()
+    expect(next.calls.find((c) => c.method === 'thread/unarchive')?.params).toEqual({
+      threadId: 'owned-thread',
+    })
+    expect(next.calls.find((c) => c.method === 'thread/resume')?.params.threadId).toBe(
+      'owned-thread',
+    )
+    expect(next.calls.some((c) => c.method === 'thread/start')).toBe(false)
+    expect(store.get(id)?.archiveState).toBeUndefined()
+    await resumed.close()
+  })
+
+  it('restarts the inactivity window after replies and never expires while working or awaiting permission', async () => {
+    const { fake, options, store } = await fixture()
+    const run = new CodexAgentRun({ ...options, lifetimeMinutes: () => 1 })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await run.send('First')
+      fake.complete()
+      await vi.waitFor(() => expect(run.current.status).toBe('ready'))
+      await vi.advanceTimersByTimeAsync(30_000)
+      await run.send('Follow up')
+      fake.emit('item/fileChange/requestApproval', { turnId: 'turn-2' }, 7)
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(run.current.status).toBe('waiting')
+      expect(fake.calls.some((c) => c.method === 'thread/archive')).toBe(false)
+      fake.complete()
+      await vi.waitFor(() => expect(run.current.status).toBe('ready'))
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(run.current.ended).toBe(false)
+      await vi.advanceTimersByTimeAsync(1_000)
+      await run.close() // wait for the expiry's asynchronous archive
+      expect(store.all()[0]?.archiveState).toBe('archived')
+      expect(fake.calls.filter((c) => c.method === 'thread/start')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+      await run.close()
+    }
+  })
+
+  it('keeps failed archiving retryable without losing uncertain input', async () => {
+    const { run, fake, store } = await fixture()
+    await run.send('Unconfirmed work')
+    fake.handler = async (method) => {
+      if (method === 'thread/archive') throw new Error('offline')
+      return undefined
+    }
+    await run.close()
+    const record = store.all()[0]!
+    expect(record).toMatchObject({ archiveState: 'pending', pending: { text: 'Unconfirmed work' } })
+    expect(run.current.error).toContain('archiving failed')
+    const cleanup = new Fake()
+    await archiveAgentConversation(store, record.id, async () => cleanup)
+    expect(store.get(record.id)).toMatchObject({
+      archiveState: 'archived',
+      pending: { text: 'Unconfirmed work' },
+    })
+    await expect(archiveAgentConversation(store, 'not-owned', async () => cleanup)).rejects.toThrow(
+      'Unknown',
+    )
+    expect(cleanup.calls.filter((c) => c.method === 'thread/archive')).toHaveLength(1)
+  })
+
+  it('archives a thread whose creation finishes after End was clicked', async () => {
+    const { run, fake, store } = await fixture()
+    let finish: (result: JsonObject) => void = () => {}
+    let started: () => void = () => {}
+    const arrived = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    fake.handler = async (method, params) => {
+      if (method !== 'thread/start') return undefined
+      started()
+      return new Promise((resolve) => {
+        finish = (result) => resolve({ ...result, model: params.model })
+      })
+    }
+    const sending = run.send('Never submitted')
+    await arrived
+    const closing = run.close()
+    finish({ thread: { id: 'owned-thread' } })
+    expect((await sending).ok).toBe(false)
+    await closing
+    expect(store.all()[0]?.archiveState).toBe('archived')
+    expect(fake.calls.some((c) => c.method === 'turn/start')).toBe(false)
+  })
+
   it('discovers all pages and validates exact model/effort without a fixed model list', async () => {
     const fake = new Fake(),
       catalog = await discoverModels(fake)
@@ -146,7 +257,7 @@ describe('Codex agent', () => {
     expect(await run.send('Next')).toEqual({ ok: true })
     expect(fake.calls.filter((c) => c.method === 'thread/start')).toHaveLength(1)
     expect(fake.calls.filter((c) => c.method === 'turn/start')).toHaveLength(2)
-    run.close()
+    await run.close()
   })
 
   it('queues typed request IDs, rejects stale/double responses and stops without approving', async () => {
@@ -165,7 +276,7 @@ describe('Codex agent', () => {
     await expect.poll(() => run.current.status).toBe('interrupted')
     expect(fake.replies).toHaveLength(1)
     expect(run.respond(second!.id, { action: 'allow' }).ok).toBe(false)
-    run.close()
+    await run.close()
   })
 
   it('keeps uncertain sends and never automatically replays after process loss', async () => {
@@ -197,7 +308,7 @@ describe('Codex agent', () => {
     expect(recovered.calls.find((c) => c.method === 'thread/resume')?.params.threadId).toBe(
       record.providerId,
     )
-    resumed.close()
+    await resumed.close()
   })
 
   it('rejects unsafe effective permissions before sending and ignores events after close', async () => {
@@ -214,7 +325,7 @@ describe('Codex agent', () => {
         : undefined
     expect((await run.send('Never execute')).ok).toBe(false)
     expect(fake.calls.some((c) => c.method === 'turn/start')).toBe(false)
-    run.close()
+    await run.close()
     fake.emit('item/completed', { item: { type: 'agentMessage', text: 'Late' } })
     expect(run.current.items).toEqual([])
   })
@@ -235,7 +346,7 @@ describe('Codex agent', () => {
     const stale = run.current.requests[0]!.id
     fake.complete()
     await settle(run)
-    run.close()
+    await run.close()
     const next = new Fake()
     const resumed = new CodexAgentRun({
       ...options,
@@ -248,7 +359,7 @@ describe('Codex agent', () => {
     expect(resumed.current.requests[0]!.id).not.toBe(stale)
     expect(resumed.respond(stale, { action: 'allow' }).ok).toBe(false)
     expect(next.replies).toEqual([])
-    resumed.close()
+    await resumed.close()
   })
 
   it('preserves paginated history order without resuming the thread', async () => {
@@ -279,7 +390,7 @@ describe('Codex agent', () => {
     await reopened.load()
     expect(reopened.all()).toEqual(store.all())
     expect(await readFile(join(folder, 'index.json'), 'utf8')).not.toContain('threadlight-briefing')
-    run.close()
+    await run.close()
     await writeFile(join(folder, 'corrupt.json'), '{broken')
     const corrupt = new AgentStore(join(folder, 'corrupt.json'))
     await expect(corrupt.load()).rejects.toThrow()
@@ -438,5 +549,17 @@ it('runs Codex without Claude installed or monitoring enabled, pins settings, an
   expect(service.current.model).toBe('future-fast')
   expect(claudeCalls).toBe(0)
   expect((await service.history())[0]?.provider).toBe('codex')
-  service.close()
+  fake.complete()
+  await expect.poll(() => service.current.status).toBe('ready')
+  const conversation = (await service.history())[0]!
+  await service.close()
+  expect((await service.history())[0]?.id).toBe(conversation.id)
+  expect(service.store.get(conversation.id)?.archiveState).toBe('archived')
+  fake.history = [{ item: { type: 'agentMessage', id: 'reply', text: 'Saved reply' } }]
+  expect((await service.read(conversation.id)).items[0]?.text).toBe('Saved reply')
+  expect(fake.calls.some((c) => c.method === 'thread/unarchive')).toBe(false)
+  expect(await service.resume(conversation.id)).toEqual({ ok: true })
+  expect(service.current.conversationId).toBe(conversation.id)
+  expect(fake.calls.filter((c) => c.method === 'thread/start')).toHaveLength(1)
+  await service.close()
 })

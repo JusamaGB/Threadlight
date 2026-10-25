@@ -11,7 +11,7 @@ import {
 import { matchThread, parseVoiceCommand } from '../../shared/match'
 import { DEFAULT_ENABLED_PROVIDERS, sessionProvider } from '../../shared/providers'
 import type { Session } from '../../shared/types'
-import { parseOpenMicCommand } from '../../shared/voiceCommands'
+import { agentBusy as isAgentBusy } from '../../shared/agent'
 import { Composer } from '../composer/Composer'
 import { useDotDrag } from '../hooks/useDotDrag'
 import { useAgent } from '../hooks/useAgent'
@@ -143,6 +143,10 @@ export function Panel() {
    * setting alone.
    */
   const [micLive, setMicLive] = useState(false)
+  const [agentVoiceDraft, setAgentVoiceDraft] = useState('')
+  const agentVoiceDraftRef = useRef('')
+  const [agentVoiceError, setAgentVoiceError] = useState<string | null>(null)
+  const agentVoiceSending = useRef(false)
   const [recordingProvider, setRecordingProvider] = useState<'claude' | 'codex'>('claude')
   const openMicMode = settings?.openMic === true && settings.talkMode === 'toggle'
   const openMicModeRef = useRef(openMicMode)
@@ -313,10 +317,6 @@ export function Panel() {
 
   const micToggle = useCallback(async () => {
     setVoiceError(null)
-    if (voice.state === 'idle' && openMicModeRef.current) {
-      toggleLive()
-      return
-    }
     if (voice.state === 'idle') {
       try {
         startedBy.current = 'mic'
@@ -337,10 +337,15 @@ export function Panel() {
         startedBy.current = null
       }
     }
-  }, [voice, toggleLive, compose])
+  }, [voice, compose])
 
   // The talk hotkey: start, stop-and-send, or cancel a countdown in progress.
   const onTalk = useCallback(async () => {
+    // Closing the global mic also works while the composer is dictating or transcribing.
+    if (micLive) {
+      setMicLive(false)
+      return
+    }
     if (Date.now() < countdownUntil.current) {
       countdownUntil.current = 0
       setCancelToken((n) => n + 1)
@@ -352,7 +357,7 @@ export function Panel() {
       return
     }
     if (voice.state !== 'idle') return
-    if (settingsRef.current?.enabledProviders.length === 0) {
+    if (!openMicModeRef.current && settingsRef.current?.enabledProviders.length === 0) {
       setNotice(en.sources.paused)
       setShowSettings(true)
       window.threadlight.openPanelQuietly()
@@ -377,7 +382,7 @@ export function Panel() {
       setNotice(en.voice.micBlocked)
       window.threadlight.openPanelQuietly()
     }
-  }, [voice, stt.state, finishTalk, micToggle, toggleLive])
+  }, [micLive, voice, stt.state, finishTalk, micToggle, toggleLive])
 
   useEffect(() => window.threadlight.onTalkToggle(() => void onTalk()), [onTalk])
 
@@ -444,13 +449,51 @@ export function Panel() {
     setHold(next)
     window.threadlight.setStayOpen(next !== 'normal')
   }
-  // The open mic: "open", then a pause, opens the full list pinned, without taking focus from a
-  // game, ready for whatever comes next. Anything else is a sentence for later commands.
-  const { state: openMic, level: openMicLevel } = useOpenMic({
+  // A rejected/busy agent keeps the words visible for retry; never fall back to a chat send.
+  const sendAgentVoice = async (text: string) => {
+    setShowSettings(false)
+    setPickingWorkspace(false)
+    setChangesFor(null)
+    setShowAgent(true)
+    window.threadlight.openPanelQuietly()
+    if (isAgentBusy(agent) || agentVoiceSending.current || agentVoiceDraftRef.current) {
+      agentVoiceDraftRef.current = [agentVoiceDraftRef.current, text].filter(Boolean).join(' ')
+      setAgentVoiceDraft(agentVoiceDraftRef.current)
+      setAgentVoiceError(en.openMic.agentBusy)
+      return
+    }
+    agentVoiceSending.current = true
+    try {
+      const result = await window.threadlight.agentSend(text)
+      if (!result.ok) throw new Error(result.reason)
+    } catch (error) {
+      agentVoiceDraftRef.current = [text, agentVoiceDraftRef.current].filter(Boolean).join(' ')
+      setAgentVoiceDraft(agentVoiceDraftRef.current)
+      setAgentVoiceError(error instanceof Error ? error.message : en.openMic.agentFailed)
+    } finally {
+      agentVoiceSending.current = false
+    }
+  }
+
+  // The first completed sentence chooses a route until this microphone session closes.
+  const {
+    state: openMic,
+    mode: micMode,
+    level: openMicLevel,
+  } = useOpenMic({
     enabled: micLive && stt.state === 'ready',
     paused: voice.state !== 'idle',
-    onSentence: (text) => {
-      if (parseOpenMicCommand(text)?.kind !== 'open') return
+    onSentence: (route) => {
+      if (route.kind === 'agent') {
+        void sendAgentVoice(route.text)
+        return
+      }
+      if (route.kind !== 'command' || route.command.kind !== 'open') return
+      setShowSettings(false)
+      setShowAgent(false)
+      setPickingWorkspace(false)
+      setChangesFor(null)
+      setPicking(null)
       window.threadlight.openPanelQuietly()
       changeHold('pinned')
     },
@@ -628,7 +671,11 @@ export function Panel() {
         <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>
           {(openMicListening || voice.state === 'listening') && (
             <MicDivider
-              provider={voice.state === 'listening' ? recordingProvider : 'claude'}
+              provider={
+                voice.state === 'listening'
+                  ? recordingProvider
+                  : (agent.provider ?? settings?.agentProvider ?? 'claude')
+              }
               level={voice.level}
               openMicLevel={voice.state === 'listening' ? undefined : openMicLevel}
             />
@@ -795,7 +842,43 @@ export function Panel() {
           />
         )}
 
-        {showAgent && !pickingWorkspace && !changesFor && <AgentView />}
+        {micLive && (
+          <p className={styles.notice} role="status" data-mic-mode={micMode}>
+            {en.openMic.mode(micMode)}
+          </p>
+        )}
+        {showAgent && !pickingWorkspace && !changesFor && (
+          <>
+            {agentVoiceDraft && (
+              <div className={styles.picking} aria-label="Unsent agent speech">
+                <p role="status">{agentVoiceError}</p>
+                <span className={styles.pickText}>{agentVoiceDraft}</span>
+                <button
+                  disabled={isAgentBusy(agent)}
+                  onClick={() => {
+                    const text = agentVoiceDraftRef.current
+                    agentVoiceDraftRef.current = ''
+                    setAgentVoiceDraft('')
+                    setAgentVoiceError(null)
+                    void sendAgentVoice(text)
+                  }}
+                >
+                  {en.openMic.retryAgent}
+                </button>
+                <button
+                  onClick={() => {
+                    agentVoiceDraftRef.current = ''
+                    setAgentVoiceDraft('')
+                    setAgentVoiceError(null)
+                  }}
+                >
+                  {en.voice.discard}
+                </button>
+              </div>
+            )}
+            <AgentView />
+          </>
+        )}
 
         {showSettings && settings && !pickingWorkspace && !showAgent && (
           <SettingsView

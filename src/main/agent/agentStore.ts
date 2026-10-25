@@ -14,6 +14,7 @@ const recordSchema = z.object({
   title: z.string(),
   createdAt: z.number().optional(),
   at: z.number(),
+  archiveState: z.enum(['pending', 'archived']).optional(),
   pending: z.object({ id: z.string(), text: z.string().max(32_000), at: z.number() }).nullable(),
 })
 export type AgentRecord = z.infer<typeof recordSchema>
@@ -49,6 +50,10 @@ export class AgentStore {
   }
   owns(provider: string, id: string): boolean {
     return this.all().some((r) => r.provider === provider && r.providerId === id)
+  }
+  async flush(): Promise<void> {
+    await this.load()
+    await this.writes
   }
   async put(record: AgentRecord): Promise<void> {
     await this.load()

@@ -8,6 +8,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Codex Agent conversations archive on End, inactivity expiry and normal app exit,
+  while remaining readable in Agent → Earlier. Continue restores the original thread.
+  Archive failures retain a cleanup marker for retry. The dedicated Agent workspace
+  stays out of monitored workspace lists even before a new thread ID is registered.
+  Live integration tests wait for retirement; discovery-only test threads are ephemeral.
+
 - The hosted Agent can use Claude or any eligible text model in the installed Codex
   runtime's catalog, independently of chat monitoring. Codex adds dynamic model and
   reasoning selection, streamed replies, queued approval and question cards, Stop,

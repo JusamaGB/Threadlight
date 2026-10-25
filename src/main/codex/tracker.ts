@@ -210,7 +210,7 @@ export class CodexTracker {
     private readonly paths: CodexPaths,
     readonly hooks: CodexHolds,
     private readonly gitFor: (cwd: string) => GitState | null = () => null,
-    private readonly hidden: (id: string) => boolean = () => false,
+    private readonly hidden: (id: string, cwd: string) => boolean = () => false,
   ) {}
   configure(hours: number, max: number): void {
     this.windowHours = hours
@@ -293,7 +293,9 @@ export class CodexTracker {
         /* optional UI activity metadata */
       }
       const valid = rows.filter(
-        (row) => CODEX_UUID.test(String(row['id'])) && !this.hidden(codexKey(String(row['id']))),
+        (row) =>
+          CODEX_UUID.test(String(row['id'])) &&
+          !this.hidden(codexKey(String(row['id'])), String(row['cwd'])),
       )
       const focused = valid
         .filter((row) => focus.has(String(row['id'])))

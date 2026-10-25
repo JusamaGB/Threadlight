@@ -7,6 +7,7 @@ import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { join, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { checkVoiceRouting } from './voice-routing.smoke.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(import.meta.url)
@@ -440,6 +441,7 @@ try {
       }),
     nativeQuestion,
   )
+  await questionCard.getByRole('button', { name: 'Next question' }).waitFor()
   assert.equal(
     await questionCard.getByRole('button', { name: 'Copy & open', exact: true }).isDisabled(),
     true,
@@ -619,7 +621,10 @@ try {
     true,
   )
   await page.evaluate(() => window.proof.emit('onTalkToggle'))
-  await page.getByRole('switch', { name: 'Claude', exact: true }).waitFor()
+  // Agent voice is independent of monitored chats; with no model it requests speech setup.
+  await page
+    .getByText('Voice needs the speech model first. Open the composer and press the mic.')
+    .waitFor()
   await page.reload()
   await page
     .getByText('Chat monitoring is paused. Enable Claude or Codex in Settings.', { exact: true })
@@ -825,6 +830,7 @@ try {
   await page.evaluate(() => window.proof.emit('onTalkToggle'))
   await divider.waitFor({ state: 'detached' })
   await page.waitForFunction(() => window.proof.stoppedTracks === 3)
+  await checkVoiceRouting(page)
   await page.evaluate(() => {
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
       configurable: true,

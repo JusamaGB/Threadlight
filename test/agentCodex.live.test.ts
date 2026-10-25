@@ -54,6 +54,7 @@ it.skipIf(!process.env.THREADLIGHT_LIVE_CODEX)(
         const started = await client.request('thread/start', {
           model,
           cwd,
+          ephemeral: true,
           sandbox: 'read-only',
           approvalPolicy: 'untrusted',
           approvalsReviewer: 'user',
@@ -130,13 +131,13 @@ it.skipIf(!process.env.THREADLIGHT_LIVE_TURNS)(
         await expect.poll(() => run.current.status, { timeout: 90_000 }).toBe('ready')
         expect(run.current.sessionId).toBe(id)
         const record = store.get(run.current.conversationId!)!
-        run.close()
+        await run.close()
         const resumed = new CodexAgentRun({ ...options, record })
         try {
           await resumed.prepareResume()
           expect(resumed.current.sessionId).toBe(id)
         } finally {
-          resumed.close()
+          await resumed.close()
         }
         const reader = await connect()
         try {
@@ -145,13 +146,12 @@ it.skipIf(!process.env.THREADLIGHT_LIVE_TURNS)(
           expect(page.items.some((item) => item.kind === 'agent' && /6|six/i.test(item.text))).toBe(
             true,
           )
-          await reader.request('thread/archive', { threadId: id })
         } finally {
           reader.close()
         }
         console.log('Live conversation and resume passed:', model.id)
       } finally {
-        run.close()
+        await run.close()
       }
     }
   },
@@ -256,7 +256,7 @@ it.skipIf(!process.env.THREADLIGHT_LIVE_APPROVALS)(
       await expect.poll(() => run.current.status, { timeout: 90_000 }).toBe('ready')
       expect(await readFile(join(workspace, 'writes.txt'), 'utf8')).toBe('write\n')
     } finally {
-      run.close()
+      await run.close()
     }
   },
   240_000,
@@ -337,7 +337,7 @@ it.skipIf(!process.env.THREADLIGHT_LIVE_FILES)(
       console.log('Synthetic native test state:', JSON.stringify(run.current))
       throw error
     } finally {
-      run.close()
+      await run.close()
     }
   },
   240_000,

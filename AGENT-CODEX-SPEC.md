@@ -137,6 +137,18 @@ Sensitive tool inputs and grants must be reviewable without logging secrets. Lon
 
 ## 8. History, identity and usage
 
+Conversation lifetime is an inactivity window restarted after each successful reply.
+Follow-ups reuse the same provider thread; neither a voice pause nor closing/reopening
+the mic starts another thread. End, idle expiry and normal app shutdown archive the
+owned Codex thread while retaining its Agent index entry and provider transcript.
+Reading Earlier must not unarchive it. Continue explicitly unarchives and resumes the
+same provider ID. Pending sends remain journaled through retirement. A persisted
+archive-state marker distinguishes pending cleanup from acknowledged archiving;
+startup retries pending cleanup only for indexed Agent-owned conversations.
+Agent workspace paths and registered IDs are excluded before workspace aggregation,
+including during creation and after restart. Live test teardown awaits the same
+retirement path on success and failure; no-inference discovery uses ephemeral threads.
+
 Introduce a Threadlight conversation key distinct from the provider thread/session ID. Persist schema version, provider, provider ID, model, reasoning, title, creation/update time, effective app exclusions and completion/recovery state. Provider identity is required even if two providers return identical IDs.
 
 Keep provider transcripts authoritative for full conversation content. Maintain a small atomic index under Threadlight user data to identify its own Codex conversations. Store bounded recovery text only for unresolved sends; clear it once reconciliation succeeds. No credentials or full tool inputs belong in this index. If a crash occurs between thread creation and index persistence, do not guess ownership from an arbitrary thread title or resume an unrelated chat.

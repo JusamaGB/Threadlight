@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { STT_SAMPLE_RATE } from '../../shared/stt'
 import { Segmenter } from '../../shared/vad'
 import { SentenceAssembler } from '../../shared/voiceTurns'
+import { MicSessionRouter, type MicRoute, type MicSessionMode } from '../../shared/voiceCommands'
 
 /** 32 ms frames at 16 kHz: fine enough for the level rules, light on the main thread. */
 const FRAME = 512
@@ -15,7 +16,7 @@ interface OpenMicOptions {
   /** Push-to-talk is recording: the open mic ignores the room until it is done. */
   paused: boolean
   /** Each finished sentence: words joined across short pauses, after a long enough one. */
-  onSentence: (text: string) => void
+  onSentence: (route: MicRoute) => void
 }
 
 /**
@@ -29,6 +30,7 @@ interface OpenMicOptions {
  */
 export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions) {
   const [state, setState] = useState<OpenMicState>('off')
+  const [mode, setMode] = useState<MicSessionMode>('undecided')
   // A visual-only level shared with the divider; audio callbacks need not rerender the panel.
   const level = useRef(0)
   const latest = useRef({ paused, onSentence })
@@ -78,6 +80,8 @@ export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions) {
 
       const segmenter = new Segmenter(context.sampleRate)
       const sentences = new SentenceAssembler()
+      const routing = new MicSessionRouter()
+      setMode('undecided')
       // Transcriptions run one at a time, in order; a pause throws away any still to come.
       let queue = Promise.resolve()
       let generation = 0
@@ -112,7 +116,11 @@ export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions) {
           )
         }
         const sentence = sentences.take(segmenter.now)
-        if (sentence !== null && !stopped) latest.current.onSentence(sentence)
+        if (sentence !== null && !stopped) {
+          const route = routing.route(sentence)
+          setMode(routing.mode)
+          latest.current.onSentence(route)
+        }
         if (heard?.kind === 'dropped' || sentence !== null) show('listening')
       }
       release = () => {
@@ -131,5 +139,5 @@ export function useOpenMic({ enabled, paused, onSentence }: OpenMicOptions) {
     }
   }, [enabled])
 
-  return { state: enabled ? state : 'off', level }
+  return { state: enabled ? state : 'off', mode: enabled ? mode : 'undecided', level }
 }

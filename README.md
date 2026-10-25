@@ -23,6 +23,12 @@ A small status dot and mini composer for **Claude and Codex desktop chats** on W
   talk) works anywhere, even in a game: say _"message docs site, check the build passed"_
   and Threadlight finds the thread, shows a short countdown you can cancel, and sends. Or
   turn on Hold, and the message waits for you to click Send.
+- **Settings → Open mic** with Toggle mode makes that hotkey a command/agent mic.
+  Say **“open”**, then pause for one second, to expand and pin the thread list. That
+  microphone session stays in command mode until closed; other speech is ignored.
+  Close and reopen to choose again. Start with ordinary speech instead to send it to
+  the Agent after a pause, keeping the mic open. Busy or failed sends remain visible
+  for retry. The thread composer's mic always stays dictation for that thread.
 
 Everything runs on your PC. Speech is transcribed locally. Threadlight has no
 telemetry and no servers.
@@ -45,6 +51,12 @@ The Agent streams replies, displays questions and approval cards, and keeps earl
 conversations under **Earlier**. **Stop** interrupts the current turn; **End** closes
 the conversation. Continue resumes its original provider and model. An uncertain
 send is retained for recovery and is never automatically sent again.
+
+The same Agent conversation is reused until **Conversation lasts** expires (60 minutes
+after the last reply by default) or you choose **End**. For Codex, ending also archives
+the underlying thread. Its saved conversation stays in **Earlier**, outside the
+workspace thread lists; **Continue** restores that same thread. Closing the mic does
+not end the Agent conversation. Failed archive cleanup is saved for retry on startup.
 
 Configured Codex MCP servers require permission for each tool call. Desktop-only
 plugins and connectors are shown as unavailable until their permissions and

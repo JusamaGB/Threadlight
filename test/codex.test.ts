@@ -271,6 +271,22 @@ describe('read-only Codex discovery', () => {
       [paths.state, paths.history, rollout].map((path) => readFile(path)),
     )
     const tracker = new CodexTracker(paths, new CodexHolds(() => {}))
+    // Hide the dedicated agent workspace before its new thread ID has reached the agent index.
+    const hiddenByFolder = new CodexTracker(
+      paths,
+      new CodexHolds(() => {}),
+      () => null,
+      (_id, cwd) => cwd === 'C:/synthetic/project',
+    )
+    const agentOnly = await hiddenByFolder.snapshot({
+      expanded: ['C:/synthetic/project'],
+      showAll: [],
+    })
+    expect(agentOnly.sessions).toEqual([])
+    expect(agentOnly.lookupSessions ?? []).toEqual([])
+    expect(agentOnly.workspaces).toEqual([])
+    expect(agentOnly.allWorkspaces).toEqual([])
+    expect(agentOnly.currentThreadId).toBeNull()
     const snapshot = await tracker.snapshot({ expanded: ['C:/synthetic/project'], showAll: [] })
     expect(snapshot.provider).toBe('codex')
     expect(snapshot.sessions[0]).toMatchObject({
