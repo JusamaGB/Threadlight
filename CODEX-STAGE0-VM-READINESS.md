@@ -2,6 +2,8 @@
 
 Checked: 25 October 2026. Scope: read-only discovery of an environment for the remaining desktop connection tests.
 
+Subsequent update: the user selected the local PC. Windows Sandbox has now been enabled through administrator-approved setup, with automatic restart suppressed. Windows reports that a restart is required; no guest has been launched. See [local VM setup status](CODEX-STAGE0-LOCAL-VM-SETUP.md). The inventory below records the state before that setup.
+
 ## Availability result
 
 **No ready Windows guest or usable local Windows VM manager was found in the checked configuration. No VM tests have run in this phase.**
