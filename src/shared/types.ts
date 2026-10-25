@@ -74,6 +74,11 @@ export interface DiffStat {
 
 /** Where a thread's git folder stands (see gitDiff.ts). */
 export interface GitState extends DiffStat {
+  /** The repository's top folder. */
+  root: string
+  /** Files changed since the last commit, and of those, new files git does not track yet. */
+  files: number
+  newFiles: number
   /** Null when no branch is checked out. */
   branch: string | null
   /** Commits waiting to be pushed: ahead of its upstream, or of main if never pushed. */
@@ -82,6 +87,37 @@ export interface GitState extends DiffStat {
   behind: number
   /** Every worktree of its repository, the main checkout first. */
   worktrees: string[]
+}
+
+/** One file in the Changes view. */
+export interface ChangedFile {
+  /** Relative to the repository's top folder, with forward slashes. */
+  path: string
+  status: 'added' | 'modified' | 'deleted'
+  added: number
+  removed: number
+  binary: boolean
+}
+
+/** One line of a drawn diff: a hunk's separator, or a context, added or removed line. */
+export interface DiffLine {
+  type: 'hunk' | 'context' | 'add' | 'remove'
+  text: string
+  oldLine?: number
+  newLine?: number
+}
+
+/** A file's diff, or why it is not drawn. */
+export type FileDiff =
+  | { kind: 'text'; lines: DiffLine[] }
+  | { kind: 'binary' }
+  | { kind: 'too-big'; lines: number }
+  | { kind: 'unavailable' }
+
+/** What the Changes view lists for a thread. */
+export interface Changes {
+  branch: string | null
+  files: ChangedFile[]
 }
 
 /** A pull request the Claude app linked to a thread, shown as the branch icon in its sidebar. */

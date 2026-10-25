@@ -70,7 +70,7 @@ export class GitStates {
 export async function readGitState(folder: string): Promise<GitState | null> {
   const top = (await git(folder, ['rev-parse', '--show-toplevel']))?.trim()
   if (!top) return null // not a repository, or git is missing
-  const diff = (await countChanges(top)) ?? { added: 0, removed: 0 }
+  const counted = (await countChanges(top)) ?? { added: 0, removed: 0, files: 0, newFiles: 0 }
   const head = (await git(top, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim()
   const branch = head && head !== 'HEAD' ? head : null // "HEAD": detached, no branch
   let main: string | null = null
@@ -91,19 +91,26 @@ export async function readGitState(folder: string): Promise<GitState | null> {
         ? await countCommits(top, `${main}..HEAD`)
         : 0
   const worktrees = parseWorktrees((await git(top, ['worktree', 'list', '--porcelain'])) ?? '')
-  return { ...diff, branch, ahead, behind, worktrees }
+  return { ...counted, root: top, branch, ahead, behind, worktrees }
 }
 
-/** Lines added and removed in a folder against its last commit; null if it is not a git folder. */
-export async function countChanges(folder: string): Promise<DiffStat | null> {
+/**
+ * Lines added and removed in a folder against its last commit, and how many files that is
+ * (new ones counted apart); null if it is not a git folder.
+ */
+export async function countChanges(
+  folder: string,
+): Promise<(DiffStat & { files: number; newFiles: number }) | null> {
   const tracked = await git(folder, ['diff', 'HEAD', '--numstat', '--no-renames', '-z'])
   if (tracked === null) return null // not a repository, no commit yet, or git is missing
   const diff = parseNumstat(tracked)
-  const untracked = await git(folder, ['ls-files', '--others', '--exclude-standard', '-z'])
-  for (const path of (untracked ?? '').split('\0').filter(Boolean).slice(0, MAX_NEW_FILES)) {
+  const changed = tracked.split('\0').filter((record) => record.includes('\t')).length
+  const untracked = (await git(folder, ['ls-files', '--others', '--exclude-standard', '-z'])) ?? ''
+  const fresh = untracked.split('\0').filter(Boolean)
+  for (const path of fresh.slice(0, MAX_NEW_FILES)) {
     diff.added += await lineCount(join(folder, path))
   }
-  return diff
+  return { ...diff, files: changed + fresh.length, newFiles: fresh.length }
 }
 
 /** `git diff --numstat -z`: "added<TAB>removed<TAB>path\0" per file; binary files show "-". */

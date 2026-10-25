@@ -416,6 +416,33 @@
   color: var(--red);
 }
 
+/* The git numbers open the Changes view. */
+.diffLink {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.diffLink:hover {
+  background: var(--hover);
+}
+
+/* A one-line hover note in the panel's own style (Tip.tsx). */
+.tip {
+  position: fixed;
+  z-index: 13;
+  max-width: calc(100vw - 8px);
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--raised);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
+  color: var(--fg);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
 .age {
   color: var(--faint);
   font-size: 11px;
@@ -866,6 +893,157 @@
 .qNext:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ---------- the Changes view ---------- */
+
+.changes {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 4px 0 8px;
+}
+
+.changesNote {
+  margin: 0;
+  padding: 10px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.fileRow.expanded,
+.fileRow:hover {
+  background: var(--hover);
+}
+
+.fileHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  text-align: left;
+  font-size: 11px;
+}
+
+/* new / edit / gone, as a quiet tag. */
+.fileMark {
+  flex: none;
+  width: 30px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+.fileMark[data-status='added'] {
+  color: var(--green);
+}
+
+.fileMark[data-status='deleted'] {
+  color: var(--red);
+}
+
+.fileName {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+
+.fileFolder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--faint);
+  direction: rtl; /* when cut short, keep the folder's end, which says the most */
+  text-align: left;
+}
+
+.diffBlock {
+  margin: 0 10px 8px;
+  max-height: 380px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  scrollbar-width: thin;
+}
+
+.diffLine {
+  display: grid;
+  grid-template-columns: 28px 28px 12px 1fr;
+  color: var(--muted);
+}
+
+.diffLine[data-type='add'] {
+  background: rgb(46 204 113 / 12%);
+  color: var(--fg);
+}
+
+.diffLine[data-type='remove'] {
+  background: rgb(231 76 60 / 12%);
+  color: var(--fg);
+}
+
+.diffNo {
+  padding-right: 4px;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+
+.diffSign {
+  text-align: center;
+  user-select: none;
+}
+
+.diffLine[data-type='add'] .diffSign {
+  color: var(--green);
+}
+
+.diffLine[data-type='remove'] .diffSign {
+  color: var(--red);
+}
+
+.diffText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-right: 6px;
+}
+
+.diffHunk {
+  padding: 2px 8px;
+  border-top: 1px solid var(--border);
+  color: var(--faint);
+  background: var(--raised);
+}
+
+.diffHunk:first-child {
+  border-top: 0;
+}
+
+.diffFoot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.fileOpen {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.fileOpen:hover {
+  color: var(--fg);
 }
 
 /* ---------- the agent ---------- */

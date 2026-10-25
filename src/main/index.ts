@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { app, clipboard, ipcMain, session, type WebContents } from 'electron'
+import { app, clipboard, ipcMain, session, shell, type WebContents } from 'electron'
 
 import { IDLE_AGENT } from '../shared/agent'
 import { IPC } from '../shared/ipc'
@@ -19,6 +19,7 @@ import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
 import { defaultPaths } from './sessions/paths'
 import { SessionService } from './sessions/service'
+import { listChanges, readFileDiff } from './sessions/gitChanges'
 import { GitStates } from './sessions/gitDiff'
 import { Tracker } from './sessions/tracker'
 import { SettingsStore } from './settings'
@@ -147,6 +148,33 @@ async function start(): Promise<void> {
       ? holds.answerNextStep(sessionId, choice)
       : { ok: false, reason: 'Invalid answer.' },
   )
+  // The Changes view. A thread is named by its id; its repository comes from Threadlight's own
+  // scan, and only files that are among its changes are ever read or opened.
+  const rootOf = (sessionId: unknown) =>
+    typeof sessionId === 'string'
+      ? (everySession(sessions.snapshot).find((s) => s.id === sessionId)?.git?.root ?? null)
+      : null
+  const changedPath = async (sessionId: unknown, path: unknown) => {
+    const root = rootOf(sessionId)
+    if (!root || typeof path !== 'string') return null
+    const files = await listChanges(root)
+    return files.some((f) => f.path === path) ? { root, path } : null
+  }
+  ipcMain.handle(IPC.getChanges, async (_event, sessionId: unknown) => {
+    const root = rootOf(sessionId)
+    if (!root) return null
+    const session = everySession(sessions.snapshot).find((s) => s.id === sessionId)
+    return { branch: session?.git?.branch ?? null, files: await listChanges(root) }
+  })
+  ipcMain.handle(IPC.getFileDiff, async (_event, sessionId: unknown, path: unknown) => {
+    const found = await changedPath(sessionId, path)
+    return found ? readFileDiff(found.root, found.path) : { kind: 'unavailable' }
+  })
+  ipcMain.on(IPC.openChangedFile, (_event, sessionId: unknown, path: unknown) => {
+    void changedPath(sessionId, path).then((found) => {
+      if (found) void shell.openPath(join(found.root, found.path))
+    })
+  })
   ipcMain.on(IPC.copyText, (_event, text: unknown) => {
     if (typeof text === 'string' && text.length <= 20_000) clipboard.writeText(text)
   })

@@ -35,6 +35,9 @@ describe('GitStates', () => {
     let time = 0
     const changes = vi.fn()
     const state: GitState = {
+      root: 'repo',
+      files: 1,
+      newFiles: 0,
       added: 2,
       removed: 1,
       branch: 'main',
@@ -69,7 +72,7 @@ describe('a real repository', () => {
       await writeFile(join(folder, 'a.txt'), 'one\ntwo\nthree\n')
       git('add', '.')
       git('commit', '-qm', 'first')
-      expect(await countChanges(folder)).toEqual({ added: 0, removed: 0 })
+      expect(await countChanges(folder)).toMatchObject({ added: 0, removed: 0, files: 0 })
 
       // A feature branch with two commits of its own, while main moves on by one.
       git('checkout', '-qb', 'feature')
@@ -87,7 +90,15 @@ describe('a real repository', () => {
       await writeFile(join(folder, 'a.txt'), 'one\n2\nthree\nfour\n') // 2 added, 1 removed
 
       const state = await readGitState(folder)
-      expect(state).toMatchObject({ added: 2, removed: 1, branch: 'feature', ahead: 2, behind: 1 })
+      expect(state).toMatchObject({
+        added: 2,
+        removed: 1,
+        files: 1,
+        newFiles: 0,
+        branch: 'feature',
+        ahead: 2,
+        behind: 1,
+      })
       expect(state?.worktrees).toHaveLength(2)
     } finally {
       await rm(extra, { recursive: true, force: true })

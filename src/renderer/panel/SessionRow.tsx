@@ -1,7 +1,7 @@
 import type { MouseEvent } from 'react'
 
 import type { GitState, RelayStatus, Session } from '../../shared/types'
-import { gitSummary } from '../lib/git'
+import { compact, gitSentence } from '../lib/git'
 import { en } from '../i18n/en'
 import { ageText } from '../lib/format'
 import { relayLine } from '../lib/relay'
@@ -11,6 +11,7 @@ import styles from './Panel.module.css'
 import { PullRequestBadge } from './PullRequestBadge'
 import { SessionDetail } from './SessionDetail'
 import { TaskTimer } from './TaskTimer'
+import { Tip } from './Tip'
 
 interface SessionRowProps {
   session: Session
@@ -25,28 +26,33 @@ interface SessionRowProps {
   onCompose: () => void
   /** The Active list leaves the age out: everything there is happening now. */
   hideAge?: boolean
+  /** Opens the Changes view on this thread's git folder. */
+  onShowChanges: () => void
 }
 
 /**
  * Where its git folder stands, compactly, only what is not zero: "+22 −1" changed since the last
- * commit (as Claude shows it), "↑2" commits to push, "↓5" commits behind main. The tooltip says
- * it in full.
+ * commit (as Claude shows it), "↑2" commits to push, "↓5" commits behind main. Hovering says it
+ * in one sentence; clicking opens the Changes view.
  */
-function GitCount({ git }: { git: GitState }) {
+function GitCount({ git, onOpen }: { git: GitState; onOpen: () => void }) {
   if (!git.added && !git.removed && !git.ahead && !git.behind) return null
   return (
-    <span className={styles.diff} title={gitSummary(git).join('\n')}>
+    <Tip
+      className={`${styles.diff} ${styles.diffLink}`}
+      text={gitSentence(git)}
+      onClick={(event) => {
+        event.stopPropagation() // the row itself would expand
+        onOpen()
+      }}
+    >
       {git.added > 0 && <span className={styles.added}>+{compact(git.added)}</span>}
       {git.removed > 0 && <span className={styles.removed}>−{compact(git.removed)}</span>}
       {git.ahead > 0 && <span className={styles.ahead}>↑{git.ahead}</span>}
       {git.behind > 0 && <span className={styles.behind}>↓{git.behind}</span>}
-    </span>
+    </Tip>
   )
 }
-
-/** 1234 → "1.2k", so a big change still fits beside the title. */
-const compact = (n: number) =>
-  n < 1000 ? String(n) : `${(n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, '')}k`
 
 export function SessionRow(props: SessionRowProps) {
   const { session, relay, composing, now, expanded, onToggle, onContextMenu, onCompose } = props
@@ -81,7 +87,7 @@ export function SessionRow(props: SessionRowProps) {
             />
           </span>
           <span className={titleClass}>{session.title}</span>
-          {session.git && <GitCount git={session.git} />}
+          {session.git && <GitCount git={session.git} onOpen={props.onShowChanges} />}
           {/* A long title fades out behind this, so it always shows. */}
           {attention && <span className={styles.needsYou}>{en.attention.needsYou}</span>}
           {/* Expanded, Open ↗ takes the age's place (drawn outside this button, below). */}

@@ -4,7 +4,7 @@
 import type { AgentState } from './agent'
 import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
-import type { RelayStatus, Session, Snapshot, TreeView } from './types'
+import type { Changes, FileDiff, RelayStatus, Session, Snapshot, TreeView } from './types'
 
 export const IPC = {
   getSnapshot: 'sessions:get-snapshot',
@@ -43,6 +43,9 @@ export const IPC = {
   answerNextStep: 'hold:answer-next-step',
   releaseHold: 'hold:release',
   copyText: 'clipboard:copy',
+  getChanges: 'changes:get',
+  getFileDiff: 'changes:file',
+  openChangedFile: 'changes:open',
   agentGet: 'agent:get',
   agentChanged: 'agent:changed',
   agentSend: 'agent:send',
@@ -113,6 +116,13 @@ export interface ThreadlightApi {
 
   /** Puts text on the clipboard (for an answer to paste into Claude). */
   copyText(text: string): void
+
+  /** A thread's changed files since the last commit (the Changes view); null outside git. */
+  getChanges(sessionId: string): Promise<Changes | null>
+  /** One changed file's diff, fetched when it is opened. */
+  getFileDiff(sessionId: string, path: string): Promise<FileDiff>
+  /** Opens a changed file in its own app. */
+  openChangedFile(sessionId: string, path: string): void
 
   /** The agent conversation Threadlight hosts (agentRun.ts). */
   getAgent(): Promise<AgentState>

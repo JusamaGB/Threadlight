@@ -101,6 +101,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refused send unlocks the card with the reason. Threads Claude Code has open are read from
   its own register of live sessions.
 - The Active list leaves out each thread's age: everything there is happening now.
+- Hovering a thread's git numbers says it in one line, in Threadlight's own style ("main · 16
+  files changed (5 new), +1.7k −30 uncommitted"); clicking them opens the Changes view in the
+  panel: each changed file with a new / edit / gone tag, its folder and its counts, and one
+  file's diff open at a time (numbered lines, removed in red, added in green), fetched only
+  when opened; a binary or very long file offers Open ↗ instead. Read-only, and only files
+  among that thread's changes can be read or opened.
 - Each thread shows where its git folder stands beside its title, only what is not zero:
   "+22 −1" changed since the last commit (as Claude shows it), "↑2" commits to push (ahead
   of its upstream, or of main if never pushed) and "↓5" commits behind the local main. The

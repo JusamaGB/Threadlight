@@ -23,6 +23,7 @@ import { en } from '../i18n/en'
 import { windowLabel } from '../lib/format'
 import { SettingsView } from '../settings/SettingsView'
 import { AgentView } from './AgentView'
+import { ChangesView } from './ChangesView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
 import { PanelRoomContext } from './room'
@@ -78,6 +79,8 @@ export function Panel() {
   const [showSettings, setShowSettings] = useState(false)
   /** The agent conversation takes over the card, like settings. */
   const [showAgent, setShowAgent] = useState(false)
+  /** The Changes view, for this thread's git folder: it takes over the card too. */
+  const [changesFor, setChangesFor] = useState<string | null>(null)
   /** Choosing which workspace the Workspace list shows; takes over the card like settings. */
   const [pickingWorkspace, setPickingWorkspace] = useState(false)
   /** Open workspaces in the "All" list; null until changed means "just the current one". */
@@ -395,6 +398,11 @@ export function Panel() {
       : listMode === 'all'
         ? { count: snapshot.workspaces.length, word: en.panel.workspaces }
         : { count: sessions.length, word: en.panel.recentWord }
+  // The Changes view's heading: "main · 3 files".
+  const changesThread = changesFor ? findInSnapshot(snapshot, changesFor) : undefined
+  const changesHeading = changesThread?.git
+    ? `${changesThread.git.branch ?? en.git.noBranch} · ${en.changes.files(changesThread.git.files)}`
+    : en.changes.title
   const pickWorkspace = async (id: string | null) => {
     await window.threadlight.updateSettings({ focusWorkspace: id, listMode: 'workspace' })
     setPickingWorkspace(false)
@@ -446,6 +454,7 @@ export function Panel() {
       onContextMenu={(event) => openMenu(event, session)}
       onCompose={() => setCompose({ sessionId: session.id })}
       hideAge={view === 'active'}
+      onShowChanges={() => setChangesFor(session.id)}
     />
   )
 
@@ -482,6 +491,18 @@ export function Panel() {
                 ‹
               </button>
               <span className={styles.heading}>{en.panel.chooseWorkspace}</span>
+            </>
+          ) : changesFor ? (
+            <>
+              <button
+                className={styles.back}
+                onClick={() => setChangesFor(null)}
+                aria-label={en.settings.back}
+                title={en.settings.back}
+              >
+                ‹
+              </button>
+              <span className={styles.heading}>{changesHeading}</span>
             </>
           ) : showAgent ? (
             <>
@@ -576,7 +597,15 @@ export function Panel() {
           </div>
         )}
 
-        {showAgent && !pickingWorkspace && <AgentView />}
+        {changesFor && !pickingWorkspace && (
+          <ChangesView
+            key={changesFor}
+            sessionId={changesFor}
+            stamp={JSON.stringify(changesThread?.git ?? null)}
+          />
+        )}
+
+        {showAgent && !pickingWorkspace && !changesFor && <AgentView />}
 
         {showSettings && settings && !pickingWorkspace && !showAgent && (
           <SettingsView
@@ -588,7 +617,10 @@ export function Panel() {
         )}
 
         {/* Kept mounted (just hidden) while settings show, so a half-typed message survives. */}
-        <div className={styles.sessions} hidden={showSettings || pickingWorkspace || showAgent}>
+        <div
+          className={styles.sessions}
+          hidden={showSettings || pickingWorkspace || showAgent || changesFor !== null}
+        >
           {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
           {picking && (
             <div className={styles.picking}>

@@ -71,10 +71,28 @@ export const en = {
   },
   git: {
     noBranch: 'no branch',
-    changed: (added: number, removed: number) => `+${added} −${removed} since the last commit`,
+    filesChanged: (n: number) => (n === 1 ? '1 file changed' : `${n} files changed`),
+    newOf: (n: number) => `${n} new`,
+    uncommitted: (files: string, lines: string) =>
+      `${files}${lines ? `, ${lines}` : ''} uncommitted`,
+    clean: 'everything committed',
     toPush: (n: number) => `${n} to push`,
     behind: (n: number) => `${n} behind main`,
     worktrees: (n: number) => `${n} worktrees`,
+  },
+  changes: {
+    title: 'Changes',
+    files: (n: number) => (n === 1 ? '1 file' : `${n} files`),
+    loading: 'Reading changes…',
+    none: 'Nothing has changed since the last commit.',
+    mark: { added: 'new', modified: 'edit', deleted: 'gone' } as Record<
+      'added' | 'modified' | 'deleted',
+      string
+    >,
+    open: 'Open ↗',
+    binary: 'A binary file: not drawn here.',
+    tooBig: (lines: number) => `${lines} lines: too long to draw here.`,
+    unavailable: 'This diff could not be read.',
   },
   agent: {
     title: 'Agent',
