@@ -71,6 +71,8 @@ const api: ThreadlightApi = {
   onTalkHold: (listener) => subscribe<'down' | 'up'>(IPC.talkHold, listener),
   setTalkState: (state) => ipcRenderer.send(IPC.talkState, state),
   onTalkState: (listener) => subscribe<TalkState>(IPC.talkState, listener),
+  setOpenMicLive: (live) => ipcRenderer.send(IPC.openMicLive, live),
+  onOpenMicLive: (listener) => subscribe<boolean>(IPC.openMicLive, listener),
   openPanelQuietly: () => ipcRenderer.send(IPC.openPanelQuietly),
   onHotkeyProblem: (listener) => subscribe<string | null>(IPC.hotkeyProblem, listener),
 

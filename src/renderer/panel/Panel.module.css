@@ -186,7 +186,36 @@
   color: var(--accent);
 }
 
+.pickHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.pickHead .pickPrompt {
+  flex: 1;
+}
+
+.pickClose {
+  flex: none;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pickClose:hover {
+  color: var(--fg);
+}
+
+/* A long transcript scrolls rather than pushing the threads out of sight. */
 .pickText {
+  max-height: 72px;
+  overflow-y: auto;
+  scrollbar-width: thin;
   color: var(--fg);
   overflow-wrap: anywhere;
 }
@@ -1480,4 +1509,37 @@
   overflow-y: auto;
   scrollbar-width: thin;
   white-space: pre-wrap;
+}
+
+/* The open mic's switch in the header: blue and breathing while it listens, amber if blocked. */
+.gear[data-open-mic='listening'],
+.gear[data-open-mic='hearing'] {
+  color: var(--accent);
+  animation: openMicBreathe 2s ease-in-out infinite;
+}
+
+.gear[data-open-mic='hearing'] {
+  animation-duration: 0.8s;
+}
+
+.gear[data-open-mic='blocked'] {
+  color: var(--amber);
+}
+
+.gear[data-open-mic] svg path {
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+@keyframes openMicBreathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gear[data-open-mic] {
+    animation: none;
+  }
 }

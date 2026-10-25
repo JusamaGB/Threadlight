@@ -32,6 +32,7 @@ export const IPC = {
   talkToggle: 'talk:toggle',
   talkHold: 'talk:hold',
   talkState: 'talk:state',
+  openMicLive: 'talk:open-mic-live',
   openPanelQuietly: 'panel:open-quietly',
   hotkeyProblem: 'hotkey:problem',
   sendMessage: 'relay:send',
@@ -197,6 +198,9 @@ export interface ThreadlightApi {
   /** Tells the dot what the talk recording is doing. */
   setTalkState(state: TalkState): void
   onTalkState(listener: (state: TalkState) => void): () => void
+  /** The open mic is listening (the panel tells the dot, which wears a ring meanwhile). */
+  setOpenMicLive(live: boolean): void
+  onOpenMicLive(listener: (live: boolean) => void): () => void
   /** Shows the panel without taking focus, keeping what the panel has filled in. */
   openPanelQuietly(): void
   /** The talk hotkey could not be registered (another app has it), or null when it is fine. */

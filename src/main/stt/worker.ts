@@ -1,9 +1,22 @@
 // Runs in its own Electron utility process: loads Whisper once, then transcribes audio clips.
 // Kept apart from the main process so a slow load or transcription never freezes the app.
 
-import { STT_DTYPE, STT_MODEL, type FromWorker, type ToWorker } from '../../shared/stt'
+import { collapseRepeats } from '../../shared/speechText'
+import {
+  STT_DTYPE,
+  STT_MODEL,
+  STT_SAMPLE_RATE,
+  type FromWorker,
+  type ToWorker,
+} from '../../shared/stt'
 
-type Transcriber = (audio: Float32Array) => Promise<{ text: string } | Array<{ text: string }>>
+type Transcriber = (
+  audio: Float32Array,
+  options?: { chunk_length_s?: number; stride_length_s?: number },
+) => Promise<{ text: string } | Array<{ text: string }>>
+
+/** Whisper hears 30 s at a time; anything longer goes in overlapping 30 s chunks. */
+const CHUNK_S = 30
 
 let transcriber: Transcriber | null = null
 
@@ -53,9 +66,13 @@ async function load(cacheDir: string, allowDownload: boolean): Promise<void> {
 async function transcribe(id: number, audio: Float32Array): Promise<void> {
   if (!transcriber) return post({ type: 'failed', id, message: 'The speech model is not loaded.' })
   try {
-    const output = await transcriber(audio)
+    const long = audio.length > CHUNK_S * STT_SAMPLE_RATE
+    const output = await transcriber(
+      audio,
+      long ? { chunk_length_s: CHUNK_S, stride_length_s: 5 } : undefined,
+    )
     const text = (Array.isArray(output) ? output.map((o) => o.text).join(' ') : output.text).trim()
-    post({ type: 'result', id, text })
+    post({ type: 'result', id, text: collapseRepeats(text) })
   } catch (error) {
     post({ type: 'failed', id, message: error instanceof Error ? error.message : String(error) })
   }

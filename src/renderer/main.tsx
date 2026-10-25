@@ -16,12 +16,15 @@ function DotView() {
   const settings = useSettings()
   const [talk, setTalk] = useState<TalkState>('idle')
   useEffect(() => window.threadlight.onTalkState(setTalk), [])
+  const [openMic, setOpenMic] = useState(false)
+  useEffect(() => window.threadlight.onOpenMicLive(setOpenMic), [])
   return (
     <FloatingDot
       provider={settings?.provider}
       working={sessions.some((s) => s.state === 'working')}
       talk={talk}
       openOn={settings?.openOn ?? 'hover'}
+      openMic={openMic}
     />
   )
 }

@@ -212,6 +212,18 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   their task list. A step then shows why it is there, and its planned files next to what it
   changed: ✓ planned and changed, ○ planned but not changed, + changed without a plan. A
   step not started yet shows what it plans to touch.
+- Open mic, a variant of the Toggle talk mode (Settings → Open mic). The talk hotkey or
+  the mic button opens a live mic that stays open until pressed again; the dot wears a
+  blue ring and a mic button in the panel's header glows (and closes it). Speech is found
+  on the PC by loudness against the room (BLAM8's rules: the room level learned only in
+  quiet, speech at 4× the room and 0.06 peak, 600 ms lead-in, 500 ms to end), transcribed
+  with the local Whisper, and joined into one sentence across short pauses. Its first
+  command: "open", then a one-second pause, opens the full list pinned without taking
+  focus; "open" followed by more words is not a command.
+- The "Which thread" box after a voice message says to click a thread, has a × to
+  discard it, and scrolls a long transcript instead of filling the panel.
+- Long recordings are transcribed in 30-second chunks, and a phrase Whisper gets stuck
+  repeating is cut back to one.
 
 ### Changed
 

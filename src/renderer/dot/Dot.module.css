@@ -30,6 +30,12 @@
   animation: pulse 1s ease-in-out infinite;
 }
 
+/* The open mic is on: a thin ring around whatever the dot shows. */
+.openMic {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .transcribing {
   background: transparent;
   box-shadow: none;

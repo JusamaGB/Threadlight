@@ -438,6 +438,9 @@ async function start(): Promise<void> {
       windows.dot.webContents.send(IPC.talkState, state)
     }
   })
+  ipcMain.on(IPC.openMicLive, (_event, live: unknown) => {
+    windows.dot.webContents.send(IPC.openMicLive, live === true)
+  })
   ipcMain.on(IPC.openPanelQuietly, () => windows.openPanel({ focus: false }))
 
   // Settings apply live. The hotkey is checked first: if another app owns the new one, the

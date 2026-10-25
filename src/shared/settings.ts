@@ -17,6 +17,12 @@ export const settingsSchema = z.object({
   voiceCountdownSeconds: z.number().int().min(1).max(10).default(5),
   /** Hold: a spoken message waits in the composer until you click Send (no countdown). */
   voiceHold: z.boolean().default(false),
+  /**
+   * Open mic, with the Toggle talk mode: the talk hotkey (or the mic button) opens a live mic
+   * that acts on voice commands as they are said ("open"), until it is pressed again. Speech is
+   * transcribed on this PC. The setting alone never opens the microphone.
+   */
+  openMic: z.boolean().default(false),
   /** Hover opens the panel straight away; click avoids opening it by accident in a game. */
   openOn: z.enum(['hover', 'click']).default('hover'),
   /** Start Threadlight when you sign in to Windows. Off until you turn it on. */
