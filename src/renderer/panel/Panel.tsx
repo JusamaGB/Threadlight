@@ -832,14 +832,16 @@ export function Panel() {
           {pickingWorkspace ? (
             <>
               <button
-                className={styles.back}
+                className={`${styles.back} ${styles.pageBack}`}
                 onClick={() => setPickingWorkspace(false)}
                 aria-label={en.settings.back}
                 title={en.settings.back}
               >
                 ‹
               </button>
-              <span className={styles.heading}>{en.panel.chooseWorkspace}</span>
+              <span className={`${styles.heading} ${styles.pageHeading}`}>
+                {en.panel.chooseWorkspace}
+              </span>
             </>
           ) : changesFor ? (
             <>

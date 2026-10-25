@@ -305,6 +305,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The workspace picker header uses a centered title and left-hand back arrow, matching Settings and Agent.
+
 - Thread toolbar separates view, application and workspace controls. Click the view label
   to cycle Active, Recent and Workspace; right-click it for direct choices including All.
   Application filtering shares the Settings selection, and the workspace name opens its
