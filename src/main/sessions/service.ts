@@ -10,6 +10,7 @@ export class SessionService {
     workspaces: [],
     allWorkspaces: [],
     currentWorkspace: null,
+    currentThreadId: null,
   }
   private latestJson = ''
   private view: TreeView = { expanded: null, showAll: [] }

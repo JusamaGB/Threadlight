@@ -106,12 +106,20 @@ describe('attentionFor', () => {
     expect(attentionFor('working', summary({ pendingQuestion: question, nextStep }))).toEqual({
       kind: 'question',
       questions: question,
+      answerableUntil: null,
     })
     expect(attentionFor('waiting', summary({ nextStep }))).toEqual({
       kind: 'approval',
       action: 'Running tests',
     })
     expect(attentionFor('idle', summary({ nextStep }))).toEqual({ kind: 'next-step', ...nextStep })
+  })
+
+  it('marks a question card answerable while Threadlight holds it', () => {
+    const held = attentionFor('working', summary({ pendingQuestion: question }), {
+      releasesAt: 123,
+    })
+    expect(held).toMatchObject({ kind: 'question', answerableUntil: 123 })
   })
 
   it('needs nothing while working, after Stop, or with nothing asked', () => {

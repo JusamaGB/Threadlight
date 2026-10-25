@@ -38,6 +38,8 @@ export const IPC = {
   panelClose: 'panel:close',
   panelStayOpen: 'panel:stay-open',
   openInClaude: 'claude:open-thread',
+  answerQuestion: 'question:answer',
+  releaseQuestion: 'question:release',
 } as const
 
 export interface PanelOpened {
@@ -82,6 +84,16 @@ export interface ThreadlightApi {
     text: string,
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   getRelays(): Promise<RelayStatus[]>
+  /**
+   * Answers a question card Threadlight is holding, keyed by each question's text (see
+   * questionHolds.ts). Refused once the hold has ended: then it is answered in Claude.
+   */
+  answerQuestion(
+    sessionId: string,
+    answers: Record<string, string>,
+  ): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Lets a held question card go, so the Claude app shows its own. */
+  releaseQuestion(sessionId: string): void
   onRelays(listener: (statuses: RelayStatus[]) => void): () => void
 
   getStt(): Promise<SttStatus>

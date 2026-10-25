@@ -667,6 +667,33 @@
   line-height: 1.4;
 }
 
+/* The text box under Other, while the card can be answered here. */
+.qOther {
+  display: block;
+  width: calc(100% - 42px);
+  height: 26px;
+  margin: 0 10px 8px 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+}
+
+.qOther:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.qNote {
+  margin: 0;
+  color: var(--faint);
+  font-size: 10px;
+  text-align: center;
+}
+
 .qButtons {
   display: flex;
   flex-direction: column;

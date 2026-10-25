@@ -1,5 +1,5 @@
 {
-  "description": "Report session activity to Threadlight on 127.0.0.1. Each hook pipes the event JSON to the local app and always exits 0, so a closed Threadlight never disturbs a session. Written to run unchanged in both Git Bash and PowerShell, the two shells Claude Code uses on Windows.",
+  "description": "Report session activity to Threadlight on 127.0.0.1. Each hook pipes the event JSON to the local app and always exits 0, so a closed Threadlight never disturbs a session. The AskUserQuestion hook waits (up to a minute) for an answer given in Threadlight and passes it on; with Threadlight closed, or the card let go, it returns nothing at once and Claude shows its own card. Written to run unchanged in both Git Bash and PowerShell, the two shells Claude Code uses on Windows.",
   "hooks": {
     "SessionStart": [
       {
@@ -31,6 +31,16 @@
             "type": "command",
             "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/PreToolUse; exit 0",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 75 --data-binary '@-' http://127.0.0.1:47615/ask; exit 0",
+            "timeout": 90
           }
         ]
       }

@@ -36,6 +36,8 @@ export interface TrackerOptions {
   /** The recent list's length, and how many threads an expanded workspace shows at first. */
   maxSessions?: number
   now?: () => number
+  /** A question card Threadlight is holding for the user to answer here (questionHolds.ts). */
+  heldQuestion?: (sessionId: string) => { releasesAt: number } | null
 }
 
 interface TranscriptFile {
@@ -203,6 +205,7 @@ export class Tracker {
       workspaces,
       allWorkspaces: [...allWorkspaces.values()].sort(byName),
       currentWorkspace,
+      currentThreadId: focused?.cliSessionId ?? null,
     }
   }
 
@@ -236,6 +239,7 @@ export class Tracker {
       tracked: hook !== undefined,
       cwd,
       lastActiveAt,
+      focusedAt: app?.lastFocusedAt ?? 0,
       stage: stageLine(state, summary),
       lastPrompt: summary?.lastPrompt ?? null,
       plan: summary?.plan ?? [],
@@ -249,7 +253,7 @@ export class Tracker {
       backgroundTasks: (summary?.backgroundTasks ?? []).filter(
         (task) => now - task.startedAt < TASK_GIVE_UP_MS,
       ),
-      attention: attentionFor(state, summary),
+      attention: attentionFor(state, summary, this.options.heldQuestion?.(id) ?? null),
       permissionMode: app?.permissionMode ?? null,
       model: app?.model ?? null,
       pullRequests: app?.pullRequests ?? [],
@@ -346,9 +350,16 @@ export interface StateInputs {
 export function attentionFor(
   state: SessionState,
   summary: TranscriptSummary | null,
+  held: { releasesAt: number } | null = null,
 ): Attention | null {
   if (!summary || summary.interrupted) return null
-  if (summary.pendingQuestion) return { kind: 'question', questions: summary.pendingQuestion }
+  if (summary.pendingQuestion) {
+    return {
+      kind: 'question',
+      questions: summary.pendingQuestion,
+      answerableUntil: held?.releasesAt ?? null,
+    }
+  }
   if (state === 'waiting') return { kind: 'approval', action: summary.lastAction }
   if (state === 'idle' && summary.nextStep) return { kind: 'next-step', ...summary.nextStep }
   return null

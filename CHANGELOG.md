@@ -93,8 +93,13 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - A next-step box (the question a finished turn asks) shows each answer with the message
     it sends; Send puts the picked one into the thread, Other opens the composer, and an
     app action (commit, open a PR) opens the thread in Claude.
-  - A question card has "‹ 1 of 2 ›", Skip and Next. The paused turn can only take its
-    answer in Claude, so the last Next opens the thread there, as does an approval.
+  - A question card has "‹ 1 of 2 ›", Skip and Next, and can be answered right here: the
+    plugin's question-card hook hands the card to Threadlight and waits, Threadlight collects
+    your pick for every question (Other has a text box), and Submit gives them to the session
+    as its real answer. Claude's own card is held back meanwhile, so Threadlight lets it go at
+    once when it is closed, when you open the thread in Claude (or Claude is in front showing
+    it), when you press Answer in Claude, or after 60 seconds. A tool waiting for approval
+    still opens the thread in Claude.
 - An expanded thread shows Open ↗ on its title line, in place of the age, and its workspace
   folder on the status line where Open used to be.
 - Background tasks: while a thread has a background command or agent running, its age

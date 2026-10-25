@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import type { Attention, CardQuestion, NextStepAction, Session } from '../../shared/types'
+import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
 import styles from './Panel.module.css'
@@ -26,7 +27,14 @@ export function AttentionCard({ session, attention, onCompose }: AttentionCardPr
         <NextStepCard session={session} attention={attention} onOpen={open} onCompose={onCompose} />
       )
     case 'question':
-      return <QuestionCard session={session} questions={attention.questions} onOpen={open} />
+      return (
+        <QuestionCard
+          session={session}
+          questions={attention.questions}
+          answerableUntil={attention.answerableUntil}
+          onOpen={open}
+        />
+      )
     case 'approval':
       return <ApprovalCard session={session} action={attention.action} onOpen={open} />
   }
@@ -40,7 +48,9 @@ function useCtrlEnter(action: () => void) {
   })
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const typing = event.target instanceof HTMLElement && event.target.closest('textarea, input')
+      // Typing in the composer is left alone; the card's own Other box counts as the card.
+      const target = event.target instanceof HTMLElement ? event.target : null
+      const typing = target?.closest('textarea, input') && !target.closest('[data-answer]')
       if (event.key !== 'Enter' || !event.ctrlKey || typing) return
       event.preventDefault()
       latest.current()
@@ -123,28 +133,79 @@ function NextStepCard({
 
 /**
  * The Claude app's question card, one question at a time with "‹ 1 of 2 ›" to move between
- * them, then Skip and Next. The pick only marks the choice here; the paused turn takes its
- * answer in Claude, so the last question's Next opens the thread there.
+ * them, then Skip and Next. While Threadlight holds the card (`answerableUntil`), the picks are
+ * collected across every question and Submit hands them all over at once, as the real answer.
+ * Otherwise the paused turn takes its answer in Claude, so the last Next opens it there.
  */
 function QuestionCard({
   session,
   questions,
+  answerableUntil,
   onOpen,
 }: {
   session: Session
   questions: CardQuestion[]
+  answerableUntil: number | null
   onOpen: () => void
 }) {
   const [index, setIndex] = useState(0)
   const [picks, setPicks] = useState<Record<number, string[]>>({})
+  const [others, setOthers] = useState<Record<number, string>>({})
+  const [skipped, setSkipped] = useState<Record<number, boolean>>({})
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const answerable = answerableUntil !== null
   const last = index === questions.length - 1
-  const forward = () => (last ? onOpen() : setIndex(index + 1))
-  useCtrlEnter(forward)
+
+  const pickedFor = (i: number): string[] => {
+    const recommended = questions[i]?.options.find((option) => option.recommended)?.label
+    return picks[i] ?? (recommended ? [recommended] : [])
+  }
+
+  /** Every question's answer, keyed by its text; null (with the reason shown) if one is missing. */
+  const collect = (skipping: Record<number, boolean>): Record<string, string> | null => {
+    const answers: Record<string, string> = {}
+    for (const [i, q] of questions.entries()) {
+      if (skipping[i]) {
+        answers[q.question] = en.attention.skipped
+        continue
+      }
+      const chosen = pickedFor(i).map((label) =>
+        label === en.attention.other ? (others[i] ?? '').trim() : label,
+      )
+      if (chosen.length === 0 || chosen.some((answer) => !answer)) {
+        setIndex(i)
+        setError(chosen.length === 0 ? en.attention.pickOne : en.attention.typeOther)
+        return null
+      }
+      answers[q.question] = chosen.join(', ')
+    }
+    return answers
+  }
+
+  const submit = async (skipping: Record<number, boolean>) => {
+    const answers = collect(skipping)
+    if (!answers || sending) return
+    setSending(true)
+    const result = await window.threadlight.answerQuestion(session.id, answers)
+    setSending(false)
+    // On success the session carries on, and this card clears with the next scan.
+    setError(result.ok ? null : result.reason)
+  }
+
+  const forward = (skip = false) => {
+    const skipping = { ...skipped, [index]: skip }
+    setSkipped(skipping)
+    setError(null)
+    if (!last) return setIndex(index + 1)
+    if (answerable) void submit(skipping)
+    else onOpen()
+  }
+  useCtrlEnter(() => forward())
 
   const question = questions[index]
   if (!question) return null
-  const recommended = question.options.find((option) => option.recommended)?.label
-  const picked = picks[index] ?? (recommended ? [recommended] : [])
+  const picked = pickedFor(index)
   const pick = (label: string) => {
     const chosen = question.multiSelect
       ? picked.includes(label)
@@ -152,6 +213,7 @@ function QuestionCard({
         : [...picked, label]
       : [label]
     setPicks({ ...picks, [index]: chosen })
+    setError(null)
   }
   const rows = [
     ...question.options,
@@ -192,18 +254,46 @@ function QuestionCard({
           onPick={() => pick(option.label)}
         />
       ))}
+      {answerable && picked.includes(en.attention.other) && (
+        <input
+          className={styles.qOther}
+          data-answer=""
+          autoFocus
+          placeholder={en.attention.otherPlaceholder}
+          value={others[index] ?? ''}
+          onChange={(event) => {
+            setOthers({ ...others, [index]: event.target.value })
+            setError(null)
+          }}
+        />
+      )}
       <Buttons>
-        <button className={styles.qSkip} onClick={forward}>
+        <button className={styles.qSkip} disabled={sending} onClick={() => forward(true)}>
           {en.attention.skip}
         </button>
         <MainButton
-          label={last ? en.attention.answerInClaude : en.attention.next}
-          disabled={last && !session.appId}
-          onClick={forward}
+          label={
+            !last
+              ? en.attention.next
+              : answerable
+                ? en.attention.submit
+                : en.attention.answerInClaude
+          }
+          disabled={sending || (last && !answerable && !session.appId)}
+          onClick={() => forward()}
         />
+        {error && <p className={styles.qError}>{error}</p>}
+        {answerableUntil !== null && <HoldNote until={answerableUntil} />}
       </Buttons>
     </div>
   )
+}
+
+/** While Threadlight holds the card: Claude shows its own after this many seconds. */
+function HoldNote({ until }: { until: number }) {
+  const now = useNow(1000)
+  const seconds = Math.max(0, Math.ceil((until - now) / 1000))
+  return <p className={styles.qNote}>{en.attention.holdNote(seconds)}</p>
 }
 
 /** A tool waiting for approval: what it wants to do, answered in Claude. */

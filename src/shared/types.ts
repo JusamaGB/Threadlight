@@ -40,7 +40,15 @@ export interface NextStepAction {
  * turn until it is answered in Claude; a next-step box comes after the turn has ended.
  */
 export type Attention =
-  | { kind: 'question'; questions: CardQuestion[] }
+  | {
+      kind: 'question'
+      questions: CardQuestion[]
+      /**
+       * Set while Threadlight holds the card so it can be answered here: when the hold ends and
+       * the Claude app shows its own card instead. Null means answer it in Claude.
+       */
+      answerableUntil: number | null
+    }
   | { kind: 'approval'; action: string | null }
   | { kind: 'next-step'; recap: string | null; ask: string; actions: NextStepAction[] }
 
@@ -70,6 +78,8 @@ export interface Session {
   cwd: string
   /** Last activity, in milliseconds since the epoch. */
   lastActiveAt: number
+  /** When the Claude app last had this thread in front; 0 when unknown. */
+  focusedAt: number
   /** One line describing where the session is. */
   stage: string
   lastPrompt: string | null
@@ -130,6 +140,8 @@ export interface Snapshot {
   allWorkspaces: { id: string; name: string }[]
   /** The workspace of the thread last open in Claude. */
   currentWorkspace: string | null
+  /** The thread last open in Claude (its Claude Code session id): the one Claude shows now. */
+  currentThreadId: string | null
 }
 
 /**

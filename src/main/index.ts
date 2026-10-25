@@ -4,10 +4,13 @@ import { app, ipcMain, session, type WebContents } from 'electron'
 
 import { IPC } from '../shared/ipc'
 import type { Settings } from '../shared/settings'
+import type { Session, Snapshot, ThreadNode } from '../shared/types'
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { TalkHotkey } from './hotkeys'
+import { foregroundTitle } from './keyState'
 import { setLaunchAtSignIn } from './loginItem'
+import { QuestionHolds } from './questionHolds'
 import { findClaudeCli, isHeldByRunningProcess, type CliCommand } from './relay'
 import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
@@ -42,13 +45,17 @@ async function start(): Promise<void> {
 
   const hooks = new HookStateStore()
   const windows = new WindowManager()
+  // Question cards held so they can be answered here; any change is shown at once.
+  const holds = new QuestionHolds(() => void sessions.refresh())
   const tracker = new Tracker({
     paths,
     hooks,
     windowHours: initial.listWindowHours,
     maxSessions: initial.maxSessions,
+    heldQuestion: (id) => holds.held(id),
   })
   const sessions = new SessionService(tracker, (snapshot) => {
+    letHeldCardsGo(holds, snapshot)
     windows.send(IPC.sessionsChanged, snapshot.sessions)
     windows.panel.webContents.send(IPC.snapshotChanged, snapshot)
   })
@@ -63,6 +70,12 @@ async function start(): Promise<void> {
       hookEvents += 1
       hooks.apply(payload)
       void sessions.refresh()
+    },
+    // The question-card hook waits here for an answer (or to be let go).
+    onAsk: (payload, reply, dropped) => {
+      const held = holds.hold(payload, reply)
+      if (held) dropped(() => holds.dropped(reply))
+      return held
     },
   }).catch((error: unknown) => {
     // Most likely another program holds the port. Threadlight still works on transcripts alone.
@@ -91,7 +104,19 @@ async function start(): Promise<void> {
   ipcMain.on(IPC.panelClose, () => windows.closePanel())
   ipcMain.on(IPC.panelStayOpen, (_event, on: unknown) => windows.setStayOpen(on === true))
   ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
-    if (typeof appId === 'string' && openThread(appId)) windows.closePanel()
+    if (typeof appId !== 'string') return
+    // Going to the thread in Claude means answering there: let a held card go first.
+    const session = everySession(sessions.snapshot).find((s) => s.appId === appId)
+    if (session) holds.release(session.id)
+    if (openThread(appId)) windows.closePanel()
+  })
+  ipcMain.handle(IPC.answerQuestion, (_event, sessionId: unknown, answers: unknown) =>
+    typeof sessionId === 'string'
+      ? holds.answer(sessionId, answers)
+      : { ok: false, reason: 'Invalid answer.' },
+  )
+  ipcMain.on(IPC.releaseQuestion, (_event, sessionId: unknown) => {
+    if (typeof sessionId === 'string') holds.release(sessionId)
   })
 
   // The UI passes only a session id and text; folder, permission mode and model come from
@@ -183,6 +208,7 @@ async function start(): Promise<void> {
   })
 
   app.on('will-quit', () => {
+    holds.releaseAll() // Claude shows every held card itself from here on
     hotkey.dispose()
     stt.stop()
     tray.destroy()
@@ -197,6 +223,32 @@ async function start(): Promise<void> {
   setInterval(() => void checkClaude(), CLAUDE_CHECK_INTERVAL_MS)
 
   if (!app.isPackaged) devAids(windows)
+}
+
+/**
+ * A held question card is let go as soon as it would be answered in Claude anyway: when the user
+ * has opened that thread in Claude since it was asked, when Claude is in front showing it, or
+ * when Threadlight no longer lists the thread at all.
+ */
+function letHeldCardsGo(holds: QuestionHolds, snapshot: Snapshot): void {
+  const ids = holds.sessionIds()
+  if (ids.length === 0) return
+  const all = everySession(snapshot)
+  const claudeInFront = foregroundTitle() === 'Claude'
+  for (const id of ids) {
+    const held = holds.held(id)
+    const session = all.find((s) => s.id === id)
+    const openedSince = session !== undefined && held !== null && session.focusedAt > held.startedAt
+    const onScreen = claudeInFront && snapshot.currentThreadId === id
+    if (!session || openedSince || onScreen) holds.release(id)
+  }
+}
+
+/** Every thread a snapshot lists: the recent ones and those in open workspaces. */
+function everySession(snapshot: Snapshot): Session[] {
+  const walk = (nodes: ThreadNode[]): Session[] =>
+    nodes.flatMap((node) => [node.session, ...walk(node.children)])
+  return [...snapshot.sessions, ...snapshot.workspaces.flatMap((w) => walk(w.threads))]
 }
 
 /**

@@ -2,6 +2,8 @@
 // piping the event JSON Claude Code gave it. This endpoint can only update session state;
 // it has no way to send messages, so the worst a stray request can do is mislabel a dot.
 // `GET /status` answers with a few counts, for the installer's check.
+// `POST /ask` is the one route that answers with a body: the question-card hook waits on it,
+// and gets either the user's answers or nothing (questionHolds.ts).
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -16,6 +18,15 @@ export interface HookServerOptions {
   onEvent: (payload: unknown) => void
   /** Answer to `GET /status`; nothing private, only that it runs and how many events arrived. */
   status?: () => object
+  /**
+   * A question card the hook is waiting on. Call `reply` once, with the hook's output or null
+   * for none; `dropped` runs if the hook stops waiting first. Return false to reply empty now.
+   */
+  onAsk?: (
+    payload: unknown,
+    reply: (body: string | null) => void,
+    dropped: (listener: () => void) => void,
+  ) => boolean
 }
 
 export interface HookServer {
@@ -23,10 +34,9 @@ export interface HookServer {
   close(): Promise<void>
 }
 
-export function startHookServer({ port, onEvent, status }: HookServerOptions): Promise<HookServer> {
-  const server = createServer((request, response) =>
-    handle(request, response, onEvent, status, server),
-  )
+export function startHookServer(options: HookServerOptions): Promise<HookServer> {
+  const { port } = options
+  const server = createServer((request, response) => handle(request, response, options, server))
   return new Promise((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, '127.0.0.1', () => {
@@ -42,10 +52,13 @@ export function startHookServer({ port, onEvent, status }: HookServerOptions): P
 function handle(
   request: IncomingMessage,
   response: ServerResponse,
-  onEvent: (payload: unknown) => void,
-  status: (() => object) | undefined,
+  { onEvent, status, onAsk }: HookServerOptions,
   server: Server,
 ): void {
+  if (request.method === 'POST' && request.url === '/ask' && onAsk) {
+    if (!fromLocalTool(request, server)) return finish(response, 403)
+    return readJson(request, (payload) => ask(payload, response, onAsk))
+  }
   if (request.method === 'GET' && request.url === '/status' && status) {
     if (!fromLocalTool(request, server)) return finish(response, 403)
     response.writeHead(200, { 'content-type': 'application/json' })
@@ -88,6 +101,49 @@ function fromLocalTool(request: IncomingMessage, server: Server): boolean {
   const port = (server.address() as AddressInfo).port
   const host = request.headers.host ?? ''
   return host === `127.0.0.1:${port}` || host === `localhost:${port}`
+}
+
+/** Holds the response open until the user answers here or the card is let go. */
+function ask(
+  payload: unknown,
+  response: ServerResponse,
+  onAsk: NonNullable<HookServerOptions['onAsk']>,
+): void {
+  let done = false
+  const reply = (body: string | null) => {
+    if (done) return
+    done = true
+    if (body === null) return finish(response, 204)
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(body)
+  }
+  const listeners: (() => void)[] = []
+  response.on('close', () => {
+    if (done) return
+    done = true
+    for (const listener of listeners) listener()
+  })
+  if (payload === undefined || !onAsk(payload, reply, (listener) => listeners.push(listener))) {
+    reply(null)
+  }
+}
+
+/** Reads a small JSON body; anything unreadable arrives as undefined. */
+function readJson(request: IncomingMessage, done: (payload: unknown) => void): void {
+  const chunks: Buffer[] = []
+  let size = 0
+  request.on('data', (chunk: Buffer) => {
+    size += chunk.length
+    if (size <= MAX_BODY_BYTES) chunks.push(chunk)
+  })
+  request.on('end', () => {
+    if (size > MAX_BODY_BYTES) return done(undefined)
+    try {
+      done(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    } catch {
+      done(undefined)
+    }
+  })
 }
 
 function finish(response: ServerResponse, status: number): void {

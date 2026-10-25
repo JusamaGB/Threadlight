@@ -80,6 +80,38 @@ describe('hook server', () => {
     expect((await send(page)).status).toBe(403)
   })
 
+  it('holds POST /ask open until replied, answering with the body or with nothing', async () => {
+    await server.close()
+    let replyTo: ((body: string | null) => void) | undefined
+    server = await startHookServer({
+      port: 0,
+      onEvent: () => {},
+      onAsk: (_payload, reply) => {
+        replyTo = reply
+        return true
+      },
+    })
+    const pending = send({ path: '/ask', body: '{"tool_name":"AskUserQuestion"}' })
+    await settle()
+    replyTo?.('{"ok":1}')
+    expect(await pending).toEqual({ status: 200, body: '{"ok":1}' })
+
+    const released = send({ path: '/ask', body: '{}' })
+    await settle()
+    replyTo?.(null)
+    expect(await released).toEqual({ status: 204, body: '' })
+  })
+
+  it('answers /ask with nothing at once when there is nothing to hold, or no handler', async () => {
+    expect(await send({ path: '/ask', body: '{}' })).toEqual({ status: 404, body: '' })
+    await server.close()
+    server = await startHookServer({ port: 0, onEvent: () => {}, onAsk: () => false })
+    expect(await send({ path: '/ask', body: '{}' })).toEqual({ status: 204, body: '' })
+    expect((await send({ path: '/ask', headers: { Origin: 'https://example.com' } })).status).toBe(
+      403,
+    )
+  })
+
   it('ignores other methods, paths and broken JSON', async () => {
     expect((await send({ method: 'GET' })).status).toBe(404)
     expect((await send({ path: '/send' })).status).toBe(404)
