@@ -55,8 +55,7 @@ threadlight/
 │  └─ setup/
 │     └─ SKILL.md              # "set this up for me": checks, questions, install, verify (§9)
 ├─ scripts/
-│  ├─ install.mjs              # deterministic installer the skill calls; --check / --uninstall
-│  └─ hook.cmd                 # tiny hook forwarder (curl → local app), no Node needed (§8)
+│  └─ install.mjs              # deterministic installer the skill calls; --check / --uninstall
 ├─ src/
 │  ├─ main/                    # Electron main process (Node side)
 │  │  ├─ index.ts              # app lifecycle, single-instance lock, windows, tray
@@ -171,9 +170,9 @@ Rules carried over from the Python prototype:
 
 Shipped in `hooks/hooks.json` with the plugin, so installing/uninstalling the plugin adds/removes them — the user's `settings.json` is never edited by hand. Events: `SessionStart` (idle), `UserPromptSubmit` (working), `PreToolUse`/`PostToolUse` (heartbeat), `Notification` (waiting if permission, else idle), `Stop` (idle), `SessionEnd` (remove).
 
-Command: `scripts/hook.cmd <event>` → pipes stdin to `curl.exe -s -m 1 --data-binary @- http://127.0.0.1:<port>/hook/<event>`. `curl.exe` ships with Windows 10 1803+, so no Node or Python is required, and a failed/absent app costs the session nothing (1 s cap, exit 0 always). Missed events while the app is closed are covered by the transcript fallback.
+Command: `curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/<Event>; exit 0`, written directly in `hooks.json` (no wrapper script). `curl.exe` ships with Windows 10 1803+, so no Node or Python is required, and a closed or absent Threadlight costs the session nothing (1 s cap, always exits 0). The server always answers `204` with an empty body, because some hook output is added to Claude's context. Missed events while the app is closed are covered by the transcript fallback.
 
-To verify before relying on it: that the Claude **desktop app** loads hooks from installed plugins (it loaded user-settings hooks live in testing). If not, `install.mjs` adds the same entries to `~/.claude/settings.json` after showing them, and `--uninstall` removes exactly those entries.
+Verified 2026-10-25: a plugin installed with `claude plugin install … --scope user` has its hooks run in Claude **desktop app** sessions started afterwards (events arrived and the session showed as hook-tracked). The command was also run by hand through Git Bash, Windows PowerShell 5.1 and PowerShell 7: all three deliver the event, and all exit 0 when Threadlight is closed. Claude Code runs hooks in Git Bash when installed, else PowerShell; hence `curl.exe` (in Windows PowerShell plain `curl` is an alias of `Invoke-WebRequest`), the quoted `'@-'`, and `; exit 0` rather than `|| exit 0`.
 
 ## 9. Setup skill ("I found this, set it up")
 

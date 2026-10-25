@@ -19,3 +19,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   click away, each expandable to its plan, current step and last result. Clicking
   anywhere else, or Esc, turns it back into the dot.
 - Right-click a session for "Open in Claude".
+- Claude Code plugin (`.claude-plugin/`, `hooks/hooks.json`) whose hooks report session
+  activity to Threadlight's local endpoint on `127.0.0.1:47615`, so working / waiting /
+  idle is exact. The hook command runs unchanged in Git Bash, Windows PowerShell and
+  PowerShell 7, and always exits cleanly when Threadlight is not running.
+- The endpoint only accepts session-state events and refuses anything a web page could
+  send (requests with an Origin or Referer header, or a non-local Host).

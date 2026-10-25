@@ -2,6 +2,7 @@ import { app, ipcMain } from 'electron'
 
 import { IPC } from '../shared/ipc'
 import { isClaudeAppRunning, openThread } from './claudeApp'
+import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { HookStateStore } from './sessions/hookState'
 import { defaultPaths } from './sessions/paths'
 import { SessionService } from './sessions/service'
@@ -22,11 +23,23 @@ if (!app.requestSingleInstanceLock()) {
 
 function start(): void {
   const paths = defaultPaths()
-  const hooks = new HookStateStore() // fed by the hook server (added in a later step)
+  const hooks = new HookStateStore()
   const windows = new WindowManager()
   const sessions = new SessionService(new Tracker({ paths, hooks }), (list) =>
     windows.send(IPC.sessionsChanged, list),
   )
+
+  // Hook events make state exact and immediate: apply, then rescan straight away.
+  startHookServer({
+    port: DEFAULT_HOOK_PORT,
+    onEvent: (payload) => {
+      hooks.apply(payload)
+      void sessions.refresh()
+    },
+  }).catch((error: unknown) => {
+    // Most likely another program holds the port. Threadlight still works on transcripts alone.
+    console.error(`Hook server could not start on port ${DEFAULT_HOOK_PORT}`, error)
+  })
 
   ipcMain.handle(IPC.getVersion, () => app.getVersion())
   ipcMain.handle(IPC.getSessions, () => sessions.sessions)

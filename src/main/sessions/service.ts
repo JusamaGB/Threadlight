@@ -8,6 +8,7 @@ export class SessionService {
   private latestJson = '[]'
   private timer: NodeJS.Timeout | null = null
   private running = false
+  private again = false
 
   constructor(
     private readonly tracker: Tracker,
@@ -29,7 +30,11 @@ export class SessionService {
   }
 
   async refresh(): Promise<void> {
-    if (this.running) return // a slow scan must not pile up behind itself
+    // A slow scan must not pile up behind itself; one more run afterwards is enough.
+    if (this.running) {
+      this.again = true
+      return
+    }
     this.running = true
     try {
       const sessions = await this.tracker.snapshot()
@@ -43,6 +48,10 @@ export class SessionService {
       console.error('Session scan failed', error)
     } finally {
       this.running = false
+    }
+    if (this.again) {
+      this.again = false
+      await this.refresh()
     }
   }
 }
