@@ -3,11 +3,12 @@
 // it had been typed in Claude. The reply comes back as JSON on stdout.
 
 import { execFile, spawn } from 'node:child_process'
-import { access, readdir, readFile } from 'node:fs/promises'
+import { access, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { Session } from '../shared/types'
 import { isObject, oneLine, str } from './sessions/json'
+import { liveSessionIds, processIsRunning } from './sessions/liveSessions'
 import type { ClaudePaths } from './sessions/paths'
 
 /** Windows caps a command line at 32 767 characters; leave room for the rest of it. */
@@ -195,42 +196,13 @@ export async function isHeld(liveSessionsDir: string, sessionId: string): Promis
   )
 }
 
-/**
- * Each running Claude Code process writes `<liveSessionsDir>/<pid>.json` naming its session.
- * A file whose process has exited is a leftover and does not count.
- */
+/** Whether a still-running Claude Code process has registered this session (liveSessions.ts). */
 export async function isInLiveRegistry(
   liveSessionsDir: string,
   sessionId: string,
   isRunning: (pid: number) => boolean = processIsRunning,
 ): Promise<boolean> {
-  let names: string[]
-  try {
-    names = (await readdir(liveSessionsDir)).filter((name) => /^\d+\.json$/.test(name))
-  } catch {
-    return false // no registry (an older Claude Code): the command-line check still runs
-  }
-  for (const name of names) {
-    let entry: unknown
-    try {
-      entry = JSON.parse(await readFile(join(liveSessionsDir, name), 'utf8'))
-    } catch {
-      continue
-    }
-    if (!isObject(entry) || entry['sessionId'] !== sessionId) continue
-    const pid = typeof entry['pid'] === 'number' ? entry['pid'] : Number.parseInt(name, 10)
-    if (isRunning(pid)) return true
-  }
-  return false
-}
-
-function processIsRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0) // signal 0 only asks whether the process exists
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM' // exists, owned by someone else
-  }
+  return (await liveSessionIds(liveSessionsDir, isRunning)).has(sessionId)
 }
 
 /** Looks for a running claude.exe whose command line names this session. */

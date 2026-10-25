@@ -1,6 +1,7 @@
 // The one contract between the UI (renderer) and the Node side (main).
 // Channel names and payload types live here so both sides stay in step.
 
+import type { AgentState } from './agent'
 import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
 import type { RelayStatus, Session, Snapshot, TreeView } from './types'
@@ -41,6 +42,12 @@ export const IPC = {
   answerQuestion: 'hold:answer-question',
   answerNextStep: 'hold:answer-next-step',
   releaseHold: 'hold:release',
+  copyText: 'clipboard:copy',
+  agentGet: 'agent:get',
+  agentChanged: 'agent:changed',
+  agentSend: 'agent:send',
+  agentDecide: 'agent:decide',
+  agentClose: 'agent:close',
 } as const
 
 export interface PanelOpened {
@@ -103,6 +110,19 @@ export interface ThreadlightApi {
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   /** Lets a held card go, so the Claude app carries on with it as usual. */
   releaseHold(sessionId: string): void
+
+  /** Puts text on the clipboard (for an answer to paste into Claude). */
+  copyText(text: string): void
+
+  /** The agent conversation Threadlight hosts (agentRun.ts). */
+  getAgent(): Promise<AgentState>
+  onAgent(listener: (state: AgentState) => void): () => void
+  /** Sends a message, starting a new conversation if none is open. */
+  agentSend(text: string): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Allows or denies the tool call waiting for approval. */
+  agentDecide(id: string, allow: boolean): void
+  /** Ends the conversation. */
+  agentClose(): void
   onRelays(listener: (statuses: RelayStatus[]) => void): () => void
 
   getStt(): Promise<SttStatus>

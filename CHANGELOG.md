@@ -85,6 +85,22 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
   moment as the Claude app's own timer (the thread record's turn start), or from the
   prompt's time for sessions the app does not track.
+- Agent (spike): the ✦ button opens a conversation Threadlight hosts itself, running the user's
+  own Claude Code on a two-way stream (as the Claude app does). Steps and replies show live;
+  reading tools (an integration's search, get, list…) run at once, while anything that sends,
+  deletes or changes things waits on an Allow / Deny card; a follow-up continues the same
+  conversation, and End closes it (its transcript stays on disk). It works in its own folder
+  and can use the user's claude.ai connectors (Gmail, Calendar, Drive…). The conversation runs
+  on Haiku, which hands anything that needs looking up or doing to an Opus worker (a Claude
+  Code subagent) and waits for its report; the worker's steps show as they happen, and its
+  tool calls still ask for approval.
+- A next-step card answers whichever way can reach the thread: handed back while Threadlight
+  holds the turn's end; for a thread Claude has open but nothing held (started before the
+  plugin's Stop hook), Copy and open puts the answer on the clipboard and opens the thread to
+  paste; otherwise sent in the background. Its "✓ Sent" now follows the real send, and a
+  refused send unlocks the card with the reason. Threads Claude Code has open are read from
+  its own register of live sessions.
+- The Active list leaves out each thread's age: everything there is happening now.
 - Each thread shows its folder's changes since the last commit beside its title, "+22 −1" in
   green and red, as Claude does; it goes back to nothing when the work is committed, and new
   files git does not track yet count as added lines. Threads outside a git folder show

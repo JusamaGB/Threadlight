@@ -838,6 +838,109 @@
   cursor: default;
 }
 
+/* ---------- the agent ---------- */
+
+.agent {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 6px 10px 8px;
+  gap: 6px;
+}
+
+.agentLog {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 360px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  font-size: 11px;
+}
+
+.agentEmpty {
+  margin: 0;
+  color: var(--faint);
+  line-height: 1.45;
+}
+
+.agentItem {
+  margin: 0;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* What you said sits on the right, like a sent message. */
+.agentItem[data-kind='you'] {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.agentItem[data-kind='agent'] {
+  color: var(--fg);
+}
+
+.agentItem[data-kind='step'] {
+  color: var(--faint);
+}
+
+.agentItem[data-kind='step']::before {
+  content: '· ';
+}
+
+.agentProgress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+}
+
+.agentDetail {
+  margin: 0;
+  padding: 6px 10px;
+  max-height: 140px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agentInput {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agentInput .qOther {
+  flex: 1;
+  width: auto;
+  margin: 0;
+}
+
+.agentEnd {
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agentEnd:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+
 /* The Now line's timer: how long the turn has run, "Reading hookServer.ts  41s". */
 .elapsed {
   margin-left: 6px;

@@ -106,6 +106,8 @@ export interface Session {
   turnStartedAt: number | null
   /** Running background tasks, oldest first. They can outlive the turn that started them. */
   backgroundTasks: BackgroundTask[]
+  /** A Claude Code process has it open now (the Claude app, or a terminal): no background sends. */
+  live: boolean
   /** Its folder's changes since the last commit; null outside git, or before the first count. */
   diff: DiffStat | null
   /** How full its context is, 0 to 1, as the Claude app's Context ring shows; null if unknown. */

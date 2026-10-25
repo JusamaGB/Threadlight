@@ -1,13 +1,16 @@
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { app, ipcMain, session, type WebContents } from 'electron'
+import { app, clipboard, ipcMain, session, type WebContents } from 'electron'
 
+import { IDLE_AGENT } from '../shared/agent'
 import { IPC } from '../shared/ipc'
 import type { Settings } from '../shared/settings'
 import type { Session, Snapshot, ThreadNode } from '../shared/types'
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { TalkHotkey } from './hotkeys'
+import { AgentRun } from './agent/agentRun'
 import { foregroundTitle } from './keyState'
 import { setLaunchAtSignIn } from './loginItem'
 import { Holds } from './holds'
@@ -25,6 +28,7 @@ import { createTray } from './tray'
 import { WindowManager } from './windows'
 
 const SCAN_INTERVAL_MS = 1000
+const AGENT_MODEL = 'claude-haiku-5-5'
 const CLAUDE_CHECK_INTERVAL_MS = 2000
 
 const setup = setupArgs()
@@ -143,6 +147,9 @@ async function start(): Promise<void> {
       ? holds.answerNextStep(sessionId, choice)
       : { ok: false, reason: 'Invalid answer.' },
   )
+  ipcMain.on(IPC.copyText, (_event, text: unknown) => {
+    if (typeof text === 'string' && text.length <= 20_000) clipboard.writeText(text)
+  })
   ipcMain.on(IPC.releaseHold, (_event, sessionId: unknown) => {
     if (typeof sessionId === 'string') holds.release(sessionId)
   })
@@ -164,6 +171,34 @@ async function start(): Promise<void> {
       : { ok: false, reason: 'Invalid message.' },
   )
   ipcMain.handle(IPC.getRelays, () => relays.list())
+
+  // The agent: one conversation Threadlight hosts itself (agent/agentRun.ts), working in its
+  // own folder. The spike runs on Haiku to keep test runs cheap; a setting comes later.
+  const agentWorkspace = join(app.getPath('userData'), 'agent')
+  let agent: AgentRun | null = null
+  const sendAgent = (state: unknown) => windows.panel.webContents.send(IPC.agentChanged, state)
+  const getAgent = async () => {
+    const found = (cli ??= await findClaudeCli(paths))
+    if (!found) return null
+    await mkdir(agentWorkspace, { recursive: true })
+    agent ??= new AgentRun({
+      cli: found,
+      workspace: agentWorkspace,
+      model: AGENT_MODEL,
+      onChange: sendAgent,
+    })
+    return agent
+  }
+  ipcMain.handle(IPC.agentGet, () => agent?.current ?? IDLE_AGENT)
+  ipcMain.handle(IPC.agentSend, async (_event, text: unknown) => {
+    if (typeof text !== 'string') return { ok: false, reason: 'Nothing to send.' }
+    const run = await getAgent()
+    return run ? run.send(text) : { ok: false, reason: 'Claude Code was not found on this PC.' }
+  })
+  ipcMain.on(IPC.agentDecide, (_event, id: unknown, allow: unknown) => {
+    if (typeof id === 'string') agent?.decide(id, allow === true)
+  })
+  ipcMain.on(IPC.agentClose, () => agent?.close())
 
   // Voice: the model loads in the background if it is already downloaded; it is only ever
   // downloaded after the user agrees in the composer.
@@ -239,6 +274,7 @@ async function start(): Promise<void> {
   })
 
   app.on('will-quit', () => {
+    agent?.close()
     holds.releaseAll() // Claude carries on with every held card itself from here on
     hotkey.dispose()
     stt.stop()

@@ -22,6 +22,7 @@ import { useVoice } from '../hooks/useVoice'
 import { en } from '../i18n/en'
 import { windowLabel } from '../lib/format'
 import { SettingsView } from '../settings/SettingsView'
+import { AgentView } from './AgentView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
 import { PanelRoomContext } from './room'
@@ -75,6 +76,8 @@ export function Panel() {
   const [view, setView] = useState<View>('active')
   /** The settings list takes over the panel's card while this is true. */
   const [showSettings, setShowSettings] = useState(false)
+  /** The agent conversation takes over the card, like settings. */
+  const [showAgent, setShowAgent] = useState(false)
   /** Choosing which workspace the Workspace list shows; takes over the card like settings. */
   const [pickingWorkspace, setPickingWorkspace] = useState(false)
   /** Open workspaces in the "All" list; null until changed means "just the current one". */
@@ -442,6 +445,7 @@ export function Panel() {
       onToggle={() => onRowClick(session)}
       onContextMenu={(event) => openMenu(event, session)}
       onCompose={() => setCompose({ sessionId: session.id })}
+      hideAge={view === 'active'}
     />
   )
 
@@ -478,6 +482,18 @@ export function Panel() {
                 ‹
               </button>
               <span className={styles.heading}>{en.panel.chooseWorkspace}</span>
+            </>
+          ) : showAgent ? (
+            <>
+              <button
+                className={styles.back}
+                onClick={() => setShowAgent(false)}
+                aria-label={en.settings.back}
+                title={en.settings.back}
+              >
+                ‹
+              </button>
+              <span className={styles.heading}>{en.agent.title}</span>
             </>
           ) : showSettings ? (
             <>
@@ -526,6 +542,16 @@ export function Panel() {
               )}
               <button
                 className={styles.gear}
+                onClick={() => setShowAgent(true)}
+                aria-label={en.agent.open}
+                title={en.agent.open}
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z" />
+                </svg>
+              </button>
+              <button
+                className={styles.gear}
                 onClick={() => setShowSettings(true)}
                 aria-label={en.settings.open}
                 title={en.settings.open}
@@ -550,7 +576,9 @@ export function Panel() {
           </div>
         )}
 
-        {showSettings && settings && !pickingWorkspace && (
+        {showAgent && !pickingWorkspace && <AgentView />}
+
+        {showSettings && settings && !pickingWorkspace && !showAgent && (
           <SettingsView
             settings={settings}
             stt={stt}
@@ -560,7 +588,7 @@ export function Panel() {
         )}
 
         {/* Kept mounted (just hidden) while settings show, so a half-typed message survives. */}
-        <div className={styles.sessions} hidden={showSettings || pickingWorkspace}>
+        <div className={styles.sessions} hidden={showSettings || pickingWorkspace || showAgent}>
           {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
           {picking && (
             <div className={styles.picking}>

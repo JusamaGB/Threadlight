@@ -19,6 +19,7 @@ import type {
 import { AppRecordIndex, type AppRecord } from './appRecords'
 import type { HookRecord, HookStateStore } from './hookState'
 import { oneLine } from './json'
+import { liveSessionIds } from './liveSessions'
 import type { ClaudePaths } from './paths'
 import { TranscriptReader, type TranscriptSummary } from './transcript'
 
@@ -72,13 +73,17 @@ export class Tracker {
 
   async snapshot(view: TreeView = DEFAULT_VIEW): Promise<Snapshot> {
     const now = this.now()
-    const [files, apps] = await Promise.all([this.findTranscripts(), this.appRecords.refresh()])
+    const [files, apps, live] = await Promise.all([
+      this.findTranscripts(),
+      this.appRecords.refresh(),
+      liveSessionIds(this.options.paths.liveSessionsDir),
+    ])
     const hooks = new Map(this.options.hooks.all(now).map((h) => [h.sessionId, h]))
     const built = new Map<string, Session>() // full sessions, built once per scan
     const build = async (id: string) => {
       let session = built.get(id)
       if (!session) {
-        session = await this.build(id, files.get(id), hooks.get(id), apps.get(id), now)
+        session = await this.build(id, files.get(id), hooks.get(id), apps.get(id), live, now)
         built.set(id, session)
       }
       return session
@@ -217,6 +222,7 @@ export class Tracker {
     file: TranscriptFile | undefined,
     hook: HookRecord | undefined,
     app: AppRecord | undefined,
+    live: Set<string>,
     now: number,
   ): Promise<Session> {
     const path = file?.path ?? hook?.transcriptPath
@@ -257,6 +263,7 @@ export class Tracker {
         (task) => now - task.startedAt < TASK_GIVE_UP_MS,
       ),
       diff: this.options.diffFor?.(cwd) ?? null,
+      live: live.has(id),
       contextUsed: contextUsed(summary, app?.model ?? null),
       attention: attentionFor(state, summary, this.options.held?.(id) ?? null),
       permissionMode: app?.permissionMode ?? null,

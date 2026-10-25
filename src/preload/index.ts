@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
+import type { AgentState } from '../shared/agent'
+
 import { IPC, type PanelOpened, type TalkState, type ThreadlightApi } from '../shared/ipc'
 import type { Settings } from '../shared/settings'
 import type { SttStatus } from '../shared/stt'
@@ -38,6 +40,12 @@ const api: ThreadlightApi = {
     ipcRenderer.invoke(IPC.answerQuestion, sessionId, answers),
   answerNextStep: (sessionId, choice) => ipcRenderer.invoke(IPC.answerNextStep, sessionId, choice),
   releaseHold: (sessionId) => ipcRenderer.send(IPC.releaseHold, sessionId),
+  copyText: (text) => ipcRenderer.send(IPC.copyText, text),
+  getAgent: () => ipcRenderer.invoke(IPC.agentGet),
+  onAgent: (listener) => subscribe<AgentState>(IPC.agentChanged, listener),
+  agentSend: (text) => ipcRenderer.invoke(IPC.agentSend, text),
+  agentDecide: (id, allow) => ipcRenderer.send(IPC.agentDecide, id, allow),
+  agentClose: () => ipcRenderer.send(IPC.agentClose),
   onRelays: (listener) => subscribe<RelayStatus[]>(IPC.relaysChanged, listener),
 
   getStt: () => ipcRenderer.invoke(IPC.getStt),

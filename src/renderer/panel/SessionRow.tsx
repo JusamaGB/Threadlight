@@ -22,6 +22,8 @@ interface SessionRowProps {
   onContextMenu: (event: MouseEvent) => void
   /** Opens the composer on this thread (a waiting thread's card uses it for Other). */
   onCompose: () => void
+  /** The Active list leaves the age out: everything there is happening now. */
+  hideAge?: boolean
 }
 
 /** Its folder's changes since the last commit, as Claude shows them: "+22 −1". */
@@ -81,7 +83,9 @@ export function SessionRow(props: SessionRowProps) {
           ) : session.backgroundTasks.length > 0 ? (
             <TaskTimer tasks={session.backgroundTasks} />
           ) : (
-            <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
+            !props.hideAge && (
+              <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
+            )
           )}
         </span>
         <span className={styles.rowBottom}>
@@ -100,7 +104,12 @@ export function SessionRow(props: SessionRowProps) {
       {expanded &&
         (attention ? (
           <div className={styles.cardSlot}>
-            <AttentionCard session={session} attention={attention} onCompose={onCompose} />
+            <AttentionCard
+              session={session}
+              attention={attention}
+              relay={relay}
+              onCompose={onCompose}
+            />
           </div>
         ) : (
           <SessionDetail session={session} relay={relay} now={now} />

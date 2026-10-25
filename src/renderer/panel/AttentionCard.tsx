@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
-import type { Attention, CardQuestion, NextStepAction, Session } from '../../shared/types'
+import type {
+  Attention,
+  CardQuestion,
+  NextStepAction,
+  RelayStatus,
+  Session,
+} from '../../shared/types'
 import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
@@ -9,6 +15,8 @@ import styles from './Panel.module.css'
 interface AttentionCardProps {
   session: Session
   attention: Attention
+  /** The thread's background send, if one is under way or just finished. */
+  relay: RelayStatus | undefined
   /** Opens Threadlight's composer on this thread, for an answer of your own (Other). */
   onCompose: () => void
 }
@@ -19,12 +27,18 @@ interface AttentionCardProps {
  * to start with), then the buttons. A next-step box's answers are sent to the thread from here;
  * a question card and an approval can only be answered inside Claude, so they open it there.
  */
-export function AttentionCard({ session, attention, onCompose }: AttentionCardProps) {
+export function AttentionCard({ session, attention, relay, onCompose }: AttentionCardProps) {
   const open = () => session.appId && window.threadlight.openInClaude(session.appId)
   switch (attention.kind) {
     case 'next-step':
       return (
-        <NextStepCard session={session} attention={attention} onOpen={open} onCompose={onCompose} />
+        <NextStepCard
+          session={session}
+          attention={attention}
+          relay={relay}
+          onOpen={open}
+          onCompose={onCompose}
+        />
       )
     case 'question':
       return (
@@ -61,19 +75,24 @@ function useCtrlEnter(action: () => void) {
 }
 
 /**
- * The end-of-turn question. While Threadlight holds the turn's end (`answerableUntil`), Send
- * hands the picked answer (or Other's own words) back and the same turn carries on with it.
- * Otherwise Send puts the answer's message into the thread in the background, and Other opens
- * the composer.
+ * The end-of-turn question, answered whichever way can reach the thread:
+ * - Threadlight holds the turn's end (`answerableUntil`): Send hands the picked answer (or
+ *   Other's own words) back, and the same turn carries on with it.
+ * - Claude has the thread open but nothing is held (it started before the plugin's Stop hook):
+ *   a background send would be refused, so the answer is copied and the thread opened, to paste.
+ * - Otherwise Send puts the answer's message into the thread in the background, and the card
+ *   follows that send: locked while it goes, open again with the reason if it fails.
  */
 function NextStepCard({
   session,
   attention,
+  relay,
   onOpen,
   onCompose,
 }: {
   session: Session
   attention: Extract<Attention, { kind: 'next-step' }>
+  relay: RelayStatus | undefined
   onOpen: () => void
   onCompose: () => void
 }) {
@@ -81,19 +100,29 @@ function NextStepCard({
   const [picked, setPicked] = useState(0) // the first answer is the recommended one
   const [other, setOther] = useState('')
   const [sending, setSending] = useState(false)
-  /** Answered from here: locked, so it cannot be sent twice before the thread moves on. */
-  const [sent, setSent] = useState(false)
+  /** Handed back to the held turn, or copied: done from here. */
+  const [done, setDone] = useState<'answered' | 'copied' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const action: NextStepAction | undefined = attention.actions[picked]
   const answerable = attention.answerableUntil !== null
+  const copyAndOpen = !answerable && session.live
+  // A background send in flight locks the card; a failed one says why and opens it again.
+  const relaying = relay?.state === 'sending' || relay?.state === 'sent'
+  const failed = relay?.state === 'failed' ? relay.detail : null
+  const locked = done === 'answered' || relaying
 
   const go = async () => {
-    if (sending || sent) return
+    if (sending || locked) return
     const own = picked === OTHER || !action
-    if (own && !answerable) return onCompose()
-    if (own && !other.trim()) return setError(en.attention.typeOther)
     // An app action (commit, open a PR…) can only be done in the Claude app itself.
     if (!own && action.message === null) return onOpen()
+    if (copyAndOpen) {
+      if (!own) window.threadlight.copyText(action.message!)
+      setDone('copied')
+      return onOpen() // Other: type it there
+    }
+    if (own && !answerable) return onCompose()
+    if (own && !other.trim()) return setError(en.attention.typeOther)
     setSending(true)
     const result = answerable
       ? await window.threadlight.answerNextStep(
@@ -102,21 +131,23 @@ function NextStepCard({
         )
       : await window.threadlight.sendMessage(session.id, action!.message!)
     setSending(false)
-    // On success the thread carries on and this card clears; the row's line shows progress.
-    setSent(result.ok)
+    if (result.ok && answerable) setDone('answered')
     setError(result.ok ? null : result.reason)
   }
   useCtrlEnter(() => void go())
 
-  const label = sent
+  const own = picked === OTHER || !action
+  const label = locked
     ? en.attention.sent
-    : picked === OTHER || !action
-      ? answerable
-        ? en.attention.send
-        : en.attention.writeReply
-      : action.message === null
-        ? en.attention.doInClaude
-        : en.attention.send
+    : !own && action.message === null
+      ? en.attention.doInClaude
+      : copyAndOpen
+        ? own
+          ? en.attention.answerInClaude
+          : en.attention.copyAndOpen
+        : own && !answerable
+          ? en.attention.writeReply
+          : en.attention.send
 
   return (
     <div className={styles.qCard}>
@@ -134,7 +165,7 @@ function NextStepCard({
           description={
             option.message !== null && option.message !== option.label ? option.message : ''
           }
-          disabled={sent}
+          disabled={locked}
           onPick={() => setPicked(index)}
         />
       ))}
@@ -142,7 +173,7 @@ function NextStepCard({
         checked={picked === OTHER}
         label={en.attention.other}
         description=""
-        disabled={sent}
+        disabled={locked}
         onPick={() => setPicked(OTHER)}
       />
       {answerable && picked === OTHER && (
@@ -150,7 +181,7 @@ function NextStepCard({
           className={styles.qOther}
           data-answer=""
           autoFocus
-          disabled={sent}
+          disabled={locked}
           placeholder={en.attention.otherPlaceholder}
           value={other}
           onChange={(event) => {
@@ -160,9 +191,11 @@ function NextStepCard({
         />
       )}
       <Buttons>
-        <MainButton label={label} disabled={sending || sent} onClick={() => void go()} />
-        {error && <p className={styles.qError}>{error}</p>}
-        {attention.answerableUntil !== null && !sent && (
+        <MainButton label={label} disabled={sending || locked} onClick={() => void go()} />
+        {(error ?? failed) && <p className={styles.qError}>{error ?? failed}</p>}
+        {done === 'copied' && <p className={styles.qNote}>{en.attention.copied}</p>}
+        {copyAndOpen && !done && <p className={styles.qNote}>{en.attention.openInClaudeNote}</p>}
+        {attention.answerableUntil !== null && !locked && (
           <HoldNote until={attention.answerableUntil} kind="next-step" />
         )}
       </Buttons>
