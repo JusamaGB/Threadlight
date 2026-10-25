@@ -7,6 +7,7 @@ import type { Settings } from '../shared/settings'
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { TalkHotkey } from './hotkeys'
+import { setLaunchAtSignIn } from './loginItem'
 import { findClaudeCli, isHeldByRunningProcess, type CliCommand } from './relay'
 import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
@@ -14,6 +15,7 @@ import { defaultPaths } from './sessions/paths'
 import { SessionService } from './sessions/service'
 import { Tracker } from './sessions/tracker'
 import { SettingsStore } from './settings'
+import { runSetup, setupArgs } from './setupMode'
 import { SttService } from './stt/service'
 import { createTray } from './tray'
 import { WindowManager } from './windows'
@@ -21,8 +23,11 @@ import { WindowManager } from './windows'
 const SCAN_INTERVAL_MS = 1000
 const CLAUDE_CHECK_INTERVAL_MS = 2000
 
-// One Threadlight per user: a second launch just exits.
-if (!app.requestSingleInstanceLock()) {
+const setup = setupArgs()
+if (setup) {
+  runSetup(setup) // the installer's one-shot helpers (setupMode.ts)
+} else if (!app.requestSingleInstanceLock()) {
+  // One Threadlight per user: a second launch just exits.
   app.quit()
 } else {
   void app.whenReady().then(start)
@@ -49,9 +54,13 @@ async function start(): Promise<void> {
   })
 
   // Hook events make state exact and immediate: apply, then rescan straight away.
+  let hookEvents = 0
   startHookServer({
     port: DEFAULT_HOOK_PORT,
+    // For the installer's check: is it running, and have the plugin's hooks reached it?
+    status: () => ({ app: 'threadlight', version: app.getVersion(), hookEvents }),
     onEvent: (payload) => {
+      hookEvents += 1
       hooks.apply(payload)
       void sessions.refresh()
     },
@@ -188,19 +197,6 @@ async function start(): Promise<void> {
   setInterval(() => void checkClaude(), CLAUDE_CHECK_INTERVAL_MS)
 
   if (!app.isPackaged) devAids(windows)
-}
-
-/**
- * Starts Threadlight when the user signs in to Windows. A development build has no installed
- * executable of its own, so it registers Electron with the project folder as its argument.
- */
-function setLaunchAtSignIn(enabled: boolean): void {
-  app.setLoginItemSettings({
-    openAtLogin: enabled,
-    name: 'Threadlight',
-    path: process.execPath,
-    args: app.isPackaged ? [] : [app.getAppPath()],
-  })
 }
 
 /**

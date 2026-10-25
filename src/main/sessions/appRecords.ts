@@ -25,6 +25,11 @@ export interface AppRecord {
   lastActivityAt: number
   /** When the thread was last open in front of the user; the latest marks the current workspace. */
   lastFocusedAt: number
+  /**
+   * When the thread's latest turn started or ended: the moment Claude's own turn timer counts
+   * from while it works. 0 when the record has none.
+   */
+  lastTurnEdgeAt: number
 }
 
 /** Caches parsed records by file modification time, so a refresh only re-reads changed files. */
@@ -78,6 +83,7 @@ export function parseAppRecord(raw: unknown): AppRecord | null {
     pullRequests: parsePullRequests(raw['prs']),
     lastActivityAt: num(raw['lastActivityAt']),
     lastFocusedAt: num(raw['lastFocusedAt']),
+    lastTurnEdgeAt: num(raw['lastTurnEdgeAt']),
   }
 }
 

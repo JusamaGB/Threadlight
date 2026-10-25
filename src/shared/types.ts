@@ -52,6 +52,8 @@ export interface Session {
   recap: string | null
   lastReply: string | null
   lastAction: string | null
+  /** When the current turn began, for the Now line's timer (it runs until the turn ends). */
+  turnStartedAt: number | null
   /** Running background tasks, oldest first. They can outlive the turn that started them. */
   backgroundTasks: BackgroundTask[]
   permissionMode: string | null

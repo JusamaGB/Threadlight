@@ -15,7 +15,13 @@ export default defineConfig(
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'test/**/*.{ts,mjs}', '*.mjs'],
+    files: [
+      'src/main/**/*.ts',
+      'src/preload/**/*.ts',
+      'test/**/*.{ts,mjs}',
+      'scripts/**/*.mjs',
+      '*.mjs',
+    ],
     languageOptions: { globals: globals.node },
   },
   {

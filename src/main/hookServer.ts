@@ -1,6 +1,7 @@
 // Receives Claude Code hook events on 127.0.0.1. Each hook runs `curl --data-binary @- …`,
 // piping the event JSON Claude Code gave it. This endpoint can only update session state;
 // it has no way to send messages, so the worst a stray request can do is mislabel a dot.
+// `GET /status` answers with a few counts, for the installer's check.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -13,6 +14,8 @@ const PATH = /^\/hook\/([A-Za-z]{1,40})$/
 export interface HookServerOptions {
   port: number
   onEvent: (payload: unknown) => void
+  /** Answer to `GET /status`; nothing private, only that it runs and how many events arrived. */
+  status?: () => object
 }
 
 export interface HookServer {
@@ -20,8 +23,10 @@ export interface HookServer {
   close(): Promise<void>
 }
 
-export function startHookServer({ port, onEvent }: HookServerOptions): Promise<HookServer> {
-  const server = createServer((request, response) => handle(request, response, onEvent, server))
+export function startHookServer({ port, onEvent, status }: HookServerOptions): Promise<HookServer> {
+  const server = createServer((request, response) =>
+    handle(request, response, onEvent, status, server),
+  )
   return new Promise((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, '127.0.0.1', () => {
@@ -38,8 +43,15 @@ function handle(
   request: IncomingMessage,
   response: ServerResponse,
   onEvent: (payload: unknown) => void,
+  status: (() => object) | undefined,
   server: Server,
 ): void {
+  if (request.method === 'GET' && request.url === '/status' && status) {
+    if (!fromLocalTool(request, server)) return finish(response, 403)
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify(status()))
+    return
+  }
   const match = PATH.exec(request.url ?? '')
   if (request.method !== 'POST' || !match) return finish(response, 404)
   if (!fromLocalTool(request, server)) return finish(response, 403)

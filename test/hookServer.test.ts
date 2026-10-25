@@ -64,6 +64,22 @@ describe('hook server', () => {
     expect(events).toEqual([])
   })
 
+  it('answers GET /status when given a status, refusing web pages as for events', async () => {
+    expect((await send({ path: '/status', method: 'GET' })).status).toBe(404) // none given
+    await server.close()
+    server = await startHookServer({
+      port: 0,
+      onEvent: () => {},
+      status: () => ({ hookEvents: 3 }),
+    })
+    expect(await send({ path: '/status', method: 'GET' })).toEqual({
+      status: 200,
+      body: '{"hookEvents":3}',
+    })
+    const page = { path: '/status', method: 'GET', headers: { Origin: 'https://example.com' } }
+    expect((await send(page)).status).toBe(403)
+  })
+
   it('ignores other methods, paths and broken JSON', async () => {
     expect((await send({ method: 'GET' })).status).toBe(404)
     expect((await send({ path: '/send' })).status).toBe(404)

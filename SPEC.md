@@ -126,7 +126,7 @@ Naming: files `camelCase.ts`, React components `PascalCase.tsx`, one exported co
 - **Main process** owns all file reading, process checks, the hook server, hotkeys and relay. The renderer never touches the filesystem.
 - **Preload** exposes one frozen object (`window.threadlight`) with typed methods generated from `src/shared/ipc.ts`.
 - Renderer: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, strict CSP (`default-src 'self'`), no remote content, `will-navigate` blocked.
-- **Hook server** binds `127.0.0.1` on a configurable port (default 47615). It only accepts hook-event JSON (`session_id`, `hook_event_name`, …) and only updates in-memory state. It has **no** endpoint that sends messages.
+- **Hook server** binds `127.0.0.1` on a configurable port (default 47615). It only accepts hook-event JSON (`session_id`, `hook_event_name`, …) and only updates in-memory state; `GET /status` answers with the version and a count of hook events, for `install.mjs --check`. It has **no** endpoint that sends messages.
 - **Sending** (UI or hotkey) is in-process only in v1. A future local API for other apps (e.g. a voice assistant) must require a per-install token stored in the user profile, and is out of scope for v1.
 - Relay passes the message as an argument array (never through a shell) to the user's `claude` CLI.
 
@@ -179,14 +179,14 @@ Verified 2026-10-25: a plugin installed with `claude plugin install … --scope 
 `skills/setup/SKILL.md` instructs Claude to:
 
 1. Confirm Windows 10 1803+/11 and that the Claude desktop app is installed. Stop with a clear message otherwise.
-2. Show what will change: hooks, autostart entry, ~150 MB speech model download, install location. Ask to proceed.
-3. Ask (with defaults): talk key (`Ctrl+Alt+Q`), open-composer key, voice countdown, dot corner. `install.mjs --check-keys` tries to register each key and reports any already taken (Electron's `globalShortcut.register` returns false), so the user picks again before anything is saved. The app does the same check at every start and shows a tray warning instead of failing silently.
+2. Show what will change: packages and build in the checkout, the plugin's hooks, settings, autostart entry. The 76 MB speech model is not part of setup: the app asks before downloading it the first time voice is used. Ask to proceed.
+3. Ask (with defaults): talk key (`Ctrl+Alt+Q`), talk mode (toggle / push to talk), voice countdown, dot corner, start at sign-in. `install.mjs --check-keys` tries to register each key and reports any already taken (Electron's `globalShortcut.register` returns false), so the user picks again before anything is saved. The app does the same check at every start and shows a tray warning instead of failing silently.
 4. Run `node scripts/install.mjs --hotkey … --countdown … --corner …` (or the packaged installer when present).
 5. Check sign-in with `claude auth status`; if signed out, run `claude auth login` and tell the user to finish in their browser. Never ask for or type credentials.
 6. Start the app and verify: dot visible, at least one session listed, a hook event received (send a test prompt in the current session).
 7. Report what was installed and how to uninstall (`install.mjs --uninstall`).
 
-`install.mjs` is idempotent, prints every action, supports `--check` (diagnose only) and `--uninstall`, and never deletes anything it did not create.
+`install.mjs` is idempotent, prints every action, supports `--check` (diagnose only) and `--uninstall`, and never deletes anything it did not create: what it adds is recorded in `%APPDATA%/Threadlight/install.json`. The parts that need Electron (hotkey check, corner position, the sign-in entry) run through the app's own one-shot `--setup` mode (`src/main/setupMode.ts`), which opens no windows. A project skill in `.claude/skills/` points to the plugin's, so the steps are available in a fresh checkout before the plugin is installed. Built 2026-10-25.
 
 ## 10. Settings
 

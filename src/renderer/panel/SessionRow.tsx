@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react'
 
 import type { RelayStatus, Session } from '../../shared/types'
+import { en } from '../i18n/en'
 import { ageText } from '../lib/format'
 import { relayLine } from '../lib/relay'
 import styles from './Panel.module.css'
@@ -23,6 +24,7 @@ export function SessionRow(props: SessionRowProps) {
   const { session, relay, composing, now, expanded, onToggle, onContextMenu } = props
   // A message in flight, or a fresh reply, replaces the stage line for a while.
   const line = relayLine(relay, now)
+  const appId = session.appId
   return (
     <div className={expanded ? `${styles.row} ${styles.expanded}` : styles.row}>
       <button
@@ -36,7 +38,10 @@ export function SessionRow(props: SessionRowProps) {
           <span className={composing ? `${styles.title} ${styles.composing}` : styles.title}>
             {session.title}
           </span>
-          {session.backgroundTasks.length > 0 ? (
+          {/* Expanded, Open ↗ takes the age's place (drawn outside this button, below). */}
+          {expanded && appId ? (
+            <span className={styles.openSpace} aria-hidden="true" />
+          ) : session.backgroundTasks.length > 0 ? (
             <TaskTimer tasks={session.backgroundTasks} />
           ) : (
             <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
@@ -49,6 +54,11 @@ export function SessionRow(props: SessionRowProps) {
           </span>
         </span>
       </button>
+      {expanded && appId && (
+        <button className={styles.rowOpen} onClick={() => window.threadlight.openInClaude(appId)}>
+          {en.detail.open}
+        </button>
+      )}
       {expanded && <SessionDetail session={session} relay={relay} now={now} />}
     </div>
   )

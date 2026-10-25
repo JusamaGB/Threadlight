@@ -11,6 +11,23 @@ export const DOT_SIZE = 22
 export const PANEL_WIDTH = 342 // 340 of content plus a 1 px border each side
 const MARGIN = 8
 
+export const CORNERS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'] as const
+export type Corner = (typeof CORNERS)[number]
+
+export const isCorner = (value: unknown): value is Corner => CORNERS.includes(value as Corner)
+
+/** Where the dot sits in a corner of a screen's work area, the same small gap from each edge. */
+export function cornerPosition(corner: Corner, area: Rectangle): Point {
+  const left = area.x + MARGIN
+  const right = area.x + area.width - DOT_SIZE - MARGIN
+  const top = area.y + MARGIN
+  const bottom = area.y + area.height - DOT_SIZE - MARGIN
+  return {
+    x: corner.endsWith('left') ? left : right,
+    y: corner.startsWith('top') ? top : bottom,
+  }
+}
+
 type View = 'dot' | 'panel'
 
 /** Shared hardening for every window: no navigation away, no pop-ups, links open in the browser. */
@@ -174,9 +191,7 @@ export class WindowManager {
 
   /** Puts the dot back in the top-right corner of the main screen (Settings → Reset). */
   resetDotPosition(): void {
-    const area = screen.getPrimaryDisplay().workArea
-    const x = area.x + area.width - DOT_SIZE - MARGIN
-    const y = area.y + MARGIN
+    const { x, y } = cornerPosition('top-right', screen.getPrimaryDisplay().workArea)
     this.dot.setPosition(x, y)
     saveDotPosition({ x, y })
     if (this.panel.isVisible()) this.placePanel(this.panel.getBounds().height)
@@ -212,8 +227,8 @@ export class WindowManager {
         clamp(saved.y, area.y, area.y + area.height - DOT_SIZE),
       ]
     }
-    const area = screen.getPrimaryDisplay().workArea
-    return [area.x + area.width - DOT_SIZE - MARGIN, area.y + MARGIN]
+    const { x, y } = cornerPosition('top-right', screen.getPrimaryDisplay().workArea)
+    return [x, y]
   }
 }
 

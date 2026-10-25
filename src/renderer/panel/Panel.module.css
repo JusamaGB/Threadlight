@@ -261,6 +261,10 @@
 
 /* ---------- rows ---------- */
 
+.row {
+  position: relative;
+}
+
 .row.expanded,
 .row:hover {
   background: var(--hover);
@@ -424,18 +428,29 @@
   color: var(--amber);
 }
 
-.link {
-  margin-left: auto;
+/* Open ↗ on an expanded row's top line, where the age was; the space keeps the title clear. */
+.rowOpen {
+  position: absolute;
+  top: 6px;
+  right: 10px;
   color: var(--muted);
   font-size: 11px;
 }
 
-.link:hover {
+.rowOpen:hover {
   color: var(--fg);
 }
 
+.openSpace {
+  flex: none;
+  width: 44px;
+}
+
 .cwd {
-  margin-top: 1px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  padding-left: 10px;
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-size: 10px;
   color: var(--faint);
@@ -504,6 +519,14 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
+}
+
+/* The Now line's timer: how long the turn has run, "Reading hookServer.ts  41s". */
+.elapsed {
+  margin-left: 6px;
+  color: var(--faint);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Background tasks: the row's age becomes "Task 42s" or "Tasks ×3", with a list on hover. */

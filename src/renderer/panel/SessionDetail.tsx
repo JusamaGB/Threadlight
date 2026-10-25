@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 
+import { elapsedText } from '../../shared/elapsed'
 import type { PlanItem, RelayStatus, Session } from '../../shared/types'
+import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
 import { relayLine } from '../lib/relay'
@@ -18,7 +20,6 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
   const done = session.plan.filter((item) => item.status === 'completed').length
   const active = session.state !== 'idle'
   const status = en.state[session.state] + (session.tracked ? '' : ` · ${en.state.guessed}`)
-  const appId = session.appId
   const message = relayLine(relay, now)
 
   return (
@@ -27,13 +28,13 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
         <span className={styles.status} data-state={session.state}>
           {status}
         </span>
-        {appId && (
-          <button className={styles.link} onClick={() => window.threadlight.openInClaude(appId)}>
-            {en.detail.open}
-          </button>
+        {/* The workspace folder; Open ↗ sits on the row's top line instead. */}
+        {session.cwd && (
+          <span className={styles.cwd} title={session.cwd}>
+            {session.cwd}
+          </span>
         )}
       </div>
-      {session.cwd && <div className={styles.cwd}>{session.cwd}</div>}
 
       {message && (
         <Section label={en.detail.yourMessage}>
@@ -62,7 +63,10 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
 
       {active && session.lastAction && (
         <Section label={en.detail.now}>
-          <p className={styles.strong}>{session.lastAction}</p>
+          <p className={styles.strong}>
+            {session.lastAction}
+            {session.turnStartedAt !== null && <Elapsed since={session.turnStartedAt} />}
+          </p>
         </Section>
       )}
 
@@ -80,6 +84,12 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
       )}
     </div>
   )
+}
+
+/** How long the current turn has been going, counting every second, as Claude's thread shows. */
+function Elapsed({ since }: { since: number }) {
+  const now = useNow(1000)
+  return <span className={styles.elapsed}>{elapsedText(since, now)}</span>
 }
 
 function Section({ label, children }: { label: string; children: ReactNode }) {

@@ -34,6 +34,8 @@ export interface TranscriptSummary {
   recap: string | null
   lastReply: string | null
   lastAction: string | null
+  /** When the current turn began (the prompt that started it), in milliseconds since the epoch. */
+  turnStartedAt: number | null
   backgroundTasks: BackgroundTask[]
   /** The user pressed Stop and nothing has happened since. */
   interrupted: boolean
@@ -59,6 +61,7 @@ export class TranscriptReader {
   private recap: string | null = null
   private lastReply: string | null = null
   private lastAction: string | null = null
+  private turnStartedAt: number | null = null
   private interrupted = false
   /** Tool calls waiting for their result, in case the result says "running in background". */
   private calls = new Map<string, ToolCall>()
@@ -101,6 +104,7 @@ export class TranscriptReader {
       recap: this.recap,
       lastReply: this.lastReply,
       lastAction: this.lastAction,
+      turnStartedAt: this.turnStartedAt,
       backgroundTasks: [...this.tasks.values()].map((task) => ({ ...task })),
       interrupted: this.interrupted,
     }
@@ -154,7 +158,7 @@ export class TranscriptReader {
       case 'user':
         if (sidechain) break
         this.feedResults(messageContent(record), record['toolUseResult'])
-        if (record['isMeta'] !== true) this.feedUser(messageContent(record))
+        if (record['isMeta'] !== true) this.feedUser(messageContent(record), timeOf(record))
         break
       case 'assistant':
         if (!sidechain) this.feedAssistant(messageContent(record), timeOf(record))
@@ -162,7 +166,7 @@ export class TranscriptReader {
     }
   }
 
-  private feedUser(content: unknown): void {
+  private feedUser(content: unknown, at: number): void {
     const texts =
       typeof content === 'string'
         ? [content]
@@ -181,6 +185,7 @@ export class TranscriptReader {
     const prompt = prompts[0]
     if (prompt === undefined) return
     this.turn += 1
+    this.turnStartedAt = at
     this.recap = null
     this.interrupted = false
     this.firstPrompt ??= prompt

@@ -144,6 +144,16 @@ describe('background tasks', () => {
     expect(done.backgroundTasks.map((t) => t.id)).toEqual(['toolu_b'])
   })
 
+  it('times the turn from its prompt, not from each step, for the Now timer', async () => {
+    const summary = await read([
+      { ...prompt('Do the thing'), timestamp: '2026-01-01T10:00:00Z' },
+      launch('toolu_a', 'Read', 'Reading a file', '2026-01-01T10:00:05Z'),
+      launch('toolu_b', 'Edit', 'Editing a file', '2026-01-01T10:00:20Z'),
+    ])
+    expect(summary.lastAction).toBe('Editing a file')
+    expect(summary.turnStartedAt).toBe(Date.parse('2026-01-01T10:00:00Z'))
+  })
+
   it('drops a task stopped by hand', async () => {
     const summary = await read([
       launch('toolu_a', 'Bash', 'Serve', '2026-01-01T10:00:00.000Z'),

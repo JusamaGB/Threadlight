@@ -35,8 +35,32 @@ telemetry and no servers.
 
 ## Install
 
-Planned: ask Claude to set it up for you, or install manually from a release.
-Instructions will be added with the first release.
+Until the first release, Threadlight runs from a copy of this repository. You need
+[Node 20 or later](https://nodejs.org) as well as the requirements above.
+
+**Ask Claude to do it.** Open Claude Code in the folder and say _"set up Threadlight"_. It
+follows [skills/setup/SKILL.md](skills/setup/SKILL.md): checks your PC, tells you what will
+change, asks for your talk hotkey and a few preferences, then runs the installer and checks
+that it works.
+
+**Or run the installer yourself** from the folder:
+
+```
+node scripts/install.mjs --hotkey Control+Alt+Q --countdown 5 --corner top-right --autostart
+```
+
+It installs the app's packages and builds it, installs the Threadlight plugin for Claude
+Code (the hooks that report session activity), saves your choices, and starts the app.
+Every option is optional. Running it again changes only what is not right yet.
+
+- `node scripts/install.mjs --check` says what is and is not set up, and changes nothing.
+- `node scripts/install.mjs --check-keys Control+Alt+Q` says whether a hotkey is free.
+- `node scripts/install.mjs --uninstall` stops Threadlight, turns off start at sign-in and
+  removes the plugin, but only if the installer added it. Add `--remove-data` to also
+  delete your settings and the speech model (`%APPDATA%\Threadlight`).
+
+The hooks only reach Claude Code sessions started after the plugin is installed. The voice
+speech model (76 MB) downloads the first time you use voice, after you agree to it.
 
 ## What it reads
 

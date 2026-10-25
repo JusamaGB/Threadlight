@@ -75,6 +75,18 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The talk hotkey can be Toggle (press to talk, press again to send) or Push to talk
   (talk while held, send when you let go), chosen next to the hotkey in Settings.
   Push to talk checks only the hotkey's own key, and only while it is held.
+- Setup: `scripts/install.mjs` installs from a checkout (packages, build, the Claude Code
+  plugin, settings, dot corner, start at sign-in), with `--check`, `--check-keys` and
+  `--uninstall`. It records what it adds and uninstalls only that. The setup skill
+  (`skills/setup/SKILL.md`) walks someone through it with Claude: what will change, their
+  choices, sign-in and a final check. The hook server answers `GET /status` (running, and
+  how many hook events arrived) for the check.
+- The expanded thread's Now line shows how long the current turn has been going, from
+  the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
+  moment as the Claude app's own timer (the thread record's turn start), or from the
+  prompt's time for sessions the app does not track.
+- An expanded thread shows Open ↗ on its title line, in place of the age, and its workspace
+  folder on the status line where Open used to be.
 - Background tasks: while a thread has a background command or agent running, its age
   becomes "Task 42s" (counting up) or "Tasks ×3". Hovering lists each task and how long it
   has been running. A task counts until its completion notice reaches the transcript, it is

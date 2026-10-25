@@ -242,6 +242,8 @@ export class Tracker {
       recap: summary?.recap ?? null,
       lastReply: summary?.lastReply ?? null,
       lastAction: summary?.lastAction ?? null,
+      // The Claude app's own turn timer when it tracks the thread; else the prompt's time.
+      turnStartedAt: app?.lastTurnEdgeAt || summary?.turnStartedAt || null,
       // A task whose thread was closed never reports back; past a while, stop counting it.
       backgroundTasks: (summary?.backgroundTasks ?? []).filter(
         (task) => now - task.startedAt < TASK_GIVE_UP_MS,
