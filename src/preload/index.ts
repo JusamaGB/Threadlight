@@ -46,6 +46,7 @@ const api: ThreadlightApi = {
   releaseHold: (sessionId) => ipcRenderer.send(IPC.releaseHold, sessionId),
   copyText: (text) => ipcRenderer.send(IPC.copyText, text),
   getChanges: (sessionId) => ipcRenderer.invoke(IPC.getChanges, sessionId),
+  getStepActivity: (sessionId, step) => ipcRenderer.invoke(IPC.getStepActivity, sessionId, step),
   getFileDiff: (sessionId, path) => ipcRenderer.invoke(IPC.getFileDiff, sessionId, path),
   openChangedFile: (sessionId, path) => ipcRenderer.send(IPC.openChangedFile, sessionId, path),
   getAgent: () => ipcRenderer.invoke(IPC.agentGet),
@@ -70,6 +71,8 @@ const api: ThreadlightApi = {
   onTalkHold: (listener) => subscribe<'down' | 'up'>(IPC.talkHold, listener),
   setTalkState: (state) => ipcRenderer.send(IPC.talkState, state),
   onTalkState: (listener) => subscribe<TalkState>(IPC.talkState, listener),
+  setOpenMicLive: (live) => ipcRenderer.send(IPC.openMicLive, live),
+  onOpenMicLive: (listener) => subscribe<boolean>(IPC.openMicLive, listener),
   openPanelQuietly: () => ipcRenderer.send(IPC.openPanelQuietly),
   onHotkeyProblem: (listener) => subscribe<string | null>(IPC.hotkeyProblem, listener),
 

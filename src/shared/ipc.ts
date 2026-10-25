@@ -5,7 +5,15 @@ import type { AgentApp, AgentConversation, AgentItem, AgentState } from './agent
 import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
 import type { Usage } from './usage'
-import type { Changes, FileDiff, RelayStatus, Session, Snapshot, TreeView } from './types'
+import type {
+  Changes,
+  FileDiff,
+  RelayStatus,
+  Session,
+  Snapshot,
+  StepActivity,
+  TreeView,
+} from './types'
 
 export const IPC = {
   getSnapshot: 'sessions:get-snapshot',
@@ -24,6 +32,7 @@ export const IPC = {
   talkToggle: 'talk:toggle',
   talkHold: 'talk:hold',
   talkState: 'talk:state',
+  openMicLive: 'talk:open-mic-live',
   openPanelQuietly: 'panel:open-quietly',
   hotkeyProblem: 'hotkey:problem',
   sendMessage: 'relay:send',
@@ -48,6 +57,7 @@ export const IPC = {
   releaseHold: 'hold:release',
   copyText: 'clipboard:copy',
   getChanges: 'changes:get',
+  getStepActivity: 'plan:step-activity',
   getFileDiff: 'changes:file',
   openChangedFile: 'changes:open',
   agentGet: 'agent:get',
@@ -144,6 +154,8 @@ export interface ThreadlightApi {
 
   /** A thread's changed files since the last commit (the Changes view); null outside git. */
   getChanges(sessionId: string): Promise<Changes | null>
+  /** What a thread did on one of its plan steps (named by its text); null if unreadable. */
+  getStepActivity(sessionId: string, step: string): Promise<StepActivity | null>
   /** One changed file's diff, fetched when it is opened. */
   getFileDiff(sessionId: string, path: string): Promise<FileDiff>
   /** Opens a changed file in its own app. */
@@ -186,6 +198,9 @@ export interface ThreadlightApi {
   /** Tells the dot what the talk recording is doing. */
   setTalkState(state: TalkState): void
   onTalkState(listener: (state: TalkState) => void): () => void
+  /** The open mic is listening (the panel tells the dot, which wears a ring meanwhile). */
+  setOpenMicLive(live: boolean): void
+  onOpenMicLive(listener: (live: boolean) => void): () => void
   /** Shows the panel without taking focus, keeping what the panel has filled in. */
   openPanelQuietly(): void
   /** The talk hotkey could not be registered (another app has it), or null when it is fine. */

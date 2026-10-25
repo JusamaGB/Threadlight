@@ -282,9 +282,17 @@ try {
     await page.getByRole('switch', { name: 'Codex', exact: true }).getAttribute('aria-checked'),
     'true',
   )
+  // The merged open-mic control coexists with both provider switches; saving it never starts it.
+  await page.getByRole('switch', { name: 'Open mic', exact: true }).click()
   await capture('provider-toggles')
   await page.getByRole('radio', { name: 'All', exact: true }).click()
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Open the mic for voice commands' })
+      .getAttribute('aria-pressed'),
+    'false',
+  )
   await page.getByTitle('Show the full list').click()
   assert.equal(await page.getByRole('button', { name: /^Claude · shared/ }).isVisible(), true)
   assert.equal(await page.getByRole('button', { name: /^Codex · shared/ }).isVisible(), true)
@@ -308,6 +316,11 @@ try {
   )
   await page.goto(url + '?view=dot')
   await page.getByRole('status', { name: /Chat monitoring is paused/ }).waitFor()
+  await page.evaluate(() => window.proof.emit('onOpenMicLive', true))
+  await page
+    .getByRole('status', { name: /Chat monitoring is paused.*Open mic is listening/ })
+    .waitFor()
+  await page.evaluate(() => window.proof.emit('onOpenMicLive', false))
   assert.deepEqual(errors, [])
   console.log(
     'PASS: both toggles, combined rows/workspaces, draft and answer retention, exact send target, live copy/open, paused list/hotkey/dot, persisted off state; no browser errors.',

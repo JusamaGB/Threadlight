@@ -160,6 +160,23 @@ export function SettingsView({
         <Row label={en.settings.speechModel}>
           <ModelStatus stt={stt} />
         </Row>
+        <Row
+          label={en.settings.openMic}
+          disabled={settings.talkMode !== 'toggle'}
+          hint={
+            settings.talkMode !== 'toggle'
+              ? en.settings.openMicNeedsToggle
+              : stt.state === 'ready'
+                ? en.settings.openMicHint
+                : en.settings.openMicNeedsModel
+          }
+        >
+          <Toggle
+            on={settings.openMic}
+            label={en.settings.openMic}
+            onChange={(openMic) => save({ openMic })}
+          />
+        </Row>
       </Group>
 
       <Group label={en.settings.panel}>

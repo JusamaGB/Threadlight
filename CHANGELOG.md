@@ -9,9 +9,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Independent Claude and Codex toggles: enable both for a combined activity list
-  with subtle blue Codex and orange Claude right-edge tints, or disable both to pause monitoring. Existing selections
-  migrate unchanged. Workspace groups and saved choices stay separate; drafts remain
+  with subtle blue Codex and orange Claude right-edge tints, or disable both to pause
+  monitoring. Existing selections migrate unchanged. Workspace groups and saved choices stay separate; drafts remain
   chat-scoped, disabled applications release held cards, and sends keep their exact target.
+  The panel header is thinner, with the excess gap below expanded thread details removed.
 
 - Codex provider: separate hook plugin and read-only session/database tracking,
   background `codex exec resume` for unloaded chats, writer-lock detection and
@@ -207,6 +208,28 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it here offers are held before Claude shows them, and the choice goes back to the thread,
   which starts the session or does the work itself. A next-step box's app buttons (Commit,
   Open PR…) ask the thread to do that itself.
+- A thread's plan steps can be clicked to see what was done on each: how long it took, the
+  files it edited (with lines added and removed), the commands it ran (✗ for a failed one),
+  the other tools it used and what it last said. It is read from the thread's transcript, so
+  it works on old threads too; a step in progress keeps up as it goes. Files changed by a
+  shell command show only as that command.
+- Plan steps can say which files they mean to change and why (plugin 0.0.4). While
+  Threadlight runs, starting threads are asked to add "files" and "why" to each step of
+  their task list. A step then shows why it is there, and its planned files next to what it
+  changed: ✓ planned and changed, ○ planned but not changed, + changed without a plan. A
+  step not started yet shows what it plans to touch.
+- Open mic, a variant of the Toggle talk mode (Settings → Open mic). The talk hotkey or
+  the mic button opens a live mic that stays open until pressed again; the dot wears a
+  blue ring and a mic button in the panel's header glows (and closes it). Speech is found
+  on the PC by loudness against the room (BLAM8's rules: the room level learned only in
+  quiet, speech at 4× the room and 0.06 peak, 600 ms lead-in, 500 ms to end), transcribed
+  with the local Whisper, and joined into one sentence across short pauses. Its first
+  command: "open", then a one-second pause, opens the full list pinned without taking
+  focus; "open" followed by more words is not a command.
+- The "Which thread" box after a voice message says to click a thread, has a × to
+  discard it, and scrolls a long transcript instead of filling the panel.
+- Long recordings are transcribed in 30-second chunks, and a phrase Whisper gets stuck
+  repeating is cut back to one.
 
 ### Changed
 

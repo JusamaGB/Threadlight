@@ -351,32 +351,10 @@ export class TranscriptReader {
     }
   }
 
-  /** Replays the app's plan updates: a full list, "advance", or explicit done/start indexes. */
+  /** Replays the app's plan updates (replayPlan); a new list belongs to this turn. */
   private applyPlan(input: JsonObject): void {
-    const items = input['items']
-    if (Array.isArray(items)) {
-      this.plan = items.filter(isObject).map((item) => ({
-        content: oneLine(str(item['content'])),
-        status: toPlanStatus(item['status']),
-      }))
-      this.planTurn = this.turn
-    }
-    if (input['advance'] === true) {
-      const current = this.plan.findIndex((item) => item.status === 'in_progress')
-      if (current !== -1) this.plan[current]!.status = 'completed'
-      const next = this.plan.findIndex((item, i) => i > current && item.status === 'pending')
-      if (next !== -1) this.plan[next]!.status = 'in_progress'
-    }
-    const done = input['done']
-    if (Array.isArray(done)) {
-      for (const n of done) {
-        const item = typeof n === 'number' ? this.plan[n - 1] : undefined
-        if (item) item.status = 'completed'
-      }
-    }
-    const start = input['start']
-    const started = typeof start === 'number' ? this.plan[start - 1] : undefined
-    if (started) started.status = 'in_progress'
+    if (Array.isArray(input['items'])) this.planTurn = this.turn
+    this.plan = replayPlan(this.plan, input)
   }
 
   private currentPlan(): PlanItem[] {
@@ -389,6 +367,47 @@ export class TranscriptReader {
     const item = this.plan[index]
     return item ? { index: index + 1, total: this.plan.length, content: item.content } : null
   }
+}
+
+/**
+ * One of the app's plan updates applied to a plan: a full list, "advance", or explicit done/start
+ * indexes. Changes `plan` in place and returns it, or the new list.
+ */
+export function replayPlan(plan: PlanItem[], input: JsonObject): PlanItem[] {
+  const items = input['items']
+  if (Array.isArray(items)) {
+    plan = items.filter(isObject).map((item) => {
+      const step: PlanItem = {
+        content: oneLine(str(item['content'])),
+        status: toPlanStatus(item['status']),
+      }
+      // What the thread says the step will touch and why, when asked to (PLAN_CONTEXT).
+      const files = Array.isArray(item['files'])
+        ? item['files'].filter((f): f is string => typeof f === 'string' && f.trim() !== '')
+        : []
+      if (files.length) step.files = files.slice(0, 30).map((f) => f.trim().slice(0, 300))
+      const why = oneLine(str(item['why'])).slice(0, 300)
+      if (why) step.why = why
+      return step
+    })
+  }
+  if (input['advance'] === true) {
+    const current = plan.findIndex((item) => item.status === 'in_progress')
+    if (current !== -1) plan[current]!.status = 'completed'
+    const next = plan.findIndex((item, i) => i > current && item.status === 'pending')
+    if (next !== -1) plan[next]!.status = 'in_progress'
+  }
+  const done = input['done']
+  if (Array.isArray(done)) {
+    for (const n of done) {
+      const item = typeof n === 'number' ? plan[n - 1] : undefined
+      if (item) item.status = 'completed'
+    }
+  }
+  const start = input['start']
+  const started = typeof start === 'number' ? plan[start - 1] : undefined
+  if (started) started.status = 'in_progress'
+  return plan
 }
 
 function messageContent(record: JsonObject): unknown {

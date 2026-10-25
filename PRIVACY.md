@@ -17,7 +17,11 @@ Threadlight runs entirely on your PC.
   That is the same as typing the message into Claude yourself, and is covered by
   your agreement with Anthropic.
 - **Voice** is recorded only while you have the microphone on, is transcribed locally
-  and is never saved to disk.
+  and is never saved to disk. The open mic (Settings → Open mic, with the Toggle talk
+  mode) listens only after you press the talk hotkey or the mic button, until you press
+  it again; the dot wears a blue ring and the panel's mic button glows while it listens.
+  It transcribes only bursts that stand out from the room, keeps nothing beyond the
+  sentence being heard, and acts only on exact commands.
 - **Network:** the only download is the speech model, once, at setup, after you agree.
 
 ## Where its own data lives

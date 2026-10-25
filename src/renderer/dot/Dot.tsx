@@ -9,14 +9,23 @@ interface StatusDotProps {
   working: boolean
   /** While the talk hotkey records or transcribes, the dot shows that instead (blue). */
   talk?: TalkState
+  /** The open mic is on: a thin blue ring, so a listening microphone is never a secret. */
+  openMic?: boolean
 }
 
 /** The dot itself. The open panel hides it, so it only shows while the panel is closed. */
-export function StatusDot({ working, talk = 'idle', providers = ['claude'] }: StatusDotProps) {
+export function StatusDot({
+  working,
+  talk = 'idle',
+  providers = ['claude'],
+  openMic = false,
+}: StatusDotProps) {
   const paused = providers.length === 0
   const provider = providers[0]
-  const look =
-    talk !== 'idle' ? styles[talk] : paused ? styles.paused : working ? styles.working : ''
+  const look = [
+    talk !== 'idle' ? styles[talk] : paused ? styles.paused : working ? styles.working : '',
+    openMic && talk === 'idle' ? styles.openMic : '',
+  ].join(' ')
   const label =
     talk === 'listening'
       ? en.dot.listening
@@ -37,7 +46,11 @@ export function StatusDot({ working, talk = 'idle', providers = ['claude'] }: St
                 : en.dot.idle
   return (
     <div className={styles.frame}>
-      <div className={`${styles.dot} ${look}`} role="status" aria-label={label} />
+      <div
+        className={`${styles.dot} ${look}`}
+        role="status"
+        aria-label={openMic ? `${label}. ${en.dot.openMic}` : label}
+      />
     </div>
   )
 }
@@ -48,18 +61,19 @@ interface FloatingDotProps {
   talk: TalkState
   /** Settings → "Open the panel on": hover opens straight away, click only on a click. */
   openOn: 'hover' | 'click'
+  openMic: boolean
 }
 
 /**
  * The floating dot window: opens the panel on hover (or only on click, if chosen in Settings).
  * It is moved by dragging the panel's header, since the panel covers it the moment it opens.
  */
-export function FloatingDot({ working, talk, openOn, providers }: FloatingDotProps) {
+export function FloatingDot({ working, talk, openOn, providers, openMic }: FloatingDotProps) {
   const open = () => window.threadlight.dotClick()
   const hover = openOn === 'hover' ? { onPointerEnter: open, onMouseMove: open } : {}
   return (
     <div className={styles.floating} {...hover} onClick={open}>
-      <StatusDot working={working} talk={talk} providers={providers} />
+      <StatusDot working={working} talk={talk} providers={providers} openMic={openMic} />
     </div>
   )
 }

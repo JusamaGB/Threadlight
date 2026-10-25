@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { elapsedText } from '../../shared/elapsed'
 import type { PlanItem, RelayStatus, Session } from '../../shared/types'
@@ -11,6 +11,7 @@ import { clip } from '../lib/format'
 const oneLineText = (text: string) => text.split(/\s+/).filter(Boolean).join(' ')
 import { relayLine } from '../lib/relay'
 import styles from './Panel.module.css'
+import { StepView } from './StepView'
 
 const MARKS: Record<PlanItem['status'], string> = { completed: '✓', in_progress: '●', pending: '○' }
 
@@ -25,6 +26,8 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
   const active = session.state !== 'idle'
   const status = en.state[session.state] + (session.tracked ? '' : ` · ${en.state.guessed}`)
   const message = relayLine(relay, now)
+  // The plan step opened to show what was done on it, by its text.
+  const [openStep, setOpenStep] = useState<string | null>(null)
 
   return (
     <div className={styles.detail}>
@@ -59,15 +62,29 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
           <ul className={styles.plan}>
             {session.plan.map((item, index) => (
               <li key={index} data-status={item.status}>
-                {item.status === 'in_progress' ? (
-                  // The step being worked on spins, as in Claude's own task list.
-                  <span className={styles.mark} aria-label={en.detail.inProgress}>
-                    <span className={styles.spinner} />
-                  </span>
-                ) : (
-                  <span className={styles.mark}>{MARKS[item.status]}</span>
+                <button
+                  className={styles.planStep}
+                  aria-expanded={openStep === item.content}
+                  onClick={() => setOpenStep(openStep === item.content ? null : item.content)}
+                >
+                  {item.status === 'in_progress' ? (
+                    // The step being worked on spins, as in Claude's own task list.
+                    <span className={styles.mark} aria-label={en.detail.inProgress}>
+                      <span className={styles.spinner} />
+                    </span>
+                  ) : (
+                    <span className={styles.mark}>{MARKS[item.status]}</span>
+                  )}
+                  {item.content}
+                </button>
+                {openStep === item.content && (
+                  <StepView
+                    sessionId={session.id}
+                    item={item}
+                    cwd={session.cwd}
+                    version={session.lastActiveAt}
+                  />
                 )}
-                {item.content}
               </li>
             ))}
           </ul>

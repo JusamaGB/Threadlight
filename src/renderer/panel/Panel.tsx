@@ -11,6 +11,7 @@ import {
 import { matchThread, parseVoiceCommand } from '../../shared/match'
 import { DEFAULT_ENABLED_PROVIDERS, sessionProvider } from '../../shared/providers'
 import type { Session } from '../../shared/types'
+import { parseOpenMicCommand } from '../../shared/voiceCommands'
 import { Composer } from '../composer/Composer'
 import { useDotDrag } from '../hooks/useDotDrag'
 import { useAgent } from '../hooks/useAgent'
@@ -21,6 +22,7 @@ import { useSnapshot } from '../hooks/useSnapshot'
 import { useSettings } from '../hooks/useSettings'
 import { useStt } from '../hooks/useStt'
 import { useUsage } from '../hooks/useUsage'
+import { useOpenMic } from '../hooks/useOpenMic'
 import { useVoice } from '../hooks/useVoice'
 import { en } from '../i18n/en'
 import { windowLabel } from '../lib/format'
@@ -128,6 +130,22 @@ export function Panel() {
   const card = useRef<HTMLDivElement>(null)
   const fade = useRef<number | undefined>(undefined)
   const drag = useDotDrag()
+
+  /**
+   * The open mic is live: opened by the talk toggle (hotkey or mic button) when Settings has
+   * Open mic on with the Toggle talk mode, closed by the next press. Never opened by the
+   * setting alone.
+   */
+  const [micLive, setMicLive] = useState(false)
+  const openMicMode = settings?.openMic === true && settings.talkMode === 'toggle'
+  const openMicModeRef = useRef(openMicMode)
+  useEffect(() => {
+    openMicModeRef.current = openMicMode
+    // Switching the setting off (or to Hold) closes a live mic, and it stays closed after.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!openMicMode) setMicLive(false)
+  }, [openMicMode])
+  const toggleLive = useCallback(() => setMicLive((live) => !live), [])
 
   // Who started the recording decides what happens with the words.
   const startedBy = useRef<'hotkey' | 'mic' | null>(null)
@@ -288,6 +306,10 @@ export function Panel() {
 
   const micToggle = useCallback(async () => {
     setVoiceError(null)
+    if (voice.state === 'idle' && openMicModeRef.current) {
+      toggleLive()
+      return
+    }
     if (voice.state === 'idle') {
       try {
         startedBy.current = 'mic'
@@ -307,7 +329,7 @@ export function Panel() {
         startedBy.current = null
       }
     }
-  }, [voice])
+  }, [voice, toggleLive])
 
   // The talk hotkey: start, stop-and-send, or cancel a countdown in progress.
   const onTalk = useCallback(async () => {
@@ -333,6 +355,11 @@ export function Panel() {
       window.threadlight.openPanelQuietly()
       return
     }
+    // With the open mic on, the toggle opens and closes a live mic instead of one recording.
+    if (openMicModeRef.current) {
+      toggleLive()
+      return
+    }
     try {
       startedBy.current = 'hotkey'
       await voice.start()
@@ -341,7 +368,7 @@ export function Panel() {
       setNotice(en.voice.micBlocked)
       window.threadlight.openPanelQuietly()
     }
-  }, [voice, stt.state, finishTalk, micToggle])
+  }, [voice, stt.state, finishTalk, micToggle, toggleLive])
 
   useEffect(() => window.threadlight.onTalkToggle(() => void onTalk()), [onTalk])
 
@@ -408,6 +435,19 @@ export function Panel() {
     setHold(next)
     window.threadlight.setStayOpen(next !== 'normal')
   }
+  // The open mic: "open", then a pause, opens the full list pinned, without taking focus from a
+  // game, ready for whatever comes next. Anything else is a sentence for later commands.
+  const openMic = useOpenMic({
+    enabled: micLive && stt.state === 'ready',
+    paused: voice.state !== 'idle',
+    onSentence: (text) => {
+      if (parseOpenMicCommand(text)?.kind !== 'open') return
+      window.threadlight.openPanelQuietly()
+      changeHold('pinned')
+    },
+  })
+  useEffect(() => window.threadlight.setOpenMicLive(openMic !== 'off'), [openMic])
+
   // Clicks on the header's bare space: 2 pins the active list, 3 pins the full list. A triple-click arrives
   // as a double-click first, so the double waits a moment in case a third click follows.
   const onHeaderClick = (event: MouseEvent) => {
@@ -638,6 +678,34 @@ export function Panel() {
                   {listTag.count} {listTag.word}
                 </button>
               )}
+              {/* With Open mic on: the live mic's switch, blue while it listens. */}
+              {openMicMode && (
+                <button
+                  className={styles.gear}
+                  data-open-mic={openMic}
+                  aria-pressed={openMic !== 'off'}
+                  aria-label={
+                    openMic === 'blocked'
+                      ? en.openMic.blocked
+                      : openMic !== 'off'
+                        ? en.openMic.on
+                        : en.openMic.off
+                  }
+                  title={
+                    openMic === 'blocked'
+                      ? en.openMic.blocked
+                      : openMic !== 'off'
+                        ? en.openMic.on
+                        : en.openMic.off
+                  }
+                  onClick={toggleLive}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                    <rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5" />
+                    <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" fill="none" />
+                  </svg>
+                </button>
+              )}
               {enabled.includes('claude') && (
                 <button
                   className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
@@ -706,8 +774,21 @@ export function Panel() {
           {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
           {picking && (
             <div className={styles.picking}>
-              <span className={styles.pickPrompt}>
-                {picking.heardThread ? en.voice.noMatch(picking.heardThread) : en.voice.pickThread}
+              <span className={styles.pickHead}>
+                <span className={styles.pickPrompt}>
+                  {picking.heardThread
+                    ? en.voice.noMatch(picking.heardThread)
+                    : en.voice.pickThread}
+                </span>
+                {/* Not for any thread after all: throw it away. */}
+                <button
+                  className={styles.pickClose}
+                  aria-label={en.voice.discard}
+                  title={en.voice.discard}
+                  onClick={() => setPicking(null)}
+                >
+                  ×
+                </button>
               </span>
               <span className={styles.pickText}>“{picking.text}”</span>
             </div>

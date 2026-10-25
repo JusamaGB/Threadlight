@@ -186,7 +186,36 @@
   color: var(--accent);
 }
 
+.pickHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.pickHead .pickPrompt {
+  flex: 1;
+}
+
+.pickClose {
+  flex: none;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pickClose:hover {
+  color: var(--fg);
+}
+
+/* A long transcript scrolls rather than pushing the threads out of sight. */
 .pickText {
+  max-height: 72px;
+  overflow-y: auto;
+  scrollbar-width: thin;
   color: var(--fg);
   overflow-wrap: anywhere;
 }
@@ -674,9 +703,100 @@
 }
 
 .plan li {
+  color: var(--muted);
+}
+
+/* A plan step: click it to see what was done on it (StepView). */
+.planStep {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.planStep:hover {
+  color: var(--fg);
+}
+
+/* What was done on a step, indented under it. */
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 3px 0 6px 16px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.stepNote {
+  margin: 3px 0 6px 16px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.step .stepNote {
+  margin: 0;
+}
+
+.stepList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+}
+
+.stepList li {
   display: flex;
   gap: 6px;
   color: var(--muted);
+}
+
+/* Planned and not changed: faint. Changed without a plan: amber mark, to stand out. */
+.stepList li[data-untouched] {
+  color: var(--faint);
+}
+
+.stepList li[data-unplanned] .stepMark {
+  color: var(--amber);
+}
+
+/* Why the step is there, as the thread put it. */
+.stepWhy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.stepList li[data-failed] {
+  color: var(--amber);
+}
+
+.stepName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+
+.stepMark {
+  flex: none;
+  width: 10px;
+  text-align: center;
+}
+
+.stepSaid {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: pre-wrap;
 }
 
 .plan li[data-status='completed'] {
@@ -1422,4 +1542,37 @@
   overflow-y: auto;
   scrollbar-width: thin;
   white-space: pre-wrap;
+}
+
+/* The open mic's switch in the header: blue and breathing while it listens, amber if blocked. */
+.gear[data-open-mic='listening'],
+.gear[data-open-mic='hearing'] {
+  color: var(--accent);
+  animation: openMicBreathe 2s ease-in-out infinite;
+}
+
+.gear[data-open-mic='hearing'] {
+  animation-duration: 0.8s;
+}
+
+.gear[data-open-mic='blocked'] {
+  color: var(--amber);
+}
+
+.gear[data-open-mic] svg path {
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+@keyframes openMicBreathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gear[data-open-mic] {
+    animation: none;
+  }
 }

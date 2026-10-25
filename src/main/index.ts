@@ -29,6 +29,7 @@ import { CodexRelayService } from './codex/relay'
 import { codexDeepLink } from './codex/identity'
 import { codexProcesses } from './codex/live'
 import { SessionService } from './sessions/service'
+import { PLAN_CONTEXT, readStepActivity } from './sessions/stepActivity'
 import { listChanges, readFileDiff } from './sessions/gitChanges'
 import { GitStates } from './sessions/gitDiff'
 import { Tracker } from './sessions/tracker'
@@ -162,6 +163,7 @@ async function start(): Promise<void> {
     port: DEFAULT_HOOK_PORT,
     // For the installer's check: is it running, and have the plugin's hooks reached it?
     status: () => ({ app: 'threadlight', version: app.getVersion(), hookEvents }),
+    context: () => PLAN_CONTEXT,
     onEvent: (payload) => {
       hookEvents += 1
       if (!enabled('claude')) return
@@ -293,6 +295,12 @@ async function start(): Promise<void> {
     if (!root) return null
     const session = everySession(sessions.snapshot).find((s) => s.id === sessionId)
     return { branch: session?.git?.branch ?? null, files: await listChanges(root) }
+  })
+  // A plan step's activity, read from the thread's own transcript, which Threadlight's scan found.
+  ipcMain.handle(IPC.getStepActivity, (_event, sessionId: unknown, step: unknown) => {
+    if (typeof sessionId !== 'string' || typeof step !== 'string') return null
+    const path = tracker.transcriptPath(sessionId)
+    return path ? readStepActivity(path, step) : null
   })
   ipcMain.handle(IPC.getFileDiff, async (_event, sessionId: unknown, path: unknown) => {
     const found = await changedPath(sessionId, path)
@@ -448,6 +456,9 @@ async function start(): Promise<void> {
     if (state === 'idle' || state === 'listening' || state === 'transcribing') {
       windows.dot.webContents.send(IPC.talkState, state)
     }
+  })
+  ipcMain.on(IPC.openMicLive, (_event, live: unknown) => {
+    windows.dot.webContents.send(IPC.openMicLive, live === true)
   })
   ipcMain.on(IPC.openPanelQuietly, () => windows.openPanel({ focus: false }))
 
