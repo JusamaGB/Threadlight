@@ -324,16 +324,6 @@
   position: relative;
 }
 
-.providerBadge {
-  flex: none;
-  font-size: 9px;
-  line-height: 14px;
-  padding: 0 4px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  color: var(--muted);
-}
-
 .row.expanded,
 .row:hover {
   background: var(--hover);
@@ -720,8 +710,12 @@
   cursor: pointer;
 }
 
-.planStep:hover {
+button.planStep:hover {
   color: var(--fg);
+}
+
+span.planStep {
+  cursor: default;
 }
 
 /* What was done on a step, indented under it. */
@@ -1422,15 +1416,37 @@
 }
 
 /* The plan's usage along the card's foot (UsageBar.tsx): a 2px line in a taller hover strip. */
-.usage {
+.usageBars {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+}
+
+.usage {
   height: 6px;
   display: flex;
   align-items: flex-end;
-  z-index: 2;
+}
+
+.usageBars[data-parallel] .usage {
+  height: 4px;
+}
+
+.usageBars[data-parallel] {
+  --usage-fill: var(--provider-claude);
+}
+
+.codexUsage {
+  --usage-fill: var(--provider-codex);
+}
+
+.usageTrack[data-unavailable] {
+  background: repeating-linear-gradient(to right, var(--faint) 0 3px, transparent 3px 6px);
+  opacity: 0.5;
 }
 
 .usageTrack {
@@ -1443,15 +1459,15 @@
 .usageFill {
   display: block;
   height: 100%;
-  background: var(--muted);
+  background: var(--usage-fill, var(--muted));
   transition: width 300ms ease;
 }
 
-.usageFill[data-level='amber'] {
+.usageBars .usageFill[data-level='amber'] {
   background: var(--amber);
 }
 
-.usageFill[data-level='red'] {
+.usageBars .usageFill[data-level='red'] {
   background: var(--red);
 }
 
@@ -1542,6 +1558,28 @@
   overflow-y: auto;
   scrollbar-width: thin;
   white-space: pre-wrap;
+}
+
+.proposedPlan {
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  color: var(--fg);
+  line-height: 1.45;
+}
+
+.proposedPlan h4 {
+  margin: 6px 0 2px;
+  font-size: 11px;
+}
+
+.proposedPlan p {
+  margin: 3px 0;
+}
+
+.proposedPlan .planBullet {
+  padding-left: 10px;
+  text-indent: -10px;
 }
 
 /* The open mic's switch in the header: blue and breathing while it listens, amber if blocked. */

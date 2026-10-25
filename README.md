@@ -34,7 +34,7 @@ telemetry and no servers.
 **Settings → Applications** has independent **Claude** and **Codex** toggles. Enable
 both for one list, ordered by working/waiting state and then recent activity. Each
 row has a subtle right-edge tint (Codex blue, Claude orange); hovering identifies
-the application, and the composer keeps its text label. The time window and session
+the application, and the composer's header fades down in its destination's colour. The time window and session
 limit apply to the combined recent list; workspace groups stay separate and are
 labelled with their application, even when they share a folder.
 
@@ -91,6 +91,17 @@ to see both together; drafts remain with their chat. Read
 [Codex setup and behavior](codex-plugin/README.md) for plugin installation and trust,
 live-chat copy-and-open, held questions/approvals, and compatibility limits.
 Codex users need the signed-in Codex desktop app and native CLI instead of Claude.
+
+Codex rows show the current numbered step when Codex has emitted a tracked plan.
+Expanded chats also show proposed plans from plan mode, formatted separately from
+completed/in-progress steps. Plans stay visible above waiting question cards.
+Ordinary replies are not converted into invented checklists.
+
+The separate blue usage line shows Codex's **weekly** account quota, read from local
+session reports. Hover for the percentage, reset time and when Codex last reported it.
+It updates as Codex records usage; Threadlight makes no probe requests. Missing or
+expired reports show an unavailable line rather than 0%. Claude keeps its own bar
+and window selection; with both applications enabled, the two lines are stacked.
 
 ### Claude
 

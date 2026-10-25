@@ -13,6 +13,7 @@ import { SessionDetail } from './SessionDetail'
 import { TaskTimer } from './TaskTimer'
 import { Tip } from './Tip'
 import { providerName, sessionProvider } from '../../shared/providers'
+import { CodexPlan } from './CodexPlan'
 
 interface SessionRowProps {
   showProvider?: boolean
@@ -119,7 +120,15 @@ export function SessionRow(props: SessionRowProps) {
           {en.detail.open}
         </button>
       )}
-      {/* Waiting on the user, the card is all an expanded thread shows. */}
+      {/* Codex's plan remains visible while its question or approval card waits for an answer. */}
+      {expanded &&
+        attention &&
+        sessionProvider(session.id) === 'codex' &&
+        (session.plan.length > 0 || session.planText) && (
+          <div className={styles.detail}>
+            <CodexPlan session={session} />
+          </div>
+        )}
       {expanded &&
         (attention ? (
           <div className={styles.cardSlot}>

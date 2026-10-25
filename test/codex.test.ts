@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -206,10 +206,20 @@ describe('read-only Codex discovery', () => {
     await writeFile(
       rollout,
       JSON.stringify({
+        timestamp: new Date().toISOString(),
         type: 'event_msg',
         payload: {
           type: 'token_count',
           info: { model_context_window: 1000, last_token_usage: { input_tokens: 250 } },
+          rate_limits: {
+            limit_id: 'codex',
+            primary: {
+              used_percent: 27,
+              window_minutes: 10080,
+              resets_at: Math.floor(Date.now() / 1000) + 86400,
+            },
+            secondary: null,
+          },
         },
       }) + '\n',
     )
@@ -223,7 +233,7 @@ describe('read-only Codex discovery', () => {
         id,
         'C:/synthetic/project',
         'Synthetic Codex',
-        Math.floor(Date.now() / 1000),
+        Math.floor(Date.now() / 1000) - 7200,
         rollout,
         'gpt-test',
         'on-request',
@@ -233,7 +243,19 @@ describe('read-only Codex discovery', () => {
     history.exec(
       'CREATE TABLE thread_items(thread_id TEXT, rollout_ordinal INTEGER, item_json TEXT); CREATE TABLE thread_turns(thread_id TEXT,rollout_ordinal INTEGER,status TEXT,started_at INTEGER,completed_at INTEGER)',
     )
-    history.prepare('INSERT INTO thread_items VALUES (?,1,?)').run(
+    history
+      .prepare('INSERT INTO thread_items VALUES (?,0,?)')
+      .run(id, JSON.stringify({ type: 'plan', text: '# Synthetic plan\n- Build the display' }))
+    for (let n = 1; n <= 201; n++)
+      history.prepare('INSERT INTO thread_items VALUES (?,?,?)').run(
+        id,
+        n,
+        JSON.stringify({
+          type: 'reasoning',
+          text: 'Synthetic reasoning must not become a plan.',
+        }),
+      )
+    history.prepare('INSERT INTO thread_items VALUES (?,202,?)').run(
       id,
       JSON.stringify({
         type: 'userMessage',
@@ -241,7 +263,7 @@ describe('read-only Codex discovery', () => {
       }),
     )
     history
-      .prepare('INSERT INTO thread_items VALUES (?,2,?)')
+      .prepare('INSERT INTO thread_items VALUES (?,203,?)')
       .run(id, JSON.stringify({ type: 'agentMessage', text: 'Synthetic reply.' }))
     history.prepare('INSERT INTO thread_turns VALUES (?,1,?,1,2)').run(id, 'completed')
     history.close()
@@ -259,12 +281,45 @@ describe('read-only Codex discovery', () => {
       lastReply: 'Synthetic reply.',
       state: 'idle',
       contextUsed: 0.25,
+      planText: '# Synthetic plan\n- Build the display',
     })
     expect(snapshot.workspaces[0]?.threads[0]?.session.id).toBe(key)
+    expect(snapshot.codexUsage).toMatchObject({ fiveHour: null, week: { used: 0.27 } })
+    tracker.configure(1, 10)
+    const noRecentChats = await tracker.snapshot()
+    expect(noRecentChats.sessions).toEqual([])
+    expect(noRecentChats.codexUsage).toEqual(snapshot.codexUsage)
     const after = await Promise.all(
       [paths.state, paths.history, rollout].map((path) => readFile(path)),
     )
     expect(after).toEqual(before)
+    tracker.configure(24, 10)
+    await appendFile(
+      rollout,
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'functions.update_plan',
+          arguments: JSON.stringify({ plan: [{ step: 'Retained step', status: 'in_progress' }] }),
+        },
+      }) + '\n',
+    )
+    expect((await tracker.snapshot()).sessions[0]?.plan[0]?.content).toBe('Retained step')
+    await appendFile(
+      rollout,
+      (
+        JSON.stringify({
+          type: 'response_item',
+          payload: { type: 'function_call_output', output: 'Synthetic output '.repeat(100) },
+        }) + '\n'
+      ).repeat(800),
+    )
+    const grown = await tracker.snapshot()
+    expect(grown.sessions[0]?.plan[0]?.content).toBe('Retained step')
+    expect(grown.codexUsage).toEqual(snapshot.codexUsage)
+    await writeFile(rollout, '{}\n')
+    expect((await tracker.snapshot()).sessions[0]?.plan).toEqual([])
     expect(await writerHeld(paths.locks, id)).toBe(false)
     expect(await writerHeld(paths.locks, '../bad')).toBe(true)
     const outside = join(home, 'outside.jsonl')

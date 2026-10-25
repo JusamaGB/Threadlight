@@ -46,6 +46,7 @@ export function combinedSnapshot(
   const currentWorkspace = current && snapshots[current].currentWorkspace
   return {
     providers,
+    codexUsage: providers.includes('codex') ? snapshots.codex.codexUsage : undefined,
     sessions: sessions.slice(0, max),
     lookupSessions: sessions,
     workspaces: providers.flatMap((provider) =>

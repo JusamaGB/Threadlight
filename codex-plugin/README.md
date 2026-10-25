@@ -58,8 +58,20 @@ steps are separate and are not run automatically by the provider toggle.
   **Copy and open Codex**. An expired Stop card uses the same fallback.
 - Open uses `codex://threads/<id>`. Workspace following uses last recorded user
   activity, not a claim about the exact foreground tab. Remote/cloud chats are
-  outside this local-file adapter. Claude's hosted Agent and usage meter remain
-  Claude-only. Codex PR badges and background task inventory are not inferred.
+  outside this local-file adapter. Claude's hosted Agent remains Claude-only.
+  Codex PR badges and background task inventory are not inferred.
+- Codex plans include explicit step updates and proposed plan text. Current steps
+  appear in the row and plans stay visible above waiting cards. Step activity drill-down
+  remains Claude-only; Codex steps do not pretend to have that data. Proposed plans
+  are also fetched outside the 200-item history page. Legacy rollout-only plans are
+  limited to the bounded recent tail, so older plans may be unavailable after restart.
+- A separate weekly usage bar reads Codex's local `token_count.rate_limits` reports,
+  identifying the week by its reported duration rather than assuming it is the
+  secondary window. Other usage buckets are ignored. Hover shows the observation
+  time and reset; expired or absent data is unavailable, not zero. This makes no
+  model calls and does not launch another Codex engine. The quota updates only when
+  Codex writes a report. The native formats are described in the
+  [Codex protocol documentation](https://learn.chatgpt.com/docs/app-server).
 
 Hook ports accept local tools, reject browser-origin requests, and are not exposed
 on the network. If Threadlight is absent, hook commands exit cleanly after a short

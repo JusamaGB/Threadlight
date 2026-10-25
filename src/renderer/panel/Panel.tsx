@@ -33,7 +33,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
 import { PanelRoomContext } from './room'
 import { SessionRow } from './SessionRow'
-import { UsageBar } from './UsageBar'
+import { CodexUsageBar, UsageBar } from './UsageBar'
 import { WorkspacePicker } from './WorkspacePicker'
 import { sameFolder, WorkspaceTree } from './WorkspaceTree'
 
@@ -826,7 +826,6 @@ export function Panel() {
             <Composer
               key={`${target.id}:${compose.initialText ?? ''}`}
               session={target}
-              showProvider={provider === 'both'}
               relay={relays.get(target.id)}
               stt={stt}
               voiceState={voice.state}
@@ -842,14 +841,17 @@ export function Panel() {
           )}
         </div>
 
-        {/* Weekly while the full list itself shows; the 5-hour limit everywhere else. */}
-        {usage && enabled.includes('claude') && (
-          <UsageBar
-            usage={usage}
-            weekly={view === 'all' && !listHidden}
-            source={provider === 'both' ? 'Claude' : undefined}
-          />
-        )}
+        <div className={styles.usageBars} data-parallel={provider === 'both' || undefined}>
+          {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
+          {usage && enabled.includes('claude') && (
+            <UsageBar
+              usage={usage}
+              weekly={view === 'all' && !listHidden}
+              source={provider === 'both' ? 'Claude' : undefined}
+            />
+          )}
+          {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
+        </div>
 
         {menu && (
           <ContextMenu

@@ -2,15 +2,15 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import type { SttStatus } from '../../shared/stt'
 import type { RelayStatus, Session } from '../../shared/types'
+import { providerName, sessionProvider } from '../../shared/providers'
 import type { VoiceState } from '../hooks/useVoice'
 import { en } from '../i18n/en'
 import { ticks } from '../lib/relay'
 import { useDraft } from '../lib/drafts'
-import { ProviderBadge } from '../panel/ProviderBadge'
 import styles from './Composer.module.css'
+import { VoiceWave } from './VoiceWave'
 
 interface ComposerProps {
-  showProvider?: boolean
   session: Session
   relay: RelayStatus | undefined
   stt: SttStatus
@@ -50,16 +50,18 @@ export function Composer(props: ComposerProps) {
 
   // Opening the composer puts the cursor in the box (the panel remounts it per thread).
   // A voice send opens the panel without focus, so this only takes effect once clicked.
-  useEffect(() => box.current?.focus(), [])
+  useEffect(() => {
+    if (!box.current?.hidden) box.current?.focus()
+  }, [])
 
   // Grow with the text, up to a few lines, then scroll.
   useEffect(() => {
     const element = box.current
-    if (!element) return
+    if (!element || element.hidden) return
     element.style.height = 'auto'
     const line = parseFloat(getComputedStyle(element).lineHeight) || 16
     element.style.height = `${Math.min(element.scrollHeight, line * MAX_ROWS)}px`
-  }, [text])
+  }, [text, voiceState])
 
   const send = async (message = text.trim()) => {
     if (!message || busy) return
@@ -138,10 +140,14 @@ export function Composer(props: ComposerProps) {
   const remaining = countdownEnds === null ? 0 : Math.max(0, (countdownEnds - now) / 1000)
 
   return (
-    <div className={styles.composer}>
+    <div
+      className={styles.composer}
+      data-provider={sessionProvider(session.id)}
+      role="group"
+      aria-label={`${providerName(sessionProvider(session.id))} message composer`}
+    >
       <div className={styles.head}>
         <span className={styles.to}>{en.composer.to}</span>
-        {props.showProvider && <ProviderBadge id={session.id} />}
         <span className={styles.target}>{session.title}</span>
         {countdownEnds !== null ? (
           <button
@@ -202,35 +208,44 @@ export function Composer(props: ComposerProps) {
       )}
 
       <div className={styles.pill}>
-        <textarea
-          ref={box}
-          className={styles.input}
-          rows={1}
-          value={text}
-          placeholder={placeholder}
-          onChange={(event) => {
-            cancelCountdown() // typing means you have taken over
-            setText(event.target.value)
-          }}
-          onKeyDown={onKeyDown}
-        />
-        {listening && !text && <Wave level={level} />}
-        <button
-          className={styles.send}
-          onClick={() => {
-            cancelCountdown()
-            void send()
-          }}
-          disabled={!text.trim() || busy}
-          aria-label={
-            session.provider === 'codex' && session.live ? 'Copy and open Codex' : en.composer.send
-          }
-          title={
-            session.provider === 'codex' && session.live ? 'Copy and open Codex' : en.composer.send
-          }
-        >
-          ↵
-        </button>
+        <div className={styles.entry}>
+          <textarea
+            ref={box}
+            className={styles.input}
+            hidden={listening && !text.trim()}
+            rows={1}
+            value={text}
+            placeholder={placeholder}
+            onChange={(event) => {
+              cancelCountdown() // typing means you have taken over
+              setText(event.target.value)
+            }}
+            onKeyDown={onKeyDown}
+          />
+          {listening && <VoiceWave level={level} />}
+        </div>
+        {text.trim().length > 0 && (
+          <button
+            className={styles.send}
+            onClick={() => {
+              cancelCountdown()
+              void send()
+            }}
+            disabled={busy}
+            aria-label={
+              session.provider === 'codex' && session.live
+                ? 'Copy and open Codex'
+                : en.composer.send
+            }
+            title={
+              session.provider === 'codex' && session.live
+                ? 'Copy and open Codex'
+                : en.composer.send
+            }
+          >
+            ↵
+          </button>
+        )}
         <button
           className={styles.mic}
           data-state={voiceState}
@@ -246,17 +261,5 @@ export function Composer(props: ComposerProps) {
         </button>
       </div>
     </div>
-  )
-}
-
-/** Claude's listening wave: a dotted line, then three bars that follow the voice. */
-function Wave({ level }: { level: number }) {
-  return (
-    <span className={styles.wave} aria-hidden="true">
-      <span className={styles.dots} />
-      {[0.6, 1, 0.75].map((weight, i) => (
-        <span key={i} className={styles.level} style={{ height: `${3 + 11 * level * weight}px` }} />
-      ))}
-    </span>
   )
 }

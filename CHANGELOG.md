@@ -8,6 +8,18 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The recording waveform fills the available composer input width and scrolls smoothly
+  with real mic levels. Existing drafts stay visible above it; reduced-motion mode
+  keeps the level display stationary.
+
+- A subtle downward fade from the composer's top divider matches its destination: orange for
+  Claude and blue for Codex, including when only one application is enabled.
+  It replaces the composer provider tags, and the send arrow stays hidden until there is text.
+
+- Codex plan presentation: current numbered steps, formatted proposed plans and plans
+  retained above waiting cards. A parallel blue weekly usage bar reads local quota
+  reports, with independent hover details, observation time and an unavailable state.
+
 - Independent Claude and Codex toggles: enable both for a combined activity list
   with subtle blue Codex and orange Claude right-edge tints, or disable both to pause
   monitoring. Existing selections migrate unchanged. Workspace groups and saved choices stay separate; drafts remain

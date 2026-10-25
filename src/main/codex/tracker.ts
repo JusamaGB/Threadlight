@@ -15,6 +15,9 @@ import { isObject, str } from '../sessions/json'
 import { CODEX_UUID, codexKey } from './identity'
 import { CodexHolds, endQuestion } from './holds'
 import { writerHeld } from './live'
+import { readCodexPlan } from './plan'
+import { codexUsage } from './usage'
+import type { Usage } from '../../shared/usage'
 
 type Row = Record<string, unknown>
 const json = (value: unknown): Row => {
@@ -71,6 +74,8 @@ export interface CodexSummary {
   lastReply: string | null
   lastAction: string | null
   plan: PlanItem[]
+  planText: string | null
+  hasPlan: boolean
   attention: Attention | null
   contextUsed: number | null
 }
@@ -115,10 +120,14 @@ export function summarizeCodex(records: Row[]): CodexSummary {
     lastReply: null,
     lastAction: null,
     plan: [],
+    planText: null,
+    hasPlan: false,
     attention: null,
     contextUsed: null,
   }
   for (const record of records) {
+    const plan = readCodexPlan(record)
+    if (plan) Object.assign(out, plan, { hasPlan: true })
     const item = isObject(record['payload']) ? record['payload'] : record
     const type = str(item['type'])
     if (
@@ -151,15 +160,6 @@ export function summarizeCodex(records: Row[]): CodexSummary {
       const name = str(item['name']) || '',
         args = json(item['arguments'])
       out.lastAction = (str(args['description']) || str(args['command']) || name).slice(0, 300)
-      if (name === 'update_plan' && Array.isArray(args['plan']))
-        out.plan = args['plan'].filter(isObject).flatMap((p) => {
-          const status = p['status'],
-            content = str(p['step']) || str(p['content'])
-          return content &&
-            (status === 'pending' || status === 'in_progress' || status === 'completed')
-            ? [{ content, status }]
-            : []
-        })
       if (/request_user_input(?:_async)?$/.test(name) && Array.isArray(args['questions'])) {
         out.attention = questionCard(args['questions'])
         questionCall = str(item['call_id']) || str(item['id'])
@@ -189,7 +189,10 @@ export class CodexTracker {
   private windowHours = 24
   private maxSessions = 10
   private lastError = ''
-  private tails = new Map<string, { stamp: string; records: Row[] }>()
+  private tails = new Map<
+    string,
+    { stamp: string; identity: string; size: number; records: Row[] }
+  >()
   constructor(
     private readonly paths: CodexPaths,
     readonly hooks: CodexHolds,
@@ -202,12 +205,25 @@ export class CodexTracker {
   private async tail(path: string): Promise<Row[]> {
     try {
       const info = await stat(path),
-        stamp = `${info.mtimeMs}:${info.size}`
+        identity = `${info.dev}:${info.ino}:${info.birthtimeMs}`,
+        stamp = `${identity}:${info.mtimeMs}:${info.size}`
       const cached = this.tails.get(path)
       if (cached?.stamp === stamp) return cached.records
       const records = await rolloutTail(path, this.paths.home)
+      // Long tool output can push the last plan/quota out of the bounded tail. Retain an
+      // observation already seen in this process, but never across a truncated/replaced file.
+      if (cached && cached.identity === identity && info.size > cached.size) {
+        if (!records.some((record) => readCodexPlan(record) !== null)) {
+          const prior = cached.records.findLast((record) => readCodexPlan(record) !== null)
+          if (prior) records.unshift(prior)
+        }
+        if (!codexUsage(records)) {
+          const prior = cached.records.findLast((record) => codexUsage([record]) !== null)
+          if (prior) records.unshift(prior)
+        }
+      }
       if (this.tails.size >= 200) this.tails.delete(this.tails.keys().next().value!)
-      this.tails.set(path, { stamp, records })
+      this.tails.set(path, { stamp, identity, size: info.size, records })
       return records
     } catch {
       return []
@@ -279,6 +295,14 @@ export class CodexTracker {
         groups.set(cwd, [...(groups.get(cwd) || []), row])
       }
       const built = new Map<string, Session>()
+      let usage: Usage | null = null
+      const observeUsage = (records: Row[]) => {
+        const found = codexUsage(records)
+        if (found && (!usage || found.at > usage.at)) usage = found
+      }
+      // Account usage must still appear when the chosen list window contains no chats.
+      for (const row of valid.slice(0, 8))
+        observeUsage(await this.tail(String(row['rollout_path'])))
       const build = async (row: Row): Promise<Session> => {
         const id = String(row['id']),
           key = codexKey(id),
@@ -297,6 +321,14 @@ export class CodexTracker {
             )
               .reverse()
               .map((r) => json(r['item_json']))
+            // A proposed plan can precede hundreds of tool events. Fetch it separately instead
+            // of silently losing it when it falls outside the normal recent-items page.
+            const priorPlan = history
+              .prepare(
+                "SELECT item_json FROM thread_items WHERE thread_id=? AND json_extract(item_json,'$.type')='plan' ORDER BY rollout_ordinal DESC LIMIT 1",
+              )
+              .get(id) as Row | undefined
+            if (priorPlan) records.unshift(json(priorPlan['item_json']))
             turn = (history
               .prepare(
                 'SELECT status,started_at,completed_at FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1',
@@ -307,6 +339,7 @@ export class CodexTracker {
           }
         }
         const tail = await this.tail(String(row['rollout_path']))
+        observeUsage(tail)
         // Paginated projections are authoritative for messages; tail still supplies token usage.
         const summary = summarizeCodex(records.length ? records : tail),
           tailSummary = summarizeCodex(tail)
@@ -323,8 +356,15 @@ export class CodexTracker {
             : attention
               ? 'waiting'
               : 'idle')
-        const plan = summary.plan.length ? summary.plan : tailSummary.plan
+        const planSource = tailSummary.hasPlan ? tailSummary : summary
+        const plan = planSource.plan
         const current = plan.findIndex((p) => p.status === 'in_progress')
+        const currentStep =
+          current < 0
+            ? null
+            : { index: current + 1, total: plan.length, content: plan[current]!.content }
+        const lastReply = summary.lastReply || tailSummary.lastReply
+        const lastAction = summary.lastAction || tailSummary.lastAction
         const cwd = String(row['cwd'])
         const session: Session = {
           provider: 'codex',
@@ -341,24 +381,15 @@ export class CodexTracker {
           thinking: false,
           lastActiveAt: activity(row),
           focusedAt: focus.get(id) || 0,
-          stage:
-            state === 'working'
-              ? 'Working'
-              : attention?.kind === 'approval'
-                ? 'Needs approval'
-                : state === 'waiting'
-                  ? 'Waiting for you'
-                  : 'Ready',
+          stage: codexStage(state, currentStep, lastAction, lastReply, attention),
           lastPrompt:
             summary.lastPrompt || tailSummary.lastPrompt || str(row['first_user_message']),
           plan,
-          currentStep:
-            current < 0
-              ? null
-              : { index: current + 1, total: plan.length, content: plan[current]!.content },
+          planText: planSource.planText,
+          currentStep,
           recap: null,
-          lastReply: summary.lastReply,
-          lastAction: summary.lastAction,
+          lastReply,
+          lastAction,
           turnStartedAt: state === 'working' ? ms(turn['started_at']) || fresh?.at || null : null,
           backgroundTasks: [],
           live,
@@ -418,6 +449,7 @@ export class CodexTracker {
       this.lastError = ''
       return {
         provider: 'codex',
+        codexUsage: usage,
         sessions: sessions.slice(0, this.maxSessions),
         workspaces,
         allWorkspaces: [...groups.keys()].map((id) => ({
@@ -437,4 +469,18 @@ export class CodexTracker {
       db?.close()
     }
   }
+}
+
+export function codexStage(
+  state: Session['state'],
+  step: Session['currentStep'],
+  action: string | null,
+  reply: string | null,
+  attention: Attention | null,
+): string {
+  if (state !== 'idle' && step)
+    return `${state === 'waiting' ? 'Waiting for you · ' : ''}${step.index}/${step.total} · ${step.content}`
+  if (attention) return attention.kind === 'approval' ? 'Needs approval' : 'Waiting for you'
+  if (state === 'working') return action || reply?.replace(/\s+/g, ' ').slice(0, 300) || 'Working'
+  return reply?.replace(/\s+/g, ' ').slice(0, 300) || 'Ready'
 }

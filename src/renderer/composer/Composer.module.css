@@ -2,6 +2,22 @@
   flex: none;
   border-top: 1px solid var(--border);
   padding: 6px 8px 8px;
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--composer-tint) 20%, transparent),
+    transparent
+  );
+  background-size: 100% 40px;
+  background-position: top;
+  background-repeat: no-repeat;
+}
+
+.composer[data-provider='claude'] {
+  --composer-tint: var(--provider-claude);
+}
+
+.composer[data-provider='codex'] {
+  --composer-tint: var(--provider-codex);
 }
 
 .head {
@@ -74,9 +90,17 @@
   border-color: #5a5a5a;
 }
 
-.input {
+.entry {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
   resize: none;
   border: 0;
   outline: none;
@@ -152,26 +176,10 @@
 }
 
 .wave {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 18px;
-}
-
-.dots {
-  width: 56px;
-  height: 2px;
-  background-image: radial-gradient(circle, var(--faint) 1px, transparent 1.2px);
-  background-size: 5px 2px;
-}
-
-.level {
-  width: 2px;
-  min-height: 3px;
-  border-radius: 1px;
-  background: var(--muted);
-  transition: height 60ms linear;
+  display: block;
+  width: 100%;
+  height: 20px;
+  color: var(--muted);
 }
 
 /* Voice send countdown: a ring that empties, and the button cancels it. */

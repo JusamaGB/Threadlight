@@ -2,6 +2,7 @@ import type { Usage, UsageWindow } from '../../shared/usage'
 import { en } from '../i18n/en'
 import styles from './Panel.module.css'
 import { Tip } from './Tip'
+import { useNow } from '../hooks/useNow'
 
 /** The same steps as the context ring: grey while there is room, then amber, then red. */
 const AMBER_FROM = 0.6
@@ -13,6 +14,30 @@ function resetText(at: number, now: Date): string {
   return when.toDateString() === now.toDateString()
     ? time
     : `${when.toLocaleDateString([], { weekday: 'short' })} ${time}`
+}
+
+/** Codex reports account quotas in its local sessions; the weekly window can be primary. */
+export function CodexUsageBar({ usage }: { usage: Usage | null | undefined }) {
+  const now = useNow(60_000)
+  const week = usage?.week && usage.week.resetsAt > now ? usage.week : null
+  const text = week
+    ? `Codex · ${part(en.usage.week, week, new Date(now))} · Last reported ${resetText(usage!.at, new Date(now))}`
+    : 'Codex · Weekly usage unavailable. Waiting for a new local usage report.'
+  const level =
+    week && week.used >= RED_FROM ? 'red' : week && week.used >= AMBER_FROM ? 'amber' : 'normal'
+  return (
+    <Tip text={text} className={`${styles.usage} ${styles.codexUsage}`}>
+      <span className={styles.usageTrack} data-unavailable={!week || undefined}>
+        {week && (
+          <span
+            className={styles.usageFill}
+            data-level={level}
+            style={{ width: `${week.used * 100}%` }}
+          />
+        )}
+      </span>
+    </Tip>
+  )
 }
 
 function part(label: string, limit: UsageWindow | null, now: Date): string | null {

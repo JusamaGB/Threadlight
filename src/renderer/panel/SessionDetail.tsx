@@ -12,6 +12,7 @@ const oneLineText = (text: string) => text.split(/\s+/).filter(Boolean).join(' '
 import { relayLine } from '../lib/relay'
 import styles from './Panel.module.css'
 import { StepView } from './StepView'
+import { CodexPlan } from './CodexPlan'
 
 const MARKS: Record<PlanItem['status'], string> = { completed: '✓', in_progress: '●', pending: '○' }
 
@@ -57,7 +58,8 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
         </Section>
       )}
 
-      {session.plan.length > 0 && (
+      {session.provider === 'codex' && <CodexPlan session={session} />}
+      {session.provider !== 'codex' && session.plan.length > 0 && (
         <Section label={en.detail.plan(done, session.plan.length)}>
           <ul className={styles.plan}>
             {session.plan.map((item, index) => (

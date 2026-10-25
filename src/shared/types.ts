@@ -192,6 +192,8 @@ export interface Session {
   thinking: boolean
   lastPrompt: string | null
   plan: PlanItem[]
+  /** Codex's proposed plan in plan mode, separate from explicitly tracked step progress. */
+  planText?: string | null
   currentStep: CurrentStep | null
   /** The session's own summary of its last finished turn. */
   recap: string | null
@@ -246,6 +248,8 @@ export interface TreeView {
 
 /** Everything one scan produces. */
 export interface Snapshot {
+  /** Latest read-only Codex quota observation, independent of the displayed chat's context. */
+  codexUsage?: import('./usage').Usage | null
   provider?: Provider
   providers?: Provider[]
   /** Retained for an open composer when the combined list's limit hides its row. */

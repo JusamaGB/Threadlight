@@ -1,6 +1,6 @@
 // Run after npm run build. Uses Playwright from THREADLIGHT_PLAYWRIGHT or local resolution.
 // All IPC is synthetic; this never launches Threadlight, hooks or either provider CLI.
-/* global window, getComputedStyle */
+/* global window, document, AudioContext, getComputedStyle */
 import assert from 'node:assert/strict'
 import { readFileSync, statSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -62,8 +62,21 @@ const session = (provider) => ({
   pullRequests: [],
 })
 const chats = { claude: session('claude'), codex: session('codex') }
+chats.codex.plan = [
+  { content: 'Inspect the data', status: 'completed' },
+  { content: 'Build the display', status: 'in_progress' },
+  { content: 'Verify the display', status: 'pending' },
+]
+const trackedPlan = structuredClone(chats.codex.plan)
+const heldAttention = structuredClone(chats.codex.attention)
+let codexQuota = {
+  at: Date.now(),
+  fiveHour: null,
+  week: { used: 0.27, resetsAt: Date.now() + 86400_000 },
+}
 const source = (provider) => ({
   provider,
+  codexUsage: provider === 'codex' ? codexQuota : undefined,
   sessions: [chats[provider]],
   currentWorkspace: folder,
   currentThreadId: chats[provider].id,
@@ -131,6 +144,10 @@ try {
     Object.assign(chats.codex, patch)
     return state().snapshot
   })
+  await page.exposeFunction('mockQuota', (value) => {
+    codexQuota = value
+    return state().snapshot
+  })
   await page.exposeFunction('mockView', (view) =>
     settings.enabledProviders.map((provider) => ({
       provider,
@@ -148,6 +165,9 @@ try {
         emit,
         async patch(patch) {
           emit('onSnapshot', await window.mockPatch(patch))
+        },
+        async quota(value) {
+          emit('onSnapshot', await window.mockQuota(value))
         },
       }
       window.threadlight = new Proxy(
@@ -167,8 +187,16 @@ try {
           getRelays: async () => [],
           getStt: async () => ({ state: 'missing' }),
           getAgent: async () => agent,
-          getUsage: async () => null,
+          getUsage: async () => ({
+            at: Date.now(),
+            fiveHour: { used: 0.2, resetsAt: Date.now() + 3600_000 },
+            week: { used: 0.6, resetsAt: Date.now() + 86400_000 },
+          }),
           getVersion: async () => 'preview',
+          transcribe: () =>
+            new Promise((resolve) => {
+              window.proof.finishTranscript = resolve
+            }),
           agentApps: async () => [],
           agentHistory: async () => [],
           sendMessage: async (...args) => {
@@ -226,7 +254,7 @@ try {
   assert.equal(await row('Claude').isVisible(), true)
   assert.equal(await row('Codex').isVisible(), true)
   assert.equal(await box.inputValue(), 'Claude draft')
-  assert.equal(await page.getByTitle('Claude chat').count(), 2)
+  assert.equal(await page.getByTitle('Claude chat').count(), 1)
   assert.equal(await row('Claude').getAttribute('data-provider'), 'claude')
   assert.equal(await row('Codex').getAttribute('data-provider'), 'codex')
   assert.equal(await row('Claude').locator('[class*="providerBadge"]').count(), 0)
@@ -241,11 +269,55 @@ try {
   await compose('Codex')
   await box.fill('Codex draft')
   await row('Codex').click()
+  const plan = page.getByRole('region', { name: 'Codex plan' })
+  await plan.getByText('Build the display', { exact: true }).waitFor()
+  assert.equal(await plan.locator('li[data-status="completed"]').count(), 1)
+  await page.getByLabel(/^Claude · 5-hour limit 20%/).hover()
+  await page.getByRole('tooltip').filter({ hasText: 'Claude · 5-hour limit 20%' }).waitFor()
+  await page.getByLabel(/^Codex · Weekly limit 27%/).hover()
+  await page.getByRole('tooltip').filter({ hasText: 'Codex · Weekly limit 27%' }).waitFor()
+  assert.equal(
+    await page
+      .getByRole('tooltip')
+      .innerText()
+      .then((text) => text.includes('5-hour')),
+    false,
+  )
+  await page.locator('[class*="header"]').first().hover()
+  await capture('codex-plan-usage')
+  await page.evaluate(() =>
+    window.proof.patch({
+      attention: null,
+      state: 'working',
+      stage: '2/3 · Build the display',
+      lastAction: 'Updating the status display',
+    }),
+  )
+  await page.getByText('Working', { exact: true }).waitFor()
+  await capture('codex-working-plan')
+  await page.evaluate(
+    (attention) => window.proof.patch({ attention, state: 'waiting', stage: 'Waiting for you' }),
+    heldAttention,
+  )
+  await page.getByLabel('Answer for this Codex chat').waitFor()
+  await page.evaluate(() =>
+    window.proof.patch({
+      plan: [],
+      planText:
+        '# Synthetic proposal\n- **Inspect** the data\n- Build `view.tsx`\n<script>not executable</script>',
+    }),
+  )
+  await plan.getByRole('heading', { name: 'Synthetic proposal' }).waitFor()
+  assert.equal(await plan.locator('script').count(), 0)
+  await capture('codex-proposed-plan')
+  await page.evaluate((plan) => window.proof.patch({ plan, planText: null }), trackedPlan)
   await page.getByLabel('Answer for this Codex chat').fill('Blue pending answer')
   await toggle('Claude')
+  assert.equal(await page.getByLabel(/^Claude · 5-hour limit/).count(), 0)
   assert.equal(await box.inputValue(), 'Codex draft')
   await toggle('Claude')
   await toggle('Codex')
+  assert.equal(await page.getByLabel(/^Codex · Weekly/).count(), 0)
   assert.equal(await box.count(), 0)
   await compose('Claude')
   assert.equal(await box.inputValue(), 'Claude draft')
@@ -259,12 +331,16 @@ try {
     'Blue pending answer',
   )
   await page.evaluate(() => window.proof.patch({ live: true }))
-  await page.getByRole('button', { name: 'Copy and open Codex', exact: true }).last().click()
+  await box
+    .locator('../..')
+    .getByRole('button', { name: 'Copy and open Codex', exact: true })
+    .click()
   assert.deepEqual(await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'send')), [])
   assert.ok(
     (await page.evaluate(() => window.proof.calls)).some(
       (c) => c[0] === 'copy' && c[1] === 'Codex draft',
     ),
+    JSON.stringify(await page.evaluate(() => window.proof.calls)),
   )
   await page.evaluate(() => window.proof.patch({ live: false }))
   await page.getByRole('button', { name: 'Send', exact: true }).click()
@@ -308,12 +384,9 @@ try {
   await page.evaluate(() => window.proof.emit('onTalkToggle'))
   await page.getByRole('switch', { name: 'Claude', exact: true }).waitFor()
   await page.reload()
-  assert.equal(
-    await page
-      .getByText('Chat monitoring is paused. Enable Claude or Codex in Settings.', { exact: true })
-      .isVisible(),
-    true,
-  )
+  await page
+    .getByText('Chat monitoring is paused. Enable Claude or Codex in Settings.', { exact: true })
+    .waitFor()
   await page.goto(url + '?view=dot')
   await page.getByRole('status', { name: /Chat monitoring is paused/ }).waitFor()
   await page.evaluate(() => window.proof.emit('onOpenMicLive', true))
@@ -321,6 +394,149 @@ try {
     .getByRole('status', { name: /Chat monitoring is paused.*Open mic is listening/ })
     .waitFor()
   await page.evaluate(() => window.proof.emit('onOpenMicLive', false))
+  await page.goto(url + '?view=panel')
+  await toggle('Codex')
+  await page.evaluate(() =>
+    window.proof.quota({
+      at: Date.now() - 86400_000,
+      fiveHour: null,
+      week: { used: 0.99, resetsAt: Date.now() - 1000 },
+    }),
+  )
+  await page.getByLabel(/^Codex · Weekly usage unavailable/).waitFor()
+  assert.equal(await page.locator('[class*="codexUsage"] [class*="usageFill"]').count(), 0)
+  // Use a generated audio stream, never the PC's microphone, to exercise the actual recorder UI.
+  await page.evaluate(async () => {
+    await window.threadlight.updateSettings({ openMic: false })
+    window.proof.emit('onStt', { state: 'ready' })
+    window.proof.stoppedTracks = 0
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: async () => {
+        const context = new AudioContext()
+        const tone = context.createOscillator()
+        const gain = context.createGain()
+        const destination = context.createMediaStreamDestination()
+        tone.frequency.value = 220
+        tone.connect(gain)
+        gain.connect(destination) // no connection to speakers or a physical input
+        const now = context.currentTime
+        gain.gain.setValueAtTime(0.02, now)
+        for (let i = 0; i < 30; i++) {
+          gain.gain.linearRampToValueAtTime(0.12, now + i * 0.4 + 0.15)
+          gain.gain.linearRampToValueAtTime(0.02, now + i * 0.4 + 0.4)
+        }
+        tone.start()
+        await context.resume()
+        for (const track of destination.stream.getTracks()) {
+          const stop = track.stop.bind(track)
+          track.stop = () => {
+            stop()
+            tone.stop()
+            void context.close()
+            window.proof.stoppedTracks++
+          }
+        }
+        return destination.stream
+      },
+    })
+  })
+  await compose('Codex')
+  await box.fill('')
+  assert.equal(
+    await page
+      .getByRole('group', { name: 'Codex message composer' })
+      .getByRole('button', { name: 'Send', exact: true })
+      .count(),
+    0,
+  )
+  await box.fill('   ')
+  assert.equal(
+    await page
+      .getByRole('group', { name: 'Codex message composer' })
+      .getByRole('button', { name: 'Send', exact: true })
+      .count(),
+    0,
+  )
+  await box.fill('')
+  const sendsBeforeRecording = await page.evaluate(
+    () => window.proof.calls.filter((c) => c[0] === 'send').length,
+  )
+  await page.getByRole('button', { name: 'Talk', exact: true }).click()
+  const waveform = page.getByRole('img', { name: 'Listening...', exact: true })
+  await waveform.waitFor()
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas')
+    if (!canvas) return false
+    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
+    const peaks = []
+    for (let x = 0; x < canvas.width; x++) {
+      for (let y = 0; y < canvas.height / 2 - 3; y++) {
+        if (pixels[(y * canvas.width + x) * 4 + 3] > 100) {
+          peaks.push(x)
+          break
+        }
+      }
+    }
+    return peaks.length && Math.max(...peaks) - Math.min(...peaks) > canvas.width * 0.85
+  })
+  const waveBounds = await waveform.boundingBox()
+  const entryBounds = await waveform.locator('..').boundingBox()
+  assert.ok(waveBounds.width > 220 && Math.abs(waveBounds.width - entryBounds.width) < 1)
+  await capture('composer-listening')
+  const firstFrame = await waveform.evaluate((canvas) => canvas.toDataURL())
+  await page.waitForFunction(
+    (first) => document.querySelector('canvas')?.toDataURL() !== first,
+    firstFrame,
+  )
+  await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).click()
+  await waveform.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
+  await page.evaluate(() => window.proof.finishTranscript('Synthetic transcript'))
+  await page.waitForFunction(
+    () => document.querySelector('textarea')?.value === 'Synthetic transcript',
+  )
+  assert.equal(await page.evaluate(() => window.proof.stoppedTracks), 1)
+  await box.fill('Existing draft')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.getByRole('button', { name: 'Talk', exact: true }).click()
+  await waveform.waitFor()
+  assert.equal(await page.locator('textarea').inputValue(), 'Existing draft')
+  assert.equal(await page.locator('textarea').isVisible(), true)
+  const centreMask = () =>
+    waveform.evaluate((canvas) => {
+      const pixels = canvas
+        .getContext('2d')
+        .getImageData(0, Math.floor(canvas.height / 2), canvas.width, 1).data
+      return Array.from({ length: canvas.width }, (_, x) => pixels[x * 4 + 3] > 0).join(',')
+    })
+  await page.waitForFunction(() =>
+    document
+      .querySelector('canvas')
+      ?.getContext('2d')
+      .getImageData(0, 10, 250, 1)
+      .data.some((value) => value > 0),
+  )
+  const stationary = await centreMask()
+  await page.waitForTimeout(180) // several animation frames: reduced motion must not scroll sideways
+  assert.equal(await centreMask(), stationary)
+  await capture('composer-listening-draft')
+  await page.evaluate(() => {
+    window.proof.finishTranscript = null
+  })
+  await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).click()
+  await waveform.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => window.proof.stoppedTracks === 2)
+  await page.getByPlaceholder('Transcribing...').waitFor()
+  await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
+  await page.evaluate(() => window.proof.finishTranscript('More words'))
+  await page.waitForFunction(
+    () => document.querySelector('textarea')?.value === 'Existing draft More words',
+  )
+  assert.equal(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'send').length),
+    sendsBeforeRecording,
+  )
   assert.deepEqual(errors, [])
   console.log(
     'PASS: both toggles, combined rows/workspaces, draft and answer retention, exact send target, live copy/open, paused list/hotkey/dot, persisted off state; no browser errors.',
