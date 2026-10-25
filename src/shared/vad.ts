@@ -19,11 +19,13 @@ export const VAD = {
   CALIBRATE_MS: 500,
   /** A frame this far above the room (and above MIN_START_PEAK) starts an utterance. */
   START_OVER_AMBIENT: 2.5,
-  MIN_START_PEAK: 0.03,
+  // Unamplified headset speech can peak below 0.05. Let its quieter syllables count;
+  // the ambient ratio and minimum voiced duration still reject noise and clicks.
+  MIN_START_PEAK: 0.01,
   /** An utterance counts only if its peak reached this far above the room… */
   SPEECH_OVER_AMBIENT: 4,
   /** …and real talking level. */
-  MIN_SPEECH_PEAK: 0.06,
+  MIN_SPEECH_PEAK: 0.025,
   /** This much quiet ends an utterance. */
   END_SILENCE_MS: 500,
   /** Audio kept from before the start. */

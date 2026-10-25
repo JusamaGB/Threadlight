@@ -41,6 +41,31 @@ describe('open mic segmenter', () => {
     )
   })
 
+  it('accepts a quiet word whose strongest syllable is below the old fixed cutoff', () => {
+    expect(
+      run(
+        new Segmenter(RATE),
+        sound(0.0015, 1000),
+        sound(0.015, 96),
+        sound(0.049, 128),
+        sound(0.015, 96),
+        sound(0.0015, 700),
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('still rejects low-level noise and short quiet clicks', () => {
+    expect(
+      run(new Segmenter(RATE), sound(0.0015, 1000), sound(0.009, 400), sound(0.0015, 700)),
+    ).toEqual([])
+    expect(
+      run(new Segmenter(RATE), sound(0.0015, 1000), sound(0.049, 64), sound(0.0015, 700)),
+    ).toEqual([])
+    expect(
+      run(new Segmenter(RATE), sound(0.0015, 1000), sound(0.02, 400), sound(0.0015, 700)),
+    ).toEqual([])
+  })
+
   it('in a loud room, wants speech well above the room', () => {
     // The telly sits at 0.05: the floor learns it, and the speech line goes to 0.2.
     const room = () => sound(0.05, 1500)

@@ -14,11 +14,11 @@ export async function checkVoiceRouting(page) {
     await page.evaluate(() => window.proof.emit('onTalkToggle'))
     await page.waitForFunction(() => document.documentElement.dataset.openMic === 'off')
   }
-  const say = async (text) => {
-    await page.evaluate(() => {
+  const say = async (text, level = 0.18) => {
+    await page.evaluate((volume) => {
       delete window.proof.finishTranscript
-      window.proof.setAudioLevel(0.18)
-    })
+      window.proof.setAudioLevel(volume)
+    }, level)
     await page.waitForTimeout(350)
     await page.evaluate(() => window.proof.setAudioLevel(0))
     await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
@@ -28,7 +28,7 @@ export async function checkVoiceRouting(page) {
 
   const before = (await agentSends()).length
   await open()
-  await say('Open.')
+  await say('Open.', 0.049) // quiet speech must reach transcription, not just loud test tones
   await page.locator('[data-mic-mode="commands"]').waitFor()
   await page
     .getByTitle('Pinned open. Click (or triple-click the bar) to unpin', { exact: true })
