@@ -25,6 +25,7 @@ export const IPC = {
   panelOpened: 'panel:opened',
   panelResize: 'panel:resize',
   panelClose: 'panel:close',
+  panelSemiOpen: 'panel:semi-open',
   openInClaude: 'claude:open-thread',
 } as const
 
@@ -53,6 +54,8 @@ export interface ThreadlightApi {
 
   resizePanel(height: number): void
   closePanel(): void
+  /** While semi-open the panel stays up as a slim bar instead of closing. */
+  setSemiOpen(on: boolean): void
   openInClaude(appId: string): void
 
   /** Relays `text` to a session in the background. Resolves once accepted, not when replied. */

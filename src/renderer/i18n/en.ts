@@ -8,15 +8,12 @@ export const en = {
     transcribing: 'Transcribing',
   },
   panel: {
-    active: 'Active',
-    recent: 'Recent',
-    working: (n: number) => `${n} working`,
-    waiting: (n: number) => `${n} waiting`,
+    activeCount: (n: number) => `Active · ${n}`,
     recentCount: (n: number) => `${n} recent`,
     nothingWorking: 'Nothing working right now',
     noSessions: (hours: number) => `No sessions in the last ${hours} h`,
-    showAll: (n: number) => `Show all recent (${n})`,
-    toggleView: 'Switch between active and recent sessions',
+    showRecent: 'Show recent sessions',
+    hideRecent: 'Show only active sessions',
   },
   state: {
     working: 'Working',

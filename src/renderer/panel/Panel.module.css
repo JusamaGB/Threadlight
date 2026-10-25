@@ -8,6 +8,26 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  transition: opacity 150ms ease;
+}
+
+.closing {
+  opacity: 0;
+}
+
+/* Semi-open and not hovered: only the header bar shows. Hidden, not removed, so a draft survives. */
+.collapsed > :not(.header) {
+  display: none;
+}
+
+.collapsed > .header {
+  border-bottom: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
 }
 
 /* ---------- header ---------- */
@@ -16,24 +36,36 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 0 0 10px;
+  padding: 0 10px;
   min-height: 30px;
   border-bottom: 1px solid var(--border);
   flex: none;
+  /* The bare header moves the panel; its text and dot do not. */
+  cursor: grab;
+  touch-action: none;
+}
+
+.header > * {
+  cursor: default;
 }
 
 .heading {
   font-weight: 600;
 }
 
-.counts {
+.recent {
   margin-left: auto;
   color: var(--muted);
   font-size: 11px;
 }
 
-.header > :last-child {
+.header > .recent {
   cursor: pointer;
+}
+
+.recent:hover,
+.recent[aria-pressed='true'] {
+  color: var(--fg);
 }
 
 /* ---------- notices and picking a thread for speech ---------- */
@@ -80,18 +112,6 @@
   padding: 10px 10px 6px;
   color: var(--muted);
   font-size: 11px;
-}
-
-.more {
-  display: block;
-  width: 100%;
-  padding: 4px 10px 6px;
-  color: var(--faint);
-  font-size: 11px;
-}
-
-.more:hover {
-  color: var(--fg);
 }
 
 /* ---------- rows ---------- */

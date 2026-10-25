@@ -58,6 +58,8 @@ export class WindowManager {
   readonly panel: BrowserWindow
   private dragStart: Point | null = null
   private claudeRunning = false
+  /** The panel stays up as a slim bar, so clicking elsewhere must not close it. */
+  private semiOpen = false
 
   constructor() {
     // The dot never takes focus, so clicking it does not pull focus from a game.
@@ -65,7 +67,9 @@ export class WindowManager {
     this.dot.setPosition(...this.initialDotPosition())
     // The panel is created up front (hidden) so it opens instantly.
     this.panel = createWindow('panel', { width: PANEL_WIDTH, height: 120 }, true)
-    this.panel.on('blur', () => this.closePanel())
+    this.panel.on('blur', () => {
+      if (!this.semiOpen) this.closePanel()
+    })
   }
 
   /** Every window gets the same broadcasts. */
@@ -104,7 +108,12 @@ export class WindowManager {
     }
   }
 
+  setSemiOpen(on: boolean): void {
+    this.semiOpen = on
+  }
+
   closePanel(): void {
+    this.semiOpen = false
     if (!this.panel.isVisible()) return
     this.panel.hide()
     if (this.claudeRunning) this.dot.showInactive()
@@ -120,7 +129,15 @@ export class WindowManager {
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
     const [x, y] = this.dot.getPosition() as [number, number]
     this.dragStart ??= { x, y }
-    this.dot.setPosition(Math.round(this.dragStart.x + dx), Math.round(this.dragStart.y + dy))
+    // Kept inside the screen's work area, just as the panel is.
+    const target = { x: Math.round(this.dragStart.x + dx), y: Math.round(this.dragStart.y + dy) }
+    const area = screen.getDisplayNearestPoint(target).workArea
+    this.dot.setPosition(
+      clamp(target.x, area.x, area.x + area.width - DOT_SIZE),
+      clamp(target.y, area.y, area.y + area.height - DOT_SIZE),
+    )
+    // Dragging the panel's header moves the hidden dot, and the panel stays anchored to it.
+    if (this.panel.isVisible()) this.placePanel(this.panel.getBounds().height)
   }
 
   endDrag(): void {

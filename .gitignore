@@ -26,3 +26,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# A worktree's own Threadlight preview data (launched with --user-data-dir)
+.devdata/

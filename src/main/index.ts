@@ -56,6 +56,7 @@ function start(): void {
   ipcMain.on(IPC.dotDragEnd, () => windows.endDrag())
   ipcMain.on(IPC.panelResize, (_event, height: unknown) => windows.resizePanel(Number(height)))
   ipcMain.on(IPC.panelClose, () => windows.closePanel())
+  ipcMain.on(IPC.panelSemiOpen, (_event, on: unknown) => windows.setSemiOpen(on === true))
   ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
     if (typeof appId === 'string' && openThread(appId)) windows.closePanel()
   })

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEv
 import { matchThread, parseVoiceCommand } from '../../shared/match'
 import type { Session } from '../../shared/types'
 import { Composer } from '../composer/Composer'
-import { StatusDot } from '../dot/Dot'
+import { useDotDrag } from '../hooks/useDotDrag'
 import { useNow } from '../hooks/useNow'
 import { useRelays } from '../hooks/useRelays'
 import { useSessions } from '../hooks/useSessions'
@@ -17,6 +17,8 @@ import { SessionRow } from './SessionRow'
 type View = 'active' | 'all'
 
 const LIST_HOURS = 24
+/** How long the panel takes to fade out once the pointer leaves it. Matches `.closing` in the CSS. */
+const FADE_MS = 150
 /** Voice sends always count down first, so a misheard sentence can be stopped. */
 const VOICE_COUNTDOWN_S = 3
 /** After a voice send is answered, an untouched panel turns back into the dot. */
@@ -53,7 +55,13 @@ export function Panel() {
   const [heard, setHeard] = useState<{ text: string; n: number } | null>(null)
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [cancelToken, setCancelToken] = useState(0)
+  const [closing, setClosing] = useState(false)
+  /** Double-clicking the header's bare space keeps the panel up as a slim bar between hovers. */
+  const [semiOpen, setSemiOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const card = useRef<HTMLDivElement>(null)
+  const fade = useRef<number | undefined>(undefined)
+  const drag = useDotDrag()
 
   // Who started the recording decides what happens with the words.
   const startedBy = useRef<'hotkey' | 'mic' | null>(null)
@@ -68,11 +76,14 @@ export function Panel() {
   const limitHandler = useRef<() => void>(() => {})
   const voice = useVoice(useCallback(() => limitHandler.current(), []))
 
-  // A click opens the panel fresh on Active; the talk hotkey keeps what it just filled in.
+  // A hover or click opens the panel fresh on Active; the talk hotkey keeps what it just filled in.
   useEffect(
     () =>
       window.threadlight.onPanelOpened(({ maxHeight, fresh }) => {
         setMaxHeight(maxHeight)
+        window.clearTimeout(fade.current)
+        setClosing(false)
+        setCollapsed(false)
         if (!fresh) return
         setView('active')
         setExpanded(null)
@@ -80,6 +91,7 @@ export function Panel() {
         setCompose(null)
         setPicking(null)
         setNotice(null)
+        setSemiOpen(false)
       }),
     [],
   )
@@ -217,17 +229,38 @@ export function Panel() {
     if (!document.hasFocus()) window.threadlight.closePanel()
   }
 
-  const working = sessions.filter((s) => s.state === 'working').length
-  const waiting = sessions.filter((s) => s.state === 'waiting').length
+  // The panel only shows while the pointer is over it: leaving fades it out, coming back cancels.
+  // Semi-open, leaving shrinks it to the header bar instead, and hovering the bar expands it.
+  const leave = () => {
+    if (drag.isDragging()) return
+    // Never hide the panel while the microphone is open or a voice send is counting down:
+    // the recording or the send would carry on with nothing on screen to show or stop it.
+    if (voice.state !== 'idle' || Date.now() < countdownUntil.current) return
+    if (semiOpen) {
+      setMenu(null)
+      setCollapsed(true)
+      return
+    }
+    setClosing(true)
+    window.clearTimeout(fade.current)
+    fade.current = window.setTimeout(() => window.threadlight.closePanel(), FADE_MS)
+  }
+  const enter = () => {
+    window.clearTimeout(fade.current)
+    setClosing(false)
+    setCollapsed(false)
+  }
+  const toggleSemiOpen = (event: MouseEvent) => {
+    if (event.target !== event.currentTarget) return
+    setSemiOpen(!semiOpen)
+    window.threadlight.setSemiOpen(!semiOpen)
+  }
+
+  const active = sessions.filter(isActive).length
   // The thread being written to stays listed even after it goes idle.
   const shown =
     view === 'all' ? sessions : sessions.filter((s) => isActive(s) || s.id === compose?.sessionId)
   const target = sessions.find((s) => s.id === compose?.sessionId)
-  const counts = [
-    ...(working ? [en.panel.working(working)] : []),
-    ...(waiting ? [en.panel.waiting(waiting)] : []),
-    en.panel.recentCount(sessions.length),
-  ]
 
   const openMenu = (event: MouseEvent, session: Session) => {
     event.preventDefault()
@@ -253,17 +286,26 @@ export function Panel() {
   }
 
   return (
-    <div ref={card} className={styles.card} style={{ maxHeight }}>
-      <header className={styles.header}>
-        <span className={styles.heading}>
-          {view === 'active' ? en.panel.active : en.panel.recent}
-        </span>
-        <span className={styles.counts}>{counts.join(' · ')}</span>
-        <StatusDot
-          working={working > 0}
-          title={en.panel.toggleView}
+    <div
+      ref={card}
+      className={[styles.card, closing && styles.closing, collapsed && styles.collapsed]
+        .filter(Boolean)
+        .join(' ')}
+      style={{ maxHeight }}
+      onMouseEnter={enter}
+      onMouseLeave={leave}
+    >
+      <header className={styles.header} onDoubleClick={toggleSemiOpen} {...drag.handlers}>
+        <span className={styles.heading}>{en.panel.activeCount(active)}</span>
+        {/* The recent count opens the full list and closes it again. */}
+        <button
+          className={styles.recent}
+          aria-pressed={view === 'all'}
+          title={view === 'all' ? en.panel.hideRecent : en.panel.showRecent}
           onClick={() => setView(view === 'active' ? 'all' : 'active')}
-        />
+        >
+          {en.panel.recentCount(sessions.length)}
+        </button>
       </header>
 
       {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
@@ -294,11 +336,6 @@ export function Panel() {
             onContextMenu={(event) => openMenu(event, session)}
           />
         ))}
-        {view === 'active' && sessions.length > shown.length && (
-          <button className={styles.more} onClick={() => setView('all')}>
-            {en.panel.showAll(sessions.length)}
-          </button>
-        )}
       </div>
 
       {target && compose && (

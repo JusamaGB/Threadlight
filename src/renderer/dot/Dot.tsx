@@ -1,5 +1,3 @@
-import { useRef, type PointerEvent } from 'react'
-
 import type { TalkState } from '../../shared/ipc'
 import { en } from '../i18n/en'
 import styles from './Dot.module.css'
@@ -9,12 +7,10 @@ interface StatusDotProps {
   working: boolean
   /** While the talk hotkey records or transcribes, the dot shows that instead (blue). */
   talk?: TalkState
-  onClick?: () => void
-  title?: string
 }
 
-/** The dot itself. Used on its own window and again in the panel header. */
-export function StatusDot({ working, talk = 'idle', onClick, title }: StatusDotProps) {
+/** The dot itself. The open panel hides it, so it only shows while the panel is closed. */
+export function StatusDot({ working, talk = 'idle' }: StatusDotProps) {
   const look = talk !== 'idle' ? styles[talk] : working ? styles.working : ''
   const label =
     talk === 'listening'
@@ -25,42 +21,20 @@ export function StatusDot({ working, talk = 'idle', onClick, title }: StatusDotP
           ? en.dot.working
           : en.dot.idle
   return (
-    <div className={styles.frame} onClick={onClick} title={title}>
+    <div className={styles.frame}>
       <div className={`${styles.dot} ${look}`} role="status" aria-label={label} />
     </div>
   )
 }
 
-const DRAG_THRESHOLD = 3
-
-/** The floating dot window: click opens the panel, drag moves it. */
+/**
+ * The floating dot window: hovering opens the panel straight away (a click too, as a fallback).
+ * It is moved by dragging the panel's header, since the panel covers it the moment it is hovered.
+ */
 export function FloatingDot({ working, talk }: { working: boolean; talk: TalkState }) {
-  const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null)
-
-  const down = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return
-    event.currentTarget.setPointerCapture(event.pointerId)
-    drag.current = { x: event.screenX, y: event.screenY, moved: false }
-  }
-  const move = (event: PointerEvent<HTMLDivElement>) => {
-    const start = drag.current
-    if (!start) return
-    const dx = event.screenX - start.x
-    const dy = event.screenY - start.y
-    if (!start.moved && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return
-    start.moved = true
-    window.threadlight.dotDrag(dx, dy)
-  }
-  const up = () => {
-    const start = drag.current
-    drag.current = null
-    if (!start) return
-    if (start.moved) window.threadlight.dotDragEnd()
-    else window.threadlight.dotClick()
-  }
-
+  const open = () => window.threadlight.dotClick()
   return (
-    <div className={styles.floating} onPointerDown={down} onPointerMove={move} onPointerUp={up}>
+    <div className={styles.floating} onPointerEnter={open} onMouseMove={open} onClick={open}>
       <StatusDot working={working} talk={talk} />
     </div>
   )
