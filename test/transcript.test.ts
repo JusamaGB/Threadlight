@@ -253,6 +253,17 @@ describe('attention cards', () => {
   })
 })
 
+describe('lastTouchedPath', () => {
+  it('remembers the last file touched inside the working folder, ignoring scratch files', async () => {
+    const summary = await read([
+      { ...prompt('Fix it'), cwd: 'Z:\\work' },
+      toolCall('Edit', { file_path: 'Z:\\work\\api\\src\\a.ts' }),
+      toolCall('Write', { file_path: 'Z:\\Temp\\scratch\\notes.md' }),
+    ])
+    expect(summary.lastTouchedPath).toBe('Z:\\work\\api\\src\\a.ts')
+  })
+})
+
 describe('interrupts', () => {
   it('flags a stopped session until something new happens', async () => {
     const stopped = await read([

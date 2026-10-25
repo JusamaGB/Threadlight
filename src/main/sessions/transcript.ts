@@ -58,6 +58,8 @@ export interface TranscriptSummary {
   contextTokens: number | null
   /** The model that wrote the latest reply. */
   model: string | null
+  /** The last file a tool read or changed: where the thread is really working. */
+  lastTouchedPath: string | null
   /** The user pressed Stop and nothing has happened since. */
   interrupted: boolean
 }
@@ -86,6 +88,7 @@ export class TranscriptReader {
   private interrupted = false
   private contextTokens: number | null = null
   private model: string | null = null
+  private lastTouchedPath: string | null = null
   /** Tool calls waiting for their result, in case the result says "running in background". */
   private calls = new Map<string, ToolCall>()
   /** Running background tasks by the tool call that started them. */
@@ -135,6 +138,7 @@ export class TranscriptReader {
       nextStep: this.nextStep,
       contextTokens: this.contextTokens,
       model: this.model,
+      lastTouchedPath: this.lastTouchedPath,
       interrupted: this.interrupted,
     }
   }
@@ -280,6 +284,9 @@ export class TranscriptReader {
   }
 
   private feedTool(name: string, input: JsonObject, id: string | null): void {
+    const touched = str(input['file_path']) ?? str(input['notebook_path'])
+    // Only inside its working folder: scratch files elsewhere say nothing about the project.
+    if (touched && this.cwd && isInside(touched, this.cwd)) this.lastTouchedPath = touched
     // Stopping a task by hand: its notification may never be written.
     if (name === 'TaskStop' || name === 'KillShell') {
       const taskId = str(input['task_id']) ?? str(input['shell_id'])
@@ -351,6 +358,12 @@ function messageContent(record: JsonObject): unknown {
 function timeOf(record: JsonObject): number {
   const at = Date.parse(str(record['timestamp']) ?? '')
   return Number.isNaN(at) ? Date.now() : at
+}
+
+/** Whether `path` is inside `folder` (Windows paths: either slash, any case). */
+function isInside(path: string, folder: string): boolean {
+  const norm = (p: string) => p.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()
+  return norm(path).startsWith(`${norm(folder)}/`)
 }
 
 /** Whether a message's text (a string, or its first text block) opens with `prefix`. */

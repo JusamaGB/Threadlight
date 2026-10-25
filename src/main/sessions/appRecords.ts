@@ -30,6 +30,8 @@ export interface AppRecord {
    * from while it works. 0 when the record has none.
    */
   lastTurnEdgeAt: number
+  /** The git worktree the app made for the thread, when it made one. */
+  worktreePath: string | null
 }
 
 /** Caches parsed records by file modification time, so a refresh only re-reads changed files. */
@@ -84,6 +86,7 @@ export function parseAppRecord(raw: unknown): AppRecord | null {
     lastActivityAt: num(raw['lastActivityAt']),
     lastFocusedAt: num(raw['lastFocusedAt']),
     lastTurnEdgeAt: num(raw['lastTurnEdgeAt']),
+    worktreePath: str(raw['worktreePath']),
   }
 }
 

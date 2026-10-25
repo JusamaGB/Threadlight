@@ -42,7 +42,8 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
           return (
             <section key={workspace.id} className={styles.workspace}>
               <FixedHeader name={workspace.name} title={workspace.id} onPick={onPickWorkspace}>
-                <span className={styles.workspaceCount}>{workspace.threadCount}</span>
+                {/* Its worktrees only: the thread count is already in the panel's header. */}
+                <Worktrees count={workspace.worktrees} />
               </FixedHeader>
               <div className={styles.workspaceThreads}>
                 <Nodes nodes={workspace.threads} renderRow={renderRow} />
@@ -67,7 +68,7 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
                   data-state={workspace.anyWorking ? 'working' : 'waiting'}
                 />
               )}
-              <span className={styles.workspaceCount}>{workspace.threadCount}</span>
+              <Worktrees count={workspace.worktrees} />
             </button>
             {open && (
               <div className={styles.workspaceThreads}>
@@ -133,4 +134,10 @@ function Nodes({
 export function sameFolder(a: string, b: string): boolean {
   const key = (path: string) => path.replace(/[\\/]+$/, '').toLowerCase()
   return key(a) === key(b)
+}
+
+/** A workspace's worktrees, once there is more than the main checkout. */
+function Worktrees({ count }: { count: number }) {
+  if (count < 2) return null
+  return <span className={styles.workspaceWorktrees}>{en.git.worktrees(count)}</span>
 }

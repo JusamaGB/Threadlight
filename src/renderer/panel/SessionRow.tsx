@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react'
 
-import type { DiffStat, RelayStatus, Session } from '../../shared/types'
+import type { GitState, RelayStatus, Session } from '../../shared/types'
+import { gitSummary } from '../lib/git'
 import { en } from '../i18n/en'
 import { ageText } from '../lib/format'
 import { relayLine } from '../lib/relay'
@@ -26,13 +27,19 @@ interface SessionRowProps {
   hideAge?: boolean
 }
 
-/** Its folder's changes since the last commit, as Claude shows them: "+22 −1". */
-function DiffCount({ diff }: { diff: DiffStat }) {
-  if (diff.added === 0 && diff.removed === 0) return null
+/**
+ * Where its git folder stands, compactly, only what is not zero: "+22 −1" changed since the last
+ * commit (as Claude shows it), "↑2" commits to push, "↓5" commits behind main. The tooltip says
+ * it in full.
+ */
+function GitCount({ git }: { git: GitState }) {
+  if (!git.added && !git.removed && !git.ahead && !git.behind) return null
   return (
-    <span className={styles.diff} title={en.detail.diff(diff.added, diff.removed)}>
-      {diff.added > 0 && <span className={styles.added}>+{compact(diff.added)}</span>}
-      {diff.removed > 0 && <span className={styles.removed}>−{compact(diff.removed)}</span>}
+    <span className={styles.diff} title={gitSummary(git).join('\n')}>
+      {git.added > 0 && <span className={styles.added}>+{compact(git.added)}</span>}
+      {git.removed > 0 && <span className={styles.removed}>−{compact(git.removed)}</span>}
+      {git.ahead > 0 && <span className={styles.ahead}>↑{git.ahead}</span>}
+      {git.behind > 0 && <span className={styles.behind}>↓{git.behind}</span>}
     </span>
   )
 }
@@ -74,7 +81,7 @@ export function SessionRow(props: SessionRowProps) {
             />
           </span>
           <span className={titleClass}>{session.title}</span>
-          {session.diff && <DiffCount diff={session.diff} />}
+          {session.git && <GitCount git={session.git} />}
           {/* A long title fades out behind this, so it always shows. */}
           {attention && <span className={styles.needsYou}>{en.attention.needsYou}</span>}
           {/* Expanded, Open ↗ takes the age's place (drawn outside this button, below). */}

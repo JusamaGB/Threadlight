@@ -4,6 +4,7 @@ import { HookStateStore } from '../src/main/sessions/hookState'
 import {
   attentionFor,
   contextUsed,
+  gitFolder,
   FALLBACK_ACTIVE_MS,
   resolveState,
   STALE_MS,
@@ -99,6 +100,7 @@ describe('attentionFor', () => {
     nextStep: null,
     contextTokens: null,
     model: null,
+    lastTouchedPath: null,
     interrupted: false,
     ...over,
   })
@@ -157,6 +159,18 @@ describe('contextUsed', () => {
     expect(contextUsed({ ...base, contextTokens: 2_000_000, model: null }, null)).toBe(1)
     expect(contextUsed(base, null)).toBeNull()
     expect(contextUsed(null, null)).toBeNull()
+  })
+})
+
+describe('gitFolder', () => {
+  const summary = (lastTouchedPath: string | null) =>
+    ({ lastTouchedPath }) as unknown as TranscriptSummary
+  it('prefers the app’s worktree, then the last file touched, then the working folder', () => {
+    const app = { worktreePath: 'Z:/repo/.claude/worktrees/x' } as never
+    const file = summary('Z:/work/api/src/a.ts')
+    expect(gitFolder(app, file, 'Z:/work')).toBe('Z:/repo/.claude/worktrees/x')
+    expect(gitFolder(undefined, file, 'Z:/work')).toBe('Z:/work/api/src')
+    expect(gitFolder(undefined, summary(null), 'Z:/work')).toBe('Z:/work')
   })
 })
 

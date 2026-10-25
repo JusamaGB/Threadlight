@@ -30,8 +30,6 @@ export const en = {
     plan: (done: number, total: number) => `Plan  ${done}/${total}`,
     inProgress: 'In progress',
     context: (percent: number) => `Context ${percent}%`,
-    diff: (added: number, removed: number) =>
-      `Since the last commit: ${added} lines added, ${removed} removed`,
     now: 'Now',
     result: 'Result',
     lastReply: 'Last reply',
@@ -70,6 +68,13 @@ export const en = {
     next: 'Next',
     previous: 'Previous question',
     answerInClaude: 'Answer in Claude ↗',
+  },
+  git: {
+    noBranch: 'no branch',
+    changed: (added: number, removed: number) => `+${added} −${removed} since the last commit`,
+    toPush: (n: number) => `${n} to push`,
+    behind: (n: number) => `${n} behind main`,
+    worktrees: (n: number) => `${n} worktrees`,
   },
   agent: {
     title: 'Agent',

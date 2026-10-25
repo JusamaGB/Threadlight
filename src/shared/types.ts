@@ -72,6 +72,18 @@ export interface DiffStat {
   removed: number
 }
 
+/** Where a thread's git folder stands (see gitDiff.ts). */
+export interface GitState extends DiffStat {
+  /** Null when no branch is checked out. */
+  branch: string | null
+  /** Commits waiting to be pushed: ahead of its upstream, or of main if never pushed. */
+  ahead: number
+  /** Commits on the local main branch that this branch does not have yet. */
+  behind: number
+  /** Every worktree of its repository, the main checkout first. */
+  worktrees: string[]
+}
+
 /** A pull request the Claude app linked to a thread, shown as the branch icon in its sidebar. */
 export interface PullRequest {
   number: number
@@ -108,8 +120,8 @@ export interface Session {
   backgroundTasks: BackgroundTask[]
   /** A Claude Code process has it open now (the Claude app, or a terminal): no background sends. */
   live: boolean
-  /** Its folder's changes since the last commit; null outside git, or before the first count. */
-  diff: DiffStat | null
+  /** Its git folder's state; null outside git, or before the first count. */
+  git: GitState | null
   /** How full its context is, 0 to 1, as the Claude app's Context ring shows; null if unknown. */
   contextUsed: number | null
   /** Set while the thread is waiting on the user; its card replaces the usual details. */
@@ -139,6 +151,8 @@ export interface Workspace {
   threads: ThreadNode[]
   /** Top-level threads not shown yet ("Show N more"). */
   hiddenCount: number
+  /** Worktrees across the repositories its listed threads work in; 0 when unknown. */
+  worktrees: number
 }
 
 /** Which workspaces the UI has open. `expanded: null` means "just the current workspace". */

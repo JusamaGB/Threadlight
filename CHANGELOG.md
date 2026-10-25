@@ -101,10 +101,15 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refused send unlocks the card with the reason. Threads Claude Code has open are read from
   its own register of live sessions.
 - The Active list leaves out each thread's age: everything there is happening now.
-- Each thread shows its folder's changes since the last commit beside its title, "+22 −1" in
-  green and red, as Claude does; it goes back to nothing when the work is committed, and new
-  files git does not track yet count as added lines. Threads outside a git folder show
-  nothing. Each folder is counted in the background, at most every 5 seconds.
+- Each thread shows where its git folder stands beside its title, only what is not zero:
+  "+22 −1" changed since the last commit (as Claude shows it), "↑2" commits to push (ahead
+  of its upstream, or of main if never pushed) and "↓5" commits behind the local main. The
+  tooltip says it in full, and an expanded thread has a line for it: branch · to push ·
+  behind main · worktrees. A workspace header counts its worktrees, in place of its thread
+  count (the panel's header already gives that). A thread's git folder is
+  the worktree the Claude app made for it, else the folder of the last file it touched
+  inside its working folder, else that folder. Counted in the background, at most every 5 s;
+  nothing is fetched from the network.
 - Next steps can be answered here too: when a turn ends on a question, the plugin's Stop hook
   waits and Threadlight shows the card with a countdown. Send hands back the picked answer,
   and Other your own words, and the same turn carries on with it. Threadlight lets go on the

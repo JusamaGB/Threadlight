@@ -382,6 +382,36 @@
   color: var(--green);
 }
 
+/* Commits waiting to be pushed. */
+.ahead {
+  color: var(--accent);
+}
+
+/* Commits behind main: worth knowing, not alarming. */
+.behind {
+  color: var(--amber);
+  opacity: 0.8;
+}
+
+/* The expanded thread's git line: branch · to push · behind main · worktrees. */
+.gitLine {
+  margin-top: 1px;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A workspace's worktrees, on the right of its header. */
+.workspaceWorktrees {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--faint);
+  font-size: 10px;
+}
+
 .removed {
   color: var(--red);
 }

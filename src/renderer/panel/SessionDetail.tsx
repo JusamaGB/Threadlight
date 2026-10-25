@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { elapsedText } from '../../shared/elapsed'
 import type { PlanItem, RelayStatus, Session } from '../../shared/types'
 import { useNow } from '../hooks/useNow'
+import { gitLine } from '../lib/git'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
 import { relayLine } from '../lib/relay'
@@ -35,6 +36,8 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
           </span>
         )}
       </div>
+      {/* Where its git folder stands: branch, to push, behind main, worktrees. */}
+      {session.git && <div className={styles.gitLine}>{gitLine(session.git)}</div>}
 
       {message && (
         <Section label={en.detail.yourMessage}>

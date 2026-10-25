@@ -4,11 +4,11 @@
 // threads cost almost nothing. Keeps one TranscriptReader per session between calls.
 
 import { readdir, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import type {
   Attention,
-  DiffStat,
+  GitState,
   Session,
   SessionState,
   Snapshot,
@@ -38,8 +38,8 @@ export interface TrackerOptions {
   /** The recent list's length, and how many threads an expanded workspace shows at first. */
   maxSessions?: number
   now?: () => number
-  /** A folder's changes since its last commit (gitDiff.ts); counted in the background. */
-  diffFor?: (folder: string) => DiffStat | null
+  /** Where a folder's repository stands (gitDiff.ts); counted in the background. */
+  gitFor?: (folder: string) => GitState | null
   /** A card Threadlight is holding for the user to answer here (holds.ts). */
   held?: (sessionId: string) => { kind: 'question' | 'next-step'; releasesAt: number } | null
 }
@@ -173,6 +173,7 @@ export class Tracker {
         anyWorking: states.includes('working'),
         threads: [],
         hiddenCount: 0,
+        worktrees: 0,
       }
       if (expanded.has(key)) {
         // Side threads nest under the thread that started them, when it is in the same workspace.
@@ -201,6 +202,7 @@ export class Tracker {
           }
         }
         for (const app of shown) workspace.threads.push(await node(app))
+        workspace.worktrees = countWorktrees(workspace.threads)
       }
       workspaces.push(workspace)
     }
@@ -262,7 +264,7 @@ export class Tracker {
       backgroundTasks: (summary?.backgroundTasks ?? []).filter(
         (task) => now - task.startedAt < TASK_GIVE_UP_MS,
       ),
-      diff: this.options.diffFor?.(cwd) ?? null,
+      git: this.options.gitFor?.(gitFolder(app, summary, cwd)) ?? null,
       live: live.has(id),
       contextUsed: contextUsed(summary, app?.model ?? null),
       attention: attentionFor(state, summary, this.options.held?.(id) ?? null),
@@ -371,6 +373,34 @@ export function contextUsed(
   const model = summary.model ?? appModel ?? ''
   const window = SMALL_WINDOW_MODELS.test(model) ? SMALL_WINDOW : CONTEXT_WINDOW
   return Math.min(1, summary.contextTokens / window)
+}
+
+/**
+ * The folder whose git state a thread shows: the worktree the Claude app made for it; else the
+ * folder of the last file it read or changed (a thread working in a parent of several
+ * repositories really works in one of them); else its working folder.
+ */
+export function gitFolder(
+  app: AppRecord | undefined,
+  summary: TranscriptSummary | null,
+  cwd: string,
+): string {
+  if (app?.worktreePath) return app.worktreePath
+  if (summary?.lastTouchedPath) return dirname(summary.lastTouchedPath)
+  return cwd
+}
+
+/** Worktrees across every repository a workspace's listed threads work in. */
+function countWorktrees(nodes: ThreadNode[]): number {
+  const seen = new Set<string>()
+  const walk = (list: ThreadNode[]) => {
+    for (const node of list) {
+      for (const path of node.session.git?.worktrees ?? []) seen.add(path.toLowerCase())
+      walk(node.children)
+    }
+  }
+  walk(nodes)
+  return seen.size
 }
 
 /**

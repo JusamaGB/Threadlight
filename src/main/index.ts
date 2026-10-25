@@ -19,7 +19,7 @@ import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
 import { defaultPaths } from './sessions/paths'
 import { SessionService } from './sessions/service'
-import { GitDiffs } from './sessions/gitDiff'
+import { GitStates } from './sessions/gitDiff'
 import { Tracker } from './sessions/tracker'
 import { SettingsStore } from './settings'
 import { runSetup, setupArgs } from './setupMode'
@@ -52,15 +52,15 @@ async function start(): Promise<void> {
   const windows = new WindowManager()
   // Cards held so they can be answered here (holds.ts); any change is shown at once.
   const holds = new Holds(() => void sessions.refresh())
-  // Each folder's uncommitted changes, counted in the background; a new count is shown at once.
-  const diffs = new GitDiffs(() => void sessions.refresh())
+  // Each folder's git state, counted in the background; a new count is shown at once.
+  const gitStates = new GitStates(() => void sessions.refresh())
   const tracker = new Tracker({
     paths,
     hooks,
     windowHours: initial.listWindowHours,
     maxSessions: initial.maxSessions,
     held: (id) => holds.held(id),
-    diffFor: (folder) => diffs.get(folder),
+    gitFor: (folder) => gitStates.get(folder),
   })
   const sessions = new SessionService(tracker, (snapshot) => {
     letHeldCardsGo(holds, snapshot)
