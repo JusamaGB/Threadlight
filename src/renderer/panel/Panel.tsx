@@ -49,6 +49,12 @@ const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
 /** A thread that has just gone idle stays in the Active list this long, so its reply can be read. */
 const LINGER_MS = 30_000
+const workspaceFolder = (id: string) =>
+  id
+    .replace(/^(claude|codex):/, '')
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '')
+    .toLowerCase()
 
 /** While pinned, this icon takes the place of the thread count, next to the word "recent". */
 function PinIcon() {
@@ -114,6 +120,11 @@ export function Panel() {
   const [menu, setMenu] = useState<MenuState | null>(null)
   /** The list button's right-click menu of the other kinds of full list, where it opened. */
   const [listMenu, setListMenu] = useState<{ x: number; y: number } | null>(null)
+  const [sourceMenu, setSourceMenu] = useState<{
+    x: number
+    y: number
+    anchor: HTMLElement
+  } | null>(null)
   /** The composer is hidden while this is null. */
   const [compose, setCompose] = useState<ComposeState | null>(null)
   /** Speech that needs a thread picked before it can be sent. */
@@ -197,6 +208,8 @@ export function Panel() {
         previousProviders.current = enabled
         if (expanded && !enabled.includes(sessionProvider(expanded))) setExpanded(null)
         setMenu(null)
+        setListMenu(null)
+        setSourceMenu(null)
         setPicking(null)
         setChangesFor(null)
 
@@ -224,6 +237,8 @@ export function Panel() {
         setVoiceWorkspace(null)
         voiceFocusPending.current = null
         setMenu(null)
+        setListMenu(null)
+        setSourceMenu(null)
         setCompose(null)
         setPicking(null)
         setNotice(null)
@@ -270,12 +285,14 @@ export function Panel() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (menu) setMenu(null)
+      if (sourceMenu) setSourceMenu(null)
+      else if (listMenu) setListMenu(null)
+      else if (menu) setMenu(null)
       else window.threadlight.closePanel()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [menu])
+  }, [menu, listMenu, sourceMenu])
 
   /** Turns finished speech into a composer for the right thread, or asks which thread. */
   const finishTalk = useCallback(async () => {
@@ -606,16 +623,77 @@ export function Panel() {
       })
     : null
   const windowText = windowLabel(settings?.listWindowHours ?? 24)
-  // The header tag names what the full list holds, number first (the pin replaces it).
-  const focusGroup = snapshot.workspaces.find((w) => focusId && sameFolder(w.id, focusId))
-  const listTag =
-    listMode === 'workspace'
-      ? { count: focusGroup?.threadCount ?? 0, word: focus?.name ?? en.panel.workspace }
-      : listMode === 'all'
-        ? { count: snapshot.workspaces.length, word: en.panel.workspaces }
-        : { count: sessions.length, word: en.panel.recentWord }
-  // Right-clicking the list button offers the other kinds of full list, so the choice in
-  // Settings → "Full list shows" is a click away. A plain click still opens and closes it.
+  const focusGroups = snapshot.workspaces.filter(
+    (w) =>
+      focusId &&
+      (provider === 'both'
+        ? workspaceFolder(w.id) === workspaceFolder(focusId)
+        : sameFolder(w.id, focusId)),
+  )
+  const focusGroupKeys = focusGroups.map((w) => w.id).join('\n')
+  const treeFocus = focus ? { ...focus, ids: focusGroups.map((w) => w.id) } : null
+  const pickerWorkspaces =
+    provider === 'both'
+      ? [
+          ...new Map(
+            snapshot.allWorkspaces.map((w) => [
+              workspaceFolder(w.id),
+              { ...w, name: w.name.replace(/^(Claude|Codex) · /, '') },
+            ]),
+          ).values(),
+        ]
+      : snapshot.allWorkspaces
+  const pickerId = (id: string | null) =>
+    id && provider === 'both'
+      ? (pickerWorkspaces.find((w) => workspaceFolder(w.id) === workspaceFolder(id))?.id ?? id)
+      : id
+  const headerView = view === 'active' ? 'active' : listMode
+  const viewLabel =
+    headerView === 'active'
+      ? 'Active'
+      : headerView === 'recent'
+        ? 'Recent'
+        : headerView === 'workspace'
+          ? 'Workspace'
+          : 'All'
+  const viewCount =
+    headerView === 'active'
+      ? active
+      : headerView === 'workspace'
+        ? focusGroups.reduce((count, group) => count + group.threadCount, 0)
+        : headerView === 'all'
+          ? snapshot.workspaces.length
+          : sessions.length
+  const workspaceName = focus?.name.replace(/^(Claude|Codex) · /, '') ?? 'Workspace'
+  const sourceLabel =
+    provider === 'both'
+      ? 'Both'
+      : provider === 'codex'
+        ? 'Codex'
+        : provider === 'claude'
+          ? 'Claude'
+          : 'Apps'
+  const selectList = async (mode: 'recent' | 'workspace' | 'all') => {
+    setVoiceSelection(null)
+    setVoiceWorkspace(null)
+    if (mode === listMode) {
+      setView('all')
+      return
+    }
+    const result = await window.threadlight.updateSettings({ listMode: mode })
+    if (result.ok) setView('all')
+    else setNotice(result.reason)
+  }
+  const cycleView = () => {
+    if (view === 'active') void selectList('recent')
+    else if (listMode === 'recent') void selectList('workspace')
+    else {
+      setVoiceSelection(null)
+      setVoiceWorkspace(null)
+      setView('active')
+    }
+  }
+  // The view control owns the former workspace label's right-click shortcuts.
   const onListMenu = (event: MouseEvent) => {
     event.preventDefault()
     setListMenu({ x: event.clientX, y: event.clientY })
@@ -625,13 +703,24 @@ export function Panel() {
     { mode: 'workspace', label: en.settings.listWorkspace },
     { mode: 'all', label: en.settings.listAll },
   ] as const
-  const listMenuItems = LIST_MODES.filter((m) => m.mode !== listMode).map(({ mode, label }) => ({
+  const listMenuItems = [
+    { label: 'Active', disabled: view === 'active', onSelect: () => setView('active') },
+    ...LIST_MODES.map(({ mode, label }) => ({
+      label,
+      disabled: view === 'all' && listMode === mode,
+      onSelect: () => void selectList(mode),
+    })),
+  ]
+  const sourceMenuItems = [
+    { label: 'Codex', providers: ['codex'] as const },
+    { label: 'Claude', providers: ['claude'] as const },
+    { label: 'Both', providers: ['claude', 'codex'] as const },
+  ].map(({ label, providers }) => ({
     label,
-    onSelect: () => {
-      setVoiceSelection(null)
-      setVoiceWorkspace(null)
-      void window.threadlight.updateSettings({ listMode: mode })
-      setView('all') // straight to the list it now shows
+    disabled: label === sourceLabel,
+    onSelect: async () => {
+      const result = await window.threadlight.updateSettings({ enabledProviders: [...providers] })
+      if (!result.ok) setNotice(result.reason)
     },
   }))
 
@@ -668,11 +757,11 @@ export function Panel() {
   useEffect(() => {
     if (!tree) return window.threadlight.setTreeView({ expanded: [], showAll: [] })
     if (listMode === 'workspace') {
-      const only = focusId ? [focusId] : []
+      const only = focusGroupKeys ? focusGroupKeys.split('\n') : focusId ? [focusId] : []
       return window.threadlight.setTreeView({ expanded: only, showAll: only })
     }
     window.threadlight.setTreeView({ expanded: openWorkspaces, showAll: moreWorkspaces })
-  }, [tree, listMode, focusId, openWorkspaces, moreWorkspaces, enabledKey])
+  }, [tree, listMode, focusId, focusGroupKeys, openWorkspaces, moreWorkspaces, enabledKey])
 
   const openMenu = (event: MouseEvent, session: Session) => {
     event.preventDefault()
@@ -809,69 +898,52 @@ export function Panel() {
             </>
           ) : (
             <>
-              <span className={styles.heading}>
-                {/* Pinned open by a double-click; another double-click unpins. */}
-                {hold === 'active' && (
-                  <span className={styles.headingPin} title={en.panel.unpinActive}>
-                    <PinIcon />
-                  </span>
-                )}
-                {en.panel.activeCount(active)}
-              </span>
-              {/* "10 recent", "18 General" or "18 workspaces" opens the full list and closes it
-                again. Pinned, the pin takes the number's place, and clicking it unpins. */}
-              {hold === 'pinned' ? (
+              {hold !== 'normal' && (
                 <button
-                  className={styles.recent}
-                  aria-pressed
+                  className={styles.unpin}
                   aria-label={en.panel.unpin}
-                  aria-haspopup="menu"
                   title={en.panel.unpin}
-                  onContextMenu={onListMenu}
                   onClick={() => changeHold('normal')}
                 >
-                  <PinIcon /> {listTag.word}
+                  <PinIcon />
                 </button>
-              ) : (
+              )}
+              <button
+                className={styles.viewControl}
+                data-thread-view={headerView}
+                aria-pressed={view === 'all'}
+                aria-haspopup="menu"
+                onContextMenu={onListMenu}
+                onClick={cycleView}
+              >
+                {viewLabel} · {viewCount}
+              </button>
+              <div className={styles.sourceWorkspace}>
                 <button
-                  className={styles.recent}
-                  aria-pressed={view === 'all'}
+                  className={styles.sourceControl}
+                  aria-label={`Filter applications: ${sourceLabel}`}
                   aria-haspopup="menu"
-                  title={view === 'all' ? en.panel.hideList : en.panel.showList}
-                  onContextMenu={onListMenu}
-                  onClick={() => setView(view === 'active' ? 'all' : 'active')}
+                  aria-expanded={sourceMenu !== null}
+                  onClick={(event) => {
+                    const box = event.currentTarget.getBoundingClientRect()
+                    setSourceMenu({
+                      x: box.left,
+                      y: box.bottom + 2,
+                      anchor: event.currentTarget.closest('header') ?? event.currentTarget,
+                    })
+                  }}
                 >
-                  {listTag.count} {listTag.word}
+                  {sourceLabel}
                 </button>
-              )}
-              {/* With Open mic on: the live mic's switch, blue while it listens. */}
-              {openMicMode && (
+                <span aria-hidden="true">·</span>
                 <button
-                  className={styles.gear}
-                  data-open-mic={openMic}
-                  aria-pressed={openMic !== 'off'}
-                  aria-label={
-                    openMic === 'blocked'
-                      ? en.openMic.blocked
-                      : openMic !== 'off'
-                        ? en.openMic.on
-                        : en.openMic.off
-                  }
-                  title={
-                    openMic === 'blocked'
-                      ? en.openMic.blocked
-                      : openMic !== 'off'
-                        ? en.openMic.on
-                        : en.openMic.off
-                  }
-                  onClick={toggleLive}
+                  className={styles.workspaceControl}
+                  aria-label={`Choose workspace: ${workspaceName}`}
+                  onClick={() => setPickingWorkspace(true)}
                 >
-                  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-                    <rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5" />
-                    <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" fill="none" />
-                  </svg>
+                  {workspaceName}
                 </button>
-              )}
+              </div>
               {
                 <button
                   className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
@@ -903,9 +975,9 @@ export function Panel() {
           <div className={styles.list}>
             <WorkspacePicker
               provider={provider}
-              workspaces={snapshot.allWorkspaces}
-              chosen={chosen}
-              current={snapshot.currentWorkspace}
+              workspaces={pickerWorkspaces}
+              chosen={pickerId(chosen)}
+              current={pickerId(snapshot.currentWorkspace)}
               onPick={(id) => void pickWorkspace(id)}
             />
           </div>
@@ -919,7 +991,12 @@ export function Panel() {
           />
         )}
 
-        {micLive && (
+        {openMic === 'blocked' && (
+          <p className={styles.notice} role="alert">
+            {en.openMic.blocked}
+          </p>
+        )}
+        {micLive && openMic !== 'blocked' && (
           <p className={styles.notice} role="status" data-mic-mode={micMode}>
             {micMode === 'agent'
               ? livePhase === 'live'
@@ -1004,11 +1081,10 @@ export function Panel() {
             {tree ? (
               <WorkspaceTree
                 workspaces={snapshot.workspaces}
-                only={listMode === 'workspace' ? focus : null}
+                only={listMode === 'workspace' ? treeFocus : null}
                 isOpen={isOpen}
                 onToggle={toggleWorkspace}
                 onShowMore={(id) => setMoreWorkspaces((list) => [...list, id])}
-                onPickWorkspace={() => setPickingWorkspace(true)}
                 emptyMessage={en.nothingInWindow(windowText)}
                 renderRow={renderRow}
               />
@@ -1073,6 +1149,15 @@ export function Panel() {
             y={listMenu.y}
             items={listMenuItems}
             onClose={() => setListMenu(null)}
+          />
+        )}
+        {sourceMenu && (
+          <ContextMenu
+            x={sourceMenu.x}
+            y={sourceMenu.y}
+            anchor={sourceMenu.anchor}
+            items={sourceMenuItems}
+            onClose={() => setSourceMenu(null)}
           />
         )}
       </div>

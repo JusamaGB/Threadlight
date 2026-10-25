@@ -19,7 +19,7 @@ export async function checkPanelHeight(page) {
     window.proof.emit('onSnapshot', { ...snapshot, sessions, lookupSessions: sessions })
     window.proof.emit('onPanelOpened', { maxHeight: 1200, opensDown: true, fresh: true })
   })
-  const expandedList = page.locator('header button[aria-haspopup="menu"]')
+  const expandedList = page.locator('header button[data-thread-view]')
   await expandedList.click()
   await page.locator('[data-session-id="synthetic-height-18"]').waitFor()
   const measure = () =>
@@ -38,7 +38,7 @@ export async function checkPanelHeight(page) {
   const natural = await measure()
   assert.equal(natural.overflow, 0)
   // Closing must not wait for an opacity transition or a timeout.
-  await page.clock.pauseAt(new Date())
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
   const leaves = () =>
     page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'leavePanel').length)
   await page.mouse.move(5, 5)

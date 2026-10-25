@@ -1,6 +1,8 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import styles from './Panel.module.css'
+import { usePanelRoom } from './room'
 
 export interface MenuItem {
   label: string
@@ -11,27 +13,59 @@ export interface MenuItem {
 interface ContextMenuProps {
   x: number
   y: number
+  anchor?: HTMLElement
   items: MenuItem[]
   onClose: () => void
 }
 
 /** A small menu at the pointer. A transparent layer behind it closes it on any outside click. */
-export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, anchor, items, onClose }: ContextMenuProps) {
   const menu = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState({ left: x, top: y })
+  const { opensDown, extra, reserve } = usePanelRoom()
+  const [position, setPosition] = useState({
+    left: x,
+    top: y,
+    maxHeight: undefined as number | undefined,
+  })
 
   // Keep the whole menu inside the panel.
   useLayoutEffect(() => {
     const element = menu.current
     if (!element) return
-    const { width, height } = element.getBoundingClientRect()
+    const card = document.querySelector('[data-card]')?.getBoundingClientRect()
+    if (!card) return
+    const width = element.offsetWidth
+    const height = element.scrollHeight + 2
+    const at = anchor?.getBoundingClientRect()
+    reserve(
+      at
+        ? opensDown
+          ? at.bottom - card.top + height + 6 - card.height
+          : height + 6
+        : height + 8 - card.height,
+    )
+    const top = opensDown ? card.top : card.top - extra
+    const bottom = opensDown ? card.bottom + extra : card.bottom
     setPosition({
       left: Math.max(4, Math.min(x, window.innerWidth - width - 4)),
-      top: Math.max(4, Math.min(y, window.innerHeight - height - 4)),
+      top: Math.max(
+        top + 4,
+        Math.min(at ? (opensDown ? at.bottom + 2 : at.top - height - 2) : y, bottom - height - 4),
+      ),
+      maxHeight: Math.max(0, bottom - top - 8),
     })
-  }, [x, y])
+  }, [x, y, anchor, opensDown, extra, reserve])
+  const release = useRef(reserve)
+  useEffect(() => {
+    release.current = reserve
+  }, [reserve])
+  useEffect(() => () => release.current(0), [])
+  useEffect(
+    () => menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(),
+    [],
+  )
 
-  return (
+  return createPortal(
     <>
       <div
         className={styles.menuLayer}
@@ -41,7 +75,27 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           onClose()
         }}
       />
-      <div ref={menu} className={styles.menu} style={position} role="menu">
+      <div
+        ref={menu}
+        className={styles.menu}
+        style={position}
+        role="menu"
+        onKeyDown={(event) => {
+          if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+          event.preventDefault()
+          const buttons = [
+            ...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+          ]
+          const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+          const next =
+            event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? buttons.length - 1
+                : (index + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length
+          buttons[next]?.focus()
+        }}
+      >
         {items.map((item) => (
           <button
             key={item.label}
@@ -57,6 +111,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           </button>
         ))}
       </div>
-    </>
+    </>,
+    document.body,
   )
 }

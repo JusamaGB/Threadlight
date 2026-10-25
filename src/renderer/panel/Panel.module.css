@@ -35,6 +35,49 @@
   font-weight: 600;
 }
 
+.header > .viewControl,
+.header > .unpin,
+.sourceWorkspace > button {
+  cursor: pointer;
+}
+
+.viewControl {
+  flex: none;
+  font-weight: 600;
+}
+
+.unpin {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sourceWorkspace {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 180px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.sourceControl {
+  flex: none;
+}
+
+.workspaceControl {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viewControl:hover,
+.sourceWorkspace > button:hover {
+  color: var(--fg);
+}
+
 .recent {
   margin-left: auto;
   color: var(--muted);
@@ -857,13 +900,15 @@ span.planStep {
 /* ---------- context menu ---------- */
 
 .menuLayer {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 10;
 }
 
 .menu {
-  position: absolute;
+  position: fixed;
+  box-sizing: border-box;
+  overflow-y: auto;
   z-index: 11;
   /* As wide as its longest item, no wider. */
   width: max-content;

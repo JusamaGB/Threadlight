@@ -13,6 +13,7 @@ import { checkAgentSelection } from './agent-selection.smoke.mjs'
 import { checkPanelHeight } from './panel-height.smoke.mjs'
 import { checkTips } from './tips.smoke.mjs'
 import { checkNowTimer } from './now-timer.smoke.mjs'
+import { checkToolbar } from './toolbar.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
 
@@ -198,6 +199,7 @@ try {
       }
       window.proof = {
         calls: [],
+        resizes: [],
         emit,
         agent(next) {
           agent = { ...agent, ...next, revision: agent.revision + 1 }
@@ -241,6 +243,7 @@ try {
           getOpenMicIndicator: async () => ({ live: false, level: 0 }),
           dotClick: () => window.proof.calls.push(['dotClick']),
           leavePanel: () => window.proof.calls.push(['leavePanel']),
+          resizePanel: (height) => window.proof.resizes.push(height),
           stopOpenMic: () => window.proof.calls.push(['stopOpenMic']),
           getAgent: async () => agent,
           getUsage: async () => ({
@@ -365,6 +368,7 @@ try {
   }
   const box = page.getByPlaceholder('Type a message…')
   await checkPanelHeight(page)
+  await checkToolbar(page)
   await checkMemory(page, memoryProof, capture)
   await page.reload()
   await compose('Claude')
@@ -389,9 +393,10 @@ try {
   assert.match(claudeFade, /linear-gradient/)
   assert.match(codexFade, /linear-gradient/)
   assert.notEqual(claudeFade, codexFade)
-  await page.getByTitle('Show the full list').click()
+  await page.locator('header button[data-thread-view]').click()
   await capture('combined-list')
-  await page.getByTitle('Show only active sessions').click()
+  await page.locator('header button[data-thread-view]').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Active', exact: true }).click()
   await compose('Codex')
   await box.fill('Codex draft')
   await row('Codex').click()
@@ -647,12 +652,11 @@ try {
   await page.getByRole('radio', { name: 'All', exact: true }).click()
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   assert.equal(
-    await page
-      .getByRole('button', { name: 'Open the mic for voice commands' })
-      .getAttribute('aria-pressed'),
-    'false',
+    await page.getByRole('button', { name: 'Open the mic for voice commands' }).count(),
+    0,
   )
-  await page.getByTitle('Show the full list').click()
+  await page.locator('header button[data-thread-view]').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'All', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: /^Claude · shared/ }).isVisible(), true)
   assert.equal(await page.getByRole('button', { name: /^Codex · shared/ }).isVisible(), true)
   await capture('combined-workspaces')
@@ -844,7 +848,12 @@ try {
     window.proof.quietInput = true
     await window.threadlight.updateSettings({ openMic: true })
   })
-  await page.getByRole('button', { name: 'Open the mic for voice commands', exact: true }).waitFor()
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Open the mic for voice commands', exact: true })
+      .count(),
+    0,
+  )
   await page.evaluate(() => window.proof.emit('onTalkToggle'))
   const divider = page.getByRole('status', { name: 'Claude microphone listening', exact: true })
   await divider.waitFor()
@@ -880,7 +889,12 @@ try {
     })
     window.proof.emit('onTalkToggle')
   })
-  await page.getByRole('button', { name: 'The microphone is blocked', exact: true }).waitFor()
+  await page.waitForFunction(() => document.documentElement.dataset.openMic === 'blocked')
+  await page.getByRole('alert').filter({ hasText: 'The microphone is blocked' }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'The microphone is blocked', exact: true }).count(),
+    0,
+  )
   assert.equal(await divider.count(), 0)
 
   // The hosted Agent is available independently of monitoring and uses a dynamic catalog.

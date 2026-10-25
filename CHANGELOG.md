@@ -305,6 +305,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Thread toolbar separates view, application and workspace controls. Click the view label
+  to cycle Active, Recent and Workspace; right-click it for direct choices including All.
+  Application filtering shares the Settings selection, and the workspace name opens its
+  picker. The duplicate workspace heading and toolbar microphone button are removed;
+  the open-mic hotkey remains available.
+
 - Thread edge glows are half as wide (10 px) and mirrored on both sides.
 
 - Expanded thread details show elapsed turn time beside NOW, above the current action.

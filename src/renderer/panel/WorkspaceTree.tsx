@@ -7,12 +7,10 @@ import styles from './Panel.module.css'
 interface WorkspaceTreeProps {
   workspaces: Workspace[]
   /** "all": every workspace, collapsible. "workspace": just this one, always open. */
-  only: { id: string; name: string } | null
+  only: { id: string; name: string; ids?: string[] } | null
   isOpen: (workspaceId: string) => boolean
   onToggle: (workspaceId: string) => void
   onShowMore: (workspaceId: string) => void
-  /** The Workspace list's header picks another workspace. */
-  onPickWorkspace: () => void
   /** Shown when nothing falls inside the chosen time window. */
   emptyMessage: string
   /** Renders a thread exactly as the recent list does. */
@@ -21,14 +19,14 @@ interface WorkspaceTreeProps {
 
 /** The recent list's rows, wrapped in workspace groups like the Claude sidebar. */
 export function WorkspaceTree(props: WorkspaceTreeProps) {
-  const { workspaces, only, isOpen, onToggle, onShowMore, onPickWorkspace, renderRow } = props
-  const shown = only ? workspaces.filter((w) => sameFolder(w.id, only.id)) : workspaces
+  const { workspaces, only, isOpen, onToggle, onShowMore, renderRow } = props
+  const shown = only
+    ? workspaces.filter((w) => (only.ids ?? [only.id]).some((id) => sameFolder(w.id, id)))
+    : workspaces
 
   if (shown.length === 0) {
     return (
       <>
-        {/* The chosen workspace still heads the list, so it can be changed from here. */}
-        {only && <FixedHeader name={only.name} title={only.id} onPick={onPickWorkspace} />}
         <p className={styles.empty}>{props.emptyMessage}</p>
       </>
     )
@@ -41,10 +39,6 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
         if (only) {
           return (
             <section key={workspace.id} className={styles.workspace}>
-              <FixedHeader name={workspace.name} title={workspace.id} onPick={onPickWorkspace}>
-                {/* Its worktrees only: the thread count is already in the panel's header. */}
-                <Worktrees count={workspace.worktrees} />
-              </FixedHeader>
               <div className={styles.workspaceThreads}>
                 <Nodes nodes={workspace.threads} renderRow={renderRow} />
               </div>
@@ -84,26 +78,6 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
         )
       })}
     </>
-  )
-}
-
-/** The Workspace list's heading: the chosen workspace, tapped to choose another. */
-function FixedHeader(props: {
-  name: string
-  title: string
-  onPick: () => void
-  children?: ReactNode
-}) {
-  return (
-    <button
-      className={styles.workspaceHeader}
-      onClick={props.onPick}
-      title={`${props.title} · ${en.workspaces.change}`}
-    >
-      <span className={styles.workspaceName}>{props.name}</span>
-      <span className={styles.caret}>▾</span>
-      {props.children}
-    </button>
   )
 }
 
