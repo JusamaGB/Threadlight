@@ -27,6 +27,7 @@ import { useVoice } from '../hooks/useVoice'
 import { en } from '../i18n/en'
 import { windowLabel } from '../lib/format'
 import { SettingsView } from '../settings/SettingsView'
+import { MemoryView } from '../memory/MemoryView'
 import { AgentView } from './AgentView'
 import { ChangesView } from './ChangesView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
@@ -89,6 +90,7 @@ export function Panel() {
   const usage = useUsage()
   /** The settings list takes over the panel's card while this is true. */
   const [showSettings, setShowSettings] = useState(false)
+  const [showMemory, setShowMemory] = useState(false)
   /** The agent conversation takes over the card, like settings. */
   const [showAgent, setShowAgent] = useState(false)
   // The agent keeps working while another page shows; its button then says so.
@@ -436,7 +438,7 @@ export function Panel() {
   // The panel only shows while the pointer is over it: leaving fades it out, coming back cancels.
   // Pinned (either list), leaving does nothing at all.
   const leave = () => {
-    if (drag.isDragging() || hold !== 'normal') return
+    if (drag.isDragging() || hold !== 'normal' || showMemory) return
     // Never hide the panel while the microphone is open or a voice send is counting down:
     // the recording or the send would carry on with nothing on screen to show or stop it.
     if (voice.state !== 'idle' || Date.now() < countdownUntil.current) return
@@ -746,7 +748,8 @@ export function Panel() {
     setExpanded(expanded === session.id ? null : session.id)
   }
 
-  const listHidden = showSettings || pickingWorkspace || showAgent || changesFor !== null
+  const listHidden =
+    showMemory || showSettings || pickingWorkspace || showAgent || changesFor !== null
 
   return (
     <PanelRoomContext.Provider value={panelRoom}>
@@ -811,6 +814,20 @@ export function Panel() {
                 </span>
               )}
               <span className={`${styles.heading} ${styles.pageHeading}`}>{en.agent.title}</span>
+            </>
+          ) : showMemory ? (
+            <>
+              <button
+                className={styles.back}
+                aria-label="Close shared memory"
+                onClick={() => {
+                  setShowMemory(false)
+                  window.threadlight.setStayOpen(hold !== 'normal')
+                }}
+              >
+                ‹
+              </button>
+              <span className={`${styles.heading} ${styles.pageHeading}`}>Shared memory</span>
             </>
           ) : showSettings ? (
             <>
@@ -974,13 +991,25 @@ export function Panel() {
           </>
         )}
 
-        {showSettings && settings && !pickingWorkspace && !showAgent && (
+        <MemoryView
+          visible={showMemory && !showAgent && !pickingWorkspace && changesFor === null}
+          sessions={snapshot.lookupSessions ?? snapshot.sessions}
+          onClose={() => {
+            setShowMemory(false)
+            window.threadlight.setStayOpen(hold !== 'normal')
+          }}
+        />
+        {showSettings && settings && !pickingWorkspace && !showAgent && !showMemory && (
           <SettingsView
             providerLocked={voice.state !== 'idle'}
             settings={settings}
             stt={stt}
             version={version}
             onPickWorkspace={() => setPickingWorkspace(true)}
+            onOpenMemory={() => {
+              setShowMemory(true)
+              window.threadlight.setStayOpen(true)
+            }}
           />
         )}
 

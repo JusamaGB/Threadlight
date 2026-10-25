@@ -11,6 +11,8 @@ import { checkVoiceRouting } from './voice-routing.smoke.mjs'
 import { checkMicPill } from './mic-pill.smoke.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
 
+import { setupMemory, checkMemory } from './memory.smoke.mjs'
+
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
@@ -142,10 +144,12 @@ const server = createServer((request, response) => {
   }
 })
 await new Promise((done) => server.listen(0, '127.0.0.1', done))
-let browser
+let browser, memoryProof, testPage
 try {
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 460, height: 900 } })
+  memoryProof = await setupMemory(page, require(join(root, 'src/main/memory/store.ts')).MemoryStore)
+  testPage = page
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', (error) => {
@@ -199,6 +203,7 @@ try {
       }
       window.threadlight = new Proxy(
         {
+          memoryRequest: (input) => window.mockMemory(input),
           getSettings: async () => (await window.mockState()).settings,
           getSnapshot: async () => (await window.mockState()).snapshot,
           getSessions: async () => (await window.mockState()).snapshot.sessions,
@@ -338,6 +343,8 @@ try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  await checkMemory(page, memoryProof, capture)
+  await page.reload()
   await compose('Claude')
   await box.fill('Claude draft')
   await toggle('Codex')
@@ -945,7 +952,15 @@ try {
   console.log(
     'PASS: provider lists, drafts, sends, plans, usage, composer waveform and mic divider; Agent model settings, questions, queued approvals, Stop/End and history; no browser errors.',
   )
+} catch (error) {
+  console.log((await testPage?.locator('body').innerText())?.slice(0, 6000))
+  if (process.env.THREADLIGHT_SCREENSHOTS)
+    await testPage?.screenshot({
+      path: join(process.env.THREADLIGHT_SCREENSHOTS, 'memory-error.local.png'),
+    })
+  throw error
 } finally {
   await browser?.close()
+  memoryProof?.close()
   await new Promise((done) => server.close(done))
 }

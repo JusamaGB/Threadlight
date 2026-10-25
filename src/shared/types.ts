@@ -275,6 +275,7 @@ export interface Snapshot {
 export type RelayState = 'sending' | 'sent' | 'replied' | 'failed'
 
 export interface RelayStatus {
+  attemptId?: string
   sessionId: string
   state: RelayState
   /** The reply when replied, the reason when failed. */

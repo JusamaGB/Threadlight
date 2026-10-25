@@ -1,3 +1,4 @@
+import type { MemoryDeliveryContext } from '../../shared/memory'
 import { spawn } from 'node:child_process'
 import { access, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -48,6 +49,16 @@ export function codexRelayArgs(session: Pick<Session, 'id' | 'model'>): string[]
   return args
 }
 
+/** Replace this server's whole invocation config so old static headers cannot override the task token. */
+export function codexMemoryArgs(memory?: Pick<MemoryDeliveryContext, 'url'>): string[] {
+  return memory
+    ? [
+        '-c',
+        `mcp_servers.threadlight={url=${JSON.stringify(memory.url)},bearer_token_env_var="THREADLIGHT_MEMORY_TOKEN",default_tools_approval_mode="approve"}`,
+      ]
+    : []
+}
+
 export function interpretCodexOutput(
   stdout: string,
   stderr: string,
@@ -95,6 +106,7 @@ export async function sendCodex(
   cli: CliCommand | null,
   isHeld: () => Promise<boolean>,
   onSent: () => void,
+  memory?: MemoryDeliveryContext,
 ): Promise<RelayResult> {
   if (!codexId(session.id)) return { ok: false, reason: 'Invalid Codex chat.' }
   if (!text.trim() || text.length > MAX_MESSAGE_LENGTH)
@@ -110,13 +122,19 @@ export async function sendCodex(
     // Do not borrow the executor identity of a process which happened to launch Threadlight.
     for (const key of ['CODEX_THREAD_ID', 'CODEX_TURN_ID', 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE'])
       delete env[key]
-    const child = spawn(cli.command, [...cli.prefixArgs, ...codexRelayArgs(session)], {
-      cwd: session.cwd,
-      windowsHide: true,
-      shell: false,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
+    if (memory) env['THREADLIGHT_MEMORY_TOKEN'] = memory.token
+    const memoryArgs = codexMemoryArgs(memory)
+    const child = spawn(
+      cli.command,
+      [...cli.prefixArgs, ...memoryArgs, ...codexRelayArgs(session)],
+      {
+        cwd: session.cwd,
+        windowsHide: true,
+        shell: false,
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    )
     let stdout = '',
       stderr = '',
       settled = false,
@@ -174,7 +192,11 @@ export class CodexRelayService {
   list(): RelayStatus[] {
     return [...this.statuses.values()]
   }
-  send(id: string, text: string): { ok: true } | { ok: false; reason: string } {
+  send(
+    id: string,
+    text: string,
+    memory?: MemoryDeliveryContext,
+  ): { ok: true } | { ok: false; reason: string } {
     const target = this.lookup(id)
     if (!target) return { ok: false, reason: 'That Codex chat is no longer listed.' }
     if (target.live)
@@ -183,7 +205,7 @@ export class CodexRelayService {
       return { ok: false, reason: 'Still waiting for the last reply.' }
     if (!text.trim() || text.length > MAX_MESSAGE_LENGTH)
       return { ok: false, reason: `Enter a message up to ${MAX_MESSAGE_LENGTH} characters.` }
-    this.update(id, 'sending', '')
+    this.update(id, 'sending', '', memory?.attemptId)
     void findCodexCli(this.paths)
       .then((cli) =>
         sendCodex(
@@ -191,17 +213,28 @@ export class CodexRelayService {
           text,
           cli,
           () => codexHeld(this.paths.locks, codexId(id)!),
-          () => this.update(id, 'sent', ''),
+          () => this.update(id, 'sent', '', memory?.attemptId),
+          memory,
         ),
       )
       .then((result) =>
-        this.update(id, result.ok ? 'replied' : 'failed', result.ok ? result.reply : result.reason),
+        this.update(
+          id,
+          result.ok ? 'replied' : 'failed',
+          result.ok ? result.reply : result.reason,
+          memory?.attemptId,
+        ),
       )
-      .catch((error) => this.update(id, 'failed', String(error)))
+      .catch((error) => this.update(id, 'failed', String(error), memory?.attemptId))
     return { ok: true }
   }
-  private update(sessionId: string, state: RelayStatus['state'], detail: string): void {
-    this.statuses.set(sessionId, { sessionId, state, detail, at: Date.now() })
+  private update(
+    sessionId: string,
+    state: RelayStatus['state'],
+    detail: string,
+    attemptId?: string,
+  ): void {
+    this.statuses.set(sessionId, { sessionId, state, detail, at: Date.now(), attemptId })
     this.changed()
   }
 }

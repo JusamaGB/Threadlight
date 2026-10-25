@@ -6,7 +6,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { CodexHolds } from '../src/main/codex/holds'
 import { codexDeepLink, codexKey } from '../src/main/codex/identity'
 import { writerHeld } from '../src/main/codex/live'
-import { codexRelayArgs, interpretCodexOutput, sendCodex } from '../src/main/codex/relay'
+import {
+  codexRelayArgs,
+  codexMemoryArgs,
+  interpretCodexOutput,
+  sendCodex,
+} from '../src/main/codex/relay'
 import { CodexTracker, rolloutTail, summarizeCodex } from '../src/main/codex/tracker'
 import { codexPaths } from '../src/main/sessions/paths'
 import type { Session } from '../src/shared/types'
@@ -16,6 +21,15 @@ import { startHookServer } from '../src/main/hookServer'
 const id = '11111111-1111-4111-8111-111111111111',
   key = codexKey(id)
 const temp: string[] = []
+
+it('uses a complete invocation-only memory server configuration, with the token outside argv', () => {
+  expect(codexMemoryArgs()).toEqual([])
+  const args = codexMemoryArgs({ url: 'http://127.0.0.1:47618/mcp' })
+  expect(args).toHaveLength(2)
+  expect(args[1]).toMatch(/^mcp_servers\.threadlight=\{/)
+  expect(args[1]).toContain('bearer_token_env_var="THREADLIGHT_MEMORY_TOKEN"')
+  expect(args[1]).not.toContain('http_headers')
+})
 afterEach(async () => {
   vi.useRealTimers()
   for (const path of temp.splice(0)) await rm(path, { recursive: true, force: true })

@@ -15,6 +15,7 @@ import type {
 import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
 import type { Usage } from './usage'
+import type { MemoryInput, MemoryReply, MemorySnapshot } from './memory'
 import type {
   Changes,
   FileDiff,
@@ -26,6 +27,11 @@ import type {
 } from './types'
 
 export const IPC = {
+  memoryRequest: 'memory:request',
+  memoryChanged: 'memory:changed',
+  memoryImport: 'memory:import',
+  memoryExport: 'memory:export',
+  memoryRestore: 'memory:restore',
   getSnapshot: 'sessions:get-snapshot',
   snapshotChanged: 'sessions:snapshot-changed',
   setTreeView: 'sessions:set-tree-view',
@@ -104,6 +110,11 @@ export type TalkState = 'idle' | 'listening' | 'transcribing'
 
 /** What the preload script exposes on `window.threadlight`. */
 export interface ThreadlightApi {
+  memoryRequest(input: MemoryInput): Promise<MemoryReply>
+  onMemory(listener: (snapshot: MemorySnapshot) => void): () => void
+  memoryImport(folderId: string): Promise<MemoryReply>
+  memoryExport(): Promise<MemoryReply>
+  memoryRestore(): Promise<MemoryReply>
   answerCodex(
     sessionId: string,
     holdId: string,

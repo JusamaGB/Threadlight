@@ -7,7 +7,7 @@ import { agentBusy } from '../shared/agent'
 import { IPC } from '../shared/ipc'
 import { registerMicIndicator } from './micIndicator'
 import type { Settings } from '../shared/settings'
-import type { Provider, Session, Snapshot, ThreadNode } from '../shared/types'
+import type { Provider, Session, Snapshot, ThreadNode, RelayStatus } from '../shared/types'
 import { combinedSnapshot, PROVIDERS, providerView, sessionProvider } from '../shared/providers'
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
@@ -38,6 +38,7 @@ import { runSetup, setupArgs } from './setupMode'
 import { SttService } from './stt/service'
 import { createTray } from './tray'
 import { WindowManager } from './windows'
+import { startMemory } from './memory/integration'
 
 const SCAN_INTERVAL_MS = 1000
 const CLAUDE_CHECK_INTERVAL_MS = 2000
@@ -344,6 +345,7 @@ async function start(): Promise<void> {
   // The UI passes only a session id and text; folder, permission mode and model come from
   // Threadlight's own scan, so a misbehaving page cannot choose them.
   let cli: CliCommand | null = null
+  let memoryReceipt: ((status: RelayStatus) => void) | undefined
   const relays = new RelayService(
     async () => ({
       cli: (cli ??= await findClaudeCli(paths)),
@@ -358,7 +360,9 @@ async function start(): Promise<void> {
     () => publishRelays(),
   )
   function publishRelays() {
-    windows.send(IPC.relaysChanged, [...relays.list(), ...codexRelays.list()])
+    const statuses = [...relays.list(), ...codexRelays.list()]
+    for (const status of statuses) if (status.attemptId) memoryReceipt?.(status)
+    windows.send(IPC.relaysChanged, statuses)
   }
   ipcMain.handle(IPC.sendMessage, (_event, sessionId: unknown, text: unknown) =>
     typeof sessionId === 'string' && typeof text === 'string'
@@ -370,6 +374,24 @@ async function start(): Promise<void> {
       : { ok: false, reason: 'Invalid message.' },
   )
   ipcMain.handle(IPC.getRelays, () => [...relays.list(), ...codexRelays.list()])
+
+  const stopMemory = await startMemory(app.getPath('userData'), windows.panel, {
+    find: (id) => sessions.find(id),
+    statuses: () => [...relays.list(), ...codexRelays.list()],
+    watch: (listener) => {
+      memoryReceipt = listener
+      return () => {
+        if (memoryReceipt === listener) memoryReceipt = undefined
+      }
+    },
+    send: (id, text, context) =>
+      !enabled(sessionProvider(id))
+        ? { ok: false, reason: 'Enable the destination provider in Settings.' }
+        : id.startsWith('codex:')
+          ? codexRelays.send(id, text, context)
+          : relays.send(id, text, context),
+  })
+  app.once('will-quit', stopMemory)
 
   const agent = new AgentService({
     workspace: agentWorkspace,

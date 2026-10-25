@@ -1,6 +1,7 @@
 // Tracks each relayed message through sending → sent (✓) → replied (✓✓) or failed,
 // and allows one message in flight per session.
 
+import type { MemoryDeliveryContext } from '../shared/memory'
 import type { RelayStatus } from '../shared/types'
 import { relayMessage, type RelayDeps, type RelayTarget } from './relay'
 
@@ -21,32 +22,50 @@ export class RelayService {
   }
 
   /** Starts a send and returns at once; progress arrives through onChange. */
-  send(sessionId: string, text: string): SendResult {
+  send(sessionId: string, text: string, memory?: MemoryDeliveryContext): SendResult {
     const target = this.lookup(sessionId)
     if (!target) return { ok: false, reason: 'That session is no longer listed.' }
     const current = this.statuses.get(sessionId)?.state
     if (current === 'sending' || current === 'sent') {
       return { ok: false, reason: 'Still waiting for the last reply.' }
     }
-    this.update(sessionId, 'sending', '')
-    void this.run(target, text)
+    this.update(sessionId, 'sending', '', memory?.attemptId)
+    void this.run(target, text, memory)
     return { ok: true }
   }
 
-  private async run(target: RelayTarget, text: string): Promise<void> {
+  private async run(
+    target: RelayTarget,
+    text: string,
+    memory?: MemoryDeliveryContext,
+  ): Promise<void> {
     try {
-      const result = await relayMessage(target, text, await this.deps(), () =>
-        this.update(target.id, 'sent', ''),
+      const result = await relayMessage(
+        target,
+        text,
+        await this.deps(),
+        () => this.update(target.id, 'sent', '', memory?.attemptId),
+        memory,
       )
-      if (result.ok) this.update(target.id, 'replied', result.reply)
-      else this.update(target.id, 'failed', result.reason)
+      if (result.ok) this.update(target.id, 'replied', result.reply, memory?.attemptId)
+      else this.update(target.id, 'failed', result.reason, memory?.attemptId)
     } catch (error) {
-      this.update(target.id, 'failed', error instanceof Error ? error.message : String(error))
+      this.update(
+        target.id,
+        'failed',
+        error instanceof Error ? error.message : String(error),
+        memory?.attemptId,
+      )
     }
   }
 
-  private update(sessionId: string, state: RelayStatus['state'], detail: string): void {
-    this.statuses.set(sessionId, { sessionId, state, detail, at: Date.now() })
+  private update(
+    sessionId: string,
+    state: RelayStatus['state'],
+    detail: string,
+    attemptId?: string,
+  ): void {
+    this.statuses.set(sessionId, { sessionId, state, detail, at: Date.now(), attemptId })
     this.onChange(this.list())
   }
 }

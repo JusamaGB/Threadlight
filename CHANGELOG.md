@@ -12,6 +12,15 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with a Use selected model action. Ended conversations display the selection for
   the next message while retaining their history.
 
+- Shared memory in the existing compact panel: spaces, folder map/list, versioned notes,
+  decisions, scratchpads, managed images/documents, discussion, search, provenance and
+  SQLite backup/restore. Agent-created folders appear without moving the current view.
+- Authenticated local MCP tools with scoped, revocable capabilities for Claude and Codex.
+  Delegations pin input and output revisions, use temporary assignment credentials and
+  the existing background relays, and require separate human acceptance of saved results.
+  Durable budgets, subscriptions, pause, causal loop checks and uncertain-delivery recovery
+  bound automatic coordination. Native provider memory and global settings are unchanged.
+
 - Codex Agent conversations archive on End, inactivity expiry and normal app exit,
   while remaining readable in Agent → Earlier. Continue restores the original thread.
   Archive failures retain a cleanup marker for retry. The dedicated Agent workspace

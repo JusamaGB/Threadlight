@@ -16,6 +16,7 @@ interface SettingsViewProps {
   version: string
   /** "Workspace" chosen (or tapped again): open the picker to choose which workspace. */
   onPickWorkspace: () => void
+  onOpenMemory: () => void
 }
 
 const HOUR_CHOICES = [6, 12, 24, 72, 168]
@@ -25,6 +26,7 @@ export function SettingsView({
   stt,
   version,
   onPickWorkspace,
+  onOpenMemory,
   providerLocked,
 }: SettingsViewProps) {
   const [errors, setErrors] = useState<Partial<Record<keyof Settings, string>>>({})
@@ -78,6 +80,13 @@ export function SettingsView({
             cards here.
           </p>
         )}
+      </Group>
+      <Group label="Shared memory">
+        <Row label="Notes, sectors and assignments">
+          <button className={styles.small} onClick={onOpenMemory}>
+            Open
+          </button>
+        </Row>
       </Group>
       <Group label={en.settings.voice}>
         <Row label={en.settings.talkHotkey} error={errors.talkHotkey}>

@@ -30,8 +30,32 @@ A small status dot and mini composer for **Claude and Codex desktop chats** on W
   the Agent after a pause, keeping the mic open. Busy or failed sends remain visible
   for retry. The thread composer's mic always stays dictation for that thread.
 
-Everything runs on your PC. Speech is transcribed locally. Threadlight has no
-telemetry and no servers.
+Threadlight runs on your PC and transcribes speech locally. It has no telemetry or
+external Threadlight service. Shared memory exposes authenticated tools on loopback;
+agent turns still use your provider account.
+
+### Shared memory
+
+Open **Settings → Shared memory → Open**. Create a space, then named sectors/folders
+for notes, decisions, scratchpads, images and documents. The map, folder, item and task
+views stay inside the existing 342-pixel panel. Map/List, search, Back and saved drafts
+let you browse without starting agent work.
+
+**Agent access** creates an explicit capability for a space or folder subtree. Choose
+an enrolled chat and contribution permissions for background assignments. To give an
+existing open chat memory tools, copy the displayed MCP configuration into that
+provider's MCP settings and reconnect its tools. Threadlight does not edit those
+settings automatically. A capability identifies an enrollment, not a verified native
+chat identity.
+
+**Delegate** creates a draft task with exact input versions and an output folder.
+Review and authorise it, then permit dispatch in **Coordination**. Live chats wait;
+closed idle chats use the existing background relay with temporary scoped tools.
+Saved results are submitted separately from human acceptance. Automatic coordination
+requires explicit permissions and is bounded by persisted time/turn limits, two
+concurrent destinations and causal-loop checks. Pausing stops new dispatches.
+
+See [SHARED-MEMORY.md](SHARED-MEMORY.md) for access, recovery, backup and verification details.
 
 ## Requirements
 
@@ -92,7 +116,7 @@ chat in memory, and changing the toggles cancels any voice-send countdown.
 ## Install
 
 Until the first release, Threadlight runs from a copy of this repository. You need
-[Node 22.13 or later](https://nodejs.org) as well as the requirements above.
+[Node 22.16 or later](https://nodejs.org) as well as the requirements above.
 
 **Ask Claude to do it.** Open Claude Code in the folder and say _"set up Threadlight"_. It
 follows [skills/setup/SKILL.md](skills/setup/SKILL.md): checks your PC, tells you what will

@@ -6,6 +6,7 @@ import { execFile, spawn } from 'node:child_process'
 import { access, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import type { MemoryDeliveryContext } from '../shared/memory'
 import type { Session } from '../shared/types'
 import { isObject, oneLine, str } from './sessions/json'
 import { liveSessionIds, processIsRunning } from './sessions/liveSessions'
@@ -58,6 +59,7 @@ export async function relayMessage(
   text: string,
   deps: RelayDeps,
   onSent: () => void = () => {},
+  memory?: MemoryDeliveryContext,
 ): Promise<RelayResult> {
   if (!SESSION_ID.test(target.id)) return { ok: false, reason: 'That session cannot be messaged.' }
   const message = text.trim()
@@ -75,9 +77,29 @@ export async function relayMessage(
     // No shell: the message is one argument and is never interpreted.
     const child = spawn(
       deps.cli!.command,
-      [...deps.cli!.prefixArgs, ...relayArgs(target, message)],
+      [
+        ...deps.cli!.prefixArgs,
+        ...relayArgs(target, message),
+        ...(memory
+          ? [
+              '--mcp-config',
+              JSON.stringify({
+                mcpServers: {
+                  threadlight: {
+                    type: 'http',
+                    url: memory.url,
+                    headers: { Authorization: 'Bearer ${THREADLIGHT_MEMORY_TOKEN}' },
+                  },
+                },
+              }),
+              '--allowedTools',
+              'mcp__threadlight__*',
+            ]
+          : []),
+      ],
       {
         cwd: target.cwd || undefined,
+        env: memory ? { ...process.env, THREADLIGHT_MEMORY_TOKEN: memory.token } : process.env,
         windowsHide: true,
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
