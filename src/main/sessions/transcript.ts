@@ -43,7 +43,13 @@ export interface TranscriptSummary {
   currentStep: CurrentStep | null
   recap: string | null
   lastReply: string | null
+  /** The current turn's latest tool call, described; null until it calls one. */
   lastAction: string | null
+  /**
+   * What the current turn did last: thinking (also before its first word, and after a tool
+   * returns), writing its reply, or calling a tool. Null before any turn.
+   */
+  activity: TurnActivity | null
   /** When the current turn began (the prompt that started it), in milliseconds since the epoch. */
   turnStartedAt: number | null
   backgroundTasks: BackgroundTask[]
@@ -63,6 +69,8 @@ export interface TranscriptSummary {
   /** The user pressed Stop and nothing has happened since. */
   interrupted: boolean
 }
+
+export type TurnActivity = 'thinking' | 'replying' | 'tool'
 
 interface ToolCall {
   label: string
@@ -89,6 +97,7 @@ export class TranscriptReader {
   private recap: string | null = null
   private lastReply: string | null = null
   private lastAction: string | null = null
+  private activity: TurnActivity | null = null
   private turnStartedAt: number | null = null
   private interrupted = false
   private contextTokens: number | null = null
@@ -137,6 +146,7 @@ export class TranscriptReader {
       recap: this.recap,
       lastReply: this.lastReply,
       lastAction: this.lastAction,
+      activity: this.activity,
       turnStartedAt: this.turnStartedAt,
       backgroundTasks: [
         ...[...this.tasks.values()].map(({ id, label, startedAt }) => ({ id, label, startedAt })),
@@ -243,6 +253,9 @@ export class TranscriptReader {
     this.turnStartedAt = at
     this.recap = null
     this.nextStep = null // whatever was asked, the user has now said something
+    // A new turn: nothing done yet, so nothing from the last one stays on the row.
+    this.lastAction = null
+    this.activity = 'thinking'
     this.interrupted = false
     this.firstPrompt ??= prompt
     this.lastPrompt = prompt
@@ -268,10 +281,16 @@ export class TranscriptReader {
     this.interrupted = false
     if (!Array.isArray(content)) return
     for (const block of content.filter(isObject)) {
-      if (block['type'] === 'text') {
+      if (block['type'] === 'thinking' || block['type'] === 'redacted_thinking') {
+        this.activity = 'thinking'
+      } else if (block['type'] === 'text') {
         const text = str(block['text'])
-        if (text?.trim()) this.lastReply = text
+        if (text?.trim()) {
+          this.lastReply = text
+          this.activity = 'replying'
+        }
       } else if (block['type'] === 'tool_use') {
+        this.activity = 'tool'
         const name = str(block['name']) ?? ''
         const input = isObject(block['input']) ? block['input'] : {}
         const id = str(block['id'])
@@ -289,6 +308,8 @@ export class TranscriptReader {
     if (!Array.isArray(content)) return
     for (const block of content.filter(isObject)) {
       if (block['type'] !== 'tool_result') continue
+      // A tool came back: the model is thinking about it until its next word or call.
+      if (this.activity === 'tool') this.activity = 'thinking'
       const id = str(block['tool_use_id'])
       if (id && id === this.pendingQuestion?.id) this.pendingQuestion = null // answered
       const call = id ? this.calls.get(id) : undefined

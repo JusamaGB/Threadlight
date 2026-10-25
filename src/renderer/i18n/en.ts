@@ -37,6 +37,7 @@ export const en = {
     inProgress: 'In progress',
     context: (percent: number) => `Context ${percent}%`,
     now: 'Now',
+    thinking: 'Thinking',
     result: 'Result',
     lastReply: 'Last reply',
     open: 'Open ↗',

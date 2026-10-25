@@ -148,6 +148,8 @@ export interface Session {
   focusedAt: number
   /** One line describing where the session is. */
   stage: string
+  /** The line is the Thinking placeholder: drawn turning, as the agent's progress line is. */
+  thinking: boolean
   lastPrompt: string | null
   plan: PlanItem[]
   currentStep: CurrentStep | null

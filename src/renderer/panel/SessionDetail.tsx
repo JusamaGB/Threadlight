@@ -6,6 +6,9 @@ import { useNow } from '../hooks/useNow'
 import { gitLine } from '../lib/git'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
+
+/** The reply as the row's line shows it (whitespace collapsed), to tell it is being written. */
+const oneLineText = (text: string) => text.split(/\s+/).filter(Boolean).join(' ')
 import { relayLine } from '../lib/relay'
 import styles from './Panel.module.css'
 
@@ -71,10 +74,10 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
         </Section>
       )}
 
-      {active && session.lastAction && (
+      {active && (session.lastAction || session.thinking) && (
         <Section label={en.detail.now}>
           <p className={styles.strong}>
-            {session.lastAction}
+            {session.thinking ? en.detail.thinking : session.lastAction}
             {session.turnStartedAt !== null && <Elapsed since={session.turnStartedAt} />}
           </p>
         </Section>
@@ -85,10 +88,11 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
           <p>{clip(session.recap, 320)}</p>
         </Section>
       ) : (
-        !active &&
-        session.lastReply && (
+        session.lastReply &&
+        (!active || session.stage === oneLineText(session.lastReply)) && (
+          // The whole reply, scrolling within the card; it is often the turn's only output.
           <Section label={en.detail.lastReply}>
-            <p>{clip(session.lastReply, 220)}</p>
+            <p className={styles.reply}>{session.lastReply.trim()}</p>
           </Section>
         )
       )}

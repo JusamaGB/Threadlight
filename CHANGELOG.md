@@ -91,6 +91,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   agent cannot use it at all).
 - The task timer also counts a command while it runs in the foreground, as the Claude app's
   Background tasks list now does; it drops off when the command finishes.
+- A turn without a plan shows what it is doing: Thinking, with the turning ring, then its
+  reply as it is written. Each new message clears the last turn's step, so the row no longer
+  shows activity from a few messages back. Long row lines fade out before the icons instead
+  of ending in "…", and an open thread shows its whole last reply, scrolling.
 - The Agent view keeps its history: past conversations sit under a collapsed "Earlier"
   row, newest first, each opening read-only with Continue to pick it up again (Claude Code
   resumes the same transcript). The agent's conversations never show in the thread list.

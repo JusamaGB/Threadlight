@@ -257,6 +257,7 @@ export class Tracker {
       lastActiveAt,
       focusedAt: app?.lastFocusedAt ?? 0,
       stage: stageLine(state, summary),
+      thinking: isThinking(state, summary),
       lastPrompt: summary?.lastPrompt ?? null,
       plan: summary?.plan ?? [],
       currentStep: summary?.currentStep ?? null,
@@ -447,13 +448,25 @@ export function resolveState(input: StateInputs): SessionState {
   return input.now - input.transcriptChangedAt < FALLBACK_ACTIVE_MS ? 'working' : 'idle'
 }
 
-/** One line for the row: the current step while working, the result once done. */
+/** Working with nothing to show yet but thought: the row shows Thinking, turning. */
+export function isThinking(state: SessionState, summary: TranscriptSummary | null): boolean {
+  return state === 'working' && !summary?.currentStep && summary?.activity === 'thinking'
+}
+
+/**
+ * One line for the row: the current step while working (or what it is saying, or Thinking,
+ * for a turn with no plan), the result once done.
+ */
 export function stageLine(state: SessionState, summary: TranscriptSummary | null): string {
   if (!summary) return state === 'working' ? 'Working' : 'Idle'
   if (state === 'idle') return oneLine(summary.recap ?? summary.lastReply) || 'Idle'
   const prefix = state === 'waiting' ? 'Needs approval · ' : ''
   const step = summary.currentStep
   if (step) return `${prefix}${step.index}/${step.total} · ${step.content}`
+  if (state === 'working' && summary.activity === 'thinking') return 'Thinking'
+  if (state === 'working' && summary.activity === 'replying' && summary.lastReply) {
+    return oneLine(summary.lastReply)
+  }
   return prefix + (summary.lastAction ?? 'Working')
 }
 

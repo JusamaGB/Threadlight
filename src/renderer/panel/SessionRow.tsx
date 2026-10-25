@@ -104,6 +104,7 @@ export function SessionRow(props: SessionRowProps) {
         <span className={styles.rowBottom}>
           <PullRequestBadge pullRequests={session.pullRequests} />
           <span className={styles.stage} data-tone={line?.tone}>
+            {!line && !attention && session.thinking && <span className={styles.spinner} />}
             {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
           </span>
         </span>

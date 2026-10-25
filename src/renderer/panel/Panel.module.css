@@ -524,6 +524,7 @@
   line-height: 1;
 }
 
+/* Long lines fade out before the icons beside them, as titles do, rather than ending in "…". */
 .stage {
   display: block;
   flex: 1;
@@ -533,7 +534,14 @@
   font-size: 11px;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+/* Thinking: the same turning ring as the agent's progress line, before the word. */
+.stage > .spinner {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: -1px;
 }
 
 /* The badge already fills the gutter. */
@@ -1375,4 +1383,12 @@
 
 .agentContinue {
   color: var(--fg);
+}
+
+/* A thread's whole last reply in its detail, scrolling within the card. */
+.reply {
+  max-height: 160px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  white-space: pre-wrap;
 }

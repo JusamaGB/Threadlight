@@ -106,6 +106,35 @@ describe('plan replay', () => {
   })
 })
 
+describe('what the turn is doing', () => {
+  const thinking = {
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'thinking', thinking: '' }] },
+  }
+
+  it('thinks, calls a tool, thinks again once it returns, then replies', async () => {
+    const run: object[] = [prompt('Why?'), thinking]
+    expect((await read(run)).activity).toBe('thinking')
+    run.push(toolCall('Read', { file_path: 'a.ts' }))
+    expect((await read(run)).activity).toBe('tool')
+    run.push(toolResult())
+    expect((await read(run)).activity).toBe('thinking')
+    run.push(textReply('Because.'))
+    expect(await read(run)).toMatchObject({ activity: 'replying', lastReply: 'Because.' })
+  })
+
+  it('clears the last turn’s tool call when a new message starts', async () => {
+    const summary = await read([
+      prompt('First'),
+      toolCall('Bash', { command: 'ls', description: 'List files' }),
+      toolResult(),
+      textReply('Done.'),
+      prompt('Second'),
+    ])
+    expect(summary).toMatchObject({ lastAction: null, activity: 'thinking' })
+  })
+})
+
 describe('background tasks', () => {
   const launch = (id: string, name: string, description: string, at: string) => ({
     type: 'assistant',

@@ -6,7 +6,9 @@ import {
   contextUsed,
   gitFolder,
   FALLBACK_ACTIVE_MS,
+  isThinking,
   resolveState,
+  stageLine,
   STALE_MS,
   Tracker,
 } from '../src/main/sessions/tracker'
@@ -94,6 +96,7 @@ describe('attentionFor', () => {
     recap: null,
     lastReply: null,
     lastAction: 'Running tests',
+    activity: 'tool',
     turnStartedAt: null,
     backgroundTasks: [],
     pendingQuestion: null,
@@ -142,6 +145,46 @@ describe('attentionFor', () => {
     expect(attentionFor('idle', summary({ nextStep, interrupted: true }))).toBeNull()
     expect(attentionFor('idle', summary())).toBeNull()
     expect(attentionFor('idle', null)).toBeNull()
+  })
+})
+
+describe('stageLine', () => {
+  const summary = (over: Partial<TranscriptSummary>): TranscriptSummary => ({
+    title: null,
+    cwd: null,
+    lastPrompt: 'Why?',
+    plan: [],
+    currentStep: null,
+    recap: null,
+    lastReply: null,
+    lastAction: null,
+    activity: 'thinking',
+    turnStartedAt: null,
+    backgroundTasks: [],
+    pendingQuestion: null,
+    nextStep: null,
+    contextTokens: null,
+    model: null,
+    lastTouchedPath: null,
+    interrupted: false,
+    ...over,
+  })
+
+  it('says Thinking for a turn with no plan until it writes or calls something', () => {
+    expect(stageLine('working', summary({}))).toBe('Thinking')
+    expect(isThinking('working', summary({}))).toBe(true)
+    expect(isThinking('idle', summary({}))).toBe(false)
+  })
+
+  it('shows the reply as it is written, then the step or tool once there is one', () => {
+    const replying = summary({ activity: 'replying', lastReply: 'It is  because\nof X.' })
+    expect(stageLine('working', replying)).toBe('It is because of X.')
+    expect(stageLine('working', summary({ activity: 'tool', lastAction: 'Run tests' }))).toBe(
+      'Run tests',
+    )
+    const step = { index: 2, total: 3, content: 'Build' }
+    expect(stageLine('working', summary({ currentStep: step }))).toBe('2/3 · Build')
+    expect(isThinking('working', summary({ currentStep: step }))).toBe(false)
   })
 })
 
