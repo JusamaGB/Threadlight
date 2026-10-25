@@ -59,6 +59,21 @@ export type MicRoute =
 export class MicSessionRouter {
   mode: MicSessionMode = 'undecided'
 
+  /** A preview can prepare conversation mode, but can never execute or latch a command. */
+  preview(text: string, threads: Candidate[] = []): boolean {
+    if (this.mode !== 'undecided') return this.mode === 'agent'
+    const words = normalise(text)
+    const count = words.split(' ').filter(Boolean).length
+    if (!words) return false
+    const opens = words === 'open' || words.startsWith('open ')
+    if (!opens && count >= 3) return true
+    if (!opens || count < 12) return false
+    // A long real title, including a partially transcribed title, is still a command.
+    const name = spokenKey(words.slice(5))
+    if (threads.some((t) => spokenKey(t.title).startsWith(name))) return false
+    return !parseOpenMicCommand(text, threads)
+  }
+
   route(text: string, threads: Candidate[] = []): MicRoute {
     const sentence = text.trim()
     if (!sentence) return { kind: 'ignored' }
@@ -66,7 +81,8 @@ export class MicSessionRouter {
     // A misheard or unavailable title must never turn a command into an Agent request.
     if (this.mode === 'undecided') {
       const words = normalise(sentence)
-      this.mode = words === 'open' || words.startsWith('open ') ? 'commands' : 'agent'
+      const command = words === 'open' || words.startsWith('open ')
+      this.mode = command && !this.preview(sentence, threads) ? 'commands' : 'agent'
     }
     if (this.mode === 'agent') return { kind: 'agent', text: sentence }
     const command = parseOpenMicCommand(sentence, threads) ?? namedThread(sentence, threads)

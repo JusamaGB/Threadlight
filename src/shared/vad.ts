@@ -123,6 +123,17 @@ export class Segmenter {
   }
 
   /** Forgets any utterance under way (the mic was paused), keeping what it knows of the room. */
+  preview(): Float32Array | null {
+    if (
+      !this.speech ||
+      this.voicedMs < 500 ||
+      this.peak < Math.max((this.ambient ?? 0) * VAD.SPEECH_OVER_AMBIENT, VAD.MIN_SPEECH_PEAK)
+    )
+      return null
+    return concat(this.speech)
+  }
+
+  /** Forgets captured audio while retaining the learned room level. */
   drop(): void {
     this.speech = null
     this.preRoll = []

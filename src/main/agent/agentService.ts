@@ -25,6 +25,12 @@ import { codexPolicy } from './codexPolicy'
 import { connectedApps } from './agentApps'
 import { briefing, readableFolders } from './briefing'
 import { archiveAgentConversation } from './agentArchive'
+import {
+  validVoiceOffer,
+  validVoiceSession,
+  type LiveVoiceEvent,
+  type LiveVoiceResult,
+} from '../../shared/liveVoice'
 
 type Run = AgentRun | CodexAgentRun
 const responseSchema = z.discriminatedUnion('action', [
@@ -46,6 +52,7 @@ interface Options {
   onChange: (state: AgentState) => void
   onRateLimit: (value: unknown) => void
   codexClient?: () => Promise<CodexTransport>
+  onLive?: (event: LiveVoiceEvent) => void
 }
 
 /** The sole owner of the active Agent, independent of the monitored applications. */
@@ -58,6 +65,7 @@ export class AgentService {
   private operation = 0
   private past: string
   private claudeWrites: Promise<void> = Promise.resolve()
+  private voiceSession: string | null = null
   constructor(private options: Options) {
     this.store = new AgentStore(options.index)
     this.past = transcriptsFolder(options.claudeProjects, options.workspace)
@@ -79,6 +87,54 @@ export class AgentService {
   refreshDefaults(): void {
     // Ended transcripts remain readable, but the next send uses the saved selection.
     if (!this.run || this.state.ended) this.publish({ ...this.state })
+  }
+
+  async startLive(id: unknown, sdp: unknown): Promise<LiveVoiceResult> {
+    if (!validVoiceSession(id) || !validVoiceOffer(sdp))
+      return { ok: false, reason: 'Invalid Live connection.' }
+    if (this.options.settings().agentProvider !== 'codex')
+      return { ok: false, reason: 'Select Codex in Agent settings to use Live voice.' }
+    if (this.locked || agentBusy(this.state) || this.voiceSession)
+      return { ok: false, reason: 'Finish or stop the current Agent turn before starting Live.' }
+    this.locked = true
+    const retired = this.close()
+    this.voiceSession = id
+    const operation = this.operation
+    try {
+      await retired
+      if (operation !== this.operation || this.voiceSession !== id)
+        throw new Error('Live was cancelled.')
+      await this.store.load()
+      const next = await this.create()
+      if (operation !== this.operation || this.voiceSession !== id) {
+        await next.close()
+        throw new Error('Live was cancelled.')
+      }
+      if (!(next instanceof CodexAgentRun)) throw new Error('Live requires the Codex Agent.')
+      this.run = next
+      const answer = await next.startLive(id, sdp)
+      if (operation !== this.operation || this.voiceSession !== id)
+        throw new Error('Live was cancelled.')
+      return { ok: true, sdp: answer }
+    } catch (error) {
+      if (this.voiceSession === id) await this.close()
+      return { ok: false, reason: (error as Error).message }
+    } finally {
+      this.locked = false
+    }
+  }
+
+  async openLive(id: unknown, text: unknown): Promise<AgentResult> {
+    if (!validVoiceSession(id) || id !== this.voiceSession || !(this.run instanceof CodexAgentRun))
+      return { ok: false, reason: 'This Live session is closed.' }
+    if (typeof text !== 'string' || !text.trim() || text.length > 32_000)
+      return { ok: false, reason: 'The opening message must contain up to 32,000 characters.' }
+    return this.run.openLive(text.trim())
+  }
+
+  async stopLive(id?: unknown): Promise<void> {
+    if (this.voiceSession && (id === undefined || id === this.voiceSession)) await this.close()
+    else if (id === undefined) await this.retirement
   }
 
   async send(value: unknown): Promise<AgentResult> {
@@ -128,6 +184,7 @@ export class AgentService {
     return this.run ? await this.run.interrupt() : { ok: true }
   }
   close(): Promise<void> {
+    this.voiceSession = null
     this.operation++
     const operation = this.operation
     const previous = this.state
@@ -227,6 +284,7 @@ export class AgentService {
         const client = await this.connect()
         try {
           const page = await readCodexHistory(client, record.providerId, cursor as string | null)
+          if (!cursor && record.liveItems?.length) page.items = [...record.liveItems, ...page.items]
           if (!cursor && record.pending)
             page.items.push({
               kind: 'step',
@@ -246,7 +304,7 @@ export class AgentService {
   }
 
   async resume(id: unknown): Promise<AgentResult> {
-    if (typeof id !== 'string' || this.locked || agentBusy(this.state))
+    if (typeof id !== 'string' || this.locked || agentBusy(this.state) || this.voiceSession)
       return { ok: false, reason: 'Finish or stop the current conversation first.' }
     this.locked = true
     const operation = this.operation
@@ -366,6 +424,7 @@ export class AgentService {
         briefing: () => briefing(this.options.snapshot()),
         lifetimeMinutes: () => this.options.settings().agentLifetimeMinutes,
         onChange,
+        onLive: this.options.onLive,
       })
     else {
       const cli = await this.options.cli('claude')

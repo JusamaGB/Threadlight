@@ -91,7 +91,7 @@ export function AgentView() {
   const [error, setError] = useState<string | null>(null)
   const [reading, setReading] = useState<Reading | null>(null)
   const log = useRef<HTMLDivElement>(null)
-  const busy = agentBusy(agent)
+  const busy = agentBusy(agent) || !!agent.live
   const [sending, setSending] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const hasConversation =
@@ -232,7 +232,7 @@ export function AgentView() {
       <div className={styles.agentLog} ref={log}>
         {agent.items.length === 0 && <p className={styles.agentEmpty}>{en.agent.empty}</p>}
         <Lines items={agent.items} />
-        {busy && (
+        {agentBusy(agent) && (
           <p className={styles.agentProgress}>
             <span className={styles.spinner} />
             {agent.progress ?? en.agent.working}

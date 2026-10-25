@@ -52,6 +52,7 @@ export interface AgentApproval {
 }
 
 export interface AgentState {
+  live?: 'connecting' | 'ready' | 'active' | null
   revision: number
   provider: AgentProvider | null
   model: string | null

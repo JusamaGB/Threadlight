@@ -15,6 +15,7 @@ import type {
 import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
 import type { Usage } from './usage'
+import type { LiveVoiceEvent, LiveVoiceResult } from './liveVoice'
 import type {
   Changes,
   FileDiff,
@@ -74,6 +75,10 @@ export const IPC = {
   getFileDiff: 'changes:file',
   openChangedFile: 'changes:open',
   agentGet: 'agent:get',
+  agentLiveStart: 'agent:live-start',
+  agentLiveOpen: 'agent:live-open',
+  agentLiveStop: 'agent:live-stop',
+  agentLiveEvent: 'agent:live-event',
   agentChanged: 'agent:changed',
   agentSend: 'agent:send',
   agentDecide: 'agent:decide',
@@ -180,6 +185,10 @@ export interface ThreadlightApi {
 
   /** The agent conversation Threadlight hosts (agentRun.ts). */
   getAgent(): Promise<AgentState>
+  agentLiveStart(sessionId: string, sdp: string): Promise<LiveVoiceResult>
+  agentLiveOpen(sessionId: string, text: string): Promise<AgentResult>
+  agentLiveStop(sessionId: string): void
+  onAgentLive(listener: (event: LiveVoiceEvent) => void): () => void
   onAgent(listener: (state: AgentState) => void): () => void
   /** Sends a message, starting a new conversation if none is open. */
   agentSend(text: string): Promise<{ ok: true } | { ok: false; reason: string }>

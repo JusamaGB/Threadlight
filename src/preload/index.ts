@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
 import type { AgentState } from '../shared/agent'
+import type { LiveVoiceEvent } from '../shared/liveVoice'
 
 import { IPC, type PanelOpened, type TalkState, type ThreadlightApi } from '../shared/ipc'
 import type { Settings } from '../shared/settings'
@@ -50,6 +51,10 @@ const api: ThreadlightApi = {
   getFileDiff: (sessionId, path) => ipcRenderer.invoke(IPC.getFileDiff, sessionId, path),
   openChangedFile: (sessionId, path) => ipcRenderer.send(IPC.openChangedFile, sessionId, path),
   getAgent: () => ipcRenderer.invoke(IPC.agentGet),
+  agentLiveStart: (id, sdp) => ipcRenderer.invoke(IPC.agentLiveStart, id, sdp),
+  agentLiveOpen: (id, text) => ipcRenderer.invoke(IPC.agentLiveOpen, id, text),
+  agentLiveStop: (id) => ipcRenderer.send(IPC.agentLiveStop, id),
+  onAgentLive: (listener) => subscribe<LiveVoiceEvent>(IPC.agentLiveEvent, listener),
   onAgent: (listener) => subscribe<AgentState>(IPC.agentChanged, listener),
   agentSend: (text) => ipcRenderer.invoke(IPC.agentSend, text),
   agentDecide: (id, allow) => ipcRenderer.send(IPC.agentDecide, id, allow),

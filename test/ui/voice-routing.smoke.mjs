@@ -1,8 +1,56 @@
-/* global window, document */
+/* global window, document, AudioContext */
 import assert from 'node:assert/strict'
 
 /** Uses the provider smoke test's generated audio stream; never opens a real microphone. */
 export async function checkVoiceRouting(page) {
+  await page.evaluate(() => {
+    window.proof.nativePeer = window.RTCPeerConnection
+    window.proof.livePeers = []
+    window.RTCPeerConnection = class {
+      connectionState = 'new'
+      channel = { readyState: 'connecting' }
+      constructor() {
+        window.proof.livePeers.push(this)
+      }
+      addTrack(_track, stream) {
+        this.stream = stream
+        this.context = new AudioContext()
+        this.analyser = this.context.createAnalyser()
+        this.context.createMediaStreamSource(stream).connect(this.analyser)
+      }
+      createDataChannel() {
+        return this.channel
+      }
+      async createOffer() {
+        return { type: 'offer', sdp: 'v=0\r\nsynthetic' }
+      }
+      async setLocalDescription(value) {
+        this.localDescription = value
+      }
+      async setRemoteDescription() {
+        this.connectionState = 'connected'
+        this.channel.readyState = 'open'
+      }
+      close() {
+        this.connectionState = 'closed'
+        void this.context?.close()
+      }
+    }
+    window.threadlight.agentLiveStart = async (id) => {
+      window.proof.calls.push(['liveStart', id])
+      if (window.proof.liveFailure) return { ok: false, reason: window.proof.liveFailure }
+      if (window.proof.holdLive)
+        await new Promise((resolve) => {
+          window.proof.connectLive = resolve
+        })
+      return { ok: true, sdp: 'v=0\r\nanswer' }
+    }
+    window.threadlight.agentLiveOpen = async (id, text) => {
+      window.proof.calls.push(['liveOpen', id, text])
+      return { ok: true }
+    }
+    window.threadlight.agentLiveStop = (id) => window.proof.calls.push(['liveStop', id])
+  })
   const agentSends = () =>
     page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'agentSend'))
   const open = async () => {
@@ -23,7 +71,9 @@ export async function checkVoiceRouting(page) {
     await page.evaluate(() => window.proof.setAudioLevel(0))
     await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
     await page.evaluate((words) => window.proof.finishTranscript(words), text)
-    await page.waitForFunction(() => document.documentElement.dataset.openMic === 'listening')
+    await page.waitForFunction(() =>
+      ['listening', 'off'].includes(document.documentElement.dataset.openMic),
+    )
   }
 
   const before = (await agentSends()).length
@@ -126,43 +176,183 @@ export async function checkVoiceRouting(page) {
   await close()
   await page.evaluate(() => window.threadlight.updateSettings({ enabledProviders: ['codex'] }))
 
-  // A fresh mic session chooses the agent and sends on a pause without closing the mic.
+  // A fresh mic session selects native Live and never uses the text-Agent fallback.
   await open()
   await say('Please review the plan.')
   await page.locator('[data-mic-mode="agent"]').waitFor()
-  assert.deepEqual((await agentSends()).slice(before), [['agentSend', 'Please review the plan.']])
-  await say('Open.') // once agent mode is chosen, command words are ordinary speech
-  const held = page.getByLabel('Unsent agent speech')
-  await held.getByText('Open.', { exact: true }).waitFor()
-  assert.equal(await held.getByRole('button', { name: 'Send to agent' }).isDisabled(), true)
-  await page.evaluate(() => window.proof.agent({ status: 'idle' }))
-  await held.getByRole('button', { name: 'Send to agent' }).click()
-  await held.waitFor({ state: 'detached' })
-  assert.deepEqual((await agentSends()).slice(-1), [['agentSend', 'Open.']])
+  await page
+    .getByText('Live · Speak naturally; press the hotkey to finish', { exact: true })
+    .waitFor()
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.proof.calls.filter((c) => c[0] === 'liveOpen').map((c) => c[2]),
+    ),
+    ['Please review the plan.'],
+  )
+  assert.equal((await agentSends()).length, before)
+  await page.evaluate(() => {
+    delete window.proof.finishTranscript
+    window.proof.setAudioLevel(0.18)
+  })
+  await page.waitForFunction(() => {
+    const analyser = window.proof.livePeers.at(-1).analyser
+    const samples = new Float32Array(analyser.fftSize)
+    analyser.getFloatTimeDomainData(samples)
+    return samples.some((value) => Math.abs(value) > 0.01)
+  })
+  assert.equal(await page.evaluate(() => typeof window.proof.finishTranscript), 'undefined')
+  await page.evaluate(() => window.proof.setAudioLevel(0))
+  await close()
+  assert.equal(await page.evaluate(() => window.proof.livePeers.at(-1).connectionState), 'closed')
+
+  // A long opening beginning with open selects Live, while setup can lag transcription.
+  await page.evaluate(() => {
+    window.proof.holdLive = true
+  })
+  await open()
+  const long = 'Open the project and help me understand why all the tests started failing yesterday'
+  await say(long)
+  await page.getByText('Connecting Live · Keep talking', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').length),
+    1,
+  )
+  await say('This sentence belongs to the same opening.')
+  await page.evaluate(() => {
+    window.proof.holdLive = false
+    window.proof.connectLive()
+  })
+  await page
+    .getByText('Live · Speak naturally; press the hotkey to finish', { exact: true })
+    .waitFor()
+  assert.equal(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').at(-1)[2]),
+    `${long} This sentence belongs to the same opening.`,
+  )
   await close()
 
-  // Agent errors retain the words and never create a thread-target picker.
+  // Native errors retain the opening text, without falling back to a text send.
   await page.evaluate(() => {
-    window.proof.agent({ status: 'idle' })
-    window.proof.savedAgentSend = window.threadlight.agentSend
-    window.threadlight.agentSend = async () => ({
-      ok: false,
-      reason: 'Synthetic agent unavailable',
-    })
+    window.proof.liveFailure = 'Synthetic Live unavailable'
   })
   await open()
   await say('Keep these words for retry.')
+  const held = page.getByLabel('Live voice error')
   await held.getByText('Keep these words for retry.', { exact: true }).waitFor()
-  await held.getByText('Synthetic agent unavailable', { exact: true }).waitFor()
+  await held.getByText('Synthetic Live unavailable', { exact: true }).waitFor()
   assert.equal(
     await page.getByText('Click the thread that should get this:', { exact: true }).count(),
     0,
   )
-  await held.getByRole('button', { name: 'Discard this' }).click()
+  await held.getByRole('button', { name: 'Copy opening message' }).click()
+  await page.waitForFunction(() => document.documentElement.dataset.openMic === 'off')
+  await page.evaluate(() => {
+    window.proof.liveFailure = null
+  })
+
+  // Two consistent previews prepare Live before the utterance ends. Only the final text sends.
+  const fullOpening =
+    'Open the project and help me understand why the microphone routing tests fail after changing the model'
+  await page.evaluate((text) => {
+    window.proof.savedTranscribe = window.threadlight.transcribe
+    window.proof.previewCount = 0
+    window.threadlight.transcribe = async () => {
+      window.proof.previewCount++
+      return window.proof.previewCount <= 2
+        ? 'Open the project and help me understand why the microphone routing tests fail'
+        : text
+    }
+  }, fullOpening)
+  await open()
+  const beforePreview = await page.evaluate(
+    () => window.proof.calls.filter((c) => c[0] === 'liveStart').length,
+  )
+  const beforeOpening = await page.evaluate(
+    () => window.proof.calls.filter((c) => c[0] === 'liveOpen').length,
+  )
+  await page.evaluate(() => window.proof.setAudioLevel(0.18))
+  await page.waitForFunction(
+    (n) => window.proof.calls.filter((c) => c[0] === 'liveStart').length > n,
+    beforePreview,
+  )
+  assert.equal(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').length),
+    beforeOpening,
+  )
+  assert.equal(await page.locator('[data-mic-mode="commands"]').count(), 0)
+  const previewPeak = await page.evaluate(() => {
+    const a = window.proof.livePeers.at(-1).analyser,
+      samples = new Float32Array(a.fftSize)
+    a.getFloatTimeDomainData(samples)
+    return Math.max(...samples.map(Math.abs))
+  })
+  assert.ok(previewPeak < 0.001, 'Opening audio must not leak into the preparing Live connection')
+  await page.evaluate(() => window.proof.setAudioLevel(0))
+  await page
+    .getByText('Live · Speak naturally; press the hotkey to finish', { exact: true })
+    .waitFor()
+  assert.equal(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').at(-1)[2]),
+    fullOpening,
+  )
   await close()
   await page.evaluate(() => {
-    window.threadlight.agentSend = window.proof.savedAgentSend
+    window.threadlight.transcribe = window.proof.savedTranscribe
   })
+
+  // Revised final text can cancel provisional Live preparation and latch commands.
+  await page.evaluate(() => {
+    window.proof.previewCount = 0
+    window.threadlight.transcribe = async () => {
+      window.proof.previewCount++
+      return window.proof.previewCount <= 2
+        ? 'Open the project and help me understand why the microphone routing tests fail'
+        : 'Open Synthetic Codex'
+    }
+  })
+  await open()
+  const revisedStarts = await page.evaluate(
+    () => window.proof.calls.filter((c) => c[0] === 'liveStart').length,
+  )
+  const revisedOpens = await page.evaluate(
+    () => window.proof.calls.filter((c) => c[0] === 'liveOpen').length,
+  )
+  await page.evaluate(() => window.proof.setAudioLevel(0.18))
+  await page.waitForFunction(
+    (n) => window.proof.calls.filter((c) => c[0] === 'liveStart').length > n,
+    revisedStarts,
+  )
+  await page.evaluate(() => window.proof.setAudioLevel(0))
+  await page.locator('[data-mic-mode="commands"]').waitFor()
+  assert.equal(await page.evaluate(() => window.proof.livePeers.at(-1).connectionState), 'closed')
+  assert.equal(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').length),
+    revisedOpens,
+  )
+  await close()
+  await page.evaluate(() => {
+    window.threadlight.transcribe = window.proof.savedTranscribe
+  })
+
+  // Closing during connection setup cannot submit its retained opening later.
+  await page.evaluate(() => {
+    window.proof.holdLive = true
+  })
+  await open()
+  await say('Cancel this opening please.')
+  const openings = await page.evaluate(
+    () => window.proof.calls.filter((c) => c[0] === 'liveOpen').length,
+  )
+  await close()
+  await page.evaluate(() => {
+    window.proof.holdLive = false
+    window.proof.connectLive()
+  })
+  await page.waitForTimeout(150)
+  assert.equal(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').length),
+    openings,
+  )
 
   // Closing while transcription is pending cannot leak a command or agent request.
   await open()
@@ -178,6 +368,9 @@ export async function checkVoiceRouting(page) {
   await page.evaluate(() => window.proof.finishTranscript('Do not send this'))
   await page.waitForTimeout(150)
   assert.equal((await agentSends()).length, count)
+  await page.evaluate(() => {
+    window.RTCPeerConnection = window.proof.nativePeer
+  })
   await page.evaluate(() => window.proof.agent({ status: 'idle', provider: null, items: [] }))
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
 }
