@@ -910,8 +910,12 @@ try {
   )
   assert.equal(await modelPicker.inputValue(), 'future-fast')
   assert.equal(await modelPicker.locator('option').count(), 1)
+  assert.equal(await page.getByLabel('Search Codex models').count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Refresh models', exact: true }).count(), 0)
+  const providerReasoning = page.getByRole('group', { name: 'Provider / Reasoning', exact: true })
+  assert.equal(await providerReasoning.getByLabel('Agent provider', { exact: true }).count(), 1)
+  assert.equal(await providerReasoning.getByLabel('Agent reasoning', { exact: true }).count(), 1)
   await page.getByLabel('Show additional models').check()
-  await page.getByLabel('Search Codex models').fill('deep')
   await modelPicker.selectOption('future-deep')
   await page.waitForFunction(
     () => document.querySelector('[aria-label="Agent reasoning"]').value === 'high',

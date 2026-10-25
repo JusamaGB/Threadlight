@@ -305,6 +305,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Agent settings combine provider and reasoning on one row and remove model search and refresh controls.
+
 - Removed the application-selection, Codex plugin and model-selection explanatory copy from Settings.
 
 - The workspace picker header uses a centered title and left-hand back arrow, matching Settings and Agent.

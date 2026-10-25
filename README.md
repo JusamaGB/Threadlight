@@ -70,8 +70,8 @@ Open **Settings → Agent → Provider** to choose Claude or Codex. The Agent wo
 independently of the Applications monitoring toggles, including when both are off.
 Codex requires a signed-in native Codex CLI; Claude is not required for a Codex Agent.
 
-Codex models and reasoning choices come from the installed runtime. Search the
-catalog, refresh it, or select **Show additional models** to see hidden entries.
+Codex models and reasoning choices come from the installed runtime and load when
+Agent settings opens. Select **Show additional models** to see hidden entries.
 Availability still depends on your account. Model and connected-app choices apply
 to new conversations; an existing or continued conversation keeps its selection.
 Claude retains its Haiku conversation model and Opus/Sonnet worker.

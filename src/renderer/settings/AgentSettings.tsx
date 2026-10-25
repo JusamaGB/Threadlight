@@ -15,8 +15,6 @@ export function AgentSettings({
   const [error, setError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [loading, setLoading] = useState(settings.agentProvider === 'codex')
-  const [refresh, setRefresh] = useState(0)
-  const [search, setSearch] = useState('')
   const [hidden, setHidden] = useState(false)
   const save = async (patch: SettingsPatch) => {
     try {
@@ -45,15 +43,34 @@ export function AgentSettings({
     return () => {
       live = false
     }
-  }, [settings.agentProvider, refresh])
+  }, [settings.agentProvider])
   const selected = models.find((m) =>
     settings.agentCodexModel ? m.id === settings.agentCodexModel : m.isDefault,
   )
-  const visible = models.filter(
-    (m) =>
-      (hidden || !m.hidden || m.id === selected?.id) &&
-      (m.id === selected?.id || `${m.name} ${m.id}`.toLowerCase().includes(search.toLowerCase())),
-  )
+  const visible = models.filter((m) => hidden || !m.hidden || m.id === selected?.id)
+  const reasoning =
+    settings.agentProvider === 'codex' && selected?.efforts.length ? (
+      <select
+        aria-label="Agent reasoning"
+        value={settings.agentCodexReasoning ?? selected.defaultEffort ?? ''}
+        onChange={(e) => void save({ agentCodexReasoning: e.target.value || null })}
+      >
+        {settings.agentCodexReasoning &&
+          !selected.efforts.includes(settings.agentCodexReasoning) && (
+            <option value={settings.agentCodexReasoning}>
+              {settings.agentCodexReasoning} · unavailable
+            </option>
+          )}
+        {!selected.defaultEffort && !settings.agentCodexReasoning && (
+          <option value="">Runtime default</option>
+        )}
+        {selected.efforts.map((effort) => (
+          <option key={effort} value={effort}>
+            {effort}
+          </option>
+        ))}
+      </select>
+    ) : null
   return (
     <section className={styles.group}>
       <h3 className={styles.groupLabel}>{en.settings.agent}</h3>
@@ -62,17 +79,26 @@ export function AgentSettings({
           {saveError}
         </p>
       )}
-      <label className={styles.row}>
-        <span className={styles.text}>Provider</span>
-        <select
-          aria-label="Agent provider"
-          value={settings.agentProvider}
-          onChange={(e) => void save({ agentProvider: e.target.value as 'claude' | 'codex' })}
-        >
-          <option value="claude">Claude</option>
-          <option value="codex">Codex</option>
-        </select>
-      </label>
+      <div
+        className={styles.row}
+        role="group"
+        aria-label={settings.agentProvider === 'codex' ? 'Provider / Reasoning' : 'Provider'}
+      >
+        <span className={styles.text}>
+          {settings.agentProvider === 'codex' ? 'Provider / Reasoning' : 'Provider'}
+        </span>
+        <span className={`${styles.pair} ${styles.agentProviderControls}`}>
+          <select
+            aria-label="Agent provider"
+            value={settings.agentProvider}
+            onChange={(e) => void save({ agentProvider: e.target.value as 'claude' | 'codex' })}
+          >
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+          </select>
+          {reasoning}
+        </span>
+      </div>
       {settings.agentProvider === 'claude' ? (
         <label className={styles.row}>
           <span className={styles.text}>Worker · Haiku handles conversation</span>
@@ -88,23 +114,6 @@ export function AgentSettings({
       ) : (
         <>
           <div className={styles.agentModels}>
-            <input
-              aria-label="Search Codex models"
-              placeholder="Search models…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <button
-              className={styles.small}
-              disabled={loading}
-              onClick={() => {
-                setLoading(true)
-                setError(null)
-                setRefresh((v) => v + 1)
-              }}
-            >
-              {loading ? 'Checking…' : 'Refresh models'}
-            </button>
             <select
               aria-label="Codex agent model"
               disabled={loading || !!error}
@@ -142,31 +151,6 @@ export function AgentSettings({
             <p role="alert" className={styles.error}>
               {error}
             </p>
-          )}
-          {!!selected?.efforts.length && (
-            <label className={styles.row}>
-              <span className={styles.text}>Reasoning</span>
-              <select
-                aria-label="Agent reasoning"
-                value={settings.agentCodexReasoning ?? selected.defaultEffort ?? ''}
-                onChange={(e) => void save({ agentCodexReasoning: e.target.value || null })}
-              >
-                {settings.agentCodexReasoning &&
-                  !selected.efforts.includes(settings.agentCodexReasoning) && (
-                    <option value={settings.agentCodexReasoning}>
-                      {settings.agentCodexReasoning} · unavailable
-                    </option>
-                  )}
-                {!selected.defaultEffort && !settings.agentCodexReasoning && (
-                  <option value="">Runtime default</option>
-                )}
-                {selected.efforts.map((e) => (
-                  <option key={e} value={e}>
-                    {e}
-                  </option>
-                ))}
-              </select>
-            </label>
           )}
         </>
       )}

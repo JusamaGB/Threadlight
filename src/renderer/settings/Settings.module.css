@@ -8,8 +8,7 @@
   scrollbar-color: var(--faint) transparent;
 }
 
-.group select,
-.agentModels input:not([type='checkbox']) {
+.group select {
   min-width: 0;
   max-width: 220px;
   border: 1px solid var(--border);
@@ -22,7 +21,7 @@
 }
 .agentModels {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   margin: 6px 0;
 }
@@ -97,6 +96,14 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+
+.agentProviderControls {
+  flex: none;
+}
+
+.agentProviderControls select {
+  max-width: 100px;
 }
 
 .small,
