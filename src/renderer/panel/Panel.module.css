@@ -9,15 +9,16 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  transition: opacity 150ms ease;
 }
 
 .closing {
   opacity: 0;
+  /* Only closing fades; reopening must not replay the fade backwards. */
+  transition: opacity 150ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card {
+  .closing {
     transition: none;
   }
 }

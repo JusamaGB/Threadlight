@@ -316,6 +316,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Hover-opening the panel restores full opacity immediately, avoiding a half-visible
+  intermediate state. Only closing uses the short fade.
+
 - Thread context bubbles wait one second and sit beside the pointer,
   switching sides at the window edge. Leaving, clicking or scrolling clears stale tips.
 
