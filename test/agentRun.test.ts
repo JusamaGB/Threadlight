@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { AgentState } from '../src/shared/agent'
-import { AgentRun, readable, toolLabel } from '../src/main/agent/agentRun'
+import { AgentRun, onlyLooks, readable, toolLabel } from '../src/main/agent/agentRun'
 
 /** A stand-in for claude.exe: what Threadlight writes, and a way to make it say things. */
 function fakeClaude() {
@@ -194,6 +194,59 @@ describe('front desk and worker', () => {
       { kind: 'step', text: 'Google Calendar · list events' },
       { kind: 'agent', text: 'Free all afternoon.' },
     ])
+  })
+})
+
+describe('onlyLooks', () => {
+  const folders = ['Z:\\General\\threadlight']
+  it('lets reading and read-only git through inside the threads’ folders', () => {
+    expect(onlyLooks('Read', { file_path: 'Z:\\General\\threadlight\\README.md' }, folders)).toBe(
+      true,
+    )
+    expect(onlyLooks('Grep', { path: 'z:/general/threadlight/src' }, folders)).toBe(true)
+    const git = (command: string) => onlyLooks('Bash', { command }, folders)
+    expect(git('git -C "Z:\\General\\threadlight" status')).toBe(true)
+    expect(git('git -C Z:/General/threadlight log --oneline -5')).toBe(true)
+    expect(git('git -C "Z:\\General\\threadlight" diff HEAD -- README.md')).toBe(true)
+  })
+
+  it('asks for anything else: other folders, changes, chains and writes', () => {
+    expect(onlyLooks('Read', { file_path: 'C:\\Users\\someone\\.ssh\\id_rsa' }, folders)).toBe(
+      false,
+    )
+    expect(onlyLooks('Write', { file_path: 'Z:\\General\\threadlight\\a.txt' }, folders)).toBe(
+      false,
+    )
+    const git = (command: string) => onlyLooks('Bash', { command }, folders)
+    expect(git('git -C "Z:\\General\\threadlight" push')).toBe(false)
+    expect(git('git -C "Z:\\General\\threadlight" branch -D main')).toBe(false)
+    expect(git('git -C "Z:\\General\\threadlight" status; rm -rf x')).toBe(false)
+    expect(git('git -C "Z:\\General\\threadlight" log | tee out.txt')).toBe(false)
+    expect(git('git -C "Z:\\General\\threadlight" diff --output=x.patch')).toBe(false)
+    expect(git('git -C "C:\\Windows" status')).toBe(false)
+    expect(git('git status')).toBe(false) // which folder? not said
+  })
+})
+
+describe('the briefing', () => {
+  it('rides along with each message, while the conversation shows only what you wrote', async () => {
+    const briefed = new AgentRun({
+      cli: { command: 'claude.exe', prefixArgs: [] },
+      workspace: 'agent',
+      model: 'claude-haiku-5-5',
+      onChange: (state) => states.push(state),
+      briefing: () => '<threadlight-briefing>\n- "Docs" · idle\n</threadlight-briefing>',
+      start: () => fake.child as never,
+    })
+    briefed.send('What is the +847?')
+    await settle()
+    expect(fake.written[0]).toMatchObject({
+      message: {
+        content:
+          '<threadlight-briefing>\n- "Docs" · idle\n</threadlight-briefing>\n\nWhat is the +847?',
+      },
+    })
+    expect(latest().items).toEqual([{ kind: 'you', text: 'What is the +847?' }])
   })
 })
 

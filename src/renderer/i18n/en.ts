@@ -107,7 +107,7 @@ export const en = {
     deny: 'Deny',
     end: 'End',
     endHint: 'End this conversation (it is kept on disk)',
-    cost: (usd: number) => `$${usd.toFixed(2)} so far`,
+    busy: 'Agent: working on it (open to see)',
   },
   tasks: {
     one: 'Task',

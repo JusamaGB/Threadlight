@@ -89,7 +89,6 @@ export function AgentView() {
           </button>
         )}
       </div>
-      {agent.costUsd > 0 && <p className={styles.qNote}>{en.agent.cost(agent.costUsd)}</p>}
     </div>
   )
 }

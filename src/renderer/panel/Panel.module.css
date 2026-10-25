@@ -112,11 +112,42 @@
   color: var(--fg);
 }
 
+/* Settings, Agent, Changes: "‹ Title" sits on the right, where the button that opened it is. */
 .back {
   width: 14px;
+  margin-left: auto;
   font-size: 16px;
   line-height: 1;
   color: var(--muted);
+}
+
+/* The agent is working while another page shows: purple, with a blue shimmer about once a second. */
+.gear.agentBusy {
+  color: var(--purple);
+}
+
+.gear.agentBusy svg {
+  fill: var(--purple);
+  animation: agentShimmer 1s ease-in-out infinite;
+}
+
+@keyframes agentShimmer {
+  0%,
+  55%,
+  100% {
+    filter: none;
+  }
+  78% {
+    fill: var(--accent);
+    stroke: var(--accent);
+    filter: drop-shadow(0 0 3px var(--accent));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gear.agentBusy svg {
+    animation: none;
+  }
 }
 
 /* The sessions part of the card; hidden (not removed) while settings show. */

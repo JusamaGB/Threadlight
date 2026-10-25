@@ -12,6 +12,7 @@ import { matchThread, parseVoiceCommand } from '../../shared/match'
 import type { Session } from '../../shared/types'
 import { Composer } from '../composer/Composer'
 import { useDotDrag } from '../hooks/useDotDrag'
+import { useAgent } from '../hooks/useAgent'
 import { useNow } from '../hooks/useNow'
 import { useRelays } from '../hooks/useRelays'
 import { findInSnapshot } from '../../shared/snapshot'
@@ -79,6 +80,11 @@ export function Panel() {
   const [showSettings, setShowSettings] = useState(false)
   /** The agent conversation takes over the card, like settings. */
   const [showAgent, setShowAgent] = useState(false)
+  // The agent keeps working while another page shows; its button then says so.
+  const agent = useAgent()
+  const agentBusy =
+    !showAgent &&
+    (agent.status === 'starting' || agent.status === 'working' || agent.status === 'waiting')
   /** The Changes view, for this thread's git folder: it takes over the card too. */
   const [changesFor, setChangesFor] = useState<string | null>(null)
   /** Choosing which workspace the Workspace list shows; takes over the card like settings. */
@@ -562,10 +568,10 @@ export function Panel() {
                 </button>
               )}
               <button
-                className={styles.gear}
+                className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
                 onClick={() => setShowAgent(true)}
-                aria-label={en.agent.open}
-                title={en.agent.open}
+                aria-label={agentBusy ? en.agent.busy : en.agent.open}
+                title={agentBusy ? en.agent.busy : en.agent.open}
               >
                 <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
                   <path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z" />

@@ -85,6 +85,14 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
   moment as the Claude app's own timer (the thread record's turn start), or from the
   prompt's time for sessions the app does not track.
+- Settings, Agent, Changes and the workspace picker put "‹ Title" on the right of the header,
+  where the button that opens them is. The agent no longer shows a running cost, and while it
+  works on another page its ✦ button turns purple with a blue shimmer about once a second.
+- The agent knows your threads: each question carries a briefing of what Threadlight shows
+  (titles, states, folders, git numbers, current steps), which the front desk answers from
+  when it can. In the threads' own folders it may read files and run read-only git (one plain
+  status, log, diff or show command with -C) without asking; anything chained, piped or
+  redirected, and anything that changes things, still asks.
 - Agent (spike): the ✦ button opens a conversation Threadlight hosts itself, running the user's
   own Claude Code on a two-way stream (as the Claude app does). Steps and replies show live;
   reading tools (an integration's search, get, list…) run at once, while anything that sends,

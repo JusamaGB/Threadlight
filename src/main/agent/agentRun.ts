@@ -26,6 +26,10 @@ export interface AgentOptions {
   model: string
   /** Called on every change, with a fresh copy of the state. */
   onChange: (state: AgentState) => void
+  /** What it is told about the user's threads with each message (briefing.ts). */
+  briefing?: () => string
+  /** Folders it may read and run read-only git in without asking: the threads' own. */
+  readable?: () => string[]
   /** Starts the process; tests swap in a fake. */
   start?: (command: string, args: string[], cwd: string) => ChildProcessWithoutNullStreams
 }
@@ -36,6 +40,46 @@ export interface AgentOptions {
  * Anything else that asks (send, delete, create, edit, run a command) comes to you first.
  */
 const READS = /^mcp__.+__(search|get|list|read|fetch|find|query|lookup|download)_?/i
+
+/** Claude Code's own tools that only read files. */
+const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead'])
+
+/**
+ * A git command that only reads: one plain command (no chaining, pipes, redirects or
+ * substitutions), optionally with -C <folder>. `branch` is left out (it can delete), and so is
+ * `--output`, which writes a file.
+ */
+const GIT_READ =
+  /^git(\s+-C\s+("[^"]+"|'[^']+'|\S+))?\s+(status|log|diff|show|rev-parse|rev-list|ls-files|worktree\s+list|blame|describe|shortlog)\b/
+const SHELL_SPECIAL = /[;&|<>`\n]|\$\(/
+
+/**
+ * Whether a tool call only looks, inside the given folders: reading or searching files there,
+ * or a read-only git command run in one of them. Such calls go through without asking.
+ */
+export function onlyLooks(name: string, input: JsonObject, folders: string[]): boolean {
+  const within = (path: string) => folders.some((folder) => sameOrInside(path, folder))
+  if (READ_TOOLS.has(name)) {
+    const path = str(input['file_path']) ?? str(input['path']) ?? str(input['notebook_path'])
+    return path !== null && within(path)
+  }
+  if (name === 'Bash' || name === 'PowerShell') {
+    const command = (str(input['command']) ?? '').trim()
+    if (SHELL_SPECIAL.test(command) || /--output\b/.test(command)) return false
+    const git = GIT_READ.exec(command)
+    if (!git) return false
+    const folder = git[2]?.replace(/^["']|["']$/g, '')
+    return folder !== undefined && within(folder)
+  }
+  return false
+}
+
+function sameOrInside(path: string, folder: string): boolean {
+  const norm = (p: string) => p.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()
+  const p = norm(path)
+  const f = norm(folder)
+  return p === f || p.startsWith(`${f}/`)
+}
 
 /** It asks in plain text instead: a question card would stall a run nobody is watching. */
 const DISALLOWED = ['AskUserQuestion']
@@ -52,8 +96,9 @@ export const WORKER_MODEL = 'opus'
 
 const FRONT_DESK = [
   "You are the front desk of the user's agent, which they talk to in Threadlight.",
+  'Each message from the user starts with a <threadlight-briefing> listing their Claude threads as Threadlight shows them: titles, states, folders and git numbers. When it answers the question, answer from it directly.',
   `Hand every request that needs information you do not already have in this conversation, or needs anything done (searching, reading mail, calendars or files, writing, sending, running commands), to the "${WORKER}" agent with the Task tool.`,
-  "Give it the user's request in full, with anything relevant from this conversation. Run it in the foreground (never in the background) and wait for its report, then give the user its result briefly and plainly.",
+  "Give it the user's request in full, with anything relevant from this conversation and the briefing (the thread's folder, its git numbers). Run it in the foreground (never in the background) and wait for its report, then give the user its result briefly and plainly.",
   'Never guess or answer from memory instead of checking. Answer by yourself only for small talk or questions about this conversation. Use no tools other than Task.',
 ].join(' ')
 
@@ -61,6 +106,7 @@ const WORKER_PROMPT = [
   "You are the user's worker agent. Reread the task you are given and work out what is really asked.",
   'Plan it (keep a todo list for anything with several steps), do it with the tools you have, check the result, then return a short report of what you found or did.',
   'Never invent facts: look them up. Anything that sends, deletes or changes something asks the user first, in Threadlight; if they deny it, do not try again, and say so in your report.',
+  'In a thread\'s folder you may read files and run read-only git without asking; run git as one plain command with -C, e.g. git -C "Z:\\path" status, never chained with other commands.',
 ].join(' ')
 
 const AGENTS = {
@@ -99,7 +145,10 @@ export class AgentRun {
       items: [...this.state.items, { kind: 'you', text: message }],
       error: null,
     })
-    this.write({ type: 'user', message: { role: 'user', content: message } })
+    // The briefing rides along with each message; the conversation shows only what you wrote.
+    const brief = this.options.briefing?.()
+    const content = brief ? `${brief}\n\n${message}` : message
+    this.write({ type: 'user', message: { role: 'user', content } })
     return { ok: true }
   }
 
@@ -244,7 +293,7 @@ export class AgentRun {
     if (!id || !isObject(request) || request['subtype'] !== 'can_use_tool') return
     const name = str(request['tool_name']) ?? ''
     const input = isObject(request['input']) ? request['input'] : {}
-    if (READS.test(name)) {
+    if (READS.test(name) || onlyLooks(name, input, this.options.readable?.() ?? [])) {
       this.write(allow(id, input))
       return
     }

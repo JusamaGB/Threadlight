@@ -11,6 +11,7 @@ import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { TalkHotkey } from './hotkeys'
 import { AgentRun } from './agent/agentRun'
+import { briefing, readableFolders } from './agent/briefing'
 import { foregroundTitle } from './keyState'
 import { setLaunchAtSignIn } from './loginItem'
 import { Holds } from './holds'
@@ -214,6 +215,9 @@ async function start(): Promise<void> {
       workspace: agentWorkspace,
       model: AGENT_MODEL,
       onChange: sendAgent,
+      // What it knows about the threads, fresh with each question, and where it may look.
+      briefing: () => briefing(sessions.snapshot),
+      readable: () => readableFolders(sessions.snapshot),
     })
     return agent
   }
