@@ -8,7 +8,7 @@ endpoint on port 47615 are separate.
 
 Use a current Windows Codex desktop app and its signed-in native `codex.exe` CLI.
 The initial compatibility check used CLI `0.164.0-alpha.11.1`. Threadlight needs
-Node 22.13+ for development; its Electron runtime includes SQLite.
+Node 22.16+ on PATH for the plugin bridge and development; its Electron runtime includes SQLite.
 
 From the Threadlight checkout, register and install the local marketplace:
 
@@ -81,6 +81,34 @@ Hook ports accept local tools, reject browser-origin requests, and are not expos
 on the network. If Threadlight is absent, hook commands exit cleanly after a short
 timeout. Hooks carry tool inputs and messages locally; none are sent to a service
 by Threadlight. Messages sent through Codex use the user's OpenAI account.
+
+## Shared memory
+
+Version 0.2.0 adds a self-contained MCP bridge and shared-memory skill, alongside
+the unchanged status/card hooks. Both the portable plugin manifest and the installed
+client's compatibility manifest point to the bundled tools. Plugin installation does
+not authorize any memory access.
+
+Ask the chat to connect to Threadlight shared memory. Match its verification code
+in **Threadlight → Shared memory → choose a space → Agent access**, review the scope
+and permissions, and tell the chat when approved. It uses the returned connection ID
+on every call. The same skill teaches Claude and Codex how to file research, decisions,
+attachments and build outputs, read exact revisions and recover context after compaction.
+See [the memory guide](../SHARED-MEMORY.md#plugin-setup) for the complete workflow.
+
+For an existing local installation, refresh its cached package using the installed
+Codex plugin manager. This CLI version supports remove followed by add:
+
+```powershell
+codex plugin remove threadlight-codex@threadlight-local
+codex plugin add threadlight-codex@threadlight-local
+```
+
+Keep the marketplace registered to the intended updated checkout. Reconnect tools or
+reopen the conversation to load the new package; review hook trust again if requested.
+Removing/reinstalling is a deliberate setup step, never automatic background behavior.
+No PC restart is needed. Memory access is separately approved, temporary and revocable;
+this does not change the live-chat sending limitation below.
 
 ## Validation and removal
 

@@ -68,6 +68,7 @@ const schemas = {
     filename: z.string().max(255).optional(),
   }),
   grant: base.extend({
+    pluginConnectionId: id.optional(),
     label: title,
     folderId: id.nullable(),
     readOnly: z.boolean(),

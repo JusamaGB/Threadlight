@@ -65,10 +65,12 @@ export function MemoryView({
   const [read, setRead] = useState<MemoryRead | null>(null)
   const [version, setVersion] = useState<number | undefined>()
   const [connection, setConnection] = useState<{ token: string; label: string } | null>(null)
+  const [pairingId, setPairingId] = useState<string | null>(null)
+  const pairing = data.connections?.find((c) => c.id === pairingId)
   const [confirm, setConfirm] = useState<MemoryInput | null>(null)
   const body = useRef<HTMLDivElement>(null)
   const route = routes.at(-1)
-  const draftKey = `form:${form ?? 'none'}:${route?.id ?? 'root'}`
+  const draftKey = `form:${form ?? 'none'}:${route?.id ?? 'root'}${pairingId && form === 'grant' ? ':' + pairingId : ''}`
   const folder = route?.kind === 'folder' ? data.folders.find((f) => f.id === route.id) : undefined
   const item = route?.kind === 'item' ? data.items.find((i) => i.id === route.id) : undefined
   const task = route?.kind === 'task' ? data.tasks.find((t) => t.id === route.id) : undefined
@@ -335,14 +337,19 @@ export function MemoryView({
         ) : form ? (
           <MemoryForm
             draftKey={draftKey}
-            key={`${form}:${route?.id ?? 'root'}`}
+            key={draftKey}
             kind={form}
             folder={folder}
             item={item}
             read={read}
             spaceId={spaceId}
             data={data}
-            sessions={sessions}
+            sessions={
+              pairing
+                ? sessions.filter((s) => (s.provider ?? 'claude') === pairing.provider)
+                : sessions
+            }
+            connectionRequest={form === 'grant' ? pairing : undefined}
             busy={busy}
             submit={async (values) => {
               let input: MemoryInput
@@ -406,6 +413,7 @@ export function MemoryView({
                 case 'grant':
                   input = {
                     action: 'create_grant',
+                    connectionId: pairingId ?? undefined,
                     assignee: values.assignee || undefined,
                     spaceId,
                     folderId: values.destination || undefined,
@@ -461,6 +469,7 @@ export function MemoryView({
                 })
                 setForm(null)
                 if (form === 'grant') {
+                  setPairingId(null)
                   const grant = result.value as { token?: string; label: string }
                   if (grant.token) setConnection({ token: grant.token, label: grant.label })
                 }
@@ -472,6 +481,12 @@ export function MemoryView({
             <p className={styles.hint}>
               Shared notes, images and decisions across your enrolled chats.
             </p>
+            {(data.connections ?? []).some((c) => c.state === 'pending') && (
+              <p role="status" className={styles.hint}>
+                Plugin connection requests are waiting. Choose a space, then Agent access to review
+                them.
+              </p>
+            )}
             {data.spaces.map((s) => (
               <button
                 key={s.id}
@@ -851,6 +866,35 @@ export function MemoryView({
                 ? `Local tools ready: ${data.endpoint}`
                 : 'Memory tools are offline. Check whether another application owns port 47618.'}
             </p>
+            {(data.connections ?? [])
+              .filter((c) => c.state === 'pending')
+              .map((c) => (
+                <div className={styles.message} key={c.id}>
+                  <strong>
+                    {c.provider === 'codex' ? 'Codex' : 'Claude'} · {c.label}
+                  </strong>
+                  <p>
+                    Match code <b>{c.code}</b> with the requesting chat.
+                  </p>
+                  <p className={styles.hint}>
+                    Expires {stamp(c.expiresAt)}. Provider and label are claimed by the plugin; you
+                    choose the scope and linked chat.
+                  </p>
+                  <div className={styles.actions}>
+                    <button
+                      onClick={() => {
+                        setPairingId(c.id)
+                        setForm('grant')
+                      }}
+                    >
+                      Review connection
+                    </button>
+                    <button onClick={() => void request({ action: 'reject_connection', id: c.id })}>
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
             {data.grants
               .filter((g) => g.spaceId === spaceId)
               .map((g) => (
@@ -861,7 +905,15 @@ export function MemoryView({
                     {g.folderId
                       ? data.folders.find((f) => f.id === g.folderId)?.title
                       : 'Entire space'}{' '}
-                    · {g.revoked ? 'Revoked' : 'Active'}
+                    ·{' '}
+                    {g.revoked
+                      ? 'Revoked'
+                      : g.pluginConnectionId
+                        ? data.connections?.find((c) => c.id === g.pluginConnectionId)?.state ===
+                          'connected'
+                          ? 'Connected'
+                          : 'Approved · awaiting tool use'
+                        : 'Active'}
                   </p>
                   {!g.revoked && (
                     <button
@@ -876,7 +928,10 @@ export function MemoryView({
             <button
               disabled={!data.endpoint}
               className={styles.action}
-              onClick={() => setForm('grant')}
+              onClick={() => {
+                setPairingId(null)
+                setForm('grant')
+              }}
             >
               Enroll agent capability
             </button>
@@ -1048,7 +1103,9 @@ function MemoryForm({
   sessions,
   busy,
   submit,
+  connectionRequest,
 }: {
+  connectionRequest?: import('../../shared/memoryPlugins').MemoryPluginConnection
   draftKey: string
   kind: FormKind
   folder?: MemoryFolder
@@ -1149,6 +1206,12 @@ function MemoryForm({
       }
       onSubmit={(e) => void handle(e)}
     >
+      {connectionRequest && (
+        <p role="status">
+          Approve {connectionRequest.provider} connection <b>{connectionRequest.code}</b> for this
+          space. Read-only is the default.
+        </p>
+      )}
       <h3>
         {
           {
@@ -1175,7 +1238,13 @@ function MemoryForm({
             name="title"
             required
             maxLength={80}
-            defaultValue={kind === 'rename' ? folder?.title : kind === 'revise' ? item?.title : ''}
+            defaultValue={
+              kind === 'rename'
+                ? folder?.title
+                : kind === 'revise'
+                  ? item?.title
+                  : (connectionRequest?.label ?? '')
+            }
           />
         </label>
       )}
@@ -1223,7 +1292,17 @@ function MemoryForm({
       {['move', 'merge', 'grant', 'task'].includes(kind) && (
         <label>
           {kind === 'grant' ? 'Access scope' : kind === 'task' ? 'Save results in' : 'Destination'}
-          <select name="destination" required={['merge', 'task'].includes(kind)}>
+          <select
+            name="destination"
+            aria-label={
+              kind === 'grant'
+                ? 'Access scope'
+                : kind === 'task'
+                  ? 'Save results in'
+                  : 'Destination'
+            }
+            required={['merge', 'task'].includes(kind)}
+          >
             {!['merge', 'task'].includes(kind) && (
               <option value="">{kind === 'grant' ? 'Entire space' : 'Space root'}</option>
             )}
@@ -1262,7 +1341,8 @@ function MemoryForm({
           </label>
           <p className={styles.hint}>
             Background assignments receive temporary scoped tools automatically. To use memory in an
-            existing open chat, copy the resulting configuration into that provider’s MCP settings.
+            existing open chat, use the shared-memory plugin and review its connection request here.
+            Manual configuration is also available.
           </p>
         </>
       )}

@@ -41,12 +41,17 @@ for notes, decisions, scratchpads, images and documents. The map, folder, item a
 views stay inside the existing 342-pixel panel. Map/List, search, Back and saved drafts
 let you browse without starting agent work.
 
-**Agent access** creates an explicit capability for a space or folder subtree. Choose
-an enrolled chat and contribution permissions for background assignments. To give an
-existing open chat memory tools, copy the displayed MCP configuration into that
-provider's MCP settings and reconnect its tools. Threadlight does not edit those
-settings automatically. A capability identifies an enrollment, not a verified native
-chat identity.
+**Claude and Codex plugins** include shared-memory tools and a common workflow skill.
+Ask an installed plugin to connect this chat to Threadlight. It shows a verification
+code; match it under **Shared memory → choose a space → Agent access**, then choose
+the folder scope and permissions. Read-only is the default. Each chat uses its own
+connection ID; installation does not grant access to all memory. Connections expire
+after eight hours and need renewed approval after an app or bridge restart.
+
+**Agent access** also creates enrollments for background assignments. Advanced users
+can still copy a manual MCP configuration. A capability identifies an enrollment,
+not a verified native chat identity. See [plugin setup](SHARED-MEMORY.md#plugin-setup)
+for installation, updates and reconnecting existing chats.
 
 **Delegate** creates a draft task with exact input versions and an output folder.
 Review and authorise it, then permit dispatch in **Coordination**. Live chats wait;

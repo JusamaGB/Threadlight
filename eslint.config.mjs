@@ -20,6 +20,7 @@ export default defineConfig(
       'src/preload/**/*.ts',
       'test/**/*.{ts,mjs}',
       'scripts/**/*.mjs',
+      'codex-plugin/scripts/**/*.mjs',
       '*.mjs',
     ],
     languageOptions: { globals: globals.node },

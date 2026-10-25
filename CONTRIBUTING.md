@@ -5,7 +5,7 @@ matter most.
 
 ## Setup
 
-1. Install [Node.js](https://nodejs.org/) 20 or later (the repo pins 22 in `.nvmrc`).
+1. Install [Node.js](https://nodejs.org/) 22.16 or later (the repo pins 22 in `.nvmrc`).
 2. Clone the repo and run `npm install`.
 3. If `npm install` finished but Electron will not start ("cannot find electron.exe"),
    run `node node_modules/electron/install.js` once to download its binary.
@@ -23,6 +23,11 @@ matter most.
 | `npm run typecheck` | TypeScript, both the Node side and the UI side |
 | `npm run format`    | Format everything with Prettier                |
 | `npm run check`     | Everything CI runs, in one go                  |
+
+Plugin assets are generated from the canonical bridge, protocol and shared-memory skill.
+Run `npm run plugins:package` after editing these sources; `npm run plugins:check`
+rejects stale copies before the normal check suite. The plugin packages do not depend
+on application `node_modules` at runtime. See `SHARED-MEMORY-PLUGINS-SPEC.md`.
 
 ## Layout
 

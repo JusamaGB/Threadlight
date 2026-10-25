@@ -8,6 +8,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Claude and Codex plugins now teach shared-memory workflows and bundle scoped MCP
+  tools. Chats request a verification code; the compact Agent access view approves
+  folder scope and permissions without copying credentials. Explicit per-chat
+  connection IDs, briefings, expiry, revocation and restart recovery keep access
+  bounded. Existing lifecycle hooks and background assignment credentials remain.
+
 - Agent shows when an existing conversation differs from the saved provider/model,
   with a Use selected model action. Ended conversations display the selection for
   the next message while retaining their history.

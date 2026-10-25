@@ -10,7 +10,7 @@
 //   node scripts/install.mjs --check-keys <key>…     which hotkeys are free
 //   node scripts/install.mjs --uninstall [--remove-data]
 //
-// Plain Node (20+), no dependencies of its own, so it runs before `npm ci`.
+// Plain Node (22.16+), no dependencies of its own, so it runs before `npm ci`.
 
 import { spawn, spawnSync } from 'node:child_process'
 import {
@@ -323,8 +323,9 @@ function preflight({ strict }) {
   const build = Number(release().split('.')[2])
   if (build < MIN_WINDOWS_BUILD) problem('Needs Windows 10 version 1803 or later, or Windows 11.')
   else ok(`Windows (build ${build})`)
-  const major = Number(process.versions.node.split('.')[0])
-  if (major < 20) problem(`Needs Node 20 or later (this is ${process.versions.node}).`)
+  const [major, minor] = process.versions.node.split('.').map(Number)
+  if (major < 22 || (major === 22 && minor < 16))
+    problem(`Needs Node 22.16 or later (this is ${process.versions.node}).`)
   else ok(`Node ${process.versions.node}`)
   const curl = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'curl.exe')
   if (!existsSync(curl)) problem('curl.exe is missing from Windows; the hooks need it.')
