@@ -24,6 +24,9 @@ const api: ThreadlightApi = {
   memoryImport: (folderId) => ipcRenderer.invoke(IPC.memoryImport, folderId),
   memoryExport: () => ipcRenderer.invoke(IPC.memoryExport),
   memoryRestore: () => ipcRenderer.invoke(IPC.memoryRestore),
+  getComposerDraft: (id) => ipcRenderer.invoke(IPC.getComposerDraft, id),
+  saveComposerDraft: (id, text, revision) =>
+    ipcRenderer.invoke(IPC.saveComposerDraft, id, text, revision),
   answerCodex: (id, holdId, answer) => ipcRenderer.invoke(IPC.answerCodex, id, holdId, answer),
   getVersion: () => ipcRenderer.invoke(IPC.getVersion),
   getSessions: () => ipcRenderer.invoke(IPC.getSessions),

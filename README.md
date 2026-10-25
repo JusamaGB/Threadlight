@@ -104,8 +104,15 @@ selections for Claude, Codex and the combined view.
 
 Both off pauses chat monitoring. The dimmed dot and Settings remain accessible.
 Disabling an application releases its held cards and prevents new background sends;
-already accepted work continues. Drafts and pending answer text stay with their
-chat in memory, and changing the toggles cancels any voice-send countdown.
+already accepted work continues. Composer drafts are saved in Threadlight's own
+local recovery store and restored after restart; pending answer cards remain in
+memory. Changing the toggles cancels any voice-send countdown.
+
+An open Codex chat currently shows **Copy and open Codex** explicitly. This copies
+your draft and opens its destination for you to paste; it does not submit it.
+Enter and voice countdowns never trigger that fallback. Delivery into the existing
+desktop runtime remains gated on the connection proof in the
+[completion roadmap](CODEX-INTEGRATION-SPEC.md#28-selected-desktop-chat-messaging-completion-roadmap).
 
 ### Installed applications
 

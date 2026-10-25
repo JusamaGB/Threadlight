@@ -17,6 +17,7 @@ import type { SttStatus } from './stt'
 import type { Usage } from './usage'
 import type { MemoryInput, MemoryReply, MemorySnapshot } from './memory'
 import type { LiveVoiceEvent, LiveVoiceResult } from './liveVoice'
+import type { DraftResult } from './messaging'
 import type {
   Changes,
   FileDiff,
@@ -56,6 +57,8 @@ export const IPC = {
   openPanelQuietly: 'panel:open-quietly',
   hotkeyProblem: 'hotkey:problem',
   sendMessage: 'relay:send',
+  getComposerDraft: 'composer:draft-get',
+  saveComposerDraft: 'composer:draft-save',
   getRelays: 'relay:get',
   relaysChanged: 'relay:changed',
   getVersion: 'app:get-version',
@@ -120,6 +123,8 @@ export interface ThreadlightApi {
   memoryImport(folderId: string): Promise<MemoryReply>
   memoryExport(): Promise<MemoryReply>
   memoryRestore(): Promise<MemoryReply>
+  getComposerDraft(sessionId: string): Promise<DraftResult>
+  saveComposerDraft(sessionId: string, text: string, revision: number): Promise<DraftResult>
   answerCodex(
     sessionId: string,
     holdId: string,

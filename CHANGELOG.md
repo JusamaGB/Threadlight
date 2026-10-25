@@ -20,6 +20,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the existing background relays, and require separate human acceptance of saved results.
   Durable budgets, subscriptions, pause, causal loop checks and uncertain-delivery recovery
   bound automatic coordination. Native provider memory and global settings are unchanged.
+- Composer drafts now survive normal restarts in Threadlight's own recovery store.
+  Conflicting or failed saves preserve the visible text and report the problem.
+- Live Codex chats show an explicit **Copy and open Codex** action and explain that
+  desktop sending is not connected. Enter and voice countdowns never invoke that
+  fallback automatically. Background desktop sending remains incomplete.
 
 - Codex Agent conversations archive on End, inactivity expiry and normal app exit,
   while remaining readable in Agent → Earlier. Continue restores the original thread.
@@ -293,6 +298,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to one of the other kinds, without going into Settings.
 
 ### Changed
+
+- Hide Connected apps from Agent settings for both providers and stop discovering
+  apps when opening settings. Existing integration policies and preferences remain intact.
 
 - A held card no longer lets go after a minute: it waits until it is answered here, or let
   go when the thread is opened in Claude or Threadlight quits (12 hours at most).

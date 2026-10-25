@@ -52,6 +52,10 @@ export const agentPaths = (userData: string) => ({
   index: join(userData, 'agent-conversations.json'),
 })
 
+export const messagingPaths = (userData: string) => ({
+  store: join(userData, 'message-recovery.json'),
+})
+
 export function codexPaths(env: NodeJS.ProcessEnv = process.env, home = homedir()): CodexPaths {
   const root = env['CODEX_HOME'] || join(home, '.codex')
   return {

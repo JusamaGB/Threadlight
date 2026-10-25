@@ -9,7 +9,7 @@ do not download a browser.
 The test serves the built renderer on a temporary loopback port with synthetic IPC.
 It never launches Electron, either chat CLI, or a hook server, and needs no accounts.
 It exercises the actual settings controls, combined lists and workspaces, draft and
-pending-answer retention, live copy/open, exact send targeting, pause/resume settings,
+pending-answer retention, explicit live copy/open and Enter refusal, exact send targeting, pause/resume settings,
 and the paused dot/hotkey. It also checks Codex step/proposed-plan rendering, separate
 quota hovers, expired usage, and safe text rendering. Provider aggregation and settings validation use the real
 shared modules. Optional `THREADLIGHT_SCREENSHOTS` writes synthetic `.local.png`
