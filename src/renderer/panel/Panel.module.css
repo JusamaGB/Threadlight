@@ -113,7 +113,7 @@
   color: var(--fg);
 }
 
-/* Settings, Agent, Changes: "‹ Title" sits on the right, where the button that opened it is. */
+/* Subpages default to a right-hand back chevron and title. */
 .back {
   width: 14px;
   margin-left: auto;
@@ -122,11 +122,12 @@
   color: var(--muted);
 }
 
-.settingsBack {
+/* Settings and Agent share a centered title and left-hand back chevron. */
+.pageBack {
   margin-left: 0;
 }
 
-.settingsHeading {
+.pageHeading {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);

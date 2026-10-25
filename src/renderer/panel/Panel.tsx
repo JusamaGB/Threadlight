@@ -785,28 +785,31 @@ export function Panel() {
           ) : showAgent ? (
             <>
               <button
-                className={styles.back}
+                className={`${styles.back} ${styles.pageBack}`}
                 onClick={() => setShowAgent(false)}
                 aria-label={en.settings.back}
                 title={en.settings.back}
               >
                 ‹
               </button>
-              <span className={styles.heading}>{en.agent.title}</span>
+              {hold !== 'normal' && (
+                <span role="img" aria-label="Pinned open" title="Pinned open">
+                  <PinIcon />
+                </span>
+              )}
+              <span className={`${styles.heading} ${styles.pageHeading}`}>{en.agent.title}</span>
             </>
           ) : showSettings ? (
             <>
               <button
-                className={`${styles.back} ${styles.settingsBack}`}
+                className={`${styles.back} ${styles.pageBack}`}
                 onClick={() => setShowSettings(false)}
                 aria-label={en.settings.back}
                 title={en.settings.back}
               >
                 ‹
               </button>
-              <span className={`${styles.heading} ${styles.settingsHeading}`}>
-                {en.settings.title}
-              </span>
+              <span className={`${styles.heading} ${styles.pageHeading}`}>{en.settings.title}</span>
             </>
           ) : (
             <>
