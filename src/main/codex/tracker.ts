@@ -18,6 +18,8 @@ import { writerHeld } from './live'
 import { readCodexPlan } from './plan'
 import { codexUsage } from './usage'
 import type { Usage } from '../../shared/usage'
+import { codexDisplayText, codexToolActivity, codexUserRequest } from './presentation'
+import { codexState } from './state'
 
 type Row = Record<string, unknown>
 const json = (value: unknown): Row => {
@@ -114,7 +116,8 @@ function questionCard(value: unknown): Attention | null {
 /** Accepts the history projection and the older rollout format without rewriting either. */
 export function summarizeCodex(records: Row[]): CodexSummary {
   let questionCall: string | null = null,
-    asynchronous = false
+    asynchronous = false,
+    progress: string | null = null
   const out: CodexSummary = {
     lastPrompt: null,
     lastReply: null,
@@ -135,7 +138,11 @@ export function summarizeCodex(records: Row[]): CodexSummary {
       type === 'user_message' ||
       (type === 'message' && item['role'] === 'user')
     ) {
-      out.lastPrompt = textOf(item['content']) || str(item['message']) || out.lastPrompt
+      const request = codexUserRequest(textOf(item['content']) || str(item['message']) || '')
+      if (!request) continue
+      out.lastPrompt = request
+      progress = null
+      out.lastAction = null
       out.attention = null
       questionCall = null
     }
@@ -146,8 +153,14 @@ export function summarizeCodex(records: Row[]): CodexSummary {
     ) {
       const text = str(item['text']) || str(item['message']) || textOf(item['content'])
       if (text) {
-        out.lastReply = text
-        if (out.attention?.kind !== 'question') out.attention = endQuestion(text)
+        const display = codexDisplayText(text)
+        if (item['phase'] === 'commentary') {
+          progress = display || null
+          out.lastAction = progress
+        } else {
+          out.lastReply = display || out.lastReply
+          if (out.attention?.kind !== 'question') out.attention = endQuestion(text)
+        }
       }
       const card = questionCard(item['questions'])
       if (card) {
@@ -155,11 +168,11 @@ export function summarizeCodex(records: Row[]): CodexSummary {
         questionCall = null
       }
     }
-    if (type === 'commandExecution') out.lastAction = str(item['command'])?.slice(0, 300) || null
+    if (type === 'commandExecution') out.lastAction = progress || codexToolActivity(type, item)
     if (type === 'function_call' || type === 'functionCall') {
       const name = str(item['name']) || '',
         args = json(item['arguments'])
-      out.lastAction = (str(args['description']) || str(args['command']) || name).slice(0, 300)
+      out.lastAction = progress || codexToolActivity(name, args)
       if (/request_user_input(?:_async)?$/.test(name) && Array.isArray(args['questions'])) {
         out.attention = questionCard(args['questions'])
         questionCall = str(item['call_id']) || str(item['id'])
@@ -349,13 +362,7 @@ export class CodexTracker {
         const attention = fresh
           ? fresh.attention || (fresh.state === 'waiting' ? summary.attention : null)
           : summary.attention
-        const state =
-          (fresh?.state === 'working' && !live ? 'idle' : fresh?.state) ||
-          (['inProgress', 'in_progress'].includes(String(turn['status'])) && live
-            ? 'working'
-            : attention
-              ? 'waiting'
-              : 'idle')
+        const { state, tracked } = codexState(turn['status'], live, attention, fresh)
         const planSource = tailSummary.hasPlan ? tailSummary : summary
         const plan = planSource.plan
         const current = plan.findIndex((p) => p.status === 'in_progress')
@@ -373,17 +380,19 @@ export class CodexTracker {
           title:
             str(row['name']) ||
             str(row['title']) ||
-            str(row['first_user_message'])?.slice(0, 100) ||
+            codexUserRequest(str(row['first_user_message']) || '')?.slice(0, 100) ||
             'Codex chat',
           cwd,
           state,
-          tracked: !!fresh,
-          thinking: false,
+          tracked,
+          thinking: state === 'working' && !lastAction,
           lastActiveAt: activity(row),
           focusedAt: focus.get(id) || 0,
           stage: codexStage(state, currentStep, lastAction, lastReply, attention),
           lastPrompt:
-            summary.lastPrompt || tailSummary.lastPrompt || str(row['first_user_message']),
+            summary.lastPrompt ||
+            tailSummary.lastPrompt ||
+            codexUserRequest(str(row['first_user_message']) || ''),
           plan,
           planText: planSource.planText,
           currentStep,
@@ -481,6 +490,6 @@ export function codexStage(
   if (state !== 'idle' && step)
     return `${state === 'waiting' ? 'Waiting for you · ' : ''}${step.index}/${step.total} · ${step.content}`
   if (attention) return attention.kind === 'approval' ? 'Needs approval' : 'Waiting for you'
-  if (state === 'working') return action || reply?.replace(/\s+/g, ' ').slice(0, 300) || 'Working'
+  if (state === 'working') return action?.replace(/\s+/g, ' ').slice(0, 300) || 'Thinking'
   return reply?.replace(/\s+/g, ' ').slice(0, 300) || 'Ready'
 }

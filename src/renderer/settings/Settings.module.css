@@ -9,7 +9,7 @@
 }
 
 .group {
-  padding: 6px 10px 2px;
+  padding: 5px 10px 2px;
 }
 
 .group + .group {
@@ -29,8 +29,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 28px;
-  padding: 3px 0;
+  min-height: 26px;
+  padding: 2px 0;
 }
 
 /* A setting that does not apply right now (e.g. "Sessions listed" outside the Recent list). */
@@ -52,7 +52,7 @@
 .hint,
 .error {
   font-size: 10px;
-  line-height: 13px;
+  line-height: 12px;
   color: var(--faint);
 }
 

@@ -280,6 +280,7 @@ describe('read-only Codex discovery', () => {
       lastPrompt: 'Synthetic prompt',
       lastReply: 'Synthetic reply.',
       state: 'idle',
+      tracked: true,
       contextUsed: 0.25,
       planText: '# Synthetic plan\n- Build the display',
     })

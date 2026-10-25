@@ -6,6 +6,7 @@ import { useNow } from '../hooks/useNow'
 import { gitLine } from '../lib/git'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
+import { displayWindowsPath } from '../../shared/displayPath'
 
 /** The reply as the row's line shows it (whitespace collapsed), to tell it is being written. */
 const oneLineText = (text: string) => text.split(/\s+/).filter(Boolean).join(' ')
@@ -25,7 +26,11 @@ interface SessionDetailProps {
 export function SessionDetail({ session, relay, now }: SessionDetailProps) {
   const done = session.plan.filter((item) => item.status === 'completed').length
   const active = session.state !== 'idle'
-  const status = en.state[session.state] + (session.tracked ? '' : ` · ${en.state.guessed}`)
+  const unavailable = session.provider === 'codex' && !session.tracked
+  const status = unavailable
+    ? 'Status unavailable'
+    : en.state[session.state] + (session.tracked ? '' : ` · ${en.state.guessed}`)
+  const cwd = session.provider === 'codex' ? displayWindowsPath(session.cwd) : session.cwd
   const message = relayLine(relay, now)
   // The plan step opened to show what was done on it, by its text.
   const [openStep, setOpenStep] = useState<string | null>(null)
@@ -33,13 +38,19 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
   return (
     <div className={styles.detail}>
       <div className={styles.detailHead}>
-        <span className={styles.status} data-state={session.state}>
+        <span
+          className={styles.status}
+          data-state={unavailable ? 'unknown' : session.state}
+          title={
+            unavailable ? 'No current hook or verified Codex turn status is available.' : undefined
+          }
+        >
           {status}
         </span>
         {/* The workspace folder; Open ↗ sits on the row's top line instead. */}
         {session.cwd && (
-          <span className={styles.cwd} title={session.cwd}>
-            {session.cwd}
+          <span className={styles.cwd} title={cwd}>
+            {cwd}
           </span>
         )}
       </div>

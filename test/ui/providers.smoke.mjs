@@ -21,6 +21,26 @@ require.extensions['.ts'] = (module, filename) =>
 const { DEFAULT_SETTINGS, validatePatch } = require(join(root, 'src/shared/settings.ts'))
 const { combinedSnapshot, providerView } = require(join(root, 'src/shared/providers.ts'))
 const { IDLE_AGENT } = require(join(root, 'src/shared/agent.ts'))
+const { summarizeCodex } = require(join(root, 'src/main/codex/tracker.ts'))
+const { codexState } = require(join(root, 'src/main/codex/state.ts'))
+const readableSummary = summarizeCodex([
+  {
+    type: 'userMessage',
+    content:
+      '# Files mentioned by the user:\n\n## preview.png: C:/synthetic/preview.png\nImage attachment: true\n\n## My request:\nPlease make the edge tint narrower and extend it through the expanded thread.',
+  },
+  {
+    type: 'agentMessage',
+    phase: 'commentary',
+    text: 'I’m checking the expanded layout and narrowing the provider tint.',
+  },
+  { type: 'commandExecution', command: 'C:/synthetic/pwsh.exe -Command "git diff --stat"' },
+  {
+    type: 'agentMessage',
+    phase: 'final_answer',
+    text: 'Done: the tint is now **20px wide** and continues through the expanded thread.\n\n![Preview](C:/synthetic/preview.png)\n\nBuild and UI checks pass.',
+  },
+])
 const { chromium } = require(process.env['THREADLIGHT_PLAYWRIGHT'] || 'playwright')
 let settings = structuredClone(DEFAULT_SETTINGS)
 const folder = 'C:/synthetic/shared'
@@ -258,8 +278,12 @@ try {
   assert.equal(await row('Claude').getAttribute('data-provider'), 'claude')
   assert.equal(await row('Codex').getAttribute('data-provider'), 'codex')
   assert.equal(await row('Claude').locator('[class*="providerBadge"]').count(), 0)
-  const claudeFade = await row('Claude').evaluate((node) => getComputedStyle(node).backgroundImage)
-  const codexFade = await row('Codex').evaluate((node) => getComputedStyle(node).backgroundImage)
+  const claudeFade = await row('Claude').evaluate(
+    (node) => getComputedStyle(node.parentElement, '::after').backgroundImage,
+  )
+  const codexFade = await row('Codex').evaluate(
+    (node) => getComputedStyle(node.parentElement, '::after').backgroundImage,
+  )
   assert.match(claudeFade, /linear-gradient/)
   assert.match(codexFade, /linear-gradient/)
   assert.notEqual(claudeFade, codexFade)
@@ -412,11 +436,38 @@ try {
       attention: null,
       state: 'working',
       stage: '2/3 · Build the display',
-      lastAction: 'Updating the status display',
     }),
   )
+  await page.evaluate(
+    (summary) =>
+      window.proof.patch({
+        lastPrompt: summary.lastPrompt,
+        lastAction: summary.lastAction,
+        lastReply: summary.lastReply,
+      }),
+    readableSummary,
+  )
   await page.getByText('Working', { exact: true }).waitFor()
+  await page.evaluate(
+    (status) => window.proof.patch({ ...status, cwd: '\\\\?\\Z:\\synthetic\\workspace' }),
+    codexState('inProgress', true, null, null),
+  )
+  await page.getByTitle('Z:\\synthetic\\workspace', { exact: true }).waitFor()
+  assert.equal(await page.getByText('Working · state guessed', { exact: true }).count(), 0)
+  await page.getByText(readableSummary.lastPrompt, { exact: true }).waitFor()
+  await page.getByText(readableSummary.lastAction, { exact: true }).waitFor()
   await capture('codex-working-plan')
+  await page.evaluate(() => window.proof.patch({ state: 'idle', stage: 'Done', plan: [] }))
+  await page.getByText(readableSummary.lastReply, { exact: true }).waitFor()
+  assert.equal(
+    await page.getByText(/Files mentioned by the user|C:\/synthetic\/preview.png|pwsh.exe/).count(),
+    0,
+  )
+  await capture('codex-readable-reply')
+  await page.evaluate(() => window.proof.patch({ tracked: false }))
+  await page.getByText('Status unavailable', { exact: true }).waitFor()
+  await page.evaluate((cwd) => window.proof.patch({ tracked: true, cwd }), folder)
+  await page.evaluate((plan) => window.proof.patch({ plan }), trackedPlan)
   await page.evaluate(
     (attention) => window.proof.patch({ attention, state: 'waiting', stage: 'Waiting for you' }),
     heldAttention,

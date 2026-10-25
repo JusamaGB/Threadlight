@@ -669,14 +669,16 @@ export function Panel() {
           ) : showSettings ? (
             <>
               <button
-                className={styles.back}
+                className={`${styles.back} ${styles.settingsBack}`}
                 onClick={() => setShowSettings(false)}
                 aria-label={en.settings.back}
                 title={en.settings.back}
               >
                 ‹
               </button>
-              <span className={styles.heading}>{en.settings.title}</span>
+              <span className={`${styles.heading} ${styles.settingsHeading}`}>
+                {en.settings.title}
+              </span>
             </>
           ) : (
             <>

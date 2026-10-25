@@ -179,7 +179,7 @@ export interface Session {
   appId: string | null
   title: string
   state: SessionState
-  /** True when the state came from a hook event; false when it was inferred. */
+  /** State verified by a hook or Codex turn status (plus a live writer for active turns). */
   tracked: boolean
   cwd: string
   /** Last activity, in milliseconds since the epoch. */

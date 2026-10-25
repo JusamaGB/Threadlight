@@ -122,6 +122,16 @@
   color: var(--muted);
 }
 
+.settingsBack {
+  margin-left: 0;
+}
+
+.settingsHeading {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 /* The agent is working while another page shows: purple, with a blue shimmer about once a second. */
 .gear.agentBusy {
   color: var(--purple);
@@ -336,23 +346,26 @@
   padding: 6px 10px;
 }
 
-/* A quiet identity cue under the age/open area; the title and status colours keep their meaning. */
-.rowButton[data-provider] {
+/* Overlay the whole row so raised details and cards don't interrupt the narrow edge tint. */
+.row[data-provider]::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 20px;
+  pointer-events: none;
+  z-index: 1;
   background-image: linear-gradient(
     to left,
     color-mix(in srgb, var(--provider-tint) 20%, transparent),
     transparent
   );
-  background-size: 40px 100%;
-  background-position: right;
-  background-repeat: no-repeat;
 }
 
-.rowButton[data-provider='codex'] {
+.row[data-provider='codex'] {
   --provider-tint: var(--provider-codex);
 }
 
-.rowButton[data-provider='claude'] {
+.row[data-provider='claude'] {
   --provider-tint: var(--provider-claude);
 }
 
@@ -629,6 +642,10 @@
   font-size: 10px;
   font-weight: 700;
   color: var(--green);
+}
+
+.status[data-state='unknown'] {
+  color: var(--muted);
 }
 
 .status[data-state='working'] {

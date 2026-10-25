@@ -8,6 +8,17 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Settings has a centred header title and slightly tighter row and help-text spacing.
+
+- Codex workspace labels hide Windows long-path prefixes. Verified database turn states
+  no longer say "state guessed"; missing or stale state information is labelled unavailable.
+
+- Codex thread summaries show the actual request after attachment metadata, use agent
+  progress updates for Now, and remove markdown/image-path clutter from replies. Tool-only
+  activity has readable labels, and a new turn no longer presents the previous reply as current work.
+
+- Thread provider edge tints are half as wide and continue through expanded details and cards.
+
 - Codex question cards use numbered selectable choices, a custom-response field,
   question paging and compact actions. Picks and drafts stay with their chat when
   collapsed or hidden; Copy & open prepares the answer for completion in Codex.

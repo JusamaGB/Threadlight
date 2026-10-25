@@ -65,7 +65,10 @@ export function SessionRow(props: SessionRowProps) {
   const attention = session.attention
   const titleClass = [styles.title, composing && styles.composing].filter(Boolean).join(' ')
   return (
-    <div className={expanded ? `${styles.row} ${styles.expanded}` : styles.row}>
+    <div
+      className={expanded ? `${styles.row} ${styles.expanded}` : styles.row}
+      data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
+    >
       <button
         className={styles.rowButton}
         data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
