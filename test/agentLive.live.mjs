@@ -27,7 +27,9 @@ const { chromium } = require(process.env.THREADLIGHT_PLAYWRIGHT || 'playwright')
 const folder = mkdtempSync(join(tmpdir(), 'threadlight-live-check-'))
 let browser, page, service
 const message =
+  process.env.THREADLIGHT_LIVE_TEST_MESSAGE ||
   'This is a voice connection test. Reply briefly with voice connection ready. Do not use tools.'
+const expected = new RegExp(process.env.THREADLIGHT_LIVE_EXPECT || 'voice connection ready', 'i')
 ;(async () => {
   assert.ok(
     process.env.THREADLIGHT_CODEX_CLI,
@@ -49,7 +51,12 @@ const message =
     workspace: folder,
     index: join(folder, 'history.json'),
     claudeProjects: folder,
-    settings: () => ({ ...DEFAULT_SETTINGS, agentProvider: 'codex', agentLifetimeMinutes: 0 }),
+    settings: () => ({
+      ...DEFAULT_SETTINGS,
+      agentProvider: 'codex',
+      agentLifetimeMinutes: 0,
+      agentCodexModel: process.env.THREADLIGHT_LIVE_MODEL || DEFAULT_SETTINGS.agentCodexModel,
+    }),
     snapshot: () => ({
       sessions: [],
       workspaces: [],
@@ -66,9 +73,11 @@ const message =
   })
   await page.exposeFunction('startVoice', (id, sdp) => service.startLive(id, sdp))
   await page.exposeFunction('openVoice', (id, text) => service.openLive(id, text))
+  await page.exposeFunction('getAgent', () => service.current)
   await page.exposeFunction('stopVoice', (id) => service.stopLive(id))
   await page.evaluate(() => {
     window.threadlight = {
+      getAgent: window.getAgent,
       agentLiveStart: window.startVoice,
       agentLiveOpen: window.openVoice,
       agentLiveStop: window.stopVoice,
@@ -116,20 +125,34 @@ const message =
   )
   assert.equal(service.current.items.length, 0, 'Preparation must not send the opening')
   await page.evaluate((text) => window.connection.open(text), message)
-  const deadline = Date.now() + 25000
+  const spokenAnswer = () =>
+    service.current.items.some(
+      (i) => i.kind === 'agent' && i.id?.startsWith('live:') && expected.test(i.text),
+    )
+  const deadline = Date.now() + 60000
   while (
-    !service.current.items.some((i) => i.kind === 'agent' && i.text.trim()) &&
+    !spokenAnswer() &&
+    (await page.evaluate(() => window.connection.active)) &&
     Date.now() < deadline
   )
     await new Promise((r) => setTimeout(r, 250))
   assert.ok(
-    service.current.items.some((i) => i.kind === 'agent' && i.text.trim()),
-    'Expected a native spoken reply transcript',
+    spokenAnswer(),
+    'Expected a native spoken answer matching THREADLIGHT_LIVE_EXPECT, not just a filler acknowledgment',
   )
   // Let the native completed-item event persist the final transcript before stopping.
   await new Promise((r) => setTimeout(r, 2500))
   if (process.env.THREADLIGHT_LIVE_TEST_WAV) {
-    const previousReplies = service.current.items.filter((i) => i.kind === 'agent').length
+    const previousReplies = new Set(service.current.items.map((i) => i.id))
+    const followupExpected = new RegExp(process.env.THREADLIGHT_LIVE_FOLLOWUP_EXPECT || '.+', 'i')
+    const followupAnswer = () =>
+      service.current.items.some(
+        (i) =>
+          i.kind === 'agent' &&
+          i.id?.startsWith('live:') &&
+          !previousReplies.has(i.id) &&
+          followupExpected.test(i.text.trim()),
+      )
     const wave = [...readFileSync(process.env.THREADLIGHT_LIVE_TEST_WAV)]
     await page.evaluate(async (bytes) => {
       const buffer = await window.context.decodeAudioData(new Uint8Array(bytes).buffer)
@@ -140,8 +163,7 @@ const message =
     }, wave)
     const followupDeadline = Date.now() + 30000
     while (
-      (service.current.items.filter((i) => i.kind === 'you').length < 2 ||
-        service.current.items.filter((i) => i.kind === 'agent').length <= previousReplies) &&
+      (service.current.items.filter((i) => i.kind === 'you').length < 2 || !followupAnswer()) &&
       Date.now() < followupDeadline
     )
       await new Promise((r) => setTimeout(r, 250))
@@ -150,8 +172,8 @@ const message =
       'Expected native microphone-input transcript',
     )
     assert.ok(
-      service.current.items.filter((i) => i.kind === 'agent').length > previousReplies,
-      'Expected spoken follow-up response',
+      followupAnswer(),
+      'Expected native spoken follow-up answer matching THREADLIGHT_LIVE_FOLLOWUP_EXPECT',
     )
     console.log(
       'PASS: generated speech entered the same Live conversation and received a follow-up reply.',

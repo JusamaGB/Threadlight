@@ -2,13 +2,15 @@ import type { AgentItem } from '../../shared/agent'
 import type { CodexTransport } from './codexClient'
 import { isObject, str, type JsonObject } from '../sessions/json'
 
+const OPENING_INSTRUCTIONS =
+  'You are Threadlight, a concise live voice assistant. The opening user request is already transcribed and will be submitted directly to the backing Codex agent. Do not delegate or execute that opening yourself. Wait silently during preparation. When backend answer text arrives in context, speak that answer to the user immediately, then listen for follow-up speech. Do not wait for additional microphone audio before conveying the backend answer. For subsequent spoken requests use native delegation when tools or current facts are needed. Respect all permissions and approvals. Never invent completion or facts.'
+
 /** Native thread-scoped WebRTC uses the existing ChatGPT sign-in. WebSocket does not. */
 export class CodexLive {
   private resolve?: (sdp: string) => void
   private reject?: (error: Error) => void
   private timer?: ReturnType<typeof setTimeout>
   private ended = false
-  private opened = false
   private stopping?: Promise<void>
   private items = new Map<string, AgentItem>()
 
@@ -37,10 +39,11 @@ export class CodexLive {
         transport: { type: 'webrtc', sdp },
         flushTranscriptTailOnSessionEnd: false,
         codexResponseHandoffMode: 'commentary',
+        prompt: OPENING_INSTRUCTIONS,
         initialItems: [
           {
             role: 'developer',
-            text: 'Wait silently for the first user message. This microphone session is a conversation, not a command interface. Keep spoken replies concise. Use the backing Codex agent for tasks and respect its approval decisions.',
+            text: OPENING_INSTRUCTIONS,
           },
         ],
       })
@@ -51,18 +54,6 @@ export class CodexLive {
       this.end((error as Error).message)
       throw error
     }
-  }
-
-  /** The opening transcript is submitted once; an uncertain acknowledgement is never retried. */
-  async open(text: string): Promise<void> {
-    if (this.ended || this.opened) throw new Error('This Live opening was already sent or closed.')
-    this.opened = true
-    await this.client.request('thread/realtime/appendText', {
-      threadId: this.threadId,
-      role: 'user',
-      text,
-    })
-    if (this.ended) throw new Error('Live closed while sending. Check Earlier before retrying.')
   }
 
   event(method: string, params: JsonObject): boolean {

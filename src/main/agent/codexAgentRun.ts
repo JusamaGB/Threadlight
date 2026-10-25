@@ -307,19 +307,32 @@ export class CodexAgentRun {
   }
 
   async openLive(text: string): Promise<AgentResult> {
-    if (!this.live || !this.record || this.state.live !== 'ready')
+    if (!this.live || !this.record || !this.client || this.state.live !== 'ready')
       return { ok: false, reason: 'Live is not ready.' }
-    this.update({ live: 'active' })
+    const epoch = this.generation
+    const client = this.client
+    this.update({ live: 'active', status: 'working' })
     const item: AgentItem = { id: `live:opening:${randomUUID()}`, kind: 'you', text }
     this.record = { ...this.record, pending: { id: item.id!, text, at: Date.now() } }
     this.putItem(item)
     this.saveLiveItem(item)
     try {
       await this.liveWrites
-      if (this.state.ended) throw new Error('Live was cancelled.')
-      await this.live.open(text)
-      this.record = { ...this.record!, pending: null }
-      await this.options.store.put(this.record)
+      if (epoch !== this.generation) throw new Error('Live was cancelled.')
+      // V3 text appends are background context, not user turns. Execute the opening
+      // once in this same thread; native commentary handoff voices its answer.
+      const brief = this.options.briefing()
+      const result = await client.request('turn/start', {
+        threadId: this.record.providerId,
+        clientUserMessageId: item.id,
+        input: [{ type: 'text', text: brief ? `${brief}\n\n${text}` : text }],
+        model: this.record.model,
+        effort: this.record.reasoning,
+      })
+      if (epoch !== this.generation) throw new Error('Live was cancelled.')
+      if (!isObject(result.turn) || !str(result.turn.id))
+        throw new Error('Codex did not identify the accepted Live opening.')
+      if (agentBusy(this.state)) this.turn = str(result.turn.id)
       return { ok: true }
     } catch (error) {
       return {

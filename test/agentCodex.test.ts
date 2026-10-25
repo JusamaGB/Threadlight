@@ -601,13 +601,22 @@ describe('native Live voice', () => {
     })
     expect(
       fake.calls.some(
-        (c) => c.method === 'turn/start' || c.method === 'thread/realtime/appendText',
+        (c) => c.method === 'turn/start' || c.method === 'thread/realtime/appendSpeech',
       ),
     ).toBe(false)
     expect(await run.openLive('Please review this with me')).toEqual({ ok: true })
     expect((await run.openLive('Duplicate')).ok).toBe(false)
     expect((await run.send('Typed fallback')).ok).toBe(false)
-    expect(fake.calls.filter((c) => c.method === 'thread/realtime/appendText')).toHaveLength(1)
+    expect(fake.calls.filter((c) => c.method === 'turn/start')).toHaveLength(1)
+    expect(
+      fake.calls.some((c) =>
+        [
+          'thread/inject_items',
+          'thread/realtime/appendText',
+          'thread/realtime/appendSpeech',
+        ].includes(c.method),
+      ),
+    ).toBe(false)
     fake.emit('thread/realtime/item/started', {
       item: { type: 'transcriptSegment', id: 'spoken', role: 'assistant', text: '' },
     })
@@ -633,13 +642,66 @@ describe('native Live voice', () => {
     connect(fake)
     await run.startLive(voiceId, offer)
     fake.handler = async (method) => {
-      if (method === 'thread/realtime/appendText') throw new Error('connection lost')
+      if (method === 'turn/start') throw new Error('connection lost')
     }
     expect((await run.openLive('Keep this message')).ok).toBe(false)
     expect((await run.openLive('Keep this message')).ok).toBe(false)
     await run.close()
     expect(store.get(run.current.conversationId!)?.pending?.text).toBe('Keep this message')
-    expect(fake.calls.filter((c) => c.method === 'thread/realtime/appendText')).toHaveLength(1)
+    expect(fake.calls.filter((c) => c.method === 'turn/start')).toHaveLength(1)
+  })
+  const emptyHandoff = {
+    type: 'handoff_request',
+    handoff_id: 'handoff-1',
+    input_transcript: '',
+    active_transcript: [],
+  }
+  it('executes the opening once with the selected model and clears pending only on completion', async () => {
+    const { run, fake, store } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    await run.openLive('What time is it in Seattle?')
+    const id = run.current.items[0]!.id
+    fake.emit('thread/realtime/itemAdded', { item: emptyHandoff })
+    fake.emit('thread/realtime/itemAdded', { item: emptyHandoff })
+    await expect.poll(() => fake.calls.filter((c) => c.method === 'turn/start').length).toBe(1)
+    expect(fake.calls.find((c) => c.method === 'turn/start')?.params).toMatchObject({
+      threadId: 'owned-thread',
+      clientUserMessageId: id,
+      model: 'future-deep',
+      effort: 'ultra',
+      input: [{ type: 'text', text: expect.stringContaining('What time is it in Seattle?') }],
+    })
+    expect(store.get(run.current.conversationId!)?.pending?.text).toBe(
+      'What time is it in Seattle?',
+    )
+    fake.complete()
+    await settle(run)
+    expect(store.get(run.current.conversationId!)?.pending).toBeNull()
+    fake.emit('thread/realtime/itemAdded', { item: { ...emptyHandoff, handoff_id: 'another' } })
+    expect(fake.calls.filter((c) => c.method === 'turn/start')).toHaveLength(1)
+    await run.close()
+  })
+
+  it('does not launch an opening while its journal write is pending after the microphone closes', async () => {
+    const { run, fake, store } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    let release!: () => void
+    const original = store.put.bind(store)
+    vi.spyOn(store, 'put').mockImplementationOnce(async (record) => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return original(record)
+    })
+    const opening = run.openLive('Cancelled question')
+    await expect.poll(() => !!release).toBe(true)
+    const closing = run.close()
+    release()
+    expect((await opening).ok).toBe(false)
+    await closing
+    expect(fake.calls.some((c) => c.method === 'turn/start')).toBe(false)
   })
 
   it('does not fall back to API authentication', async () => {
@@ -659,7 +721,7 @@ describe('native Live voice', () => {
     await run.close()
     await result
     expect(run.current.ended).toBe(true)
-    expect(fake.calls.some((c) => c.method === 'thread/realtime/appendText')).toBe(false)
+    expect(fake.calls.some((c) => c.method === 'thread/realtime/appendSpeech')).toBe(false)
   })
 
   it('propagates native connection errors and never claims the session is ready', async () => {
@@ -707,7 +769,19 @@ describe('native Live voice', () => {
     expect(await service.openLive(voiceId, 'New conversation')).toEqual({ ok: true })
     await service.stopLive(voiceId)
     expect(service.current.ended).toBe(true)
+    expect(service.current.live).toBeNull()
     const past = (await service.history()).find((r) => r.title === 'New conversation')!
-    expect((await service.read(past.id)).items.map((i) => i.text)).toContain('New conversation')
+    fake.history = [
+      {
+        item: {
+          type: 'userMessage',
+          id: service.current.items[0]!.id,
+          content: [{ type: 'text', text: 'New conversation' }],
+        },
+      },
+    ]
+    expect(
+      (await service.read(past.id)).items.filter((i) => i.text === 'New conversation'),
+    ).toHaveLength(1)
   })
 })

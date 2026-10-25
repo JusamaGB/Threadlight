@@ -135,7 +135,7 @@ native Codex WebRTC and spoken replies play through the output device. Threadlig
 does not save raw audio. Because the current native paginated history omits realtime
 timeline items, Threadlight stores voice text alongside its Agent metadata, including
 partial replies visible when the conversation ends. History stays under Earlier.
-The opening has a durable pending marker until acknowledged; an uncertain send is
+The opening has a durable pending marker until its backend turn completes; an uncertain send is
 shown in history and never automatically retried. Storage failures are surfaced.
 
 ## Native transport evidence
@@ -161,6 +161,23 @@ explicitly declined; it is not part of this implementation.
 
 ## Verification
 
+The renderer waits for the Live data-channel `session.started` event, not just an
+open WebRTC connection. After the opening is acknowledged it shows "Waiting for a
+reply". A silent connection fails visibly after 30 seconds without resending the
+question. Backend work and approval waits extend that deadline.
+
+The installed V3 transport maps text appends to background context. Threadlight
+therefore submits the transcribed opening exactly once as a normal `turn/start`
+to the selected Codex model and reasoning effort in the same owned Live thread.
+The native commentary handoff conveys the backend result to voice. Voice instructions
+explain that the opening is already being handled and its result should be spoken
+without waiting for additional microphone input. Subsequent speech uses native Live
+delegation. The opening stays in the durable pending journal until turn completion;
+uncertain sends are never replayed. Closing cancels unsent work and retains history.
+
+`test/liveVoice.test.mjs` covers service readiness, early events, waiting for a reply,
+timeouts, delegated work, cancellation, and audio during the opening acknowledgement.
+
 `test/voiceRouting.test.ts` covers session latching and reset. `test/vad.test.ts`
 covers pause assembly. The generated-audio tests in `test/ui/voice-routing.smoke.mjs`,
 called by the provider UI smoke harness, exercise the real renderer/hook, commands,
@@ -174,5 +191,9 @@ protection. `test/agentLive.live.mjs` is an opt-in authenticated test using the 
 service and renderer connection with synthetic audio. Set `THREADLIGHT_LIVE_SMOKE=1`,
 `THREADLIGHT_CODEX_CLI` to the desktop-managed executable, and `THREADLIGHT_PLAYWRIGHT`
 if Playwright is not locally installed. Optionally set `THREADLIGHT_LIVE_TEST_WAV` to
-a short synthetic speech WAV to verify follow-up audio input. It consumes native
+a short synthetic speech WAV to verify follow-up audio input, and optionally
+`THREADLIGHT_LIVE_FOLLOWUP_EXPECT` to require a matching spoken answer. It consumes native
 voice usage, uses no physical microphone/speakers, and archives its owned test thread.
+Set `THREADLIGHT_LIVE_TEST_MESSAGE`, `THREADLIGHT_LIVE_EXPECT` (a regex for the spoken
+answer), and `THREADLIGHT_LIVE_MODEL` to reproduce a specific opening. A filler such
+as “Checking now” alone does not pass the answer assertion.

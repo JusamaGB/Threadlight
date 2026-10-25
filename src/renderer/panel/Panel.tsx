@@ -934,11 +934,13 @@ export function Panel() {
             {micMode === 'agent'
               ? livePhase === 'live'
                 ? 'Live · Speak naturally; press the hotkey to finish'
-                : livePhase === 'error'
-                  ? 'Live could not connect · Your opening message is kept below'
-                  : livePhase === 'ready'
-                    ? 'Live ready · Finish your opening sentence'
-                    : 'Connecting Live · Keep talking'
+                : livePhase === 'waiting'
+                  ? 'Live · Waiting for a reply; you can keep talking'
+                  : livePhase === 'error'
+                    ? 'Live could not connect · Your opening message is kept below'
+                    : livePhase === 'ready'
+                      ? 'Live ready · Finish your opening sentence'
+                      : 'Connecting Live · Keep talking'
               : en.openMic.mode(micMode)}
           </p>
         )}

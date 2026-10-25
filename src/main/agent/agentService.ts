@@ -199,6 +199,7 @@ export class AgentService {
       ...previous,
       status: 'idle',
       ended: true,
+      live: null,
       requests: [],
       approval: null,
       progress: null,
@@ -284,7 +285,10 @@ export class AgentService {
         const client = await this.connect()
         try {
           const page = await readCodexHistory(client, record.providerId, cursor as string | null)
-          if (!cursor && record.liveItems?.length) page.items = [...record.liveItems, ...page.items]
+          if (!cursor && record.liveItems?.length) {
+            const ids = new Set(record.liveItems.map((i) => i.id).filter(Boolean))
+            page.items = [...record.liveItems, ...page.items.filter((i) => !i.id || !ids.has(i.id))]
+          }
           if (!cursor && record.pending)
             page.items.push({
               kind: 'step',

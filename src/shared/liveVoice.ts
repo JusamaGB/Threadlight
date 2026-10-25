@@ -5,7 +5,7 @@ export type LiveVoiceEvent = {
   type: 'closed' | 'error'
   message?: string
 }
-export type LiveVoicePhase = 'off' | 'connecting' | 'ready' | 'live' | 'error'
+export type LiveVoicePhase = 'off' | 'connecting' | 'ready' | 'waiting' | 'live' | 'error'
 
 export const validVoiceSession = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-zA-Z0-9-]{16,80}$/.test(value)

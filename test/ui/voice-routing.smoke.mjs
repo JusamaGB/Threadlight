@@ -30,6 +30,7 @@ export async function checkVoiceRouting(page) {
       async setRemoteDescription() {
         this.connectionState = 'connected'
         this.channel.readyState = 'open'
+        this.channel.onmessage?.({ data: JSON.stringify({ type: 'session.started' }) })
       }
       close() {
         this.connectionState = 'closed'
@@ -47,6 +48,9 @@ export async function checkVoiceRouting(page) {
     }
     window.threadlight.agentLiveOpen = async (id, text) => {
       window.proof.calls.push(['liveOpen', id, text])
+      window.proof.livePeers.at(-1).channel.onmessage?.({
+        data: JSON.stringify({ type: 'turn.created' }),
+      })
       return { ok: true }
     }
     window.threadlight.agentLiveStop = (id) => window.proof.calls.push(['liveStop', id])

@@ -13,8 +13,12 @@ export class LiveVoiceConnection {
   private backlog: Float32Array[] = []
   private buffered = 0
   private ready = false
+  private sessionStarted = false
+  private replyStarted = false
+  private checkConnection?: () => void
   private rejectConnection?: (error: Error) => void
   private timer?: ReturnType<typeof setTimeout>
+  private replyTimer?: ReturnType<typeof setTimeout>
 
   constructor(
     stream: MediaStream,
@@ -23,6 +27,38 @@ export class LiveVoiceConnection {
   ) {
     this.peer.addTrack(stream.getAudioTracks()[0]!, stream)
     this.channel = this.peer.createDataChannel('oai-events')
+    // An open transport is not yet a ready model. Register before negotiating so an
+    // early session.started cannot be missed, and gate the opening on that signal.
+    this.channel.onmessage = ({ data }) => {
+      if (this.cancelled) return
+      let event: { type?: string }
+      try {
+        event = JSON.parse(data)
+      } catch {
+        return
+      }
+      if (!event || typeof event !== 'object') return
+      if (event.type === 'session.started') {
+        this.sessionStarted = true
+        this.checkConnection?.()
+      } else if (event.type === 'error' || event.type === 'session.error') {
+        this.fail('Live reported a connection error. Reopen the mic to try again.')
+      } else if (event.type === 'session.closed') {
+        if (!this.handedOver) this.fail('Live closed before the opening message could be sent.')
+        else {
+          this.stop()
+          this.onState('off')
+        }
+      } else if (
+        this.handedOver &&
+        !this.replyStarted &&
+        (event.type === 'output_transcript.added' || event.type === 'turn.created')
+      ) {
+        this.replyStarted = true
+        clearTimeout(this.replyTimer)
+        if (!this.opening) this.onState('live')
+      }
+    }
     this.audio.autoplay = true
     this.audio.muted = true
     this.peer.ontrack = (event) => {
@@ -69,7 +105,11 @@ export class LiveVoiceConnection {
       await new Promise<void>((resolve, reject) => {
         this.rejectConnection = reject
         const check = () => {
-          if (this.peer.connectionState === 'connected' && this.channel.readyState === 'open') {
+          if (
+            this.peer.connectionState === 'connected' &&
+            this.channel.readyState === 'open' &&
+            this.sessionStarted
+          ) {
             clearTimeout(this.timer)
             this.rejectConnection = undefined
             resolve()
@@ -77,6 +117,7 @@ export class LiveVoiceConnection {
             this.fail('Live audio disconnected. Reopen the mic to try again.')
           }
         }
+        this.checkConnection = check
         this.peer.onconnectionstatechange = check
         this.channel.onopen = check
         this.channel.onclose = () => this.fail('Live audio disconnected.')
@@ -103,10 +144,26 @@ export class LiveVoiceConnection {
       if (this.cancelled) return
       if (!result.ok) throw new Error(result.reason)
       this.opening = false
-      this.onState('live')
+      this.onState(this.replyStarted ? 'live' : 'waiting')
+      if (!this.replyStarted) this.waitForReply()
     } catch (error) {
       if (!this.cancelled) this.fail((error as Error).message)
     }
+  }
+
+  private waitForReply(): void {
+    this.replyTimer = setTimeout(async () => {
+      const state = await window.threadlight.getAgent().catch(() => null)
+      if (this.cancelled || this.replyStarted) return
+      // Tool work and approval waits can legitimately outlast the voice deadline.
+      if (state?.live && ['starting', 'working', 'waiting', 'stopping'].includes(state.status)) {
+        this.waitForReply()
+        return
+      }
+      this.fail(
+        'Live connected but did not respond to the opening message. It was not sent again. Check Earlier before retrying.',
+      )
+    }, 30_000)
   }
 
   /** Called on the existing audio clock. Bounded buffering preserves the handoff boundary. */
@@ -129,6 +186,8 @@ export class LiveVoiceConnection {
     if (this.cancelled) return
     this.cancelled = true
     clearTimeout(this.timer)
+    clearTimeout(this.replyTimer)
+    this.checkConnection = undefined
     this.rejectConnection?.(new Error('Live was cancelled.'))
     this.rejectConnection = undefined
     this.unsubscribe()
