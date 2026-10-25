@@ -1,0 +1,35 @@
+/* Design tokens. Every colour and radius in the UI comes from here. */
+:root {
+  --bg: #171717;
+  --raised: #1e1e1e;
+  --hover: #212121;
+  --border: rgb(255 255 255 / 10%);
+  --fg: #fafafa;
+  --muted: #a1a1a1;
+  --faint: #6b6b6b;
+  --green: #2ecc71;
+  --red: #e74c3c;
+  --amber: #f0ad4e;
+  --accent: #7fb2ff;
+  --radius: 10px;
+
+  /* Composer, matching the Claude app's own */
+  --composer-bg: #2f2f2f;
+  --composer-edge: #454545;
+  --mic-bg: #24395a;
+
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--fg);
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+}

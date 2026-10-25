@@ -1,0 +1,36 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste real transcripts, thread titles or anything private.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: threadlight
+    attributes:
+      label: Threadlight version
+      description: Tray menu → About, or the release you installed.
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude desktop app version
+      description: Claude → Help → About. Many bugs come from Claude app updates.
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true

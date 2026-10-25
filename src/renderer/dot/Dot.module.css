@@ -1,0 +1,37 @@
+.frame {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
+}
+
+.working {
+  background: var(--red);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(0.85);
+    filter: brightness(0.55);
+  }
+  50% {
+    transform: scale(1.45);
+    filter: brightness(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working {
+    animation: none;
+  }
+}
