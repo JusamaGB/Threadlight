@@ -2,6 +2,8 @@
 
 Date: 25 October 2026. Scope: the currently running Windows desktop installation.
 
+Follow-up: [shared runtime experiment](CODEX-STAGE0-SHARED-RUNTIME-EXPERIMENT.md) demonstrates an experimental route in a separate test configuration and documents a host-isolation failure and recovery. It does not change the result below for the default live desktop connection.
+
 ## Decision
 
 **Stage 0 did not establish a supported independent connection from Threadlight to the existing desktop runtime. Do not begin the sending, question-card or approval integration on the strength of these tests.**
