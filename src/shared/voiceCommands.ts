@@ -62,11 +62,14 @@ export class MicSessionRouter {
   route(text: string, threads: Candidate[] = []): MicRoute {
     const sentence = text.trim()
     if (!sentence) return { kind: 'ignored' }
-    const command =
-      parseOpenMicCommand(sentence, threads) ??
-      (this.mode === 'commands' ? namedThread(sentence, threads) : null)
-    if (this.mode === 'undecided') this.mode = command ? 'commands' : 'agent'
+    // Choose the route from command syntax, not from whether a title was recognised.
+    // A misheard or unavailable title must never turn a command into an Agent request.
+    if (this.mode === 'undecided') {
+      const words = normalise(sentence)
+      this.mode = words === 'open' || words.startsWith('open ') ? 'commands' : 'agent'
+    }
     if (this.mode === 'agent') return { kind: 'agent', text: sentence }
+    const command = parseOpenMicCommand(sentence, threads) ?? namedThread(sentence, threads)
     return command ? { kind: 'command', command } : { kind: 'unmatched', text: sentence }
   }
 }

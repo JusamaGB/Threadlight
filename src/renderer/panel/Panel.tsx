@@ -521,12 +521,7 @@ export function Panel() {
         void sendAgentVoice(route.text)
         return
       }
-      if (route.kind === 'unmatched') {
-        setNotice(en.openMic.unmatched(route.text))
-        window.threadlight.openPanelQuietly()
-        return
-      }
-      if (route.kind !== 'command') return
+      if (route.kind !== 'command' && route.kind !== 'unmatched') return
       setShowSettings(false)
       setShowAgent(false)
       setPickingWorkspace(false)
@@ -534,6 +529,10 @@ export function Panel() {
       setPicking(null)
       window.threadlight.openPanelQuietly()
       changeHold('pinned')
+      if (route.kind === 'unmatched') {
+        setNotice(en.openMic.unmatched(route.text))
+        return
+      }
       const command = route.command
       if (command.kind === 'ambiguous') {
         setNotice(en.openMic.ambiguous(command.titles))

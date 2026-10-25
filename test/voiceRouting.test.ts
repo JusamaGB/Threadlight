@@ -137,12 +137,33 @@ describe('microphone session routing', () => {
 
   it('keeps ordinary speech, including later command words, in the agent message', () => {
     const session = new MicSessionRouter()
-    expect(session.route('Open the docs and check the plan.')).toEqual({
+    expect(session.route('Please check the plan.')).toEqual({
       kind: 'agent',
-      text: 'Open the docs and check the plan.',
+      text: 'Please check the plan.',
     })
     expect(session.route('Open.')).toEqual({ kind: 'agent', text: 'Open.' })
     expect(session.mode).toBe('agent')
+  })
+
+  it.each([
+    'Open review thread lines.',
+    'Open missing thread',
+    'Open the docs and check the plan.',
+  ])('reserves command mode for an unmatched initial "%s"', (text) => {
+    const session = new MicSessionRouter()
+    expect(session.route(text, [])).toEqual({ kind: 'unmatched', text })
+    expect(session.mode).toBe('commands')
+    expect(
+      session.route('Open review thread light.', [{ id: 'review', title: 'Review Threadlight' }]),
+    ).toEqual({
+      kind: 'command',
+      command: { kind: 'focus', threadId: 'review' },
+    })
+    expect(session.route('Please help')).toEqual({ kind: 'unmatched', text: 'Please help' })
+    expect(new MicSessionRouter().route('Please help')).toEqual({
+      kind: 'agent',
+      text: 'Please help',
+    })
   })
 
   it('does not select a route from empty transcription', () => {

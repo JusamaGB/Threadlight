@@ -11,8 +11,9 @@ fresh session. The first completed sentence chooses its mode:
 - Exactly “open”, ignoring case and punctuation, followed by a one-second pause:
   expand and pin the thread list and latch command mode. Other speech cannot
   switch to the Agent, including the word “agent”.
-- “Open [thread name]”, where the name matches a known title: enter command mode,
-  expand that thread in Threadlight, scroll it into view and focus its row. After
+- An utterance beginning with “open” always enters command mode, even when the
+  following name is misheard, unavailable or does not match. A matching title expands
+  that thread in Threadlight, scrolls it into view and focuses its row. After
   “open” and a pause, the bare thread name works too. Repeating a name keeps it open.
   Matching ignores case and punctuation, prefers full titles, and otherwise accepts
   a unique whole-word phrase within a title. Speech-recognition word splits such as
@@ -26,9 +27,10 @@ fresh session. The first completed sentence chooses its mode:
   existing Agent send interface after a natural pause. The microphone stays open.
   A later “open” is part of the Agent conversation, not a UI command.
 
-An unmatched “open …” on the first utterance still follows the ordinary-speech
-Agent route. Say “open” and pause first when unsure of the title: unmatched speech
-then stays in command mode and shows a no-match notice without sending anything.
+An unmatched “open …” shows the thread list and a no-match notice, including when
+the Agent view was previously open. Retry the name in the same microphone session.
+Nothing from this command session is sent to the Agent. To begin an Agent conversation,
+close and reopen the microphone and start with speech that does not begin with “open”.
 
 Closing the mic ends that mode; reopening starts undecided. Closing also discards
 unfinished/pending transcription, so no delayed command or send escapes a closed

@@ -75,6 +75,26 @@ export async function checkVoiceRouting(page) {
   // A single utterance also chooses commands from a fresh session.
   await page.evaluate(() => window.proof.patch({ title: 'Review Threadlight' }))
   await codexRow.getByText('Review Threadlight', { exact: true }).waitFor()
+  // A misheard first title must not choose the Agent, even with its view already open.
+  for (const fromAgent of [false, true]) {
+    if (fromAgent)
+      await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+    await open()
+    await say('Open review thread lines.')
+    await page.locator('[data-mic-mode="commands"]').waitFor()
+    await page
+      .getByText(
+        'No thread matched “Open review thread lines.”. Say the title shown in the list, or click the thread.',
+        { exact: true },
+      )
+      .waitFor()
+    assert.equal(await codexRow.isVisible(), true)
+    assert.equal((await agentSends()).length, before)
+    await say('Open review thread light.')
+    assert.equal(await codexRow.getAttribute('aria-expanded'), 'true')
+    assert.equal((await agentSends()).length, before)
+    await close()
+  }
   await open()
   await say('Open review thread light.')
   await page.locator('[data-mic-mode="commands"]').waitFor()
