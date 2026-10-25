@@ -16,6 +16,10 @@ models/
 *.local.gif
 screenshots-local/
 
+# Local Claude Code state (worktrees are full copies of this repo)
+.claude/worktrees/
+.claude/settings.local.json
+
 # OS and editor noise
 .DS_Store
 Thumbs.db

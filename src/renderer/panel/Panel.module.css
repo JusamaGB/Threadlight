@@ -36,6 +36,36 @@
   cursor: pointer;
 }
 
+/* ---------- notices and picking a thread for speech ---------- */
+
+.notice {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--amber);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.picking {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  flex: none;
+}
+
+.pickPrompt {
+  color: var(--accent);
+}
+
+.pickText {
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
 /* ---------- list ---------- */
 
 .list {

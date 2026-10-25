@@ -41,7 +41,7 @@ Not affiliated with or endorsed by Anthropic. It reads files the Claude app and 
 | Package manager | npm                                                                        | Lowest friction for contributors                                                                                                                                               |
 | Node            | ≥ 20 LTS for development only                                              | End users get the packaged app                                                                                                                                                 |
 
-Fallback if Whisper in WASM is too slow on typical CPUs (> 3 s for a 5 s clip): swap the STT module for `whisper.cpp` bindings behind the same interface (§7 `stt/`).
+Measured 2026-10-25: `onnx-community/whisper-base.en` at `q8` (76 MB) through transformers.js 4 + onnxruntime-node transcribes a 5.2 s clip in ≈1.5–1.8 s on the CPU, word-perfect; the model loads in ≈5 s once per launch. No need for the `whisper.cpp` fallback. Packaging (step 9): `onnxruntime-node`'s native binaries must be unpacked from the asar archive, and `sharp` (pulled in by transformers.js for images; its prebuilt libvips is LGPL) should be excluded since voice never uses it.
 
 ## 4. Repository layout
 
@@ -160,7 +160,7 @@ Rules carried over from the Python prototype:
 
 **Composer** — hidden until Compose. Shows `To <thread>` and ×. Input with an in-field hint; Enter sends, Esc closes. Mic: click to record, again to stop; live level bars; transcript appended into the input. Ticks: `…` sending, `✓ Sent` delivered, `✓✓ Read` replied (reply shown on the row for 2 min), amber on failure with the reason.
 
-**Talk hotkey** — default `Ctrl+Alt+Q` as a toggle (not `Ctrl+Alt+Space`: the Claude app's quick entry owns it) (press to start recording, press again to stop; auto-stops at 90 s); configurable. A small "listening" pill shows beside the dot while recording. On stop: transcribe → parse `message|tell|send to <thread>[,:] <text>` → fuzzy-match against visible titles (`shared/match.ts`, token overlap + prefix bonus, threshold 0.6) → open panel with the composer filled → 3 s countdown ring (configurable 0–10 s; 0 only with an explicit setting) → send. Hotkey again or × cancels. No match → composer opens with the text and the list highlighted to pick.
+**Talk hotkey** — default `Ctrl+Alt+Q` as a toggle (not `Ctrl+Alt+Space`: the Claude app's quick entry owns it) (press to start recording, press again to stop; auto-stops at 90 s); configurable. While recording the dot itself turns blue and breathes, and shows a spinner while transcribing (no extra window). The panel then opens with `showInactive()`, so a full-screen game keeps focus; Esc cannot reach an unfocused window, so the hotkey and × cancel, and an untouched panel closes itself 4 s after the reply. On stop: transcribe → parse `message|tell|send to <thread>[,:] <text>` → fuzzy-match against visible titles (`shared/match.ts`, token overlap + prefix bonus, threshold 0.6) → open panel with the composer filled → 3 s countdown ring (configurable 0–10 s; 0 only with an explicit setting) → send. Hotkey again or × cancels. No match → composer opens with the text and the list highlighted to pick.
 
 **Relay guard** — refuse when the thread is held by the app (offer Open), when the CLI is missing, or when not signed in (show `claude auth login`). One message in flight per thread.
 

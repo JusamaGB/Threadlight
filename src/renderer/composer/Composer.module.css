@@ -109,3 +109,149 @@
   color: var(--faint);
   cursor: default;
 }
+
+/* The blue mic disc, as in Claude's composer. */
+.mic {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: -3px -4px -3px 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--mic-bg);
+  color: var(--accent);
+}
+
+.mic svg rect {
+  fill: currentColor;
+}
+
+.mic svg path {
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.mic[data-state='listening'] {
+  background: #2f5ea8;
+  color: #fff;
+  animation: micPulse 1.4s ease-in-out infinite;
+}
+
+.mic:disabled {
+  background: var(--border);
+  color: var(--faint);
+  cursor: default;
+}
+
+@keyframes micPulse {
+  50% {
+    box-shadow: 0 0 0 4px rgb(127 178 255 / 18%);
+  }
+}
+
+.wave {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+}
+
+.dots {
+  width: 56px;
+  height: 2px;
+  background-image: radial-gradient(circle, var(--faint) 1px, transparent 1.2px);
+  background-size: 5px 2px;
+}
+
+.level {
+  width: 2px;
+  min-height: 3px;
+  border-radius: 1px;
+  background: var(--muted);
+  transition: height 60ms linear;
+}
+
+/* Voice send countdown: a ring that empties, and the button cancels it. */
+.countdown {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+}
+
+.ringTrack,
+.ring {
+  fill: none;
+  stroke-width: 2;
+}
+
+.ringTrack {
+  stroke: var(--border);
+}
+
+.ring {
+  stroke: var(--accent);
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dashoffset 100ms linear;
+}
+
+/* One-time speech model download. */
+.download {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.download > span:first-child {
+  flex: 1 1 100%;
+}
+
+.bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.primary,
+.secondary {
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.primary {
+  background: var(--mic-bg);
+  color: var(--accent);
+}
+
+.secondary {
+  color: var(--faint);
+}
+
+.secondary:hover {
+  color: var(--fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic[data-state='listening'] {
+    animation: none;
+  }
+}

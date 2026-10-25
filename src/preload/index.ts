@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
-import { IPC, type PanelOpened, type ThreadlightApi } from '../shared/ipc'
+import { IPC, type PanelOpened, type TalkState, type ThreadlightApi } from '../shared/ipc'
+import type { SttStatus } from '../shared/stt'
 import type { RelayStatus, Session } from '../shared/types'
 
 // The renderer has no Node access. This object is the only door between them,
@@ -29,6 +30,17 @@ const api: ThreadlightApi = {
   sendMessage: (sessionId, text) => ipcRenderer.invoke(IPC.sendMessage, sessionId, text),
   getRelays: () => ipcRenderer.invoke(IPC.getRelays),
   onRelays: (listener) => subscribe<RelayStatus[]>(IPC.relaysChanged, listener),
+
+  getStt: () => ipcRenderer.invoke(IPC.getStt),
+  onStt: (listener) => subscribe<SttStatus>(IPC.sttChanged, listener),
+  downloadStt: () => ipcRenderer.send(IPC.sttDownload),
+  transcribe: (audio) => ipcRenderer.invoke(IPC.transcribe, audio),
+
+  onTalkToggle: (listener) => subscribe<void>(IPC.talkToggle, listener),
+  setTalkState: (state) => ipcRenderer.send(IPC.talkState, state),
+  onTalkState: (listener) => subscribe<TalkState>(IPC.talkState, listener),
+  openPanelQuietly: () => ipcRenderer.send(IPC.openPanelQuietly),
+  onHotkeyProblem: (listener) => subscribe<string | null>(IPC.hotkeyProblem, listener),
 }
 
 contextBridge.exposeInMainWorld('threadlight', api)

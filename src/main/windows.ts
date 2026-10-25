@@ -40,6 +40,8 @@ function createWindow(view: View, size: { width: number; height: number }, focus
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // The hidden panel records for the talk hotkey, so its timers must keep running.
+      backgroundThrottling: false,
     },
   })
   // 'screen-saver' keeps it above full-screen windows such as borderless games.
@@ -84,13 +86,22 @@ export class WindowManager {
     }
   }
 
-  openPanel(): void {
-    const info: PanelOpened = { maxHeight: this.workArea().height - 2 * MARGIN }
+  /**
+   * Opens the panel in the dot's place. A click opens it fresh and focused. The talk hotkey
+   * opens it without focus (so a full-screen game is not minimised) and keeps the panel's
+   * state, because the panel has just filled in the composer itself.
+   */
+  openPanel({ focus = true }: { focus?: boolean } = {}): void {
+    const info: PanelOpened = { maxHeight: this.workArea().height - 2 * MARGIN, fresh: focus }
     this.panel.webContents.send(IPC.panelOpened, info)
     this.placePanel(this.panel.getBounds().height)
     this.dot.hide() // the panel takes the dot's place
-    this.panel.show()
-    this.panel.focus()
+    if (focus) {
+      this.panel.show()
+      this.panel.focus()
+    } else {
+      this.panel.showInactive()
+    }
   }
 
   closePanel(): void {

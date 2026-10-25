@@ -24,6 +24,27 @@
   animation: pulse 1.4s ease-in-out infinite;
 }
 
+/* Talk hotkey: blue and breathing while it listens, a spinning ring while it transcribes. */
+.listening {
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.transcribing {
+  background: transparent;
+  box-shadow: none;
+  border: 2px solid rgb(127 178 255 / 25%);
+  border-top-color: var(--accent);
+  box-sizing: border-box;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -37,7 +58,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .working {
+  .working,
+  .listening,
+  .transcribing {
     animation: none;
   }
 }

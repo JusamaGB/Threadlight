@@ -33,6 +33,20 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   row for two minutes. Threads the Claude app holds open are refused, and only one
   message per thread can be in flight.
 
+- Voice, transcribed on your PC with Whisper (base.en, about 76 MB, downloaded once and
+  only after you agree). It runs in its own background process, so the app never freezes.
+  A 5-second message takes about 1.5–2 seconds to transcribe on a typical CPU.
+- A mic button in the composer: click to talk, click again and the words land in the box.
+  The microphone is only open while recording, and Threadlight's windows may use nothing
+  but the microphone (camera, screen, location and the rest are refused).
+- The talk hotkey, Ctrl+Alt+Q (press to start, press again to stop). Say
+  "message <thread>, <what to say>": Threadlight finds the thread, opens the panel without
+  taking focus from a game, counts down 3 seconds (press the hotkey again or × to cancel),
+  sends, and turns back into the dot once the thread has replied. If no thread clearly
+  matches, it never guesses: it asks you to pick one. While it listens the dot turns blue;
+  while it transcribes it shows a spinner. If another app already owns the hotkey,
+  Threadlight says so in the panel.
+
 ### Fixed
 
 - A session whose Claude Code process ended (for example after a background reply) no

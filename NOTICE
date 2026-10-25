@@ -9,14 +9,16 @@ to describe what this software works with.
 This software is built on third-party open-source components, each under its own
 licence. The main ones:
 
-- Electron (MIT)               https://github.com/electron/electron
-- React, React DOM (MIT)       https://github.com/facebook/react
-- Zod (MIT)                    https://github.com/colinhacks/zod
+- Electron (MIT)                     https://github.com/electron/electron
+- React, React DOM (MIT)             https://github.com/facebook/react
+- Zod (MIT)                          https://github.com/colinhacks/zod
+- Transformers.js (Apache-2.0)       https://github.com/huggingface/transformers.js
+- ONNX Runtime for Node (MIT)        https://github.com/microsoft/onnxruntime
 
-Planned for the voice feature (not yet included):
+Speech model, not included in this repository or in release builds:
 
-- Transformers.js (Apache-2.0) https://github.com/huggingface/transformers.js
-- Whisper model weights (MIT, OpenAI), downloaded at setup, never redistributed
-  in this repository                https://github.com/openai/whisper
+- Whisper base.en weights (MIT, OpenAI), as converted to ONNX by the ONNX Community
+  (onnx-community/whisper-base.en). Downloaded once, only after the user agrees, into
+  the user's own app data folder.   https://github.com/openai/whisper
 
 Full licence texts for bundled dependencies are shipped with release builds.

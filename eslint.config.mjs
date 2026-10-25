@@ -5,7 +5,8 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default defineConfig(
-  { ignores: ['out/**', 'dist/**', 'node_modules/**'] },
+  // .claude/ holds local Claude Code state, including worktrees (full copies of this repo).
+  { ignores: ['out/**', 'dist/**', 'node_modules/**', '.claude/**'] },
   js.configs.recommended,
   tseslint.configs.recommended,
   {
