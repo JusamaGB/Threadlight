@@ -85,6 +85,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the prompt until it finishes ("Reading hookServer.ts 41s"). It counts from the same
   moment as the Claude app's own timer (the thread record's turn start), or from the
   prompt's time for sessions the app does not track.
+- Each thread's dot has a context ring like the Claude app's: it fills clockwise as the
+  thread's context fills, grey, then amber from 60% and red from 80%, and stands on its own
+  where an idle thread has no dot. Hovering shows "Context 52%". It counts the latest
+  reply's input and cache tokens against the model's window (1M; 200k for older models),
+  which matches the app's own figure.
+- Idle threads no longer show a green dot; only working (red) and waiting (amber) threads do.
 - The plan step in progress spins, as in Claude's own task list (still with reduced motion).
 - A thread that has just gone idle stays in the Active list for 30 seconds, so its reply can
   be read; the thread the composer is open on stays for as long as the composer is open.

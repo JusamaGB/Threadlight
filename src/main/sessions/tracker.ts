@@ -253,6 +253,7 @@ export class Tracker {
       backgroundTasks: (summary?.backgroundTasks ?? []).filter(
         (task) => now - task.startedAt < TASK_GIVE_UP_MS,
       ),
+      contextUsed: contextUsed(summary, app?.model ?? null),
       attention: attentionFor(state, summary, this.options.heldQuestion?.(id) ?? null),
       permissionMode: app?.permissionMode ?? null,
       model: app?.model ?? null,
@@ -341,6 +342,24 @@ export interface StateInputs {
   transcriptChangedAt: number
   interrupted: boolean
   now: number
+}
+
+/**
+ * Context windows, in tokens. Measured against the Claude app's own Context %: current models
+ * have a 1M window (threads compact at about 96.6%); older Claude 3 and Haiku 4 models 200k.
+ */
+const CONTEXT_WINDOW = 1_000_000
+const SMALL_WINDOW = 200_000
+const SMALL_WINDOW_MODELS = /^claude-(3|haiku-4)/
+
+export function contextUsed(
+  summary: TranscriptSummary | null,
+  appModel: string | null,
+): number | null {
+  if (!summary?.contextTokens) return null
+  const model = summary.model ?? appModel ?? ''
+  const window = SMALL_WINDOW_MODELS.test(model) ? SMALL_WINDOW : CONTEXT_WINDOW
+  return Math.min(1, summary.contextTokens / window)
 }
 
 /**

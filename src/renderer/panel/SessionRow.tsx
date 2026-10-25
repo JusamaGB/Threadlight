@@ -5,6 +5,7 @@ import { en } from '../i18n/en'
 import { ageText } from '../lib/format'
 import { relayLine } from '../lib/relay'
 import { AttentionCard, attentionLine } from './AttentionCard'
+import { ContextRing, contextLabel } from './ContextRing'
 import styles from './Panel.module.css'
 import { PullRequestBadge } from './PullRequestBadge'
 import { SessionDetail } from './SessionDetail'
@@ -41,11 +42,20 @@ export function SessionRow(props: SessionRowProps) {
         aria-expanded={expanded}
       >
         <span className={styles.rowTop}>
+          {/* The state dot, with the thread's context ring around it. */}
           <span
-            className={styles.stateDot}
-            data-state={session.state}
-            data-attention={attention ? '' : undefined}
-          />
+            className={styles.dotSlot}
+            title={session.contextUsed !== null ? contextLabel(session.contextUsed) : undefined}
+          >
+            {session.contextUsed !== null && (
+              <ContextRing used={session.contextUsed} wide={attention !== null} />
+            )}
+            <span
+              className={styles.stateDot}
+              data-state={session.state}
+              data-attention={attention ? '' : undefined}
+            />
+          </span>
           <span className={titleClass}>{session.title}</span>
           {/* A long title fades out behind this, so it always shows. */}
           {attention && <span className={styles.needsYou}>{en.attention.needsYou}</span>}

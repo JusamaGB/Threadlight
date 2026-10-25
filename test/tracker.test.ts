@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HookStateStore } from '../src/main/sessions/hookState'
 import {
   attentionFor,
+  contextUsed,
   FALLBACK_ACTIVE_MS,
   resolveState,
   STALE_MS,
@@ -96,6 +97,8 @@ describe('attentionFor', () => {
     backgroundTasks: [],
     pendingQuestion: null,
     nextStep: null,
+    contextTokens: null,
+    model: null,
     interrupted: false,
     ...over,
   })
@@ -127,6 +130,23 @@ describe('attentionFor', () => {
     expect(attentionFor('idle', summary({ nextStep, interrupted: true }))).toBeNull()
     expect(attentionFor('idle', summary())).toBeNull()
     expect(attentionFor('idle', null)).toBeNull()
+  })
+})
+
+describe('contextUsed', () => {
+  // Only the context size and model matter here.
+  const base = { contextTokens: null, model: null } as unknown as TranscriptSummary
+  it('measures against a 1M window, or 200k for older models, and is null before any reply', () => {
+    expect(contextUsed({ ...base, contextTokens: 520_000, model: 'claude-opus-5-5' }, null)).toBe(
+      0.52,
+    )
+    expect(contextUsed({ ...base, contextTokens: 50_000, model: 'claude-haiku-4-5' }, null)).toBe(
+      0.25,
+    )
+    expect(contextUsed({ ...base, contextTokens: 50_000, model: null }, 'claude-3-opus')).toBe(0.25)
+    expect(contextUsed({ ...base, contextTokens: 2_000_000, model: null }, null)).toBe(1)
+    expect(contextUsed(base, null)).toBeNull()
+    expect(contextUsed(null, null)).toBeNull()
   })
 })
 

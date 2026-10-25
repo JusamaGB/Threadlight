@@ -29,6 +29,7 @@ export const en = {
     asked: 'Asked',
     plan: (done: number, total: number) => `Plan  ${done}/${total}`,
     inProgress: 'In progress',
+    context: (percent: number) => `Context ${percent}%`,
     now: 'Now',
     result: 'Result',
     lastReply: 'Last reply',

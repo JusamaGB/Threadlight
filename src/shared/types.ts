@@ -93,6 +93,8 @@ export interface Session {
   turnStartedAt: number | null
   /** Running background tasks, oldest first. They can outlive the turn that started them. */
   backgroundTasks: BackgroundTask[]
+  /** How full its context is, 0 to 1, as the Claude app's Context ring shows; null if unknown. */
+  contextUsed: number | null
   /** Set while the thread is waiting on the user; its card replaces the usual details. */
   attention: Attention | null
   permissionMode: string | null

@@ -48,6 +48,13 @@ export interface TranscriptSummary {
   pendingQuestion: CardQuestion[] | null
   /** The last turn ended asking the user something, and nothing has been said since. */
   nextStep: { recap: string | null; ask: string; actions: NextStepAction[] } | null
+  /**
+   * How full the context was on the latest reply: everything sent to the model that turn
+   * (fresh input plus cache writes and reads), as the Claude app counts it. Null before any.
+   */
+  contextTokens: number | null
+  /** The model that wrote the latest reply. */
+  model: string | null
   /** The user pressed Stop and nothing has happened since. */
   interrupted: boolean
 }
@@ -74,6 +81,8 @@ export class TranscriptReader {
   private lastAction: string | null = null
   private turnStartedAt: number | null = null
   private interrupted = false
+  private contextTokens: number | null = null
+  private model: string | null = null
   /** Tool calls waiting for their result, in case the result says "running in background". */
   private calls = new Map<string, ToolCall>()
   /** Running background tasks by the tool call that started them. */
@@ -121,6 +130,8 @@ export class TranscriptReader {
       backgroundTasks: [...this.tasks.values()].map((task) => ({ ...task })),
       pendingQuestion: this.pendingQuestion?.questions ?? null,
       nextStep: this.nextStep,
+      contextTokens: this.contextTokens,
+      model: this.model,
       interrupted: this.interrupted,
     }
   }
@@ -176,7 +187,9 @@ export class TranscriptReader {
         if (record['isMeta'] !== true) this.feedUser(messageContent(record), timeOf(record))
         break
       case 'assistant':
-        if (!sidechain) this.feedAssistant(messageContent(record), timeOf(record))
+        if (sidechain) break
+        this.feedUsage(record['message'])
+        this.feedAssistant(messageContent(record), timeOf(record))
         break
     }
   }
@@ -206,6 +219,22 @@ export class TranscriptReader {
     this.interrupted = false
     this.firstPrompt ??= prompt
     this.lastPrompt = prompt
+  }
+
+  /** The context size a reply was written with (a compaction shows as a sudden drop). */
+  private feedUsage(message: unknown): void {
+    if (!isObject(message)) return
+    const usage = message['usage']
+    if (!isObject(usage)) return
+    const count = (key: string) => (typeof usage[key] === 'number' ? (usage[key] as number) : 0)
+    const tokens =
+      count('input_tokens') +
+      count('cache_creation_input_tokens') +
+      count('cache_read_input_tokens')
+    // A synthetic reply (an error or a notice) carries no real usage; keep the last real one.
+    if (tokens > 0) this.contextTokens = tokens
+    const model = str(message['model'])
+    if (model && !model.startsWith('<')) this.model = model
   }
 
   private feedAssistant(content: unknown, at: number): void {
