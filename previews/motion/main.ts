@@ -1,5 +1,5 @@
 import { MotionGeometry, restingPose } from '../../src/renderer/motion/geometry'
-import { MotionGeometry as OriginalGeometry } from './original-geometry'
+import { colourActiveWheel } from './active-wheel-colours'
 import { createWebGLRenderer, createCanvasRenderer } from '../../src/renderer/motion/render'
 
 const pose = { ...restingPose(), wheel: 1, warmth: 1, rest: 0 }
@@ -16,7 +16,8 @@ const surfaces = ['before', 'after', 'beforeDot', 'afterDot'].map((id) => {
   return {
     canvas,
     renderer,
-    geometry: id.startsWith('before') ? new OriginalGeometry() : new MotionGeometry(),
+    geometry: new MotionGeometry(),
+    activeColours: id.startsWith('after'),
   }
 })
 const pause = document.querySelector<HTMLButtonElement>('#pause')!
@@ -31,7 +32,7 @@ let playing = true,
 document.querySelector('#renderer')!.textContent =
   `${surfaces[1].renderer.kind === 'webgl' ? 'WebGL' : 'Canvas fallback'} · Live preview`
 function draw() {
-  for (const { canvas, renderer, geometry } of surfaces) {
+  for (const { canvas, renderer, geometry, activeColours } of surfaces) {
     const bounds = canvas.getBoundingClientRect()
     const scale = Math.min(2, devicePixelRatio || 1)
     const width = Math.round(bounds.width * scale),
@@ -40,12 +41,10 @@ function draw() {
       canvas.width = width
       canvas.height = height
     }
-    renderer.draw(
-      geometry.build(bounds.width, bounds.height, time, pose, reduced.checked),
-      bounds.width,
-      bounds.height,
-      scale,
-    )
+    const vertices = geometry.build(bounds.width, bounds.height, time, pose, reduced.checked)
+    if (activeColours)
+      colourActiveWheel(vertices, bounds.width, bounds.height, time, reduced.checked)
+    renderer.draw(vertices, bounds.width, bounds.height, scale)
   }
   position.value = String(time % 2.1)
   const head = (time % 2.1) / 1.35 - 0.12

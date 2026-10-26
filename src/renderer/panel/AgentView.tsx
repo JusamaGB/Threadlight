@@ -241,7 +241,6 @@ export function AgentView() {
         </div>
       )}
       <div className={styles.agentLog} ref={log}>
-        {agent.items.length === 0 && <p className={styles.agentEmpty}>{en.agent.empty}</p>}
         <Lines items={agent.items} />
         {agentBusy(agent) && (
           <p className={styles.agentProgress}>

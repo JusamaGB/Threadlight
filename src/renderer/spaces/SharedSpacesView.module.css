@@ -10,6 +10,31 @@
 .view [hidden] {
   display: none;
 }
+.view[data-setup] {
+  height: auto;
+  flex: 0 1 auto;
+}
+.view[data-setup] .body {
+  flex: 0 1 auto;
+}
+.workspaceHeading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.workspace .drive {
+  width: auto;
+  field-sizing: content;
+  max-width: 200px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+}
 .workspace {
   padding: 8px 12px;
   flex: none;

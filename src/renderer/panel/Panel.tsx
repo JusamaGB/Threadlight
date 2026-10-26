@@ -900,11 +900,21 @@ export function Panel() {
         style={{ maxHeight, marginTop: opensDown ? 0 : room }}
         onMouseLeave={leave}
       >
-        <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>
+        <header
+          className={styles.header}
+          data-voice={showVoiceActivity || undefined}
+          onClick={onHeaderClick}
+          {...drag.handlers}
+        >
           {showVoiceActivity && (
             <div className={styles.voiceActivity} role="region" aria-label="Voice waveform">
               <ElectricMotion source={motion.source} label={motion.label} edgeToEdge />
             </div>
+          )}
+          {showVoiceActivity && (
+            <span className={styles.microphoneStatus}>
+              {openMicListening || voice.state === 'listening' ? 'Microphone on' : 'Microphone off'}
+            </span>
           )}
           {pickingWorkspace ? (
             <>
@@ -1049,13 +1059,7 @@ export function Panel() {
           )}
         </header>
 
-        {showVoiceActivity && (
-          <VoicePresence
-            label={motion.label}
-            microphone={openMicListening || voice.state === 'listening'}
-            caption={motionCaption}
-          />
-        )}
+        {showVoiceActivity && <VoicePresence label={motion.label} caption={motionCaption} />}
 
         {pickingWorkspace && (
           <div className={styles.list}>
@@ -1117,6 +1121,7 @@ export function Panel() {
         )}
 
         <SharedSpacesView
+          currentRoot={snapshot.currentWorkspace?.replace(/^(claude|codex):/, '') ?? null}
           workspaces={pickerWorkspaces.map((w) => ({
             id: w.id.replace(/^(claude|codex):/, ''),
             name: w.name,

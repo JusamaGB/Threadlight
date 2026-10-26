@@ -44,6 +44,20 @@ Browser checks cover immediate pinning with frozen timers, the ignored third cli
 pin/unpin in each view, switching views while pinned, header controls, pointer
 leave, panel resizing, and the existing voice-command caller.
 
+### Compact Agent and page navigation (26 October 2026)
+
+All five panel subpages (Agent, Settings, Shared Spaces, workspace picker and
+Changes) keep their title centered and place the existing back chevron on the
+right. The header's left side shows microphone on/off while voice activity is
+visible. Header controls retain their existing navigation and pinning behavior.
+
+The Agent's empty state shows its input without usage instructions. Voice activity
+keeps a compact status row; a caption appears only when there is text, grows to fit
+it and scrolls beyond 52px. Conversation messages, approvals and Earlier remain
+available through their existing controls. `Panel` owns the shared header,
+`VoicePresence` owns the content-sized caption and `AgentView` owns the chat input
+and history.
+
 ### Agent footer settings
 
 The footer provider, model and Codex effort labels open their corresponding setting

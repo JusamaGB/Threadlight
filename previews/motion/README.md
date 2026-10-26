@@ -3,8 +3,9 @@
 Saved from the generative-motion chat on 26 October 2026. These are standalone
 design previews, not a desktop overlay or an application feature flag.
 
-- `/` compares the original thinking wheel with the production outward shine,
-  including actual-size indicators, scrubbing, slow motion and reduced motion.
+- `/` compares the production gold shine with the latest vibrant Claude-orange
+  wheel and glossy Codex-blue outward shine, including actual-size indicators,
+  scrubbing, slow motion and reduced motion. This colour treatment is preview-only.
 - `/needs-input.html` demonstrates a minimized Threadlight indicator collecting
   liquid inside the wheel, pausing for 250 ms, releasing a drop and splashing on
   the simulated taskbar. Provider colours follow Codex blue and Claude orange.

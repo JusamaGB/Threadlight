@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -11,6 +12,7 @@ import { IDLE_AGENT, agentBusy, type AgentItem } from '../../shared/agent'
 import type { SpaceIdea, SpacesInput, SpacesSnapshot, MigrationPreview } from '../../shared/spaces'
 import type { MemorySnapshot } from '../../shared/memory'
 import { scopeMemory } from '../../shared/memory'
+import { workspaceFolder } from '../../shared/providers'
 import type { Session } from '../../shared/types'
 import { MemoryView } from '../memory/MemoryView'
 import { AgentRequestCard } from '../panel/AgentRequestCard'
@@ -29,7 +31,15 @@ const empty: SpacesSnapshot = {
   spaceOwners: {},
   documents: [],
 }
-const rootKey = (root: string) => root.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()
+const rootKey = workspaceFolder
+/** Workspace locations can be drive letters, network shares, or Unix roots in fixtures. */
+const workspaceDrive = (root: string) => {
+  const path = workspaceFolder(root)
+  const drive = /^[a-z]:/i.exec(path)?.[0]
+  if (drive) return drive.toUpperCase()
+  const share = /^\/\/[^/]+\/[^/]+/.exec(path)?.[0]
+  return share ?? (path.startsWith('/') ? '/' : '')
+}
 export function SharedSpacesView({
   visible,
   sessions,
@@ -37,6 +47,7 @@ export function SharedSpacesView({
   navigationRef,
   workspaces,
   focusedRoot,
+  currentRoot = null,
 }: {
   visible: boolean
   sessions: Session[]
@@ -44,7 +55,10 @@ export function SharedSpacesView({
   navigationRef: Ref<SpacesNavigation>
   workspaces: { id: string; name: string }[]
   focusedRoot: string | null
+  currentRoot?: string | null
 }) {
+  const workspaceId = useId()
+  const [driveFilter, setDriveFilter] = useState<string | null>(null)
   const [area, setArea] = useState<Area>('handoffs')
   const [allData, setData] = useState(empty)
   const [allMemory, setMemory] = useState<MemorySnapshot | null>(null)
@@ -98,6 +112,16 @@ export function SharedSpacesView({
       ].map((w) => [rootKey(w.id), w]),
     ).values(),
   ]
+  const drives = [
+    ...new Set(choices.map((choice) => workspaceDrive(choice.id)).filter(Boolean)),
+  ].sort()
+  const preferredDrive = workspaceDrive(root || currentRoot || choices[0]?.id || '')
+  const chosenDrive = driveFilter ?? preferredDrive
+  const drive =
+    chosenDrive === '*' || drives.includes(chosenDrive) ? chosenDrive : (drives[0] ?? '*')
+  const listedChoices = choices.filter(
+    (choice) => drive === '*' || workspaceDrive(choice.id) === drive,
+  )
   const [migrationOpen, setMigrationOpen] = useState(false)
   const [migrationWorkspace, setMigrationWorkspace] = useState('')
   const [ideaIds, setIdeaIds] = useState<string[]>([])
@@ -202,8 +226,45 @@ export function SharedSpacesView({
     }
   }
   return (
-    <section className={styles.view} hidden={!visible} aria-label="Shared Spaces">
+    <section
+      className={styles.view}
+      hidden={!visible}
+      aria-label="Shared Spaces"
+      data-setup={!migrationOpen && !unassigned && !workspaceReady ? '' : undefined}
+    >
       <div className={styles.workspace}>
+        <div className={styles.workspaceHeading}>
+          <label htmlFor={focusedRoot ? undefined : workspaceId}>Workspace</label>
+          <span aria-hidden="true">·</span>
+          {focusedRoot ? (
+            <span>{workspaceDrive(focusedRoot)}</span>
+          ) : (
+            <select
+              className={styles.drive}
+              aria-label="Shared Spaces drive"
+              title="Filter workspaces already known to Threadlight by drive"
+              value={drive}
+              onChange={(event) => {
+                const next = event.target.value
+                setDriveFilter(next)
+                if (next !== '*' && workspaceDrive(root) !== next) {
+                  setChosenRoot('')
+                  setUnassignedFor(null)
+                  setSelected(null)
+                  setError('')
+                  setMigrationOpen(false)
+                }
+              }}
+            >
+              {drives.map((location) => (
+                <option key={location} value={location}>
+                  {location}
+                </option>
+              ))}
+              <option value="*">All drives</option>
+            </select>
+          )}
+        </div>
         {focusedRoot ? (
           <strong>
             {unassigned
@@ -213,9 +274,9 @@ export function SharedSpacesView({
                 focusedRoot)}
           </strong>
         ) : (
-          <label>
-            Workspace
+          <>
             <select
+              id={workspaceId}
               aria-label="Shared Spaces workspace"
               value={unassigned ? '@unassigned' : (workspace?.root ?? root)}
               onChange={(e) => {
@@ -227,14 +288,14 @@ export function SharedSpacesView({
               }}
             >
               <option value="">Choose a workspace…</option>
-              {choices.map((w) => (
-                <option value={w.id} key={rootKey(w.id)}>
+              {listedChoices.map((w) => (
+                <option value={w.id} key={rootKey(w.id)} title={w.id}>
                   {w.name}
                 </option>
               ))}
               <option value="@unassigned">Unassigned</option>
             </select>
-          </label>
+          </>
         )}
         {focusedRoot && (
           <button
@@ -400,12 +461,20 @@ export function SharedSpacesView({
       ) : !unassigned && !workspace?.ready ? (
         <div className={styles.body}>
           <div className={styles.editor}>
-            <h3>{root ? 'Set up Shared Spaces' : 'Choose a workspace'}</h3>
+            <h3>
+              {root ? 'Set up Shared Spaces for this project' : 'Keep shared work with its project'}
+            </h3>
             <p className={styles.hint}>
               {root
-                ? 'Create the fixed folders for ideas, plans, handoffs and results in this workspace. Existing files will be preserved.'
-                : 'Select a workspace to create its Shared Spaces. Unassigned keeps existing material available until you choose where it belongs.'}
+                ? 'Create folders for this project’s ideas, plans, handoffs and results. Your agents use them to share context and hand work to one another. Existing files are kept.'
+                : 'Choose the project whose ideas, plans, handoffs and results you want to use. Shared Spaces keeps its shared files together in that project’s shared-spaces folder.'}
             </p>
+            {!root && (
+              <p className={styles.hint}>
+                The list shows workspaces already known to Threadlight. Choose a drive above to
+                filter it. Older material stays available under Unassigned.
+              </p>
+            )}
             {workspace?.issue && (
               <p className={styles.error} role="alert">
                 {workspace.issue}

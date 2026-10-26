@@ -108,6 +108,94 @@ export async function setupSpaces(
   }
 }
 
+export async function checkSpacesSetup(page, proof, capture) {
+  const snapshot = await page.evaluate(() => window.threadlight.getSnapshot())
+  const currentRoot = snapshot.currentWorkspace.replace(/^(claude|codex):/, '')
+  const currentDrive = currentRoot.match(/^[a-z]:/i)?.[0].toUpperCase() ?? '/'
+  const otherRoot = '\\\\?\\D:\\synthetic\\another-project'
+  const networkRoot = '\\\\?\\UNC\\synthetic-server\\projects\\network-project'
+  const before = proof.store.workspaces().length
+  await page.evaluate(
+    ({ snapshot, otherRoot, networkRoot }) => {
+      window.proof.emit('onSnapshot', {
+        ...snapshot,
+        allWorkspaces: [
+          ...snapshot.allWorkspaces,
+          { id: otherRoot, name: 'another-project' },
+          { id: networkRoot, name: 'network-project' },
+        ],
+      })
+    },
+    { snapshot, otherRoot, networkRoot },
+  )
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  const view = page.getByRole('region', { name: 'Shared Spaces', exact: true })
+  const drive = view.getByLabel('Shared Spaces drive', { exact: true })
+  const workspace = view.getByLabel('Shared Spaces workspace', { exact: true })
+  await view
+    .getByRole('heading', { name: 'Keep shared work with its project', exact: true })
+    .waitFor()
+  await view.getByText(/Choose the project whose ideas, plans, handoffs and results/).waitFor()
+  assert.equal(await drive.inputValue(), currentDrive)
+  const hasWorkspace = (root) =>
+    workspace
+      .locator('option')
+      .evaluateAll((options, root) => options.some((option) => option.value === root), root)
+  assert.equal(await hasWorkspace(otherRoot), false)
+  const contentFits = async () => {
+    const bounds = await view.boundingBox()
+    const body = await view.locator('[class*="_body_"] > [class*="_editor_"]').boundingBox()
+    assert.ok(bounds.y + bounds.height >= body.y + body.height - 1, 'setup content is not clipped')
+    assert.ok(
+      bounds.y + bounds.height <= body.y + body.height + 1,
+      'setup has no empty fixed-height area',
+    )
+    assert.ok(bounds.height < 400, 'setup grows only to fit its text')
+  }
+  await contentFits()
+  await capture('shared-spaces-purpose')
+  await drive.selectOption('D:')
+  assert.equal(await workspace.inputValue(), '')
+  assert.equal(
+    await workspace
+      .locator('option')
+      .evaluateAll((options, root) => options.some((option) => option.value === root), currentRoot),
+    false,
+  )
+  await workspace.selectOption(otherRoot)
+  await view
+    .getByText(`${otherRoot.replaceAll('\\', '/')}/shared-spaces/`, { exact: true })
+    .waitFor()
+  await contentFits()
+  await capture('shared-spaces-drive-filter')
+  await drive.selectOption('//synthetic-server/projects')
+  assert.equal(
+    await workspace.inputValue(),
+    '',
+    'changing drive clears the previous workspace choice',
+  )
+  await workspace.selectOption(networkRoot)
+  await view
+    .getByText(`${networkRoot.replaceAll('\\', '/')}/shared-spaces/`, { exact: true })
+    .waitFor()
+  await drive.selectOption('*')
+  assert.equal(await hasWorkspace(otherRoot), true)
+  assert.equal(await workspace.locator('option[value="@unassigned"]').count(), 1)
+  assert.equal(
+    proof.store.workspaces().length,
+    before,
+    'filtering and choosing never create folders',
+  )
+  await workspace.selectOption('')
+  await page.evaluate((snapshot) => window.proof.emit('onSnapshot', snapshot), snapshot)
+  await page.getByRole('button', { name: 'Back in Shared Spaces', exact: true }).click()
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  console.log(
+    'PASS: content-sized workspace setup, purpose copy, current drive, cross-drive/network filters, destination path and no implicit setup.',
+  )
+}
+
 export async function checkSpaces(page, proof, memory, capture) {
   await page.evaluate(() =>
     window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
@@ -202,6 +290,7 @@ export async function checkSpaces(page, proof, memory, capture) {
   await view.getByRole('button', { name: 'Discuss with Agent', exact: true }).click()
   await view.getByRole('button', { name: 'Stop brainstorm', exact: true }).waitFor()
   await view.getByLabel('Message to Agent').fill('Unsent draft for the first workspace')
+  await view.getByLabel('Shared Spaces drive', { exact: true }).selectOption('*')
   await view.getByLabel('Shared Spaces workspace', { exact: true }).selectOption(proof.secondRoot)
   assert.equal(await view.getByRole('heading', { name: 'A shared activity recap' }).count(), 0)
   await view.getByRole('tab', { name: 'Ideas', exact: true }).click()

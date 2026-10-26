@@ -20,7 +20,7 @@ import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
-import { setupSpaces, checkSpaces } from './spaces.smoke.mjs'
+import { setupSpaces, checkSpaces, checkSpacesSetup } from './spaces.smoke.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(import.meta.url)
@@ -419,6 +419,7 @@ checks: try {
   await checkChecklistDiff(page, row, capture)
   await checkPanelHeight(page)
   await checkToolbar(page)
+  await checkSpacesSetup(page, spacesProof, capture)
   await checkMemory(page, memoryProof, capture)
   await checkSpaces(page, spacesProof, memoryProof.store, capture)
   assert.deepEqual(errors, [])
