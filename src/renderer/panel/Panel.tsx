@@ -554,6 +554,10 @@ export function Panel() {
     setHold(next)
     window.threadlight.setStayOpen(next !== 'normal')
   }
+  const openSharedSpaces = () => {
+    setShowMemory(true)
+    window.threadlight.setStayOpen(hold !== 'normal')
+  }
   // Recent titles plus loaded workspace rows, including child threads. Deduplicate by ID.
   const voiceThreads = new Map(sessions.map((s) => [s.id, s]))
   const voiceFolders = new Map<string, string>()
@@ -1205,6 +1209,17 @@ export function Panel() {
                     {workspaceName}
                   </button>
                 </div>
+                <button
+                  className={styles.gear}
+                  onClick={openSharedSpaces}
+                  aria-label="Shared Spaces"
+                  title="Shared Spaces"
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 4a2.5 2.5 0 0 0-4.7-1.2A2.6 2.6 0 0 0 1.7 7a2.6 2.6 0 0 0 .7 4.7A2.7 2.7 0 0 0 8 13V4Zm0 0a2.5 2.5 0 0 1 4.7-1.2A2.6 2.6 0 0 1 14.3 7a2.6 2.6 0 0 1-.7 4.7A2.7 2.7 0 0 1 8 13" />
+                    <path d="M3.3 2.8c-.3 1.4.4 2.2 1.7 2.2M1.7 7c1.4-.6 2.8 0 2.8 1.5m-2.1 3.2c.9-1 2.3-1 3-.2m7.3-8.7c.3 1.4-.4 2.2-1.7 2.2m3.3 2c-1.4-.6-2.8 0-2.8 1.5m2.1 3.2c-.9-1-2.3-1-3-.2" />
+                  </svg>
+                </button>
                 {
                   <button
                     className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
@@ -1332,10 +1347,7 @@ export function Panel() {
               stt={stt}
               version={version}
               onPickWorkspace={() => setPickingWorkspace(true)}
-              onOpenMemory={() => {
-                setShowMemory(true)
-                window.threadlight.setStayOpen(hold !== 'normal')
-              }}
+              onOpenMemory={openSharedSpaces}
             />
           )}
 
