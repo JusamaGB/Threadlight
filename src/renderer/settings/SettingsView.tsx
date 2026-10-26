@@ -244,7 +244,7 @@ export function SettingsView({
         </Row>
       </Group>
 
-      <p className={styles.footer}>
+      <p className={`${styles.footer} ${styles.attribution}`}>
         {en.settings.footer(version)}
         <br />
         {en.settings.notMadeBy}

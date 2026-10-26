@@ -292,6 +292,11 @@
   color: var(--faint);
 }
 
+.attribution {
+  margin-top: 0;
+  text-align: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .toggle,
   .toggle span {
