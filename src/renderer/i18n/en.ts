@@ -287,7 +287,8 @@ export const en = {
     appsNone: 'No connected apps found.',
     less: 'Less',
     more: 'More',
-    footer: (version: string) => `Threadlight ${version} · Unofficial, not made by Anthropic`,
+    footer: (version: string) => `Threadlight ${version} · Haail`,
+    notMadeBy: 'Not made by Anthropic or OpenAI.',
   },
   relay: {
     sending: '…',

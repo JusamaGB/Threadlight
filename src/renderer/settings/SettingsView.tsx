@@ -245,11 +245,9 @@ export function SettingsView({
       </Group>
 
       <p className={styles.footer}>
-        {settings.enabledProviders.length === 2
-          ? `Threadlight ${version} · Unofficial, not made by Anthropic or OpenAI`
-          : settings.enabledProviders.includes('codex')
-            ? `Threadlight ${version} · Unofficial, not made by OpenAI`
-            : en.settings.footer(version)}
+        {en.settings.footer(version)}
+        <br />
+        {en.settings.notMadeBy}
       </p>
     </div>
   )
