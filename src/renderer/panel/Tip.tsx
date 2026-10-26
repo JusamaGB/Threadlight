@@ -8,12 +8,12 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react'
-import { HoverInfo } from './HoverInfo'
+import { hasDockedHover, HoverInfo, type HoverPoint } from './HoverInfo'
 
 type Point = {
   x: number
   y: number
-  local: { x: number; y: number }
+  local: HoverPoint
   card: { left: number; top: number }
 }
 
@@ -29,10 +29,7 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
   onClick?: (event: React.MouseEvent) => void
 }
 
-/**
- * An immediate note above/below the pointer. Nested targets take precedence over their parents.
- * Portalled outside the anchor so row layout and scrolling cannot displace or clip the bubble.
- */
+/** Nested targets own their hint; HoverInfo chooses a short bubble or the shared footer. */
 export function Tip({
   as: Tag = 'span',
   text,
@@ -49,13 +46,18 @@ export function Tip({
   const [point, setPoint] = useState<Point | null>(null)
   const resting = useRef<Point | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastPointer = useRef<HoverPoint | null>(null)
+  const dismissedAt = useRef<HoverPoint | null>(null)
   const dismiss = useCallback(() => {
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
     resting.current = null
+    if (hasDockedHover(anchor.current)) dismissedAt.current = lastPointer.current
     setPoint(null)
   }, [])
   useLayoutEffect(() => {
+    // The footer may cover the original hit target without any pointer movement.
+    if (hasDockedHover(anchor.current)) return
     // A live snapshot can reorder rows without a mouse movement or scroll event.
     const candidate = resting.current ?? point
     // An upward native resize can briefly lag behind the reserved card offset.
@@ -74,21 +76,37 @@ export function Tip({
       dismiss()
   })
   useEffect(() => {
+    // Closing a footer can move its anchor back under a stationary pointer.
+    const movement = (event: globalThis.MouseEvent) => {
+      const blocked = dismissedAt.current
+      if (blocked && (blocked.screenX !== event.screenX || blocked.screenY !== event.screenY))
+        dismissedAt.current = null
+    }
     // Scrolling can put a different thread beneath a stationary pointer.
-    document.addEventListener('scroll', dismiss, true)
+    const scroll = (event: Event) => {
+      if (!event.isTrusted || !hasDockedHover(anchor.current)) dismiss()
+    }
+    document.addEventListener('scroll', scroll, true)
+    document.addEventListener('mousemove', movement, true)
     window.addEventListener('blur', dismiss)
     const resize = () => {
       if (timer.current) dismiss()
     }
     window.addEventListener('resize', resize)
     return () => {
-      document.removeEventListener('scroll', dismiss, true)
+      document.removeEventListener('scroll', scroll, true)
+      document.removeEventListener('mousemove', movement, true)
       window.removeEventListener('blur', dismiss)
       window.removeEventListener('resize', resize)
       if (timer.current) clearTimeout(timer.current)
     }
   }, [dismiss])
   const track = (event: MouseEvent<HTMLElement>) => {
+    if (
+      dismissedAt.current?.screenX === event.screenX &&
+      dismissedAt.current?.screenY === event.screenY
+    )
+      return
     if (
       !text ||
       !(event.target instanceof Element) ||
@@ -102,9 +120,15 @@ export function Tip({
     const next = {
       x: event.clientX,
       y: event.clientY,
-      local: { x: event.clientX - at.left, y: event.clientY - at.top },
+      local: {
+        x: event.clientX - at.left,
+        y: event.clientY - at.top,
+        screenX: event.screenX,
+        screenY: event.screenY,
+      },
       card: { left: card?.left ?? 0, top: card?.top ?? 0 },
     }
+    lastPointer.current = next.local
     if (!restDelay) {
       setPoint(next)
       return
@@ -137,11 +161,15 @@ export function Tip({
         props.onMouseMove?.(event)
       }}
       onMouseLeave={(event) => {
-        dismiss()
+        if (!hasDockedHover(anchor.current)) dismiss()
         props.onMouseLeave?.(event)
       }}
       onMouseDown={(event) => {
-        dismiss()
+        if (
+          !hasDockedHover(anchor.current) ||
+          !anchor.current?.closest('[data-workspace-resizing]')
+        )
+          dismiss()
         props.onMouseDown?.(event)
       }}
       onClick={onClick}

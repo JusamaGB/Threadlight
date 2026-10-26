@@ -19,7 +19,7 @@ import {
 } from './agent-selection.smoke.mjs'
 import { checkThreadReading } from './thread-reading.smoke.mjs'
 import { checkPanelHeight, checkWorkspaceHeight } from './panel-height.smoke.mjs'
-import { checkTips, checkLastActive } from './tips.smoke.mjs'
+import { checkTips, checkLastActive, checkFooterExpansion } from './tips.smoke.mjs'
 
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar, checkRecentLimit, checkSubpagePinning } from './toolbar.smoke.mjs'
@@ -614,6 +614,7 @@ checks: try {
       window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
     )
     await checkTips(page, row, capture)
+    await checkFooterExpansion(page, row, capture)
     assert.deepEqual(errors, [])
     break checks
   }

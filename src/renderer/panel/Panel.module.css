@@ -302,6 +302,7 @@
 
 .list {
   overflow-y: auto;
+  overflow-anchor: none;
 }
 
 .empty {
@@ -1785,6 +1786,38 @@ span.planStep {
   display: flex;
   flex-direction: column;
   z-index: 2;
+}
+
+.hoverMessage {
+  flex: none;
+  min-width: 0;
+}
+
+.hoverMessage:empty {
+  display: none;
+}
+
+.hoverMessage > .dockedInfo {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  box-shadow: none;
+  overflow-y: auto;
+  pointer-events: auto;
+  cursor: auto;
+  user-select: text;
+}
+
+.hoverMessage > .dockedInfo * {
+  cursor: auto;
 }
 
 .workspaceResizeArea {

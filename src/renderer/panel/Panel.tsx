@@ -1012,17 +1012,23 @@ export function Panel() {
     }
   }
 
+  // Claude keeps its existing window choice; Codex always shows its weekly quota.
+  const claudeUsage =
+    usage && enabled.includes('claude') ? (
+      <UsageBar
+        usage={usage}
+        weekly={view === 'all' && !listHidden}
+        source={provider === 'both' ? 'Claude' : undefined}
+      />
+    ) : null
+  const codexUsage = enabled.includes('codex') ? (
+    <CodexUsageBar usage={snapshot.codexUsage} />
+  ) : null
   const usageBars = (
     <>
-      {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
-      {usage && enabled.includes('claude') && (
-        <UsageBar
-          usage={usage}
-          weekly={view === 'all' && !listHidden}
-          source={provider === 'both' ? 'Claude' : undefined}
-        />
-      )}
-      {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
+      {codexUsage && claudeUsage}
+      <div className={styles.hoverMessage} data-hover-message="" />
+      {codexUsage ?? claudeUsage}
     </>
   )
 

@@ -5,7 +5,7 @@ import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { elapsedText } from '../../shared/elapsed'
 import styles from './Panel.module.css'
-import { HoverInfo, type HoverPoint } from './HoverInfo'
+import { hasDockedHover, HoverInfo, type HoverPoint } from './HoverInfo'
 
 interface TaskTimerProps {
   tasks: BackgroundTask[]
@@ -25,9 +25,16 @@ export function TaskTimer({ tasks }: TaskTimerProps) {
       className={styles.taskTimer}
       onMouseMove={(event) => {
         const { left, top } = event.currentTarget.getBoundingClientRect()
-        setPointer({ x: event.clientX - left, y: event.clientY - top })
+        setPointer({
+          x: event.clientX - left,
+          y: event.clientY - top,
+          screenX: event.screenX,
+          screenY: event.screenY,
+        })
       }}
-      onMouseLeave={() => setPointer(null)}
+      onMouseLeave={() => {
+        if (!hasDockedHover(anchor.current)) setPointer(null)
+      }}
       onMouseDown={() => setPointer(null)}
     >
       {only ? (

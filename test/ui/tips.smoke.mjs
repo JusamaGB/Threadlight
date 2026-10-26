@@ -95,6 +95,21 @@ export async function checkTips(page, row, capture = async () => {}) {
     )
     assert.equal(await tip.count(), 1, 'only the hovered target owns a bubble')
   }
+  const docked = async () => {
+    assert.equal(await tip.count(), 1)
+    assert.equal(await tip.getAttribute('data-docked'), '')
+    assert.equal(await page.locator('[data-hover-message] [role="tooltip"]').count(), 1)
+    const bounds = await tip.boundingBox()
+    const card = await page.locator('[data-card]').boundingBox()
+    const bars = await page.locator('[class*="_usage_"]').all()
+    const top = await bars[0].boundingBox()
+    const bottom = await bars[1].boundingBox()
+    assert.ok(
+      bounds.y >= top.y + top.height - 0.5 && bounds.y + bounds.height <= bottom.y + 0.5,
+      'hint sits between the usage bars',
+    )
+    assert.ok(bounds.x >= card.x && bounds.x + bounds.width <= card.x + card.width)
+  }
   try {
     for (const provider of ['Claude', 'Codex']) {
       assert.equal(await row(provider).getAttribute('title'), null)
@@ -169,9 +184,8 @@ export async function checkTips(page, row, capture = async () => {}) {
     await page.getByRole('tooltip').filter({ hasText: 'Claude · 5-hour limit 20%' }).waitFor()
     const usage = await page.getByLabel(/^Claude · 5-hour limit 20%/).boundingBox()
     for (const x of [usage.x + 12, usage.x + usage.width / 2, usage.x + usage.width - 12]) {
-      const at = { x, y: usage.y + usage.height / 2 }
-      await page.mouse.move(at.x, at.y)
-      await vertical(at)
+      await page.mouse.move(x, usage.y + usage.height / 2)
+      await docked()
       assert.ok(
         (await tip.boundingBox()).width >=
           (await page.locator('[data-card]').boundingBox()).width - 9,
@@ -211,7 +225,7 @@ export async function checkTips(page, row, capture = async () => {}) {
     const at = { x: taskBox.x + taskBox.width / 2, y: taskBox.y + taskBox.height / 2 }
     await page.mouse.move(at.x, at.y)
     await tip.waitFor()
-    await vertical(at)
+    await docked()
     assert.ok(
       (await tip.boundingBox()).width >=
         (await page.locator('[data-card]').boundingBox()).width - 9,
@@ -222,11 +236,16 @@ export async function checkTips(page, row, capture = async () => {}) {
         (bottom) => window.proof.resizes.at(-1) >= bottom + 3,
         taskTip.y + taskTip.height,
       ),
-      'compact windows reserve enough height for the popup',
+      'compact windows include the footer hint in their measured height',
     )
     await capture('hover-info-task-details')
     await page.evaluate(() => document.dispatchEvent(new Event('scroll')))
     await tip.waitFor({ state: 'detached' })
+    await page.waitForFunction(
+      () =>
+        window.proof.resizes.at(-1) ===
+        document.querySelector('[data-card]').getBoundingClientRect().height,
+    )
     assert.equal(
       await page.evaluate(() => window.proof.resizes.at(-1)),
       await page.locator('[data-card]').evaluate((el) => el.getBoundingClientRect().height),
@@ -236,10 +255,158 @@ export async function checkTips(page, row, capture = async () => {}) {
       window.proof.emit('onSnapshot', await window.threadlight.getSnapshot()),
     )
     console.log(
-      'PASS: content-sized tips above/below the pointer, full-width long usage/task text, and instant leave/click/reorder/scroll dismissal with frozen timers.',
+      'PASS: short pointer tips, long usage/task hints between bars, single owner, and leave/click/reorder/scroll dismissal with frozen timers.',
     )
   } finally {
     await page.clock.resume()
+    await page.setViewportSize({ width: 460, height: 900 })
+  }
+}
+
+export async function checkFooterExpansion(page, row, capture) {
+  const initial = await page.evaluate(async () => {
+    window.proof.hoverOriginalWorkspacePanel = window.threadlight.setWorkspacePanel
+    return {
+      settings: await window.threadlight.getSettings(),
+      snapshot: await window.threadlight.getSnapshot(),
+    }
+  })
+  const card = page.locator('[data-card]')
+  const tip = page.getByRole('tooltip')
+  const bars = page.locator('[class*="_usage_"]')
+  const choose = async (name) => {
+    if (
+      (await page.locator('header [data-thread-view]').getAttribute('data-thread-view')) ===
+      name.toLowerCase()
+    )
+      return
+    await page.locator('header [data-thread-view]').click({ button: 'right' })
+    await page.getByRole('menuitem', { name, exact: true }).click()
+  }
+  const sizes = async () => ({
+    card: await card.boundingBox(),
+    top: await bars.first().boundingBox(),
+    bottom: await bars.last().boundingBox(),
+  })
+  try {
+    await page.setViewportSize({ width: 280, height: 900 })
+    await page.evaluate(async () => {
+      await window.threadlight.updateSettings({
+        enabledProviders: ['claude', 'codex'],
+        listMode: 'recent',
+      })
+    })
+    await choose('Recent')
+    await page.evaluate(async () => {
+      const snapshot = await window.threadlight.getSnapshot()
+      window.proof.emit('onSnapshot', {
+        ...snapshot,
+        sessions: snapshot.sessions.map((session) => ({
+          ...session,
+          threadDiff: {
+            files: 6,
+            added: 47,
+            removed: 4,
+            revision: 'hover-footer',
+            complete: false,
+          },
+        })),
+      })
+    })
+    const before = await sizes()
+    await row('Claude')
+      .getByRole('button', { name: /^Thread diff/ })
+      .hover()
+    await tip.waitFor()
+    assert.equal(await tip.getAttribute('data-docked'), '')
+    const after = await sizes()
+    assert.ok(after.card.height > before.card.height, 'Recent grows to fit the footer message')
+    assert.equal(after.top.y, before.top.y, 'upper bar remains in place while a short panel grows')
+    assert.ok(after.bottom.y > before.bottom.y, 'lower bar opens downward')
+    assert.ok(after.card.height <= 800)
+    await page.waitForTimeout(250)
+    assert.equal(
+      await tip.count(),
+      1,
+      'stationary pointer keeps the docked message visible through relayout',
+    )
+    await capture('footer-hint-recent-downward')
+    await tip.click()
+    assert.equal(await tip.count(), 1, 'clicking footer text keeps the message open')
+    assert.equal(
+      await page.locator('header [data-thread-view]').getAttribute('data-thread-view'),
+      'recent',
+      'clicking the message does not open the source diff',
+    )
+    await page.locator('header').hover()
+    await tip.waitFor({ state: 'detached' })
+    assert.equal((await card.boundingBox()).height, before.card.height)
+
+    await page.evaluate(async () => {
+      window.threadlight.setWorkspacePanel = async () => ({
+        maxHeight: 300,
+        opensDown: true,
+        fresh: false,
+      })
+      await window.threadlight.updateSettings({ listMode: 'workspace', workspacePanelHeight: 300 })
+      window.proof.emit('onSnapshot', await window.mockWorkspaceRows(40))
+    })
+    await choose('Workspace')
+    await page.waitForFunction(
+      () => document.querySelector('[data-card]').getBoundingClientRect().height === 300,
+    )
+    const full = await sizes()
+    await page.getByLabel(/^Claude · 5-hour limit/).hover()
+    await tip.waitFor()
+    const opened = await sizes()
+    assert.equal(opened.card.height, 300, 'full Workspace stays at its height cap')
+    assert.equal(opened.bottom.y, full.bottom.y, 'lower bar stays at the bottom of a full panel')
+    assert.ok(opened.top.y < full.top.y, 'upper bar opens upward into the thread list')
+    await page.waitForTimeout(250)
+    assert.equal(await tip.count(), 1, 'moving the upper usage bar does not close its own hint')
+    await capture('footer-hint-workspace-upward')
+    await page.keyboard.press('Escape')
+    await tip.waitFor({ state: 'detached' })
+    await page.waitForTimeout(100)
+    assert.equal(await tip.count(), 0, 'Escape stays dismissed under a stationary pointer')
+    assert.equal((await sizes()).top.y, full.top.y)
+    await page.getByLabel(/^Codex · Weekly limit/).hover()
+    await tip.waitFor()
+    await tip.click()
+    assert.equal(await tip.count(), 1, 'footer text can be read/clicked without starting a resize')
+    assert.equal(
+      await page.evaluate(
+        async () => (await window.threadlight.getSettings()).workspacePanelHeight,
+      ),
+      300,
+    )
+    await page.keyboard.press('Escape')
+    await tip.waitFor({ state: 'detached' })
+    await page.getByRole('separator', { name: 'Resize Workspace height' }).press('ArrowUp')
+    await page.waitForFunction(
+      async () => (await window.threadlight.getSettings()).workspacePanelHeight === 290,
+    )
+    await page.evaluate(() => window.threadlight.updateSettings({ enabledProviders: ['codex'] }))
+    await page.getByLabel(/^Codex · Weekly limit/).hover()
+    await tip.waitFor()
+    assert.equal(await bars.count(), 1, 'single-provider mode does not add a fake usage bar')
+    const message = await tip.boundingBox(),
+      bottom = await bars.first().boundingBox()
+    assert.ok(message.y + message.height <= bottom.y + 0.5)
+    await capture('footer-hint-single-provider')
+    await page.locator('header').hover()
+    await tip.waitFor({ state: 'detached' })
+    console.log(
+      'PASS: Recent opens downward; capped Workspace opens upward, remains stable and resizable; readable footer text and single-provider fallback.',
+    )
+  } finally {
+    await page.evaluate(async ({ settings, snapshot }) => {
+      window.threadlight.setWorkspacePanel = window.proof.hoverOriginalWorkspacePanel
+      await window.mockWorkspaceRows(null)
+      await window.threadlight.updateSettings(settings)
+      window.proof.emit('onSnapshot', snapshot)
+      window.proof.emit('onPanelOpened', { maxHeight: 800, opensDown: true, fresh: true })
+    }, initial)
     await page.setViewportSize({ width: 460, height: 900 })
   }
 }

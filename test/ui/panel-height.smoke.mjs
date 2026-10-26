@@ -39,6 +39,8 @@ export async function checkWorkspaceHeight(page, capture) {
     assert.equal(await grip.locator('button, svg').count(), 0, 'no visible resize control')
     await page.getByLabel(/^Claude · 5-hour limit/).hover()
     await page.getByRole('tooltip').filter({ hasText: 'Claude · 5-hour limit' }).waitFor()
+    await page.locator('header').hover()
+    await page.getByRole('tooltip').waitFor({ state: 'detached' })
     const strip = page.locator('[class*="_workspaceResizeArea_"]')
     const box = await strip.boundingBox()
     assert.equal(box.height, 8, 'only the existing two usage bars take up space')
@@ -138,17 +140,29 @@ export async function checkWorkspaceHeight(page, capture) {
     const shortX = shortStrip.x + shortStrip.width / 2,
       shortY = shortStrip.y + shortStrip.height - 2
     await page.mouse.move(shortX, shortY)
+    await page.getByRole('tooltip').waitFor()
+    const shortDragHeight = await card.evaluate((el) => el.getBoundingClientRect().height)
+    const revealedStrip = await strip.boundingBox()
+    const dragY = revealedStrip.y + revealedStrip.height - 2
+    await page.mouse.move(shortX, dragY)
     await page.mouse.down()
-    await page.mouse.move(shortX, shortY - 40)
+    await page.mouse.move(shortX, dragY - 40)
     await page.mouse.up()
-    await heightIs(Math.round(shortHeight - 40))
+    await heightIs(Math.round(shortDragHeight - 40))
     assert.equal(
       await page.evaluate(
         async () => (await window.threadlight.getSettings()).workspacePanelHeight,
       ),
-      Math.round(shortHeight - 40),
+      Math.round(shortDragHeight - 40),
       'dragging a short panel starts at its visible bottom, not the old maximum',
     )
+    assert.equal(
+      await page.getByRole('tooltip').count(),
+      1,
+      'resize keeps the revealed footer stable',
+    )
+    await page.locator('header').hover()
+    await page.getByRole('tooltip').waitFor({ state: 'detached' })
     await page.evaluate(() => window.threadlight.updateSettings({ workspacePanelHeight: 700 }))
     await setRows(40)
     await heightIs(700)

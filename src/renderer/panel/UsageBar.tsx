@@ -26,7 +26,7 @@ export function CodexUsageBar({ usage }: { usage: Usage | null | undefined }) {
   const level =
     week && week.used >= RED_FROM ? 'red' : week && week.used >= AMBER_FROM ? 'amber' : 'normal'
   return (
-    <Tip text={text} className={`${styles.usage} ${styles.codexUsage}`}>
+    <Tip text={text} title="" className={`${styles.usage} ${styles.codexUsage}`}>
       <span className={styles.usageTrack} data-unavailable={!week || undefined}>
         {week && (
           <span
@@ -67,7 +67,7 @@ export function UsageBar({
     .join(' · ')
   const level = shown.used >= RED_FROM ? 'red' : shown.used >= AMBER_FROM ? 'amber' : 'normal'
   return (
-    <Tip text={source ? `${source} · ${text}` : text} className={styles.usage}>
+    <Tip text={source ? `${source} · ${text}` : text} title="" className={styles.usage}>
       <span className={styles.usageTrack}>
         <span
           className={styles.usageFill}

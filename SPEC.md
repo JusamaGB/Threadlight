@@ -198,11 +198,17 @@ leaving the top row for the title and this thread's diff totals.
 Last active has no inline marker. Resting the pointer on a thread for one second
 shows its local time, or its date when at least 24 hours old. Movement, leave,
 scroll and blur cancel the delayed tip; specific diff/context/task tips take priority.
-Hover chips sit above or below the pointer, choosing a side with room. Their width
-follows the content, capped by the application card's available width rather than
-the space beside the pointer. Short chips stay narrow; longer text may use the full
-width and wrap. Task details use the same placement. When a compact panel needs
-more vertical room, it borrows popup space and releases it when the chip closes.
+Short hover chips sit above or below the pointer, choosing a side with room, and
+stay content-sized. A hint longer than five words or half the card's available
+width opens between the Claude and Codex usage bars instead. This includes diff
+summaries, usage information and task details. The compact panel grows downward
+to reveal the message. At its height limit, the lower bar stays at the bottom and
+the upper bar moves up into the scrolling list. The saved height remains a maximum.
+Single-provider views show the message above their existing bar. Usage values,
+colours and reset information are unchanged. Longer messages wrap and can scroll
+within the footer. A stationary pointer keeps the message open through relayout;
+moving away, scrolling elsewhere, Escape or blur dismisses it. Clicking the
+message does not activate its source control or resize the panel.
 The panel is 264px wide, with the existing 16px outside wire area. Scrollbars are
 hidden throughout the app. Wheel, trackpad and keyboard scrolling remain native;
 thread and workspace lists can receive keyboard focus. There is no scrollbar
