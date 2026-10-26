@@ -11,6 +11,7 @@ export interface MenuItem {
 }
 
 interface ContextMenuProps {
+  label?: string
   x: number
   y: number
   anchor?: HTMLElement
@@ -19,7 +20,7 @@ interface ContextMenuProps {
 }
 
 /** A small menu at the pointer. A transparent layer behind it closes it on any outside click. */
-export function ContextMenu({ x, y, anchor, items, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, anchor, items, onClose, label }: ContextMenuProps) {
   const menu = useRef<HTMLDivElement>(null)
   const { opensDown, extra, reserve } = usePanelRoom()
   const [position, setPosition] = useState({
@@ -61,7 +62,10 @@ export function ContextMenu({ x, y, anchor, items, onClose }: ContextMenuProps) 
   }, [reserve])
   useEffect(() => () => release.current(0), [])
   useEffect(
-    () => menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(),
+    () =>
+      (
+        menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? menu.current
+      )?.focus(),
     [],
   )
 
@@ -80,7 +84,15 @@ export function ContextMenu({ x, y, anchor, items, onClose }: ContextMenuProps) 
         className={styles.menu}
         style={position}
         role="menu"
+        tabIndex={-1}
+        aria-label={label}
         onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            onClose()
+            return
+          }
           if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
           event.preventDefault()
           const buttons = [

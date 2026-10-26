@@ -29,6 +29,10 @@
   border-bottom: 1px solid var(--border);
 }
 
+.surface[data-edge-to-edge][data-renderer='unavailable']::after {
+  width: 100%;
+}
+
 .status {
   display: flex;
   align-items: center;

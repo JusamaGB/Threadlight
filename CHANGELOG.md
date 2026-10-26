@@ -6,6 +6,19 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Agent footer provider, model and effort labels now open their setting menus, using
+  the same model catalog and model-specific effort defaults as Settings.
+
+- Centered the Agent footer labels vertically with even space above and below.
+
+- Extended the header waveform to both panel edges, including its quiet resting state.
+
+- Double-clicking the header now toggles pinning without changing the selected view.
+  Removed triple-click pinning and its delay; switching views keeps the panel pinned.
+
+- Grouped the application and workspace controls beside the view/count label on the
+  left of the toolbar, separated by a subtle divider.
+
 - Moved the Agent provider, model and reasoning label to a compact bottom-right footer
   alongside Earlier.
 

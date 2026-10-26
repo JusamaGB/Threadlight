@@ -15,6 +15,47 @@ A small, unofficial desktop companion for the **Claude desktop app** on Windows.
 
 Not affiliated with or endorsed by Anthropic. It reads files the Claude app and Claude Code leave on disk; it never talks to Anthropic servers itself (background sends run the user's own `claude` CLI).
 
+### Panel pinning and view controls (26 October 2026)
+
+Pinning and the chosen list are independent. Double-clicking the header's bare
+background immediately toggles pinned/unpinned without changing Active, Recent,
+Workspace or All, the selected workspace, or expanded rows. A third click has no
+additional action; there is no triple-click gesture or delay waiting for one.
+Clicking the pin icon also unpins without resetting the view.
+
+Clicking the view/count label cycles Active → Recent → Workspace → Active. Its
+existing right-click menu also offers All. Switching views while pinned keeps the
+panel pinned in the newly selected view. Controls, labels and icons in the header
+keep their own clicks and do not trigger the bare-background pin gesture.
+
+While pinned, pointer leave keeps the panel open. Unpinning restores the existing
+pointer-leave behavior without changing the selected view. The existing fresh-open
+reset to Active remains separate from pinning. Voice Open commands still choose
+the full list explicitly before pinning it.
+
+| Behavior                    | Existing implementation reused                                              |
+| --------------------------- | --------------------------------------------------------------------------- |
+| Double-click pin toggle     | `Panel.tsx`: `onHeaderClick` → `changeHold`                                 |
+| View selection while pinned | `Panel.tsx`: `cycleView`, `selectList`, `listMenuItems`                     |
+| Stay open / pointer leave   | `setStayOpen` IPC, `Panel.tsx` `leave`, `WindowManager.closeOnPointerLeave` |
+| Voice Open selects the list | `Panel.tsx`: `handleSentence`                                               |
+
+Browser checks cover immediate pinning with frozen timers, the ignored third click,
+pin/unpin in each view, switching views while pinned, header controls, pointer
+leave, panel resizing, and the existing voice-command caller.
+
+### Agent footer settings
+
+The footer provider, model and Codex effort labels open their corresponding setting
+menus. They reuse Settings' model discovery and supported effort list; choosing a
+model resets effort to that model's default. Additional Codex models remain opt-in.
+Claude exposes the existing Opus/Sonnet worker choice and no Codex effort control.
+Choices save immediately through the existing settings API. A running conversation
+keeps its recorded identity and the existing Use selected model flow; changing a
+setting never stops or starts a conversation. Menus support keyboard navigation,
+Escape, outside-click dismissal and both panel opening directions. Discovery and
+save failures remain visible, with retry available for discovery failures.
+
 ## 2. Principles (because it is public)
 
 1. **Nothing personal in the repo, ever.** No real paths, names, thread titles, transcripts, emails or screenshots of real work. Fixtures are synthetic.

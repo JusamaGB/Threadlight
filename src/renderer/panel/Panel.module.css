@@ -55,7 +55,10 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
+  margin-left: 4px;
+  margin-right: auto;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
   min-width: 0;
   max-width: 180px;
   color: var(--muted);
@@ -1571,8 +1574,8 @@ span.planStep {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--border);
-  margin: 2px -10px -4px;
-  padding: 0 10px;
+  margin: 2px -10px -8px;
+  padding: 2px 10px;
 }
 
 .agentEarlierHead {
@@ -1725,6 +1728,9 @@ span.planStep {
   opacity: 0.7;
 }
 .agentIdentity {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   flex: 1;
   min-width: 0;
   margin: 0;
@@ -1735,11 +1741,40 @@ span.planStep {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.agentSetting {
+  flex: none;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentSetting[data-field='model'] {
+  flex-shrink: 1;
+}
+
+.agentSetting:hover,
+.agentSetting[aria-expanded='true'] {
+  color: var(--fg);
+}
+
+.agentSetting:disabled {
+  cursor: default;
+}
+
+.agentIdentity > span {
+  flex: none;
+  white-space: pre;
+}
 .agentFooter {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 16px;
+  line-height: 16px;
 }
 .agentQuestion {
   border: 0;

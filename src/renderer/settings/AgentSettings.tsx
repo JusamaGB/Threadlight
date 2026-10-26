@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import type { AgentModel } from '../../shared/agent'
+import { useState } from 'react'
 import type { Settings, SettingsPatch } from '../../shared/settings'
+import { codexModelSettings, useAgentModels } from '../hooks/useAgentModels'
 import { en } from '../i18n/en'
 import styles from './Settings.module.css'
 
@@ -11,10 +11,8 @@ export function AgentSettings({
   settings: Settings
   save: (patch: SettingsPatch) => Promise<boolean>
 }) {
-  const [models, setModels] = useState<AgentModel[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const { models, error, loading } = useAgentModels(settings.agentProvider === 'codex')
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(settings.agentProvider === 'codex')
   const [hidden, setHidden] = useState(false)
   const save = async (patch: SettingsPatch) => {
     try {
@@ -23,27 +21,6 @@ export function AgentSettings({
       setSaveError('Could not save Agent settings. Try again.')
     }
   }
-  useEffect(() => {
-    let live = true
-    if (settings.agentProvider === 'codex') {
-      void window.threadlight
-        .agentModels()
-        .then((result) => {
-          if (!live) return
-          setModels(result.models)
-          setError(result.error)
-        })
-        .catch(() => {
-          if (live) setError('Could not discover Codex models.')
-        })
-        .finally(() => {
-          if (live) setLoading(false)
-        })
-    }
-    return () => {
-      live = false
-    }
-  }, [settings.agentProvider])
   const selected = models.find((m) =>
     settings.agentCodexModel ? m.id === settings.agentCodexModel : m.isDefault,
   )
@@ -120,8 +97,7 @@ export function AgentSettings({
               value={settings.agentCodexModel ?? selected?.id ?? ''}
               onChange={(e) => {
                 const model = models.find((m) => m.id === e.target.value)
-                if (model)
-                  void save({ agentCodexModel: model.id, agentCodexReasoning: model.defaultEffort })
+                if (model) void save(codexModelSettings(model))
               }}
             >
               {!selected && (

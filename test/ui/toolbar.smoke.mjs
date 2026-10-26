@@ -11,6 +11,7 @@ export async function checkToolbar(page) {
     await page.getByRole('button', { name: `Filter applications: ${name}`, exact: true }).waitFor()
   }
   await chooseSource('Both')
+  await checkPinning(page)
   assert.deepEqual(
     await page.evaluate(async () => (await window.threadlight.getSettings()).enabledProviders),
     ['claude', 'codex'],
@@ -101,5 +102,70 @@ export async function checkToolbar(page) {
   )
   console.log(
     'PASS: toolbar view cycle, context menu, app/settings sync, shared folder selection and compact menus.',
+  )
+}
+
+async function checkPinning(page) {
+  const header = page.locator('header')
+  const view = header.locator('[data-thread-view]')
+  const pin = page.getByRole('button', {
+    name: 'Pinned open. Click to unpin, or double-click the bar',
+    exact: true,
+  })
+  const bare = () =>
+    header.evaluate((element) => {
+      const bounds = element.getBoundingClientRect()
+      const y = bounds.height / 2
+      for (let x = bounds.width - 30; x > 0; x--) {
+        if (document.elementFromPoint(bounds.x + x, bounds.y + y) === element) return { x, y }
+      }
+      throw new Error('The header has no bare background for its pin gesture')
+    })
+  const leaveCalls = () =>
+    page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'leavePanel').length)
+  for (const [mode, label, next] of [
+    ['active', 'Active', 'recent'],
+    ['recent', 'Recent', 'workspace'],
+    ['workspace', 'Workspace', 'active'],
+    ['all', 'All', 'active'],
+  ]) {
+    if ((await view.getAttribute('data-thread-view')) !== mode) {
+      await view.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: label, exact: true }).click()
+    }
+    await header.locator(`[data-thread-view="${mode}"]`).waitFor()
+    await header.dblclick({ position: await bare() })
+    await pin.waitFor()
+    assert.equal(await view.getAttribute('data-thread-view'), mode, 'pinning keeps the chosen view')
+    const before = await leaveCalls()
+    await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
+    assert.equal(await leaveCalls(), before, 'pinned views stay open on pointer leave')
+    await header.dblclick({ position: await bare() })
+    await pin.waitFor({ state: 'detached' })
+    assert.equal(
+      await view.getAttribute('data-thread-view'),
+      mode,
+      'double-click unpins without resetting the view',
+    )
+    await header.click({ position: await bare(), clickCount: 3 })
+    await pin.waitFor()
+    assert.equal(
+      await view.getAttribute('data-thread-view'),
+      mode,
+      'a triple click only performs its double-click toggle',
+    )
+    await view.click()
+    await header.locator(`[data-thread-view="${next}"]`).waitFor()
+    assert.equal(await pin.count(), 1, 'the view control changes lists without unpinning')
+    await pin.click()
+    await pin.waitFor({ state: 'detached' })
+    assert.equal(
+      await view.getAttribute('data-thread-view'),
+      next,
+      'the pin icon also preserves the view',
+    )
+  }
+  console.log(
+    'PASS: immediate double-click pin/unpin in all four views, ignored third click, pinned view switching and pointer leave.',
   )
 }
