@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Preserved the conversation E2E observer and its cleanup check, with portable
+  paths and conversation evidence stored outside the repository.
+
 - Codex chats discover Git badges from structured repository activity and attached
   worktrees, and display linked PR badges when remote status is unavailable.
 
