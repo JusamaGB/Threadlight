@@ -613,16 +613,21 @@
   margin-top: 2px;
 }
 
+.rowBottom > .age,
+.rowBottom > .taskTimer {
+  margin-left: 8px;
+}
+
 /* Sits under the state dot, in the gutter the stage line is indented by. */
 .pr {
   display: flex;
   align-items: center;
   gap: 1px;
   flex: none;
-  /* Centres the icon under the 6 px dot and keeps the text lined up with rows without one. */
-  min-width: 16.5px;
+  /* Icon + spacing fill the normal 14px gutter; only a count adds width. */
+  min-width: 11px;
   margin-left: -2.5px;
-  padding-right: 4px;
+  padding-right: 5.5px;
   color: var(--faint);
   font-size: 9px;
   font-weight: 700;
@@ -715,7 +720,7 @@
   color: var(--amber);
 }
 
-/* Open ↗ on an expanded row's top line, where the age was; the space keeps the title clear. */
+/* Open ↗ on an expanded row's top line; the space keeps the title clear. */
 .rowOpen {
   position: absolute;
   top: 6px;
