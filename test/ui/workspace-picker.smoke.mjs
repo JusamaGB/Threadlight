@@ -1,15 +1,22 @@
-/* global window */
+/* global window, document */
 import assert from 'node:assert/strict'
 
 export async function checkWorkspacePicker(page, capture) {
   const initial = await page.evaluate(() => window.threadlight.getSettings())
-  const applications = page.getByLabel('Workspace applications', { exact: true })
+  const applications = page.getByRole('button', { name: /^Workspace applications:/ })
+  const appsMenu = page.getByRole('menu', { name: 'Workspace applications', exact: true })
+  const searchLink = page.getByRole('button', { name: 'Search', exact: true })
   const search = page.getByRole('searchbox', { name: 'Search workspaces' })
   const results = page.locator('[class*="_pickerResults_"]')
   const choose = (name) => results.getByRole('button', { name, exact: true })
-  const open = async () => {
+  const open = async (revealSearch = true) => {
     await page.getByRole('button', { name: /^Choose workspace:/ }).click()
     await applications.waitFor()
+    if (revealSearch) await searchLink.click()
+  }
+  const chooseApplications = async (name) => {
+    await applications.hover()
+    await appsMenu.getByRole('menuitem', { name, exact: true }).click()
   }
   const folders = {
     claude: [
@@ -35,17 +42,74 @@ export async function checkWorkspacePicker(page, capture) {
       })
       window.proof.emit('onSnapshot', await window.mockWorkspaceFolders(folders))
     }, folders)
-    await open()
-    assert.equal(await applications.inputValue(), 'both')
+    await open(false)
+    assert.equal(await applications.getAttribute('aria-label'), 'Workspace applications: Both')
+    assert.equal(await page.locator('[class*="_workspacePicker_"] select').count(), 0)
+    assert.equal(await search.count(), 0, 'search is hidden until requested')
     assert.equal(await page.getByLabel('Workspace drive', { exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: /^Follow .*activity/ }).count(), 0)
     assert.equal(await page.getByText(/Choose which folder’s threads/).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'Parent folder', exact: true }).count(), 0)
     await page.getByRole('button', { name: 'Use All Drives', exact: true }).waitFor()
     const appBox = await applications.boundingBox()
-    const searchBox = await search.boundingBox()
-    assert.equal(appBox.y, searchBox.y, 'applications and search share one row')
-    assert.ok(appBox.width < searchBox.width / 2, 'applications leaves most of the row for search')
+    const searchBox = await searchLink.boundingBox()
+    const allBox = await page
+      .getByRole('button', { name: 'Use All Drives', exact: true })
+      .boundingBox()
+    assert.equal(appBox.y, searchBox.y)
+    assert.equal(appBox.y, allBox.y)
+    assert.ok(
+      allBox.x < appBox.x && appBox.x < searchBox.x,
+      'one line has Use All Drives left and Apps | Search right',
+    )
+    await capture('workspace-picker-links')
+    await applications.hover()
+    assert.deepEqual(await appsMenu.getByRole('menuitem').allTextContents(), [
+      'Claude',
+      'Codex',
+      'Both',
+    ])
+    await appsMenu.hover()
+    await capture('workspace-picker-apps-hover')
+    await page.locator('header').hover()
+    await appsMenu.waitFor({ state: 'detached' })
+    await applications.press('Enter')
+    await appsMenu.waitFor()
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute('role')),
+      'menuitem',
+    )
+    await page.keyboard.press('Escape')
+    await appsMenu.waitFor({ state: 'detached' })
+    await searchLink.hover()
+    await search.waitFor()
+    await search.hover()
+    await page.locator('header').hover()
+    await search.waitFor({ state: 'detached' })
+    await searchLink.hover()
+    await search.click()
+    await page.locator('header').hover()
+    assert.equal(await search.count(), 1, 'a focused search remains open')
+    await search.fill('shared')
+    await search.press('Tab')
+    assert.equal(await search.count(), 1, 'an entered query remains visible after focus leaves')
+    await search.press('Escape')
+    await search.waitFor({ state: 'detached' })
+    await searchLink.click()
+    await search.waitFor()
+    await page.locator('header').hover()
+    assert.equal(await search.count(), 1, 'clicking Search pins it open after the pointer leaves')
+    await applications.hover()
+    assert.equal(
+      await search.evaluate((el) => document.activeElement === el),
+      true,
+      'hovering Apps does not take search focus',
+    )
+    await page.locator('header').hover()
+    await appsMenu.waitFor({ state: 'detached' })
+    await search.press('Escape')
+    await search.waitFor({ state: 'detached' })
+    await searchLink.click()
     const zDrive = results.getByRole('button', { name: /^Z: 4 workspaces/ })
     await capture('workspace-picker-drives')
     await zDrive.click()
@@ -61,15 +125,15 @@ export async function checkWorkspacePicker(page, capture) {
     // Searching from Z: must also find C: without any drive filter.
     await search.fill('other')
     await choose('other C:/Projects/other').waitFor()
-    await applications.selectOption('claude')
+    await chooseApplications('Claude')
     await page.getByRole('status').filter({ hasText: 'No workspaces match' }).waitFor()
     assert.deepEqual(
       await page.evaluate(async () => (await window.threadlight.getSettings()).enabledProviders),
       ['claude'],
     )
-    await applications.selectOption('codex')
+    await chooseApplications('Codex')
     await choose('other C:/Projects/other').waitFor()
-    await applications.selectOption('both')
+    await chooseApplications('Both')
     await search.fill('shared')
     assert.equal(
       await results.getByRole('button').count(),
@@ -137,7 +201,7 @@ export async function checkWorkspacePicker(page, capture) {
     await capture('workspace-picker-scrolling')
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
     console.log(
-      'PASS: compact workspace picker, all-drive start/search, provider settings, drive/UNC navigation, deduplication, nested folders, explicit selection and fixed controls over scrolling results.',
+      'PASS: one-line picker links, hover Apps without stealing focus, transient/pinned search and Escape, global provider/search settings, drive/UNC navigation and stable scrolling controls.',
     )
   } finally {
     await page.evaluate(async (initial) => {

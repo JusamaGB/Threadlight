@@ -17,10 +17,24 @@ interface ContextMenuProps {
   anchor?: HTMLElement
   items: MenuItem[]
   onClose: () => void
+  /** Hover menus leave the rest of the panel interactive and do not take keyboard focus. */
+  modal?: boolean
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
 }
 
 /** A small menu at the pointer. A transparent layer behind it closes it on any outside click. */
-export function ContextMenu({ x, y, anchor, items, onClose, label }: ContextMenuProps) {
+export function ContextMenu({
+  x,
+  y,
+  anchor,
+  items,
+  onClose,
+  label,
+  modal = true,
+  onMouseEnter,
+  onMouseLeave,
+}: ContextMenuProps) {
   const menu = useRef<HTMLDivElement>(null)
   const { opensDown, extra, reserve } = usePanelRoom()
   const [position, setPosition] = useState({
@@ -61,24 +75,25 @@ export function ContextMenu({ x, y, anchor, items, onClose, label }: ContextMenu
     release.current = reserve
   }, [reserve])
   useEffect(() => () => release.current(0), [])
-  useEffect(
-    () =>
+  useEffect(() => {
+    if (modal)
       (
         menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? menu.current
-      )?.focus(),
-    [],
-  )
+      )?.focus()
+  }, [modal])
 
   return createPortal(
     <>
-      <div
-        className={styles.menuLayer}
-        onMouseDown={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault()
-          onClose()
-        }}
-      />
+      {modal && (
+        <div
+          className={styles.menuLayer}
+          onMouseDown={onClose}
+          onContextMenu={(event) => {
+            event.preventDefault()
+            onClose()
+          }}
+        />
+      )}
       <div
         ref={menu}
         className={styles.menu}
@@ -86,6 +101,8 @@ export function ContextMenu({ x, y, anchor, items, onClose, label }: ContextMenu
         role="menu"
         tabIndex={-1}
         aria-label={label}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault()

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { workspaceFolder } from '../../shared/providers'
 import {
   searchWorkspaces,
@@ -8,6 +8,7 @@ import {
 } from '../lib/workspaceExplorer'
 import styles from './Panel.module.css'
 import { ThreadScrollbar } from './ThreadScrollbar'
+import { ContextMenu } from './ContextMenu'
 
 interface WorkspacePickerProps {
   provider: 'claude' | 'codex' | 'both' | 'none'
@@ -33,6 +34,45 @@ export function WorkspacePicker({
   const explorer = useMemo(() => workspaceExplorer(workspaces), [workspaces])
   const [location, setLocation] = useState('')
   const [query, setQuery] = useState('')
+  const [searchHovered, setSearchHovered] = useState(false)
+  const [searchPinned, setSearchPinned] = useState(false)
+  const [searchFocused, setSearchFocused] = useState(false)
+  const searchInput = useRef<HTMLInputElement>(null)
+  const searchLink = useRef<HTMLButtonElement>(null)
+  const [appsAnchor, setAppsAnchor] = useState<HTMLButtonElement | null>(null)
+  const [appsMode, setAppsMode] = useState<'hover' | 'click' | null>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelAppsClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    closeTimer.current = null
+  }
+  const closeAppsSoon = () => {
+    if (appsMode !== 'hover') return
+    cancelAppsClose()
+    closeTimer.current = setTimeout(
+      () => setAppsMode((mode) => (mode === 'hover' ? null : mode)),
+      150,
+    )
+  }
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current)
+    },
+    [],
+  )
+  useEffect(() => {
+    if (searchPinned) searchInput.current?.focus({ preventScroll: true })
+  }, [searchPinned])
+  const searchOpen = searchHovered || searchPinned || searchFocused || query.length > 0
+  const sourceLabel =
+    provider === 'both'
+      ? 'Both'
+      : provider === 'codex'
+        ? 'Codex'
+        : provider === 'claude'
+          ? 'Claude'
+          : 'None'
+  const appsAt = appsAnchor?.getBoundingClientRect()
   const list = useRef<HTMLDivElement>(null)
   const folder = explorer.folders.get(location)
   const searching = query.trim().length > 0
@@ -48,64 +88,119 @@ export function WorkspacePicker({
 
   return (
     <div className={styles.workspacePicker}>
-      <div className={styles.pickerControls}>
-        <label>
-          Applications
-          <select
-            aria-label="Workspace applications"
-            value={provider === 'none' ? '' : provider}
-            onChange={(event) =>
-              onProviderChange(event.target.value as 'claude' | 'codex' | 'both')
-            }
-          >
-            {provider === 'none' && (
-              <option value="" disabled>
-                Choose apps…
-              </option>
-            )}
-            <option value="claude">Claude</option>
-            <option value="codex">Codex</option>
-            <option value="both">Both</option>
-          </select>
-        </label>
-        <label>
-          Search
-          <input
-            type="search"
-            aria-label="Search workspaces"
-            placeholder="Search workspaces…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
-      </div>
-      <nav className={styles.pickerLocation} aria-label="Workspace folder navigation">
-        {folder ? (
-          <>
-            <button
-              aria-label="Parent folder"
-              title="Back to parent folder"
-              onClick={() => setLocation(folder?.parent ?? '')}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                <path
-                  d="M13 8H3m5-5L3 8l5 5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-            <span title={folder.path}>{folder.path}</span>
-          </>
-        ) : (
+      <div className={styles.pickerToolbar} onMouseLeave={() => setSearchHovered(false)}>
+        <div className={styles.pickerControls}>
           <button className={styles.pickerUseAll} aria-pressed={allDrives} onClick={onPickAll}>
             Use All Drives
           </button>
+          <div className={styles.pickerTools}>
+            <span onMouseLeave={closeAppsSoon}>
+              <button
+                className={styles.pickerLink}
+                aria-label={`Workspace applications: ${sourceLabel}`}
+                aria-haspopup="menu"
+                aria-expanded={!!appsMode}
+                onMouseEnter={(event) => {
+                  setAppsAnchor(event.currentTarget)
+                  cancelAppsClose()
+                  setSearchHovered(false)
+                  setAppsMode((mode) => (mode === 'click' ? mode : 'hover'))
+                }}
+                onClick={(event) => {
+                  setAppsAnchor(event.currentTarget)
+                  cancelAppsClose()
+                  setAppsMode((mode) => (mode === 'click' ? null : 'click'))
+                }}
+              >
+                Apps
+              </button>
+              {appsMode && appsAt && (
+                <ContextMenu
+                  label="Workspace applications"
+                  anchor={appsAnchor ?? undefined}
+                  x={appsAt.left}
+                  y={appsAt.bottom}
+                  modal={appsMode === 'click'}
+                  onClose={() => {
+                    cancelAppsClose()
+                    setAppsMode(null)
+                  }}
+                  onMouseEnter={cancelAppsClose}
+                  onMouseLeave={closeAppsSoon}
+                  items={(['claude', 'codex', 'both'] as const).map((value) => ({
+                    label: value === 'both' ? 'Both' : value === 'claude' ? 'Claude' : 'Codex',
+                    disabled: provider === value,
+                    onSelect: () => onProviderChange(value),
+                  }))}
+                />
+              )}
+            </span>
+            <span className={styles.pickerToolDivider} aria-hidden="true">
+              |
+            </span>
+            <button
+              ref={searchLink}
+              className={styles.pickerLink}
+              aria-expanded={searchOpen}
+              aria-pressed={searchPinned}
+              onMouseEnter={() => {
+                setSearchHovered(true)
+                cancelAppsClose()
+                setAppsMode((mode) => (mode === 'hover' ? null : mode))
+              }}
+              onClick={() => setSearchPinned((pinned) => !pinned)}
+            >
+              Search
+            </button>
+          </div>
+        </div>
+        {searchOpen && (
+          <div className={styles.pickerSearch} onMouseEnter={() => setSearchHovered(true)}>
+            <input
+              ref={searchInput}
+              type="search"
+              aria-label="Search workspaces"
+              placeholder="Search workspaces…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape') return
+                event.preventDefault()
+                event.stopPropagation()
+                setSearchPinned(false)
+                setSearchHovered(false)
+                setSearchFocused(false)
+                setQuery('')
+                event.currentTarget.blur()
+                searchLink.current?.focus()
+              }}
+            />
+          </div>
         )}
-      </nav>
+      </div>
+      {folder && (
+        <nav className={styles.pickerLocation} aria-label="Workspace folder navigation">
+          <button
+            aria-label="Parent folder"
+            title="Back to parent folder"
+            onClick={() => setLocation(folder?.parent ?? '')}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path
+                d="M13 8H3m5-5L3 8l5 5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <span title={folder.path}>{folder.path}</span>
+        </nav>
+      )}
       {folder?.workspace && !searching && (
         <button
           className={styles.workspaceHeader}
