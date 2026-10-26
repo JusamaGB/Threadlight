@@ -163,7 +163,7 @@ thread history. The action is disabled without a known Git root. See
 
 ### Workspace links and provider-coloured attention
 
-The panel uses a 300px card and adds a 16px transparent gutter on the left
+The panel uses a 264px card and adds a 16px transparent gutter on the left
 inside the native window. Wires link listed rows with the same normalized Git
 worktree root (or known working folder when no Git root is available), across
 Claude and Codex. Separate worktrees and unknown folders stay unlinked. Within each
@@ -189,12 +189,16 @@ follows the content, capped by the application card's available width rather tha
 the space beside the pointer. Short chips stay narrow; longer text may use the full
 width and wrap. Task details use the same placement. When a compact panel needs
 more vertical room, it borrows popup space and releases it when the chip closes.
-The thread scrollbar overlays the rows with a transparent track and hollow 6px
-thumb, preserving provider gradients to the panel edge. Drag, wheel, track clicks
-and keyboard scrolling remain available; dragging keeps an unpinned panel open.
+The panel is 264px wide, with the existing 16px outside wire area. Scrollbars are
+hidden throughout the app. Wheel, trackpad and keyboard scrolling remain native;
+thread and workspace lists can receive keyboard focus. There is no scrollbar
+overlay or reserved gutter, leaving the rows' full width available for content.
 
 Context circles spin for the full `working` state, including thinking, tools and
-reply generation, replacing the flashing red row dot. Idle/waiting circles are
+replies. Whenever thinking resumes, including mid-task with known context, the
+wheel switches to a dotted appearance using the same thinking flag as the Now line.
+The dots mask the measured context arc without changing its percentage or colour.
+The wheel replaces the flashing red row dot. Idle/waiting circles are
 still; amber attention markers remain. Context percentages, arc fill and threshold
 colours are unchanged. A working thread without a context reading shows a neutral
 dashed activity track with no percentage arc. Reduced motion keeps the ring still.

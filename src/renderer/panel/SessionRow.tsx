@@ -97,6 +97,7 @@ export function SessionRow(props: SessionRowProps) {
                 used={session.contextUsed}
                 wide={attention !== null}
                 active={session.state === 'working'}
+                thinking={session.thinking}
               />
             )}
             {(session.state === 'waiting' || attention) && (

@@ -163,7 +163,7 @@ export async function checkThreadDiffs(page, capture) {
     assert.ok(layout.trackerY > layout.diffY, 'Git tracker is below thread diff totals')
     assert.equal(
       layout.rowRight - layout.right,
-      10,
+      6,
       'Git tracker sits at the right of the second row',
     )
     assert.equal(layout.inlineAge, false, 'last active time no longer takes up row space')

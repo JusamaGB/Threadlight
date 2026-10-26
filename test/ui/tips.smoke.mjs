@@ -66,7 +66,7 @@ export async function checkLastActive(page, row, capture) {
 }
 
 export async function checkTips(page, row, capture = async () => {}) {
-  await page.setViewportSize({ width: 316, height: 900 })
+  await page.setViewportSize({ width: 280, height: 900 })
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
   const tip = page.getByRole('tooltip')
   const move = async (target, offset = 70) => {
@@ -173,7 +173,8 @@ export async function checkTips(page, row, capture = async () => {}) {
       await page.mouse.move(at.x, at.y)
       await vertical(at)
       assert.ok(
-        (await tip.boundingBox()).width >= 280,
+        (await tip.boundingBox()).width >=
+          (await page.locator('[data-card]').boundingBox()).width - 9,
         'long text may use the full app width at either edge or the centre',
       )
     }
@@ -211,7 +212,10 @@ export async function checkTips(page, row, capture = async () => {}) {
     await page.mouse.move(at.x, at.y)
     await tip.waitFor()
     await vertical(at)
-    assert.ok((await tip.boundingBox()).width >= 280)
+    assert.ok(
+      (await tip.boundingBox()).width >=
+        (await page.locator('[data-card]').boundingBox()).width - 9,
+    )
     const taskTip = await tip.boundingBox()
     assert.ok(
       await page.evaluate(

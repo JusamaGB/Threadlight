@@ -96,7 +96,6 @@
   overflow: auto;
   min-height: 0;
   flex: 1;
-  scrollbar-width: thin;
 }
 .handoffs {
   min-height: 0;

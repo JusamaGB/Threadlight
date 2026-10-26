@@ -42,7 +42,6 @@ import { useMotion } from '../hooks/useMotion'
 import { VoicePresence } from '../motion/VoicePresence'
 import { ElectricMotion } from '../motion/ElectricMotion'
 import { WorkspaceLinks } from './WorkspaceLinks'
-import { ThreadScrollbar } from './ThreadScrollbar'
 import { WorkspaceResize, WORKSPACE_MIN_HEIGHT } from './WorkspaceResize'
 import { TimeWindowMessage } from './TimeWindowMessage'
 
@@ -162,7 +161,6 @@ export function Panel() {
   /** Double-clicking the bare header toggles staying open without changing the view. */
   const [hold, setHold] = useState<HoldMode>('normal')
   const card = useRef<HTMLDivElement>(null)
-  const threadList = useRef<HTMLDivElement>(null)
   const drag = useDotDrag()
 
   /** Agent Toggle listens until the next press; selecting a target never opens the mic. */
@@ -542,7 +540,7 @@ export function Panel() {
   const leave = useCallback(() => {
     if (
       drag.isDragging() ||
-      document.querySelector('[data-thread-scroll-dragging], [data-workspace-resizing]') ||
+      document.querySelector('[data-workspace-resizing]') ||
       hold !== 'normal' ||
       showMemory
     )
@@ -1359,8 +1357,10 @@ export function Panel() {
             )}
 
             <div
-              ref={threadList}
               id="thread-list"
+              role="region"
+              aria-label="Threads"
+              tabIndex={0}
               className={styles.list}
               data-workspace-thread-list=""
             >
@@ -1396,7 +1396,6 @@ export function Panel() {
               )}
             </div>
 
-            <ThreadScrollbar list={threadList} />
             {target && compose && (
               <Composer
                 key={`${target.id}:${compose.initialText ?? ''}`}

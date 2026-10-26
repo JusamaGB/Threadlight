@@ -4,8 +4,6 @@
   min-height: 0;
   overflow-y: auto;
   padding: 2px 0 6px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--faint) transparent;
 }
 
 .group select {
@@ -292,6 +290,11 @@
   margin: 6px 10px 0;
   font-size: 10px;
   color: var(--faint);
+}
+
+.attribution {
+  margin-top: 0;
+  text-align: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
