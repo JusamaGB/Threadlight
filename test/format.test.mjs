@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+// Renderer helpers follow the existing renderer tests' JavaScript entry point.
 import { lastActiveText } from '../src/renderer/lib/format'
 
 describe('last active hover', () => {

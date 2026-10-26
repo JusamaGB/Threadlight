@@ -68,6 +68,11 @@ const api: ThreadlightApi = {
   releaseHold: (sessionId) => ipcRenderer.send(IPC.releaseHold, sessionId),
   copyText: (text) => ipcRenderer.send(IPC.copyText, text),
   getChanges: (sessionId) => ipcRenderer.invoke(IPC.getChanges, sessionId),
+  getWorktreeChanges: (sessionId) => ipcRenderer.invoke(IPC.getWorktreeChanges, sessionId),
+  getWorktreeFileDiff: (sessionId, path) =>
+    ipcRenderer.invoke(IPC.getWorktreeFileDiff, sessionId, path),
+  openWorktreeChangedFile: (sessionId, path) =>
+    ipcRenderer.send(IPC.openWorktreeChangedFile, sessionId, path),
   getStepActivity: (sessionId, step) => ipcRenderer.invoke(IPC.getStepActivity, sessionId, step),
   getFileDiff: (sessionId, path) => ipcRenderer.invoke(IPC.getFileDiff, sessionId, path),
   openChangedFile: (sessionId, path) => ipcRenderer.send(IPC.openChangedFile, sessionId, path),

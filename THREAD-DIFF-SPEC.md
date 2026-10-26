@@ -3,8 +3,10 @@
 The row's diff badge, hover, heading, file list and opened patch all describe the
 same provider-qualified chat. They do not use the checkout's diff against HEAD.
 The scope is the recorded lifetime of the thread; committing a worktree does not
-erase that thread's recorded changes. Workspace-wide diff actions belong to the
-later workspace-wire feature and are not added here.
+erase that thread's recorded changes. Right-clicking a thread offers Worktree diff:
+all staged, unstaged and untracked changes against HEAD in its detected Git root.
+Different worktrees of the same repository remain separate. Wire-specific menus
+remain a later feature.
 
 ## Evidence and ownership
 
@@ -44,8 +46,11 @@ Reuse the existing ChangesView, FileRow and FileDiffView with their current styl
 and interactions. This changes their data scope; it does not introduce another
 diff list or page design.
 
-Nonzero badges open Thread diff. The thread context menu also offers Thread diff
-for zero/unknown histories. Revision stamps refresh an open file independently of
+Nonzero badges open Thread diff. The thread context menu offers Worktree diff,
+disabled when its Git worktree is unknown. Both scopes reuse the existing file list
+and file viewer with distinct headings and empty/unavailable messages. A worktree
+diff remains available when the thread's recorded history is missing. Thread
+revision stamps refresh an open file independently of
 worktree totals. Checklist links open that same thread-recorded file diff; their
 per-step counts retain their existing activity meaning.
 
@@ -54,6 +59,11 @@ validates every requested file against that chat's recorded file list. Open uses
 the known absolute path from that list. Caller-supplied paths never select an
 arbitrary filesystem read. Paths inside the preferred Git root display relatively;
 recorded files elsewhere remain accessible under their actual paths.
+
+Worktree list/file/Open use separate IPC endpoints. The main process resolves the
+root from its scanned session and validates paths against that worktree's current
+changed-file list. The row badge and checklist links continue to use recorded-thread
+endpoints; neither scope silently falls back to the other.
 
 Worktree branch, ahead/behind and PR metadata remain separate from the thread's
 added/removed totals. The native window and running E2E app are not restarted as

@@ -6,35 +6,44 @@ import styles from './Panel.module.css'
 
 interface ChangesViewProps {
   sessionId: string
-  /** Recorded thread revision, including edits made while worktree totals stay unchanged. */
+  scope?: 'thread' | 'worktree'
+  /** The selected scope's revision/counts, refreshed by the session scan. */
   stamp: string
 }
 
 /**
- * This thread's recorded net changes. Each file is loaded only when opened.
+ * The shared file list for recorded thread changes and the worktree's uncommitted diff.
  */
-export function ChangesView({ sessionId, stamp }: ChangesViewProps) {
+export function ChangesView({ sessionId, stamp, scope = 'thread' }: ChangesViewProps) {
   const [changes, setChanges] = useState<Changes | null | undefined>(undefined)
   const [open, setOpen] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
-    void window.threadlight
-      .getChanges(sessionId)
+    const read =
+      scope === 'worktree' ? window.threadlight.getWorktreeChanges : window.threadlight.getChanges
+    void read(sessionId)
       .then((found) => live && setChanges(found))
       .catch(() => live && setChanges(null))
     return () => {
       live = false
     }
-  }, [sessionId, stamp])
+  }, [sessionId, stamp, scope])
 
   if (changes === undefined) return <p className={styles.changesNote}>{en.changes.loading}</p>
-  if (!changes) return <p className={styles.changesNote}>{en.changes.historyUnavailable}</p>
+  if (!changes)
+    return (
+      <p className={styles.changesNote}>
+        {scope === 'worktree' ? en.changes.worktreeUnavailable : en.changes.historyUnavailable}
+      </p>
+    )
   return (
     <div className={styles.changes}>
       {changes.complete === false && <p className={styles.changesNote}>{en.changes.partial}</p>}
       {!changes.files.length && changes.complete !== false && (
-        <p className={styles.changesNote}>{en.changes.none}</p>
+        <p className={styles.changesNote}>
+          {scope === 'worktree' ? en.changes.worktreeNone : en.changes.none}
+        </p>
       )}
       {changes.files.map((file) => (
         <FileRow
@@ -42,6 +51,7 @@ export function ChangesView({ sessionId, stamp }: ChangesViewProps) {
           sessionId={sessionId}
           file={file}
           stamp={stamp}
+          scope={scope}
           open={open === file.path}
           onToggle={() => setOpen(open === file.path ? null : file.path)}
         />
@@ -54,10 +64,11 @@ function FileRow(props: {
   sessionId: string
   file: ChangedFile
   stamp: string
+  scope: 'thread' | 'worktree'
   open: boolean
   onToggle: () => void
 }) {
-  const { sessionId, file, stamp, open, onToggle } = props
+  const { sessionId, file, stamp, scope, open, onToggle } = props
   const slash = file.path.lastIndexOf('/')
   const name = file.path.slice(slash + 1)
   const folder = slash > 0 ? file.path.slice(0, slash) : ''
@@ -74,7 +85,7 @@ function FileRow(props: {
           {file.removed > 0 && <span className={styles.removed}>−{file.removed}</span>}
         </span>
       </button>
-      {open && <FileDiffView sessionId={sessionId} path={file.path} stamp={stamp} />}
+      {open && <FileDiffView sessionId={sessionId} path={file.path} stamp={stamp} scope={scope} />}
     </div>
   )
 }
@@ -84,10 +95,12 @@ export function FileDiffView({
   path,
   stamp,
   resolvePath = false,
+  scope = 'thread',
 }: {
   sessionId: string
   path: string | null
   stamp: string
+  scope?: 'thread' | 'worktree'
   /** Match transcript paths to the provider's recorded filename casing/separators. */
   resolvePath?: boolean
 }) {
@@ -97,7 +110,10 @@ export function FileDiffView({
     const read = async () => {
       let file = path
       if (resolvePath && file) {
-        const changes = await window.threadlight.getChanges(sessionId)
+        const changes =
+          scope === 'worktree'
+            ? await window.threadlight.getWorktreeChanges(sessionId)
+            : await window.threadlight.getChanges(sessionId)
         file =
           changes?.files.find(
             (candidate) =>
@@ -106,7 +122,9 @@ export function FileDiffView({
           )?.path ?? null
       }
       const diff: FileDiff = file
-        ? await window.threadlight.getFileDiff(sessionId, file)
+        ? scope === 'worktree'
+          ? await window.threadlight.getWorktreeFileDiff(sessionId, file)
+          : await window.threadlight.getFileDiff(sessionId, file)
         : { kind: 'unavailable' }
       if (live) setResult({ path: file, diff })
     }
@@ -114,14 +132,18 @@ export function FileDiffView({
     return () => {
       live = false
     }
-  }, [sessionId, path, stamp, resolvePath])
+  }, [sessionId, path, stamp, resolvePath, scope])
 
   const diff = result?.diff
   const file = result?.path
   const openFile = file && (
     <button
       className={styles.fileOpen}
-      onClick={() => window.threadlight.openChangedFile(sessionId, file)}
+      onClick={() =>
+        scope === 'worktree'
+          ? window.threadlight.openWorktreeChangedFile(sessionId, file)
+          : window.threadlight.openChangedFile(sessionId, file)
+      }
     >
       {en.changes.open}
     </button>

@@ -142,6 +142,9 @@ export const en = {
   },
   changes: {
     title: 'Thread diff',
+    worktreeTitle: 'Worktree diff',
+    worktreeNone: 'No uncommitted changes in this worktree.',
+    worktreeUnavailable: "This thread's Git worktree is unavailable.",
     files: (n: number) => (n === 1 ? '1 file' : `${n} files`),
     loading: 'Reading changes…',
     none: 'No recorded file changes in this thread.',

@@ -89,8 +89,11 @@ microphone-pill and composer surfaces keep their existing layout and motion.
 
 Row diff badges and their opened viewer use the chat's provider-recorded changes,
 independent of the checkout's HEAD or other writers. Successful recorded edits
-combine where possible; incomplete/missing history is explicit. Workspace-wide
-diff actions are reserved for the later workspace-wire feature. See
+combine where possible; incomplete/missing history is explicit. Worktree-wide
+diff is available from the thread's right-click menu as Worktree diff, reusing the
+same file list and patch viewer. It includes every writer's uncommitted changes
+against HEAD in that thread's detected Git worktree, independently of recorded
+thread history. The action is disabled without a known Git root. See
 [Thread-specific changes](THREAD-DIFF-SPEC.md) for ownership, coverage and validation.
 
 ### Workspace links and provider-coloured attention

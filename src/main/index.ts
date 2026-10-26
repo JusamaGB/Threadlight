@@ -35,6 +35,7 @@ import { SessionService } from './sessions/service'
 import { PLAN_CONTEXT, readStepActivity } from './sessions/stepActivity'
 import { ThreadChanges } from './sessions/threadChanges'
 import { GitStates } from './sessions/gitDiff'
+import { inside, listChanges, readFileDiff } from './sessions/gitChanges'
 import { Tracker } from './sessions/tracker'
 import { SettingsStore } from './settings'
 import { runSetup, setupArgs } from './setupMode'
@@ -333,6 +334,25 @@ async function start(): Promise<void> {
   ipcMain.handle(IPC.getChanges, async (_event, sessionId: unknown) => {
     const session = changeSession(sessionId)
     return session ? threadChanges.changes(session) : null
+  })
+  // Worktree actions use the scan's exact Git root and the existing HEAD-based viewer.
+  const changedWorktreePath = async (sessionId: unknown, path: unknown) => {
+    const root = changeSession(sessionId)?.git?.root
+    if (!root || typeof path !== 'string' || !inside(root, path)) return null
+    return (await listChanges(root)).some((file) => file.path === path) ? { root, path } : null
+  }
+  ipcMain.handle(IPC.getWorktreeChanges, async (_event, sessionId: unknown) => {
+    const git = changeSession(sessionId)?.git
+    return git?.root ? { branch: git.branch, files: await listChanges(git.root) } : null
+  })
+  ipcMain.handle(IPC.getWorktreeFileDiff, async (_event, sessionId: unknown, path: unknown) => {
+    const found = await changedWorktreePath(sessionId, path)
+    return found ? readFileDiff(found.root, found.path) : { kind: 'unavailable' }
+  })
+  ipcMain.on(IPC.openWorktreeChangedFile, (_event, sessionId: unknown, path: unknown) => {
+    void changedWorktreePath(sessionId, path).then((found) => {
+      if (found) void shell.openPath(join(found.root, found.path))
+    })
   })
   // A plan step's activity, read from the thread's own transcript, which Threadlight's scan found.
   ipcMain.handle(IPC.getStepActivity, (_event, sessionId: unknown, step: unknown) => {

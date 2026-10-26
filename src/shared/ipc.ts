@@ -94,6 +94,9 @@ export const IPC = {
   releaseHold: 'hold:release',
   copyText: 'clipboard:copy',
   getChanges: 'changes:get',
+  getWorktreeChanges: 'changes:worktree',
+  getWorktreeFileDiff: 'changes:worktree-file',
+  openWorktreeChangedFile: 'changes:worktree-open',
   getStepActivity: 'plan:step-activity',
   getFileDiff: 'changes:file',
   openChangedFile: 'changes:open',
@@ -216,8 +219,12 @@ export interface ThreadlightApi {
   /** Puts text on the clipboard (for an answer to paste into Claude). */
   copyText(text: string): void
 
-  /** A thread's changed files since the last commit (the Changes view); null outside git. */
+  /** This thread's own recorded changes; null when its history is unavailable. */
   getChanges(sessionId: string): Promise<Changes | null>
+  /** All current changes against HEAD in the thread's detected Git worktree. */
+  getWorktreeChanges(sessionId: string): Promise<Changes | null>
+  getWorktreeFileDiff(sessionId: string, path: string): Promise<FileDiff>
+  openWorktreeChangedFile(sessionId: string, path: string): void
   /** What a thread did on one of its plan steps (named by its text); null if unreadable. */
   getStepActivity(sessionId: string, step: string): Promise<StepActivity | null>
   /** One changed file's diff, fetched when it is opened. */

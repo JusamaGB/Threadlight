@@ -116,8 +116,11 @@ export function Panel() {
       agent.status === 'working' ||
       agent.status === 'waiting' ||
       agent.status === 'stopping')
-  /** The Changes view, for this thread's git folder: it takes over the card too. */
-  const [changesFor, setChangesFor] = useState<string | null>(null)
+  /** The existing Changes view shows either recorded thread changes or its worktree. */
+  const [changesFor, setChangesFor] = useState<{
+    sessionId: string
+    scope: 'thread' | 'worktree'
+  } | null>(null)
   /** Choosing which workspace the Workspace list shows; takes over the card like settings. */
   const [pickingWorkspace, setPickingWorkspace] = useState(false)
   /** Open workspaces in the "All" list; null until changed means "just the current one". */
@@ -819,11 +822,14 @@ export function Panel() {
     },
   }))
 
-  // The badge, heading and opened files all belong to the same recorded chat diff.
-  const changesThread = changesFor ? findInSnapshot(snapshot, changesFor) : undefined
-  const changesHeading = changesThread?.threadDiff
-    ? `${en.changes.title} · ${en.changes.files(changesThread.threadDiff.files)}`
-    : en.changes.title
+  const changesThread = changesFor ? findInSnapshot(snapshot, changesFor.sessionId) : undefined
+  const worktreeDiff = changesFor?.scope === 'worktree'
+  const changesTitle = worktreeDiff ? en.changes.worktreeTitle : en.changes.title
+  const changesFiles = worktreeDiff ? changesThread?.git?.files : changesThread?.threadDiff?.files
+  const changesHeading =
+    changesFiles !== undefined
+      ? `${changesTitle} · ${en.changes.files(changesFiles)}`
+      : changesTitle
   const pickWorkspace = async (id: string | null) => {
     setVoiceSelection(null)
     setVoiceWorkspace(null)
@@ -863,7 +869,11 @@ export function Panel() {
     setMenu({ x: event.clientX, y: event.clientY, session })
   }
   const menuItems = (session: Session): MenuItem[] => [
-    { label: en.changes.title, onSelect: () => setChangesFor(session.id) },
+    {
+      label: en.changes.worktreeTitle,
+      disabled: !session.git?.root,
+      onSelect: () => setChangesFor({ sessionId: session.id, scope: 'worktree' }),
+    },
     { label: en.menu.compose, onSelect: () => setCompose({ sessionId: session.id }) },
     {
       label: session.provider === 'codex' ? 'Open in Codex' : en.menu.openInClaude,
@@ -885,7 +895,7 @@ export function Panel() {
       onToggle={() => onRowClick(session)}
       onContextMenu={(event) => openMenu(event, session)}
       onCompose={() => setCompose({ sessionId: session.id })}
-      onShowChanges={() => setChangesFor(session.id)}
+      onShowChanges={() => setChangesFor({ sessionId: session.id, scope: 'thread' })}
     />
   )
 
@@ -1112,9 +1122,12 @@ export function Panel() {
 
           {changesFor && !pickingWorkspace && (
             <ChangesView
-              key={changesFor}
-              sessionId={changesFor}
-              stamp={JSON.stringify(changesThread?.threadDiff ?? null)}
+              key={`${changesFor.scope}:${changesFor.sessionId}`}
+              sessionId={changesFor.sessionId}
+              scope={changesFor.scope}
+              stamp={JSON.stringify(
+                (worktreeDiff ? changesThread?.git : changesThread?.threadDiff) ?? null,
+              )}
             />
           )}
 

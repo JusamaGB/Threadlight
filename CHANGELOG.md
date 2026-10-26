@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Corrected the thread context menu to open Worktree diff, including all current
+  changes in its checkout. Row badges and checklist links keep their thread-specific diffs.
+
 - Restored the compact 300px panel and 6px between adjacent thread contents.
   Moved Git ahead/behind counts to the second row. Last active now appears after
   a one-second stationary hover, with a date for activity at least 24 hours old.

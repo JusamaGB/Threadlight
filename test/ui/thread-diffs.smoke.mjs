@@ -19,6 +19,9 @@ export async function checkThreadDiffs(page, capture) {
         getChanges: window.threadlight.getChanges,
         getFileDiff: window.threadlight.getFileDiff,
         openChangedFile: window.threadlight.openChangedFile,
+        getWorktreeChanges: window.threadlight.getWorktreeChanges,
+        getWorktreeFileDiff: window.threadlight.getWorktreeFileDiff,
+        openWorktreeChangedFile: window.threadlight.openWorktreeChangedFile,
       },
       snapshot,
       revision: 1,
@@ -63,6 +66,25 @@ export async function checkThreadDiffs(page, capture) {
       }
     }
     window.threadlight.openChangedFile = (...args) => proof.calls.push(['open', ...args])
+    window.threadlight.getWorktreeChanges = async (id) => {
+      proof.calls.push(['worktree-files', id])
+      return {
+        branch: 'same-worktree',
+        files: [
+          { path: 'src/shared.ts', status: 'modified', added: 700, removed: 50, binary: false },
+          { path: 'other-writer.ts', status: 'added', added: 10, removed: 0, binary: false },
+        ],
+      }
+    }
+    window.threadlight.getWorktreeFileDiff = async (id, path) => {
+      proof.calls.push(['worktree-file', id, path])
+      return {
+        kind: 'text',
+        lines: [{ type: 'add', text: 'All worktree writers: ' + path, newLine: 1 }],
+      }
+    }
+    window.threadlight.openWorktreeChangedFile = (...args) =>
+      proof.calls.push(['worktree-open', ...args])
     proof.current = {
       ...snapshot,
       sessions: snapshot.sessions.map((session) => ({
@@ -75,7 +97,7 @@ export async function checkThreadDiffs(page, capture) {
           branch: 'same-worktree',
           added: 9999,
           removed: 8888,
-          files: 99,
+          files: 2,
           newFiles: 0,
           ahead: 3,
           behind: 1,
@@ -213,10 +235,23 @@ export async function checkThreadDiffs(page, capture) {
     assert.equal(await page.getByRole('button', { name: /^Thread diff/ }).count(), 0)
     assert.equal(await page.getByText('+10k', { exact: true }).count(), 0)
     await thread('Claude').locator('button').first().click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Thread diff', exact: true }).click()
-    await page
-      .getByText("This thread's recorded changes are unavailable.", { exact: true })
-      .waitFor()
+    assert.equal(await page.getByRole('menuitem', { name: 'Thread diff', exact: true }).count(), 0)
+    await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).click()
+    await page.locator('header').getByText('Worktree diff · 2 files', { exact: true }).waitFor()
+    await page.getByRole('button', { name: /edit shared.ts/ }).click()
+    await page.getByText('All worktree writers: src/shared.ts', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Open ↗', exact: true }).click()
+    assert.deepEqual(await page.evaluate(() => window.proof.threadDiff.calls.at(-1)), [
+      'worktree-open',
+      'synthetic-claude',
+      'src/shared.ts',
+    ])
+    await capture('worktree-diff-shared-file')
+    await back()
+    await thread('Codex').locator('button').first().click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).click()
+    await page.getByRole('button', { name: /new other-writer.ts/ }).click()
+    await page.getByText('All worktree writers: other-writer.ts', { exact: true }).waitFor()
     await back()
     await page.evaluate(() => {
       const proof = window.proof.threadDiff
@@ -226,19 +261,37 @@ export async function checkThreadDiffs(page, capture) {
         files: [],
         complete: true,
       })
+      window.threadlight.getWorktreeChanges = async () => ({ branch: 'same-worktree', files: [] })
       window.proof.emit('onSnapshot', {
         ...proof.current,
         sessions: proof.current.sessions.map((session) => ({
           ...session,
+          git: { ...session.git, files: 0 },
           threadDiff: { files: 0, added: 0, removed: 0, revision: 'zero', complete: true },
         })),
       })
     })
     await thread('Claude').locator('button').first().click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Thread diff', exact: true }).click()
-    await page.getByText('No recorded file changes in this thread.', { exact: true }).waitFor()
+    await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).click()
+    await page.getByText('No uncommitted changes in this worktree.', { exact: true }).waitFor()
+    await back()
+    await page.evaluate(() =>
+      window.proof.emit('onSnapshot', {
+        ...window.proof.threadDiff.current,
+        sessions: window.proof.threadDiff.current.sessions.map((session) => ({
+          ...session,
+          git: null,
+        })),
+      }),
+    )
+    await thread('Claude').locator('button').first().click({ button: 'right' })
+    assert.equal(
+      await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).isDisabled(),
+      true,
+    )
+    await page.keyboard.press('Escape')
     console.log(
-      'PASS: independent Claude/Codex thread badges, same-file ownership, own-file Open, thread-revision refresh, partial/unavailable history and no Git-total fallback.',
+      'PASS: independent thread badges and right-click worktree diffs for both providers; shared-file ownership, scoped Open, refresh, empty/unavailable states and disabled non-Git action.',
     )
   } finally {
     const close = page.getByRole('button', { name: 'Back to sessions', exact: true })
