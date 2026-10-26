@@ -26,7 +26,7 @@ export async function checkVoiceTarget(page) {
       .getByRole('status')
       .filter({ hasText: /^(Listening|You speaking)$/ })
       .waitFor()
-    assert.equal(await page.getByText('no active Mic', { exact: true }).count(), 0)
+    assert.equal(await page.getByText(/no active mic/i).count(), 0)
     await page.waitForTimeout(260)
     await page.evaluate(
       (value) => window.proof.emit(value === 'hold' ? 'onTalkHold' : 'onTalkToggle', 'up'),
@@ -108,6 +108,7 @@ export async function checkVoiceTarget(page) {
     window.proof.allowMic()
   })
   await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
+  // The target setting does not navigate away from the thread view before transcription.
   await page.locator('header').getByText('no active Mic', { exact: true }).waitFor()
   await transcribe('A quick released request.')
   await page.waitForFunction(() =>
@@ -137,12 +138,13 @@ export async function checkVoiceTarget(page) {
   await settings({ talkMode: 'toggle' })
   await page.evaluate(() => window.proof.emit('onTalkToggle'))
   await page.waitForFunction(() => document.documentElement.dataset.openMic === 'listening')
-  await page.waitForTimeout(650)
+  await page.waitForFunction(() => window.proof.quietAudioMs >= 650)
   await page.evaluate(() => {
     delete window.proof.finishTranscript
+    window.proof.voicedAudioMs = 0
     window.proof.setAudioLevel(0.18)
   })
-  await page.waitForTimeout(350)
+  await page.waitForFunction(() => window.proof.voicedAudioMs >= 350)
   await page.evaluate(() => window.proof.setAudioLevel(0))
   await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
   await transcribe('Please check the other approach.')

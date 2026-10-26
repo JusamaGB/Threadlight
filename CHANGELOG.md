@@ -9,6 +9,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Preserved the conversation E2E observer and its cleanup check, with portable
   paths and conversation evidence stored outside the repository.
 
+- Moved the Agent's inactive microphone text beside its status, such as
+  "Ready - No active Mic", clearing it from the header.
+
+- Reused the context wheel for thread thinking animation, preserving its recorded
+  fill, colour and tooltip and removing the separate status-line spinner.
+
 - Codex chats discover Git badges from structured repository activity and attached
   worktrees, and display linked PR badges when remote status is unavailable.
 

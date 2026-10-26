@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
+import os from 'node:os'
+import path from 'node:path'
 const source = fs.readFileSync(new URL('./observe.mjs', import.meta.url), 'utf8')
 const injected = source.slice(
   source.indexOf('function installObserver()'),
@@ -94,3 +96,61 @@ assert.equal(unexpected, 0)
 console.log(
   'PASS: additive channel observation, original listener preserved, Agent subscription, no mutation APIs, full cleanup',
 )
+
+const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'threadlight-observer-check-'))
+try {
+  const id = '11111111-1111-4111-8111-111111111111'
+  const sessions = path.join(temporary, 'sessions')
+  const archive = path.join(temporary, 'archived_sessions')
+  fs.mkdirSync(sessions)
+  fs.mkdirSync(archive)
+  const transcript = path.join(sessions, `rollout-${id}.jsonl`)
+  const moved = path.join(archive, `rollout-${id}.jsonl`)
+  const row = (message) =>
+    JSON.stringify({ type: 'event_msg', payload: { type: 'user_message', message } }) + '\n'
+  fs.writeFileSync(transcript, row('first'))
+  const captured = []
+  const native = new Map()
+  const tailContext = vm.createContext({
+    fs,
+    path,
+    os,
+    Buffer,
+    native,
+    nativeRoot: temporary,
+    record: (type, data) => captured.push({ type, data }),
+  })
+  vm.runInContext(
+    source.slice(source.indexOf('function findFile('), source.indexOf('\nlet lastIndex')),
+    tailContext,
+  )
+  vm.runInContext(`trackNative('codex', '${id}'); tailNative()`, tailContext)
+  assert.equal(captured.filter((event) => event.type === 'persisted').length, 1)
+  fs.renameSync(transcript, moved)
+  vm.runInContext('tailNative(); tailNative()', tailContext)
+  assert.equal(native.get(id).file, moved)
+  assert.equal(
+    captured.filter((event) => event.type === 'persisted').length,
+    1,
+    'moving to the archive must not repeat existing history',
+  )
+  fs.appendFileSync(moved, row('second'))
+  vm.runInContext('tailNative()', tailContext)
+  assert.deepEqual(
+    captured
+      .filter((event) => event.type === 'persisted')
+      .map((event) => event.data.row.payload.message),
+    ['first', 'second'],
+  )
+  assert.equal(
+    captured.filter((event) => event.type === 'persisted-error').length,
+    1,
+    'a missing cached path is reported once, then recovered',
+  )
+  console.log(
+    'PASS: archived Codex transcript recovery preserves its cursor and captures subsequent messages once.',
+  )
+} finally {
+  assert.equal(path.dirname(temporary), path.resolve(os.tmpdir()))
+  fs.rmSync(temporary, { recursive: true, force: true })
+}

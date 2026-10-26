@@ -10,6 +10,8 @@ interface ContextRingProps {
   used: number
   /** Wider, to sit around the double circle of a thread that needs you. */
   wide: boolean
+  /** Animate the existing context arc while this thread is thinking. */
+  thinking?: boolean
 }
 
 /**
@@ -17,7 +19,7 @@ interface ContextRingProps {
  * clockwise from the top, grey while there is room, then amber, then red. It sits around the
  * row's dot, or on its own where an idle thread has none.
  */
-export function ContextRing({ used, wide }: ContextRingProps) {
+export function ContextRing({ used, wide, thinking = false }: ContextRingProps) {
   // Even sizes around even dots (6 and 12 px), so every edge falls on a whole pixel.
   const size = wide ? 18 : 14
   const radius = (size - 1.5) / 2
@@ -26,6 +28,7 @@ export function ContextRing({ used, wide }: ContextRingProps) {
   return (
     <svg
       className={styles.contextRing}
+      data-thinking={thinking || undefined}
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}

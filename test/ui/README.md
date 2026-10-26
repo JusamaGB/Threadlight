@@ -32,7 +32,8 @@ Recording checks generate an audio stream in the browser and replace `getUserMed
 they never access a microphone or speakers. They verify full-width changing waveform
 pixels, reduced-motion behaviour, preserved drafts, transcription and stopped tracks.
 Voice routing waits for processed quiet audio before sending each opening test tone,
-so browser startup delays do not consume the microphone's calibration period.
+and measures the processed speech duration before ending it, so browser scheduling
+delays do not consume the microphone's calibration period or shorten an utterance.
 
 `node test/ui/motion.smoke.mjs` focuses on the electric voice surface. It uses the same
 Playwright and screenshot environment variables, exercises the built panel and dot,

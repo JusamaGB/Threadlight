@@ -506,7 +506,14 @@ class Client {
 const nativeRoot = process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
 function findFile(dir, id, depth = 0) {
   if (depth > 4 || !fs.existsSync(dir)) return null
-  for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+  let files
+  try {
+    files = fs.readdirSync(dir, { withFileTypes: true })
+  } catch (error) {
+    if (error.code === 'ENOENT') return null
+    throw error
+  }
+  for (const f of files) {
     if (f.isFile() && f.name.endsWith(id + '.jsonl')) return path.join(dir, f.name)
     if (f.isDirectory()) {
       const found = findFile(path.join(dir, f.name), id, depth + 1)
@@ -566,12 +573,11 @@ function tailNative() {
   for (const [id, info] of native) {
     if (!info.file && Date.now() - info.lastSearch > 15000) {
       info.lastSearch = Date.now()
-      info.file = findFile(
+      const roots =
         info.provider === 'codex'
-          ? path.join(nativeRoot, 'sessions')
-          : path.join(os.homedir(), '.claude/projects'),
-        id,
-      )
+          ? [path.join(nativeRoot, 'sessions'), path.join(nativeRoot, 'archived_sessions')]
+          : [path.join(os.homedir(), '.claude/projects')]
+      info.file = roots.map((root) => findFile(root, id)).find(Boolean) ?? null
       if (info.file)
         record('persisted-source', {
           id,
@@ -624,6 +630,12 @@ function tailNative() {
       }
     } catch (e) {
       record('persisted-error', { id, message: e.message })
+      if (e.code === 'ENOENT') {
+        // Codex can move the same transcript into archived_sessions. Keep the byte
+        // cursor so finding it there neither repeats history nor skips its ending.
+        info.file = null
+        info.lastSearch = 0
+      }
     }
   }
 }

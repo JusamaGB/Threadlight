@@ -22,6 +22,11 @@ Evidence:
 
 Native transcript reading follows only session IDs emitted by the hosted Agent. Initial rows may predate attachment and retain their original timestamp. Reasoning is excluded. Generic token/key redaction is best effort; screenshots and arbitrary conversation text may contain sensitive material. Do not publish evidence. A missing native source is a gap, not proof that nothing persisted.
 
+If Codex moves a known transcript into `archived_sessions`, the observer finds it
+again and resumes from the previous byte position without replaying old rows.
+This recovery is included in the versioned tooling; an already running observer
+continues using the code loaded when that capture started.
+
 Commands (PowerShell):
 
 ```powershell

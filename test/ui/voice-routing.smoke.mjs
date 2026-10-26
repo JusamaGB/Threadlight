@@ -11,10 +11,15 @@ export async function checkVoiceRouting(page) {
     window.proof.createProcessor = createProcessor
     AudioContext.prototype.createScriptProcessor = function (...args) {
       const processor = createProcessor.apply(this, args)
+      window.proof.audioProcessor = processor
+      window.proof.quietAudioMs = 0
+      window.proof.voicedAudioMs = 0
       processor.addEventListener('audioprocess', (event) => {
+        if (window.proof.audioProcessor !== processor) return
         const frame = event.inputBuffer.getChannelData(0)
         if (frame.every((sample) => Math.abs(sample) < 0.001))
           window.proof.quietAudioMs += (frame.length / this.sampleRate) * 1000
+        else window.proof.voicedAudioMs += (frame.length / this.sampleRate) * 1000
       })
       return processor
     }
@@ -86,12 +91,13 @@ export async function checkVoiceRouting(page) {
   const say = async (text, level = 0.18) => {
     await page.evaluate((volume) => {
       delete window.proof.finishTranscript
+      window.proof.voicedAudioMs = 0
       window.proof.setAudioLevel(volume)
     }, level)
     // Start the utterance duration after the real audio callback has detected the tone.
     // Browser/GPU startup can otherwise consume most of a short synthetic utterance.
     await page.waitForFunction(() => document.documentElement.dataset.openMic === 'hearing')
-    await page.waitForTimeout(350)
+    await page.waitForFunction(() => window.proof.voicedAudioMs >= 350)
     await page.evaluate(() => window.proof.setAudioLevel(0))
     await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
     await page.evaluate((words) => window.proof.finishTranscript(words), text)
@@ -384,9 +390,10 @@ export async function checkVoiceRouting(page) {
   await open()
   await page.evaluate(() => {
     delete window.proof.finishTranscript
+    window.proof.voicedAudioMs = 0
     window.proof.setAudioLevel(0.18)
   })
-  await page.waitForTimeout(350)
+  await page.waitForFunction(() => window.proof.voicedAudioMs >= 350)
   await page.evaluate(() => window.proof.setAudioLevel(0))
   await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
   await close()
