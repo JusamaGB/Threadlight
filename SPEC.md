@@ -79,6 +79,10 @@ maximum across restarts. Changing content never overwrites it. Smaller displays 
 shown height without overwriting the saved preference. Other views and pages keep
 content-sized layout. Drag capture protects an unpinned panel and quota tooltips
 remain available on the bars.
+The "Nothing within your chosen time frame" empty message is centred. Its time
+value opens a dropdown sharing Settings' 6h, 12h, 24h, 3d and 7d options. Choosing
+one saves the same activity-window preference and refreshes the list; changes in
+Settings update the empty-state value in turn.
 
 Clicking the view/count label cycles Active → Recent → Workspace → Active. Its
 existing right-click menu also offers All. Switching views while pinned keeps the

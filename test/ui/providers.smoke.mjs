@@ -440,6 +440,7 @@ checks: try {
       const stage = await page.locator('#root > div').boundingBox()
       const tips = await page
         .getByRole('tooltip')
+        .or(page.getByRole('menu'))
         .evaluateAll((elements) => elements.map((el) => el.getBoundingClientRect().toJSON()))
       const bounds = [stage, ...tips]
       const x = Math.min(...bounds.map((box) => box.x))

@@ -26,7 +26,6 @@ import { useVoice } from '../hooks/useVoice'
 import { useRecordedAgentVoice } from '../hooks/useRecordedAgentVoice'
 import { MicSessionRouter, type MicRoute } from '../../shared/voiceCommands'
 import { en } from '../i18n/en'
-import { windowLabel } from '../lib/format'
 import { SettingsView, Stepper } from '../settings/SettingsView'
 import { SharedSpacesView, type SpacesNavigation } from '../spaces/SharedSpacesView'
 import { AgentView } from './AgentView'
@@ -45,6 +44,7 @@ import { ElectricMotion } from '../motion/ElectricMotion'
 import { WorkspaceLinks } from './WorkspaceLinks'
 import { ThreadScrollbar } from './ThreadScrollbar'
 import { WorkspaceResize, WORKSPACE_MIN_HEIGHT } from './WorkspaceResize'
+import { TimeWindowMessage } from './TimeWindowMessage'
 
 type View = 'active' | 'all'
 
@@ -736,7 +736,7 @@ export function Panel() {
           name: focusId.split(/[\\/]/).filter(Boolean).pop() ?? focusId,
         })
       : null
-  const windowText = windowLabel(settings?.listWindowHours ?? 24)
+  const emptyWindow = <TimeWindowMessage hours={settings?.listWindowHours ?? 24} />
   const focusGroups = snapshot.workspaces.filter(
     (w) =>
       allDrives ||
@@ -1347,18 +1347,24 @@ export function Panel() {
                   isOpen={isOpen}
                   onToggle={toggleWorkspace}
                   onShowMore={(id) => setMoreWorkspaces((list) => [...list, id])}
-                  emptyMessage={en.nothingInWindow(windowText)}
+                  emptyMessage={emptyWindow}
                   renderRow={renderRow}
                 />
               ) : (
                 <>
                   {shown.length === 0 && (
-                    <p className={styles.empty}>
+                    <p
+                      className={
+                        provider !== 'none' && view !== 'active'
+                          ? `${styles.empty} ${styles.emptyWindow}`
+                          : styles.empty
+                      }
+                    >
                       {provider === 'none'
                         ? en.sources.paused
                         : view === 'active'
                           ? en.panel.nothingWorking
-                          : en.nothingInWindow(windowText)}
+                          : emptyWindow}
                     </p>
                   )}
                   {shown.map(renderRow)}

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { DEFAULT_ENABLED_PROVIDERS, PROVIDERS } from './providers'
 
 export const SETTINGS_VERSION = 1
+export const SESSION_WINDOW_HOURS = [6, 12, 24, 72, 168] as const
 
 export const settingsSchema = z.object({
   enabledProviders: z

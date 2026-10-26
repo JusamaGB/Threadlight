@@ -13,7 +13,7 @@ interface WorkspaceTreeProps {
   onToggle: (workspaceId: string) => void
   onShowMore: (workspaceId: string) => void
   /** Shown when nothing falls inside the chosen time window. */
-  emptyMessage: string
+  emptyMessage: ReactNode
   /** Renders a thread exactly as the recent list does. */
   renderRow: (session: Session) => ReactNode
 }
@@ -28,7 +28,7 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
   if (shown.length === 0) {
     return (
       <>
-        <p className={styles.empty}>{props.emptyMessage}</p>
+        <p className={`${styles.empty} ${styles.emptyWindow}`}>{props.emptyMessage}</p>
       </>
     )
   }

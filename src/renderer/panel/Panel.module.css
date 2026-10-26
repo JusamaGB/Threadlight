@@ -340,6 +340,25 @@
   font-size: 11px;
 }
 
+.emptyWindow {
+  text-align: center;
+}
+.timeWindowChoice {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+}
+.timeWindowChoice:hover {
+  text-decoration: underline;
+}
+.timeWindowError {
+  display: block;
+  margin-top: 4px;
+  color: var(--amber);
+}
+
 /* ---------- workspaces (the full list grouped like the Claude sidebar) ---------- */
 
 .workspaceHeader {

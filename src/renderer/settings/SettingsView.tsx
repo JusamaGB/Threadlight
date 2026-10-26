@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { acceleratorFrom, acceleratorLabel } from '../../shared/accelerator'
 import { AgentSettings } from './AgentSettings'
-import type { Settings, SettingsPatch } from '../../shared/settings'
+import { SESSION_WINDOW_HOURS, type Settings, type SettingsPatch } from '../../shared/settings'
 import { PROVIDERS, providerName } from '../../shared/providers'
 import type { SttStatus } from '../../shared/stt'
 import { en } from '../i18n/en'
@@ -19,7 +19,6 @@ interface SettingsViewProps {
   onOpenMemory: () => void
 }
 
-const HOUR_CHOICES = [6, 12, 24, 72, 168]
 /** Every setting in one compact list, inside the panel's own card. Changes save immediately. */
 export function SettingsView({
   settings,
@@ -175,7 +174,10 @@ export function SettingsView({
         <Row label={en.settings.listWindow}>
           <Segmented
             value={settings.listWindowHours}
-            options={HOUR_CHOICES.map((hours) => ({ value: hours, label: windowLabel(hours) }))}
+            options={SESSION_WINDOW_HOURS.map((hours) => ({
+              value: hours,
+              label: windowLabel(hours),
+            }))}
             onChange={(listWindowHours) => save({ listWindowHours })}
           />
         </Row>

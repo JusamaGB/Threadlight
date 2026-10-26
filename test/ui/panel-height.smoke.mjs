@@ -76,6 +76,48 @@ export async function checkWorkspaceHeight(page, capture) {
     await capture('workspace-picked-height')
     await setRows(0)
     await page.getByText(/Nothing within your chosen time frame/).waitFor()
+    const emptyMessage = page
+      .locator('p')
+      .filter({ hasText: /Nothing within your chosen time frame/ })
+    const centered = await emptyMessage.evaluate((el) => {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const content = range.getBoundingClientRect(),
+        paragraph = el.getBoundingClientRect()
+      return Math.abs(content.x + content.width / 2 - paragraph.x - paragraph.width / 2)
+    })
+    assert.ok(centered < 1, 'the message and its clickable time frame are centred together')
+    await page.getByRole('button', { name: 'Time frame: 24h', exact: true }).click()
+    const timeMenu = page.getByRole('menu', { name: 'Time frame', exact: true })
+    assert.deepEqual(await timeMenu.getByRole('menuitem').allTextContents(), [
+      '6h',
+      '12h',
+      '24h',
+      '3d',
+      '7d',
+    ])
+    assert.equal(
+      await timeMenu.getByRole('menuitem', { name: '24h', exact: true }).isDisabled(),
+      true,
+    )
+    await capture('workspace-empty-time-frame-menu')
+    await page.keyboard.press('Escape')
+    assert.equal(await timeMenu.count(), 0)
+    await page.getByRole('button', { name: 'Time frame: 24h', exact: true }).click()
+    await timeMenu.getByRole('menuitem', { name: '7d', exact: true }).click()
+    await page.getByRole('button', { name: 'Time frame: 7d', exact: true }).waitFor()
+    assert.equal(
+      await page.evaluate(async () => (await window.threadlight.getSettings()).listWindowHours),
+      168,
+    )
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    assert.equal(
+      await page.getByRole('radio', { name: '7d', exact: true }).getAttribute('aria-checked'),
+      'true',
+    )
+    await page.getByRole('radio', { name: '6h', exact: true }).click()
+    await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+    await page.getByRole('button', { name: 'Time frame: 6h', exact: true }).waitFor()
     const emptyHeight = await card.evaluate((el) => el.getBoundingClientRect().height)
     assert.ok(emptyHeight < 120, 'an empty workspace uses only its empty-state content')
     assert.equal(await card.evaluate((el) => getComputedStyle(el).maxHeight), '700px')
