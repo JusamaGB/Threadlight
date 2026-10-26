@@ -1,5 +1,6 @@
 /* global window, getComputedStyle */
 import assert from 'node:assert/strict'
+import { checkPagePinning } from './toolbar.smoke.mjs'
 
 /** Both providers share a checkout and a filename; neither may open the other's patches. */
 export async function checkThreadDiffs(page, capture) {
@@ -177,6 +178,7 @@ export async function checkThreadDiffs(page, capture) {
     await capture('thread-diff-independent-badges')
     await badge('Claude').click()
     await page.locator('header').getByText('Thread diff · 1 file', { exact: true }).waitFor()
+    await checkPagePinning(page, 'Thread diff · 1 file')
     await page.getByRole('button', { name: /edit shared.ts/ }).click()
     await page.getByText('Claude own patch', { exact: true }).waitFor()
     assert.equal(await page.getByText(/^Codex own patch/).count(), 0)
@@ -321,6 +323,7 @@ export async function checkThreadDiffs(page, capture) {
     assert.equal(await page.getByRole('menuitem', { name: 'Thread diff', exact: true }).count(), 0)
     await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).click()
     await page.locator('header').getByText('Worktree diff · 2 files', { exact: true }).waitFor()
+    await checkPagePinning(page, 'Worktree diff · 2 files')
     await page.getByRole('button', { name: /edit shared.ts/ }).click()
     await page.getByText('All worktree writers: src/shared.ts', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Open ↗', exact: true }).click()

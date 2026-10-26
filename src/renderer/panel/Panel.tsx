@@ -158,7 +158,7 @@ export function Panel() {
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [voiceCaption, setVoiceCaption] = useState('')
   const [cancelToken, setCancelToken] = useState(0)
-  /** Double-clicking the bare header toggles staying open without changing the view. */
+  /** Double-clicking the header background or title toggles staying open on any page. */
   const [hold, setHold] = useState<HoldMode>('normal')
   const card = useRef<HTMLDivElement>(null)
   const drag = useDotDrag()
@@ -541,15 +541,14 @@ export function Panel() {
     if (
       drag.isDragging() ||
       document.querySelector('[data-workspace-resizing]') ||
-      hold !== 'normal' ||
-      showMemory
+      hold !== 'normal'
     )
       return
     // Never hide the panel while the microphone is open or a voice send is counting down:
     // the recording or the send would carry on with nothing on screen to show or stop it.
     if (voice.state !== 'idle' || Date.now() < countdownUntil.current) return
     window.threadlight.leavePanel()
-  }, [drag, hold, showMemory, voice.state])
+  }, [drag, hold, voice.state])
   useEffect(() => window.threadlight.onPanelPointerOutside(leave), [leave])
   const changeHold = (next: HoldMode) => {
     setHold(next)
@@ -700,9 +699,14 @@ export function Panel() {
     }
   }, [openMicListening, openMicLevel])
 
-  // Only a double-click on bare space toggles pinning. A third click has no extra action.
+  // Titles and other header text share the pin gesture; controls keep their own actions.
   const onHeaderClick = (event: MouseEvent) => {
-    if (event.target !== event.currentTarget || event.detail !== 2) return
+    if (
+      event.detail !== 2 ||
+      !(event.target instanceof Element) ||
+      event.target.closest('button, a, input, select, textarea, [role="button"], [role="switch"]')
+    )
+      return
     changeHold(hold === 'normal' ? 'pinned' : 'normal')
   }
 
@@ -1056,6 +1060,16 @@ export function Panel() {
             {showVoiceActivity && inactiveMicrophone && !agentVisible && (
               <span className={styles.microphoneStatus}>no active Mic</span>
             )}
+            {listHidden && hold !== 'normal' && (
+              <button
+                className={styles.unpin}
+                aria-label={en.panel.unpin}
+                title={en.panel.unpin}
+                onClick={() => changeHold('normal')}
+              >
+                <PinIcon />
+              </button>
+            )}
             {pickingWorkspace ? (
               <>
                 <button
@@ -1094,11 +1108,6 @@ export function Panel() {
                 >
                   <BackIcon />
                 </button>
-                {hold !== 'normal' && (
-                  <span role="img" aria-label="Pinned open" title="Pinned open">
-                    <PinIcon />
-                  </span>
-                )}
                 <span className={`${styles.heading} ${styles.pageHeading}`}>{en.agent.title}</span>
               </>
             ) : showMemory ? (
@@ -1324,7 +1333,7 @@ export function Panel() {
               onPickWorkspace={() => setPickingWorkspace(true)}
               onOpenMemory={() => {
                 setShowMemory(true)
-                window.threadlight.setStayOpen(true)
+                window.threadlight.setStayOpen(hold !== 'normal')
               }}
             />
           )}

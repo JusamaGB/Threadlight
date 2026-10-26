@@ -172,6 +172,60 @@ export async function checkToolbar(page) {
   )
 }
 
+export async function checkPagePinning(page, title) {
+  const header = page.locator('header')
+  const heading = header.getByText(title, { exact: true })
+  const pin = header.getByRole('button', {
+    name: 'Pinned open. Click to unpin, or double-click the bar',
+    exact: true,
+  })
+  const leaveCalls = () =>
+    page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'leavePanel').length)
+  await heading.dblclick()
+  await pin.waitFor()
+  assert.equal(await heading.count(), 1, 'pinning preserves the page')
+  const before = await leaveCalls()
+  await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
+  assert.equal(await leaveCalls(), before, 'pinned subpages ignore pointer leave')
+  await heading.dblclick()
+  await pin.waitFor({ state: 'detached' })
+  await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
+  assert.equal(await leaveCalls(), before + 1, 'unpinned subpages allow pointer leave')
+  await heading.click({ clickCount: 3 })
+  await pin.waitFor()
+  await pin.click()
+  await pin.waitFor({ state: 'detached' })
+  assert.equal(await heading.count(), 1, 'the third click and pin control preserve the page')
+}
+
+export async function checkSubpagePinning(page) {
+  const header = page.locator('header')
+  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  await checkPagePinning(page, 'Agent')
+  await header.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  await header.getByRole('button', { name: /^Choose workspace:/ }).click()
+  await checkPagePinning(page, 'Choose workspace')
+  await header.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  await header.getByRole('button', { name: 'Settings', exact: true }).click()
+  await checkPagePinning(page, 'Settings')
+  await header.getByText('Settings', { exact: true }).dblclick()
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await header.getByText('Shared Spaces', { exact: true }).waitFor()
+  const pin = header.getByRole('button', {
+    name: 'Pinned open. Click to unpin, or double-click the bar',
+    exact: true,
+  })
+  await pin.waitFor()
+  await pin.click()
+  await checkPagePinning(page, 'Shared Spaces')
+  await header.getByRole('button', { name: 'Back in Shared Spaces', exact: true }).click()
+  await header.getByText('Settings', { exact: true }).waitFor()
+  await header.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  console.log(
+    'PASS: title double-click pin/unpin on Agent, workspace picker, Settings and Shared Spaces; pin indication, pointer leave, triple-click and navigation state.',
+  )
+}
+
 async function checkPinning(page) {
   const header = page.locator('header')
   const view = header.locator('[data-thread-view]')

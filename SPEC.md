@@ -32,11 +32,12 @@ reply for older histories. Before completion evidence is available, a newly seen
 thread starts at its observed activity time. Active threads retain places in the
 configured recent-list limit; state changes alone do not reshuffle the chosen rows.
 
-Pinning and the chosen list are independent. Double-clicking the header's bare
-background immediately toggles pinned/unpinned without changing Active, Recent,
-Workspace or All, the selected workspace, or expanded rows. A third click has no
+Pinning and the chosen list are independent. Double-clicking the header background
+or non-interactive title immediately toggles pinned/unpinned on every page,
+including Settings, Agent, the workspace picker, both diff scopes and Shared Spaces.
+It preserves Active, Recent, Workspace or All, the selected workspace and expanded rows. A third click has no
 additional action; there is no triple-click gesture or delay waiting for one.
-Clicking the pin icon also unpins without resetting the view.
+Every pinned page shows the pin icon; clicking it also unpins without resetting the view.
 
 Recent shows a compact `−count+` control in place of its bullet/count, using the
 Sessions listed setting (3–25). Changes save immediately and update Settings;
@@ -90,11 +91,11 @@ Settings update the empty-state value in turn.
 
 Clicking the view/count label cycles Active → Recent → Workspace → Active. Its
 existing right-click menu also offers All. Switching views while pinned keeps the
-panel pinned in the newly selected view. Controls, labels and icons in the header
-keep their own clicks and do not trigger the bare-background pin gesture.
+panel pinned in the newly selected view. Interactive header controls keep their
+own clicks and do not trigger the pin gesture.
 
 While pinned, pointer leave keeps the panel open. Unpinning restores the existing
-pointer-leave behavior without changing the selected view. The existing fresh-open
+pointer-leave behavior on every page, including Shared Spaces, without changing the selected view. The existing fresh-open
 reset to Active remains separate from pinning. Voice Open commands still choose
 the full list explicitly before pinning it.
 

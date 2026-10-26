@@ -22,7 +22,7 @@ import { checkPanelHeight, checkWorkspaceHeight } from './panel-height.smoke.mjs
 import { checkTips, checkLastActive } from './tips.smoke.mjs'
 
 import { checkNowTimer } from './now-timer.smoke.mjs'
-import { checkToolbar, checkRecentLimit } from './toolbar.smoke.mjs'
+import { checkToolbar, checkRecentLimit, checkSubpagePinning } from './toolbar.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkWorkspacePicker } from './workspace-picker.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
@@ -511,6 +511,13 @@ checks: try {
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'conversation-events') {
     await checkConversationEvents(page, communicationProof, memoryProof.store, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'pinning') {
+    await checkSubpagePinning(page)
+    await checkThreadDiffs(page, capture)
+    await checkToolbar(page)
     assert.deepEqual(errors, [])
     break checks
   }
