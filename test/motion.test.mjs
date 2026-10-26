@@ -137,6 +137,69 @@ describe('connected header motion', () => {
       bottom: Math.max(...ys),
     }
   }
+  it('keeps microphone and playback energy out of every partially opened header pose', () => {
+    const geometry = new MotionGeometry()
+    for (const wheel of [1, 0.7, 0.3, 0.01, 0.0001]) {
+      const pose = { ...restingPose(), rest: 0, wheel, warmth: wheel }
+      for (const reduced of [false, true]) {
+        const quiet = [...geometry.build(width, height, 0.8, pose, reduced, true)]
+        for (const [input, output] of [
+          [full, SILENT_AUDIO],
+          [SILENT_AUDIO, full],
+          [full, full],
+        ]) {
+          expect([
+            ...geometry.build(width, height, 0.8, { ...pose, input, output }, reduced, true),
+          ]).toEqual(quiet)
+        }
+      }
+    }
+    const open = { ...restingPose(), rest: 0 }
+    const quiet = [...geometry.build(width, height, 0.8, open, false, true)]
+    for (const [input, output] of [
+      [full, SILENT_AUDIO],
+      [SILENT_AUDIO, full],
+      [full, full],
+    ]) {
+      expect([
+        ...geometry.build(width, height, 0.8, { ...open, input, output }, false, true),
+      ]).not.toEqual(quiet)
+    }
+  })
+  it('finishes opening before easing live audio in, including another opening mid-task', () => {
+    const pose = { ...restingPose(), wheel: 1, warmth: 1, rest: 0 }
+    for (let cycle = 0; cycle < 2; cycle++) {
+      let openingFrames = 0
+      do {
+        advancePose(
+          pose,
+          { ...IDLE_MOTION, mode: 'listening', input: full, output: full },
+          1000 / 60,
+          true,
+        )
+        if (pose.wheel > 0) {
+          expect(pose.input).toEqual(SILENT_AUDIO)
+          expect(pose.output).toEqual(SILENT_AUDIO)
+          openingFrames++
+        }
+        expect(openingFrames).toBeLessThan(65)
+      } while (pose.wheel > 0)
+      expect(openingFrames).toBeGreaterThan(50)
+      expect(pose.input.level).toBeGreaterThan(0)
+      expect(pose.input.level).toBeLessThan(0.4)
+      expect(pose.output).toEqual(pose.input)
+      for (let i = 0; i < 30; i++)
+        advancePose(
+          pose,
+          { ...IDLE_MOTION, mode: 'listening', input: full, output: full },
+          1000 / 60,
+          true,
+        )
+      expect(pose.input.level).toBeGreaterThan(0.98)
+      for (let i = 0; i < 120; i++)
+        advancePose(pose, { ...IDLE_MOTION, mode: 'thinking' }, 1000 / 60, true)
+    }
+  })
   it('keeps the wheel at the left wall on the divider and every morph inside the header surface', () => {
     const geometry = new MotionGeometry()
     for (const wheel of [0, 0.1, 0.3, 0.7, 1]) {

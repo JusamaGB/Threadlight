@@ -132,6 +132,10 @@ The orange working wheel and the edge-to-edge voice ribbon are two poses of one
 mesh and one canvas. The wheel sits against the left wall, centred on the grey
 header divider. As speech opens the ribbon, its existing strands stretch rightward;
 interruptions reverse that same continuous morph without replacing the surface.
+Microphone and playback energy do not affect the header's shape, brightness or
+overlapping ribbons during the morph. The strands reach the full panel width
+first; then live audio eases in from silence. Audio capture and playback continue
+throughout the transition.
 
 The header canvas has a 9px upper band and 27px below the divider. Its small wheel
 stays flush with the left edge throughout the morph. Ribbon crests have more vertical range below the bar,
