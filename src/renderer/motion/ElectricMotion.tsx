@@ -69,7 +69,8 @@ export function ElectricMotion({
       previous = 0
       settled = 0
       needsPaint = true
-      if (!disposed && !document.hidden && inView) frame = requestAnimationFrame(draw)
+      // Repaint before presentation when a hidden native window becomes visible again.
+      if (!disposed && !document.hidden && inView) draw(performance.now())
     }
     const resize = () => {
       const bounds = element.getBoundingClientRect()
@@ -77,8 +78,10 @@ export function ElectricMotion({
       height = bounds.height
       scale = Math.min(2, window.devicePixelRatio || 1)
       needsPaint = true
-      canvas.width = Math.max(1, Math.round(width * scale))
-      canvas.height = Math.max(1, Math.round(height * scale))
+      const pixelWidth = Math.max(1, Math.round(width * scale))
+      const pixelHeight = Math.max(1, Math.round(height * scale))
+      if (canvas.width !== pixelWidth) canvas.width = pixelWidth
+      if (canvas.height !== pixelHeight) canvas.height = pixelHeight
       wake()
     }
     const draw = (now: number) => {

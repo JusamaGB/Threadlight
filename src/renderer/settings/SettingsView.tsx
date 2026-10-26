@@ -235,7 +235,11 @@ export function SettingsView({
       <AgentSettings key={settings.agentProvider} settings={settings} save={save} />
 
       <Group label={en.settings.app}>
-        <Row label={en.settings.launchAtSignIn} error={errors.launchAtSignIn}>
+        <Row
+          label={en.settings.launchAtSignIn}
+          hint={en.settings.launchAtSignInHint}
+          error={errors.launchAtSignIn}
+        >
           <Toggle
             on={settings.launchAtSignIn}
             label={en.settings.launchAtSignIn}

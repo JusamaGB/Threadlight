@@ -126,6 +126,20 @@ describe('validatePatch', () => {
 })
 
 describe('SettingsStore', () => {
+  it('persists one sign-in preference and ignores an obsolete extra startup field', async () => {
+    const store = new SettingsStore(box.root)
+    expect((await store.load()).launchAtSignIn).toBe(false)
+    await store.update({ launchAtSignIn: true })
+    expect(await new SettingsStore(box.root).load()).toMatchObject({
+      launchAtSignIn: true,
+    })
+    await store.update({ launchAtSignIn: false })
+    expect(await new SettingsStore(box.root).load()).toMatchObject({
+      launchAtSignIn: false,
+    })
+    expect(parseSettings({ launchWhenAppsOpen: true })).not.toHaveProperty('launchWhenAppsOpen')
+    expect(validatePatch({ launchWhenAppsOpen: true }).ok).toBe(false)
+  })
   it('defaults Workspace to full height and remembers a picked height across restarts', async () => {
     const store = new SettingsStore(box.root)
     expect((await store.load()).workspacePanelHeight).toBeNull()

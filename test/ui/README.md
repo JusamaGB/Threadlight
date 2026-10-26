@@ -6,6 +6,12 @@ resolution, or `THREADLIGHT_PLAYWRIGHT` can name an existing Playwright module's
 absolute directory. It is separate from the default Vitest suite so normal installs
 do not download a browser.
 
+`THREADLIGHT_UI_FOCUS=startup` checks the single sign-in switch, the quiet-start
+explanation, enable/disable and persistence after reload.
+On Windows, `node test/live/app-launcher.proof.mjs` checks the real sign-in command
+with spaces and apostrophes. It owns a temporary profile and a separately named
+temporary Run entry, removes both on exit, and never starts the regular app.
+
 Set `THREADLIGHT_UI_FOCUS=workspace` to run the toolbar checks and mixed Windows path regression:
 Both + Workspace loads both providers from initially empty trees, combines ordinary
 and extended drive/UNC paths in the picker, and preserves original IDs when loading
@@ -52,3 +58,11 @@ and establishes a local synthetic WebRTC call using the production voice connect
 It checks measured microphone and playback levels, muted and stopped audio, caption
 layout, reduced motion, WebGL context loss, and the Canvas fallback. Chromium is
 launched with audio output muted. It requires no microphone, account, or network service.
+
+`node test/ui/window-hover.smoke.mjs` checks the real Electron window manager,
+preload and renderer with isolated temporary user data. Playwright supplies pointer
+events and matching controlled screen coordinates, so desktop mouse movement does
+not interfere. It checks repeated hover/leave handoffs in both directions, delayed
+blur, painted attention frames across closing, rapid re-entry, Escape and pinning.
+It uses the same Playwright and screenshot environment variables, starts no provider
+or hook services, and does not restart the regular app.

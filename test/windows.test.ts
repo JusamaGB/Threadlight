@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   cursor: { x: 1205, y: 205 },
   primary: { x: 0, y: 0, width: 1920, height: 1040 },
   secondary: { x: -1280, y: 0, width: 1280, height: 720 },
+  nativeWindows: [] as { visible: boolean }[],
 }))
 vi.mock('../src/main/windowState', () => ({
   loadDotPosition: () => state.saved,
@@ -30,6 +31,7 @@ vi.mock('electron', () => {
       webContents = { on: vi.fn(), setWindowOpenHandler: vi.fn(), send: vi.fn() }
       constructor(size: { width: number; height: number }) {
         this.bounds = { x: 0, y: 0, width: size.width, height: size.height }
+        state.nativeWindows.push(this)
       }
       on = vi.fn()
       setAlwaysOnTop = vi.fn()
@@ -100,6 +102,7 @@ describe('panel movement and available height', () => {
     vi.useFakeTimers()
     state.saved = { x: 1200, y: 200 }
     state.cursor = { x: 1205, y: 205 }
+    state.nativeWindows = []
   })
   afterEach(() => vi.useRealTimers())
 
@@ -139,7 +142,7 @@ describe('panel movement and available height', () => {
     expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
   })
 
-  it('shows provider-coloured attention only while minimised, with capture taking priority', () => {
+  it('keeps attention painted but hidden behind the panel, with capture taking priority', () => {
     const windows = new WindowManager()
     const thread = {
       id: 'codex:needs-input',
@@ -153,8 +156,10 @@ describe('panel movement and available height', () => {
     expect(windows.attentionMotion).toMatchObject({ active: true, provider: 'codex', floor: 840 })
     windows.openPanel()
     expect(windows.attentionMotion.active).toBe(false)
+    expect(state.nativeWindows.at(-1)?.visible).toBe(false)
     windows.closePanel()
     expect(windows.attentionMotion.active).toBe(true)
+    expect(state.nativeWindows.at(-1)?.visible).toBe(true)
     windows.setOpenMicLive(true)
     expect(windows.attentionMotion.active).toBe(false)
     windows.setOpenMicLive(false)
@@ -232,6 +237,23 @@ describe('panel movement and available height', () => {
     expect(windows.panel.isVisible()).toBe(false)
     windows.dot.show()
     windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(false)
+  })
+
+  it('ignores a delayed handoff blur while hovered, but still closes outside and honours pinning', () => {
+    const windows = new WindowManager()
+    const blur = vi
+      .mocked(windows.panel.on as (event: string, listener: () => void) => void)
+      .mock.calls.find(([event]) => event === 'blur')![1]
+    windows.openPanel({ focus: false })
+    blur()
+    expect(windows.panel.isVisible()).toBe(true)
+    state.cursor = { x: 400, y: 400 }
+    windows.setStayOpen(true)
+    blur()
+    expect(windows.panel.isVisible()).toBe(true)
+    windows.setStayOpen(false)
+    blur()
     expect(windows.panel.isVisible()).toBe(false)
   })
 

@@ -6,6 +6,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Launch at sign-in** now starts a quiet Windows launcher. Threadlight waits for
+  Claude or Codex to open before showing its dot, with one startup setting. Opening
+  both starts one copy; quitting Threadlight is respected until another desktop app
+  opens. Turning the setting off stops the launcher too.
+
 - Git badges now prioritize displayed chats, share worktree scans, publish branch
   metadata before expensive counts, and bound background Git concurrency. Hook and
   filesystem changes invalidate cached diffs promptly, with loading indicators and

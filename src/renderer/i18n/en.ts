@@ -277,6 +277,8 @@ export const en = {
     listWindow: 'Show sessions from the last',
     maxSessions: 'Sessions listed',
     launchAtSignIn: 'Launch at sign-in',
+    launchAtSignInHint:
+      'Wait quietly in the background until Claude or Codex opens, then show the dot.',
     agent: 'Agent',
     agentLifetime: 'Conversation lasts',
     agentLifetimeHint: 'After its last reply, then it starts afresh',

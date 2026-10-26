@@ -31,7 +31,7 @@ export const settingsSchema = z.object({
   voiceMode: z.enum(['local-stt', 'gpt-live']).default('local-stt'),
   /** Hover opens the panel straight away; click avoids opening it by accident in a game. */
   openOn: z.enum(['hover', 'click']).default('hover'),
-  /** Start Threadlight when you sign in to Windows. Off until you turn it on. */
+  /** At Windows sign-in, start a quiet launcher that waits for Claude or Codex. */
   launchAtSignIn: z.boolean().default(false),
   /** The header's wire clip connects/disconnects workspace links. Opt in on first use. */
   workspaceWires: z.boolean().default(false),

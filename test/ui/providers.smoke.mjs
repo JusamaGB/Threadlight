@@ -477,6 +477,31 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'startup') {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const signIn = page.getByRole('switch', { name: 'Launch at sign-in', exact: true })
+    assert.equal(await page.getByRole('switch', { name: /Launch/ }).count(), 1)
+    await page
+      .getByText('Wait quietly in the background until Claude or Codex opens, then show the dot.')
+      .waitFor()
+    assert.equal(await signIn.getAttribute('aria-checked'), 'false')
+    await signIn.click()
+    await page.waitForFunction(() => window.mockState().then((s) => s.settings.launchAtSignIn))
+    assert.equal(await signIn.getAttribute('aria-checked'), 'true')
+    await capture('startup-watcher')
+    await page.reload()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    assert.equal(await signIn.getAttribute('aria-checked'), 'true')
+    await signIn.click()
+    await page.waitForFunction(() => window.mockState().then((s) => !s.settings.launchAtSignIn))
+    await page.reload()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    assert.equal(await signIn.getAttribute('aria-checked'), 'false')
+    assert.equal(await page.getByRole('switch', { name: /Launch/ }).count(), 1)
+    assert.deepEqual(errors, [])
+    console.log('PASS: one sign-in switch, quiet startup explanation, enable/disable and reload.')
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'conversation-events') {
     await checkConversationEvents(page, communicationProof, memoryProof.store, capture)
     assert.deepEqual(errors, [])

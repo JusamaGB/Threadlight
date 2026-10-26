@@ -896,16 +896,26 @@ async function start(): Promise<void> {
     publish()
     void sessions.refresh()
     void checkProviders()
-    setLaunchAtSignIn(next.launchAtSignIn)
     windows.send(IPC.settingsChanged, next)
   }
   ipcMain.handle(IPC.getSettings, () => settings.settings)
   ipcMain.handle(IPC.updateSettings, async (_event, patch: unknown) => {
     const previousProviders = settings.settings.enabledProviders
     const previousVoiceMode = settings.settings.voiceMode
-    const result = await settings.update(patch, (next, previous) =>
-      next.talkHotkey === previous.talkHotkey ? null : hotkey.set(next.talkHotkey),
-    )
+    const result = await settings.update(patch, (next, previous) => {
+      const hotkeyError =
+        next.talkHotkey === previous.talkHotkey ? null : hotkey.set(next.talkHotkey)
+      if (hotkeyError) return hotkeyError
+      if (next.launchAtSignIn !== previous.launchAtSignIn) {
+        try {
+          setLaunchAtSignIn(next.launchAtSignIn)
+        } catch (error) {
+          if (next.talkHotkey !== previous.talkHotkey) hotkey.set(previous.talkHotkey)
+          return `Could not update Windows startup: ${error instanceof Error ? error.message : String(error)}`
+        }
+      }
+      return null
+    })
     if (result.ok) {
       if (previousVoiceMode !== result.settings.voiceMode) await agent.stopLive()
       if (result.settings.enabledProviders.join() !== previousProviders.join()) {
@@ -920,7 +930,12 @@ async function start(): Promise<void> {
     }
     return result
   })
-  setLaunchAtSignIn(initial.launchAtSignIn) // the setting is the source of truth
+  // Restore the watcher after an app update, as well as the Windows sign-in entry.
+  try {
+    setLaunchAtSignIn(initial.launchAtSignIn)
+  } catch (error) {
+    console.error('Could not restore Windows startup:', error)
+  }
 
   let trayPaused = false
   const tray = createTray({
@@ -973,18 +988,16 @@ async function start(): Promise<void> {
 
   // Keep a paused dot accessible when both sources are off, so Settings is still one click away.
   const checkProviders = async () => {
-    const selected = [...settings.settings.enabledProviders]
-    const running = await Promise.all(
-      selected.map((provider) =>
-        provider === 'codex'
-          ? codexProcesses().then((result) => result.running)
-          : isClaudeAppRunning(paths.appLockFile),
-      ),
+    // The launcher watches either app, independently of the selected chat sources.
+    const running = await Promise.all([
+      isClaudeAppRunning(paths.appLockFile),
+      codexProcesses().then((result) => result.running),
+    ])
+    windows.setClaudeRunning(
+      settings.settings.enabledProviders.length === 0 ||
+        running.some(Boolean) ||
+        agentBusy(agent.current),
     )
-    if (selected.join() === settings.settings.enabledProviders.join())
-      windows.setClaudeRunning(
-        selected.length === 0 || running.some(Boolean) || agentBusy(agent.current),
-      )
   }
   void checkProviders()
   setInterval(() => void checkProviders(), CLAUDE_CHECK_INTERVAL_MS)

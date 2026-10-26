@@ -24,12 +24,13 @@ export function setupArgs(argv = process.argv): string[] | null {
 }
 
 export function runSetup(args: string[]): void {
+  const userData = app.getPath('userData')
   // Its own profile, so it never fights a running Threadlight over the real one.
   app.setPath('userData', join(tmpdir(), 'threadlight-setup'))
   void app.whenReady().then(() => {
     let result: unknown
     try {
-      result = run(args)
+      result = run(args, userData)
     } catch (error) {
       result = { error: error instanceof Error ? error.message : String(error) }
     }
@@ -38,7 +39,7 @@ export function runSetup(args: string[]): void {
   })
 }
 
-function run([command, ...rest]: string[]): unknown {
+function run([command, ...rest]: string[], userData: string): unknown {
   switch (command) {
     case 'check-keys':
       return rest.map(checkKey)
@@ -47,9 +48,14 @@ function run([command, ...rest]: string[]): unknown {
       if (!isCorner(corner)) throw new Error(`Unknown corner: ${String(corner)}`)
       return cornerPosition(corner, screen.getPrimaryDisplay().workArea)
     }
-    case 'login':
-      if (rest[0] === 'on' || rest[0] === 'off') setLaunchAtSignIn(rest[0] === 'on')
-      return { openAtLogin: launchesAtSignIn() }
+    case 'login': {
+      if (rest[0] === 'on' || rest[0] === 'off')
+        setLaunchAtSignIn(rest[0] === 'on', {
+          userData,
+          startWatcher: false,
+        })
+      return { openAtLogin: launchesAtSignIn(userData) }
+    }
     default:
       throw new Error(`Unknown setup command: ${String(command)}`)
   }

@@ -219,6 +219,21 @@ Every option is optional. Running it again changes only what is not right yet.
 The hooks only reach Claude Code sessions started after the plugin is installed. The voice
 speech model (76 MB) downloads the first time you use voice, after you agree to it.
 
+### Startup
+
+In **Settings → App**, **Launch at sign-in** starts a small hidden launcher with
+Windows. Nothing opens until Claude or Codex opens; then Threadlight shows its dot
+within a few seconds. If either app is already open at sign-in, Threadlight starts
+straight away. This is the only startup setting.
+The launcher also starts immediately when you enable the setting; no sign-out is
+needed. It watches both apps independently of the chat monitoring toggles.
+Background CLI workers and the separate ChatGPT app do not trigger it.
+
+Quitting Threadlight leaves it closed until another desktop app opens. Turning
+**Launch at sign-in** off stops the launcher and removes the sign-in entry.
+Uninstall also disables the launcher. It runs under your Windows account without a window or
+tray icon; it polls locally every two seconds and sends no data anywhere.
+
 ## What it reads
 
 ### Codex

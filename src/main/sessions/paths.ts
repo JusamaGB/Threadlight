@@ -60,6 +60,21 @@ export const messagingPaths = (userData: string) => ({
   store: join(userData, 'message-recovery.json'),
 })
 
+export const launcherPaths = (userData: string) => ({
+  script: join(userData, 'app-launcher.ps1'),
+  config: join(userData, 'app-launcher.json'),
+})
+
+export const launcherSource = (appPath: string) => join(appPath, 'resources', 'app-launcher.ps1')
+export const windowsPowerShell = (env: NodeJS.ProcessEnv = process.env) =>
+  join(
+    env['SystemRoot'] || 'C:\\Windows',
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  )
+
 export const spacesPaths = (userData: string) => ({
   store: join(userData, 'shared-spaces', 'ideas.sqlite'),
   workspace: join(userData, 'shared-spaces', 'brainstorm'),

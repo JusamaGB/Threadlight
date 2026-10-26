@@ -535,8 +535,25 @@ try {
     hanging,
     'reduced motion holds a provider-coloured wheel and bead steady',
   )
-  await page.evaluate(() => window.motionProof.emit('onAttentionMotion', { active: false }))
-  await page.waitForFunction(() => !document.querySelector('[data-attention-provider]'))
+  await page.evaluate(async () =>
+    window.motionProof.emit('onAttentionMotion', {
+      ...(await window.threadlight.getAttentionMotion()),
+      provider: 'codex',
+      active: false,
+    }),
+  )
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-attention-provider]')?.getAttribute('aria-hidden') === 'true',
+  )
+  const paused = await attention.screenshot()
+  assert.deepEqual(paused, hanging, 'the last painted attention frame survives the native hide')
+  await page.waitForTimeout(150)
+  assert.deepEqual(
+    await attention.screenshot(),
+    paused,
+    'inactive attention retains a painted, paused frame',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'PASS: real microphone analysis, speech/silence, content-sized captions, thinking morph, reduced motion, context loss, native WebRTC playback/mute/stop, compact pill and unavailable-WebGL fallback.',

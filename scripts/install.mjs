@@ -487,7 +487,8 @@ async function check() {
     )
   }
   const login = setup('login')
-  if (login) ok(`Start at sign-in: ${login.openAtLogin ? 'on' : 'off'}`)
+  if (login)
+    ok(`Start at sign-in: ${login.openAtLogin ? 'wait quietly for Claude or Codex' : 'off'}`)
 
   step('Hooks')
   if (cli) {

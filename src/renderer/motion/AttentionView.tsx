@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NO_ATTENTION, type AttentionMotion } from '../../shared/attentionMotion'
 import { createAttentionPainter } from './attentionPainter'
 
@@ -30,7 +30,7 @@ export function AttentionView() {
   const state = useAttentionMotion()
   const wheel = useRef<HTMLCanvasElement>(null),
     liquid = useRef<HTMLCanvasElement>(null)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!state.active || !wheel.current || !liquid.current) return
     const painter = createAttentionPainter(wheel.current, liquid.current)
     if (!painter) return
@@ -47,7 +47,8 @@ export function AttentionView() {
     }
     preference.addEventListener('change', wake)
     document.addEventListener('visibilitychange', wake)
-    wake()
+    // Prime even a hidden native window, then animate only while it is visible.
+    draw()
     return () => {
       cancelAnimationFrame(frame)
       preference.removeEventListener('change', wake)
@@ -55,9 +56,12 @@ export function AttentionView() {
       painter.dispose()
     }
   }, [state])
-  return state.active ? (
+  // Native visibility controls presentation. Retain the last painted frame while
+  // inactive so showing the window never exposes newly mounted, empty canvases.
+  return (
     <div
       aria-label={`${state.provider === 'codex' ? 'Codex' : 'Claude'} needs input`}
+      aria-hidden={!state.active}
       data-attention-provider={state.provider}
       style={{ width: state.width, height: state.height, pointerEvents: 'none' }}
     >
@@ -68,5 +72,5 @@ export function AttentionView() {
         style={{ position: 'absolute', inset: 0, width: state.width, height: state.height }}
       />
     </div>
-  ) : null
+  )
 }

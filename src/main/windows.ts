@@ -111,7 +111,8 @@ export class WindowManager {
     // The panel is created up front (hidden) so it opens instantly.
     this.panel = createWindow('panel', { width: PANEL_WIDTH + WORKSPACE_GUTTER, height: 120 }, true)
     this.panel.on('blur', () => {
-      if (!this.stayOpen) this.closePanel()
+      // A showInactive/resize handoff can deliver a delayed blur while still hovered.
+      this.closeOnPointerLeave()
     })
     this.panel.on('closed', () => this.stopPointerWatch())
   }
@@ -186,15 +187,16 @@ export class WindowManager {
     }
     this.panel.webContents.send(IPC.panelOpened, info)
     this.placePanel(Math.min(this.panel.getBounds().height, info.maxHeight))
-    this.dot.hide() // the panel takes the dot's place
-    this.attentionWindow?.hide()
-    this.broadcastAttention({ ...this.attentionState, active: false })
     if (focus) {
       this.panel.show()
       this.panel.focus()
     } else {
       this.panel.showInactive()
     }
+    // Present the replacement before hiding the already-painted indicator.
+    this.dot.hide()
+    this.attentionWindow?.hide()
+    this.broadcastAttention({ ...this.attentionState, active: false })
     this.startPointerWatch()
   }
 
@@ -206,9 +208,9 @@ export class WindowManager {
     this.stayOpen = false
     this.stopPointerWatch()
     if (!this.panel.isVisible()) return
-    this.panel.hide()
     if (this.claudeRunning) this.dot.showInactive()
-    this.syncAttention()
+    this.syncAttention(false)
+    this.panel.hide()
   }
 
   /** Browser leave events may be stale while replacing or resizing a transparent window. */
@@ -327,15 +329,9 @@ export class WindowManager {
     this.dot.webContents.send(IPC.attentionMotion, state)
     this.attentionWindow?.webContents.send(IPC.attentionMotion, state)
   }
-  private syncAttention(): void {
+  private syncAttention(panelVisible = this.panel.isVisible()): void {
     const selected = this.attentionSession
-    if (
-      !selected ||
-      !this.claudeRunning ||
-      this.panel.isVisible() ||
-      this.openMicLive ||
-      this.talking
-    ) {
+    if (!selected || !this.claudeRunning || panelVisible || this.openMicLive || this.talking) {
       this.attentionWindow?.hide()
       this.broadcastAttention({ ...this.attentionState, active: false })
       return
