@@ -190,18 +190,17 @@ try {
   await page.evaluate(() => window.motionProof.settings({ enabledProviders: ['codex'] }))
   await page.locator('[class*="usageTrack"]').waitFor()
   await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
-  await page.getByRole('region', { name: 'Agent activity', exact: true }).waitFor()
+  await page.getByRole('region', { name: 'Voice waveform', exact: true }).waitFor()
   assert.equal(await page.locator('[class*="usageTrack"]').count(), 1)
   await page.waitForTimeout(500)
   await capture('agent-idle-header', page.locator('[data-card]'))
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.locator('[class*="usageTrack"]').waitFor()
-  assert.equal(await page.getByRole('region', { name: 'Agent activity', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  assert.equal(await page.getByRole('region', { name: 'Voice waveform', exact: true }).count(), 0)
   await page.evaluate(() => window.motionProof.emit('onTalkHold', 'down'))
   const stage = page.getByRole('region', { name: 'Voice activity' })
   await stage.waitFor()
-  const ribbon = page.getByRole('region', { name: 'Agent activity', exact: true })
+  const ribbon = page.getByRole('region', { name: 'Voice waveform', exact: true })
   await ribbon.waitFor()
   assert.equal(await stage.locator('canvas').count(), 0)
   const ribbonBounds = await ribbon.boundingBox()
@@ -211,7 +210,7 @@ try {
   assert.equal(ribbonBounds.width, cardBounds.width - 2)
   assert.equal(ribbonBounds.y + ribbonBounds.height / 2, headerBounds.y + headerBounds.height - 1)
   assert.equal(
-    await page.locator('header').getByRole('region', { name: 'Agent activity' }).count(),
+    await page.locator('header').getByRole('region', { name: 'Voice waveform' }).count(),
     1,
   )
   assert.equal(
@@ -225,7 +224,13 @@ try {
   const first = await ribbon.locator('canvas').screenshot()
   await page.waitForTimeout(150)
   assert.notDeepEqual(await ribbon.locator('canvas').screenshot(), first)
-  await capture('human-speaking', page.locator('[data-card]'))
+  await capture('thread-view-speaking', page.locator('[data-card]'))
+  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  assert.equal(await page.locator('[data-card] canvas').count(), 1)
+  assert.equal(await stage.locator('canvas').count(), 0)
+  await capture('agent-view-speaking', page.locator('[data-card]'))
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  assert.equal(await page.locator('header canvas').count(), 1)
   await page.evaluate(() => window.motionProof.setLevel(0))
   await page.waitForFunction(() => window.motionProof.telemetry.input.level === 0)
   await stage
@@ -267,7 +272,7 @@ try {
     )
   await page.waitForFunction(
     () =>
-      document.querySelector('[aria-label="Agent activity"] [data-renderer]')?.dataset.renderer ===
+      document.querySelector('[aria-label="Voice waveform"] [data-renderer]')?.dataset.renderer ===
       'canvas',
   )
   await page.evaluate(() => window.motionProof.agent({ status: 'working' }))

@@ -38,7 +38,6 @@ import { SessionRow } from './SessionRow'
 import { CodexUsageBar, UsageBar } from './UsageBar'
 import { WorkspacePicker } from './WorkspacePicker'
 import { sameFolder, WorkspaceTree } from './WorkspaceTree'
-import { MicDivider } from './MicDivider'
 import { motionMode } from '../../shared/motion'
 import { useMotion } from '../hooks/useMotion'
 import { VoicePresence } from '../motion/VoicePresence'
@@ -158,7 +157,6 @@ export function Panel() {
 
   /** Agent Toggle listens until the next press; selecting a target never opens the mic. */
   const [micLive, setMicLive] = useState(false)
-  const [recordingProvider, setRecordingProvider] = useState<'claude' | 'codex'>('claude')
   const openMicMode = settings?.voiceTarget === 'agent' && settings.talkMode === 'toggle'
   const openMicModeRef = useRef(openMicMode)
   useEffect(() => {
@@ -386,7 +384,6 @@ export function Panel() {
       setVoiceCaption('')
       try {
         startedBy.current = 'mic'
-        setRecordingProvider(compose ? sessionProvider(compose.sessionId) : 'claude')
         await voice.start()
       } catch {
         startedBy.current = null
@@ -405,7 +402,7 @@ export function Panel() {
         startedBy.current = null
       }
     }
-  }, [voice, compose])
+  }, [voice])
 
   // The talk hotkey: start, stop-and-send, or cancel a countdown in progress.
   const onTalk = useCallback(async () => {
@@ -454,7 +451,6 @@ export function Panel() {
       setVoiceCaption('')
       recordingTarget.current = settingsRef.current?.voiceTarget ?? 'thread'
       recordingAgent.current = agent.provider ?? settingsRef.current?.agentProvider ?? 'claude'
-      setRecordingProvider(recordingTarget.current === 'agent' ? recordingAgent.current : 'claude')
       await voice.start()
       window.threadlight.openPanelQuietly()
     } catch {
@@ -915,6 +911,8 @@ export function Panel() {
   }
 
   const agentVisible = showAgent && !pickingWorkspace && !changesFor
+  const showVoiceActivity =
+    voice.state !== 'idle' || micLive || agentVisible || Boolean(voiceSendId)
   const listHidden =
     showMemory || showSettings || pickingWorkspace || showAgent || changesFor !== null
 
@@ -929,22 +927,10 @@ export function Panel() {
         onMouseLeave={leave}
       >
         <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>
-          {agentVisible ? (
-            <div className={styles.agentActivity} role="region" aria-label="Agent activity">
+          {showVoiceActivity && (
+            <div className={styles.voiceActivity} role="region" aria-label="Voice waveform">
               <ElectricMotion source={motion.source} label={motion.label} />
             </div>
-          ) : (
-            (openMicListening || voice.state === 'listening') && (
-              <MicDivider
-                provider={
-                  voice.state === 'listening'
-                    ? recordingProvider
-                    : (agent.provider ?? settings?.agentProvider ?? 'claude')
-                }
-                level={voice.level}
-                openMicLevel={voice.state === 'listening' ? undefined : openMicLevel}
-              />
-            )
           )}
           {pickingWorkspace ? (
             <>
@@ -1089,16 +1075,11 @@ export function Panel() {
           )}
         </header>
 
-        {(voice.state !== 'idle' ||
-          micLive ||
-          (showAgent && !pickingWorkspace && !changesFor) ||
-          voiceSendId) && (
+        {showVoiceActivity && (
           <VoicePresence
-            source={motion.source}
             label={motion.label}
             microphone={openMicListening || voice.state === 'listening'}
             caption={motionCaption}
-            showWaveform={!agentVisible}
           />
         )}
 

@@ -43,10 +43,6 @@
   color: var(--faint);
 }
 
-.stage {
-  height: 88px;
-}
-
 .caption {
   margin: 2px 0 0;
   height: 52px;

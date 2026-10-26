@@ -790,9 +790,9 @@ checks: try {
   await page.getByRole('button', { name: 'Talk', exact: true }).click()
   const waveform = page.getByRole('img', { name: 'Listening...', exact: true })
   await waveform.waitFor()
-  const codexDivider = page.getByRole('status', { name: 'Codex microphone listening', exact: true })
+  const codexDivider = page.getByRole('region', { name: 'Voice waveform', exact: true })
   await codexDivider.waitFor()
-  assert.equal(await codexDivider.getAttribute('data-provider'), 'codex')
+  assert.equal(await page.locator('header canvas').count(), 1)
   await page.waitForFunction(() => window.proof.motion?.input.level > 0.1)
   await page.waitForTimeout(600) // finish the idle-to-ribbon morph before checking its full extent
   const ribbonPixels = await readMotionFrame(waveform)
@@ -806,21 +806,18 @@ checks: try {
   assert.notEqual((await readMotionFrame(waveform)).hash, firstFrame.hash)
   await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).click()
   await waveform.waitFor({ state: 'detached' })
-  await codexDivider.waitFor({ state: 'detached' })
   await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
   await page.evaluate(() => window.proof.finishTranscript('Synthetic transcript'))
   await page.waitForFunction(
     () => document.querySelector('textarea')?.value === 'Synthetic transcript',
   )
   assert.equal(await page.evaluate(() => window.proof.stoppedTracks), 1)
+  await codexDivider.waitFor({ state: 'detached' })
   await box.fill('Existing draft')
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.getByRole('button', { name: 'Talk', exact: true }).click()
   await waveform.waitFor()
-  await page.waitForFunction(() => {
-    const node = document.querySelector('[aria-label="Codex microphone listening"]')
-    return node && Number(getComputedStyle(node).getPropertyValue('--spread')) === 0.15
-  })
+  await codexDivider.waitFor()
   assert.equal(await page.locator('textarea').inputValue(), 'Existing draft')
   assert.equal(await page.locator('textarea').isVisible(), true)
   await page.evaluate(() => window.proof.setAudioLevel(0))
@@ -828,12 +825,9 @@ checks: try {
   const stationary = await readMotionFrame(waveform)
   await page.waitForTimeout(180) // several animation frames: reduced motion must not scroll sideways
   assert.equal((await readMotionFrame(waveform)).hash, stationary.hash)
-  assert.equal(
-    await codexDivider.evaluate((node) =>
-      Number(getComputedStyle(node).getPropertyValue('--spread')),
-    ),
-    0.15,
-  )
+  const headerStill = await readMotionFrame(codexDivider)
+  await page.waitForTimeout(180)
+  assert.equal((await readMotionFrame(codexDivider)).hash, headerStill.hash)
   await capture('composer-listening-draft')
   await page.evaluate(() => {
     window.proof.finishTranscript = null
@@ -864,26 +858,27 @@ checks: try {
     0,
   )
   await page.evaluate(() => window.proof.emit('onTalkToggle'))
-  const divider = page.getByRole('status', { name: 'Claude microphone listening', exact: true })
+  const divider = page.getByRole('region', { name: 'Voice waveform', exact: true })
   await divider.waitFor()
-  assert.equal(await divider.getAttribute('data-provider'), 'claude')
+  assert.equal(await page.locator('header canvas').count(), 1)
+  assert.equal(
+    await page.getByRole('region', { name: 'Voice activity' }).locator('canvas').count(),
+    0,
+  )
   await page.waitForFunction(() => {
-    const node = document.querySelector('[aria-label="Claude microphone listening"]')
-    return node && Number(getComputedStyle(node).getPropertyValue('--spread')) < 0.05
+    return window.proof.motion?.input.level < 0.01
   })
   await capture('open-mic-quiet')
   const before = await page.locator('[data-card]').boundingBox()
   await page.evaluate(() => window.proof.setAudioLevel(0.18))
   await page.waitForFunction(() => {
-    const node = document.querySelector('[aria-label="Claude microphone listening"]')
-    return node && Number(getComputedStyle(node).getPropertyValue('--spread')) > 0.85
+    return window.proof.motion?.input.level > 0.2
   })
   assert.equal((await page.locator('[data-card]').boundingBox()).height, before.height)
   await capture('open-mic-speaking')
   await page.evaluate(() => window.proof.setAudioLevel(0))
   await page.waitForFunction(() => {
-    const node = document.querySelector('[aria-label="Claude microphone listening"]')
-    return node && Number(getComputedStyle(node).getPropertyValue('--spread')) < 0.06
+    return window.proof.motion?.input.level < 0.01
   })
   await page.evaluate(() => window.proof.emit('onTalkToggle'))
   await divider.waitFor({ state: 'detached' })
@@ -904,7 +899,7 @@ checks: try {
     await page.getByRole('button', { name: 'The microphone is blocked', exact: true }).count(),
     0,
   )
-  assert.equal(await divider.count(), 0)
+  assert.equal(await divider.getByRole('img', { name: 'You speaking', exact: true }).count(), 0)
 
   // The hosted Agent is available independently of monitoring and uses a dynamic catalog.
   await page.evaluate(() =>
@@ -1009,7 +1004,7 @@ checks: try {
   await checkAgentSelection(page, capture)
   assert.deepEqual(errors, [])
   console.log(
-    'PASS: provider lists, drafts, sends, plans, usage, composer waveform and mic divider; Agent model settings, questions, queued approvals, Stop/End and history; no browser errors.',
+    'PASS: provider lists, drafts, sends, plans, usage, composer waveform and header waveform; Agent model settings, questions, queued approvals, Stop/End and history; no browser errors.',
   )
 } catch (error) {
   console.log((await testPage?.locator('body').innerText())?.slice(0, 6000))

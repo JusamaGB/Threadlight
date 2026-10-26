@@ -20,7 +20,8 @@ export async function checkVoiceTarget(page) {
       delete window.proof.finishTranscript
       window.proof.emit(value === 'hold' ? 'onTalkHold' : 'onTalkToggle', 'down')
     }, mode)
-    await page.getByRole('status', { name: /microphone listening/ }).waitFor()
+    await page.getByRole('region', { name: 'Voice waveform', exact: true }).waitFor()
+    await page.getByText('Microphone on', { exact: true }).waitFor()
     await page.waitForTimeout(260)
     await page.evaluate(
       (value) => window.proof.emit(value === 'hold' ? 'onTalkHold' : 'onTalkToggle', 'up'),
@@ -102,7 +103,7 @@ export async function checkVoiceTarget(page) {
     window.proof.allowMic()
   })
   await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
-  assert.equal(await page.getByRole('status', { name: /microphone listening/ }).count(), 0)
+  assert.equal(await page.getByText('Microphone on', { exact: true }).count(), 0)
   await transcribe('A quick released request.')
   await page.waitForFunction(() =>
     window.proof.calls.some((c) => c[0] === 'agentSend' && c[1] === 'A quick released request.'),
