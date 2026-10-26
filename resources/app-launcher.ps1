@@ -1,4 +1,15 @@
-param([string] $ConfigPath)
+param([string] $ConfigPath, [switch] $StartHidden)
+
+if ($StartHidden) {
+    # Start-Process creates a separate hidden console. A console inherited from
+    # Electron would disappear with Electron; Node's DETACHED_PROCESS cannot host
+    # Windows PowerShell reliably. Wait only for this short bootstrap, not the watcher.
+    $hostExecutable = (Get-Process -Id $PID).Path
+    $arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -ConfigPath "{1}"' -f $PSCommandPath, $ConfigPath
+    $child = Start-Process -FilePath $hostExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru -ErrorAction Stop
+    try { $child.Id } finally { $child.Dispose() }
+    return
+}
 
 # A window is required: background Claude Code / Codex CLI workers must not wake Threadlight.
 # Codex Desktop currently calls its executable ChatGPT.exe; the product distinguishes it

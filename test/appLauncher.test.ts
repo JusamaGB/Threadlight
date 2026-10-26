@@ -2,14 +2,14 @@
 // No login entry, provider process or real Threadlight instance is modified.
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { windowsArguments } from '../src/main/loginItem'
-import { windowsPowerShell } from '../src/main/sessions/paths'
+import { loginItem, windowsArguments } from '../src/main/loginItem'
+import { launcherPaths, windowsPowerShell } from '../src/main/sessions/paths'
 import { sandbox, type Sandbox } from './helpers'
 
 const run = promisify(execFile)
@@ -133,27 +133,16 @@ Wait-Process -Id $owner.id -ErrorAction SilentlyContinue
   })
 
   it('allows one watcher per profile and stops it when sign-in is disabled', async () => {
-    const config = join(box.root, 'launcher config.json')
+    const { config, script } = launcherPaths(box.root)
+    await copyFile(source, script)
     const owner = {
       id: process.pid,
       startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
     }
     await writeFile(config, JSON.stringify({ enabled: true, owner }))
+    const entry = loginItem(true, box.root)
     const start = () => {
-      const child = spawn(
-        windowsPowerShell(),
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          source,
-          '-ConfigPath',
-          config,
-        ],
-        { windowsHide: true, stdio: 'ignore' },
-      )
+      const child = spawn(entry.path!, entry.args!, { windowsHide: true, stdio: 'ignore' })
       children.add(child)
       return child
     }
@@ -168,4 +157,54 @@ Wait-Process -Id $owner.id -ErrorAction SilentlyContinue
     await rename(`${config}.tmp`, config)
     expect(await once(first, 'exit')).toEqual([0, null])
   }, 15_000)
+
+  it('keeps the hidden watcher alive after its launching parent exits', async () => {
+    const { config, script } = launcherPaths(box.root)
+    await copyFile(source, script)
+    await writeFile(
+      config,
+      JSON.stringify({
+        enabled: true,
+        owner: {
+          id: process.pid,
+          startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+        },
+      }),
+    )
+    const entry = loginItem(true, box.root)
+    const parent = join(box.root, 'parent.cjs')
+    const result = join(box.root, 'watcher-pid.json')
+    await writeFile(
+      parent,
+      `
+const {execFileSync} = require('node:child_process');
+const id = execFileSync(${JSON.stringify(entry.path)}, ${JSON.stringify([...entry.args!, '-StartHidden'])}, {windowsHide:true,encoding:'utf8',timeout:10000});
+require('node:fs').writeFileSync(${JSON.stringify(result)}, id.trim());
+`,
+    )
+    await run(process.execPath, [parent], { windowsHide: true, timeout: 12_000 })
+    const watcherPid = Number(await readFile(result, 'utf8'))
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      expect(() => process.kill(watcherPid, 0)).not.toThrow()
+      await writeFile(`${config}.tmp`, JSON.stringify({ enabled: false }))
+      await rename(`${config}.tmp`, config)
+      const deadline = Date.now() + 5000
+      while (Date.now() < deadline) {
+        try {
+          process.kill(watcherPid, 0)
+        } catch {
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      throw new Error('Watcher did not stop after sign-in was disabled.')
+    } finally {
+      try {
+        process.kill(watcherPid)
+      } catch {
+        /* Already stopped. */
+      }
+    }
+  }, 20_000)
 })

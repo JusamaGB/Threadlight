@@ -1,5 +1,5 @@
 // Windows sign-in starts a small watcher; Threadlight itself waits for Claude or Codex.
-import { spawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
@@ -85,13 +85,13 @@ export function setLaunchAtSignIn(
   }
   if (enabled && options.startWatcher !== false) {
     const command = watcherCommand(userData)
-    const child = spawn(command.path, command.args, {
-      detached: true,
+    // The short bootstrap starts an independent hidden process, so quitting
+    // Threadlight cannot close an inherited console and stop the watcher.
+    execFileSync(command.path, [...command.args, '-StartHidden'], {
       windowsHide: true,
       stdio: 'ignore',
+      timeout: 10_000,
     })
-    child.on('error', (error) => console.error('Could not start the app launcher:', error.message))
-    child.unref()
   }
 }
 

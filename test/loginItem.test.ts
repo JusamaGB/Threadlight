@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   packaged: false,
   register: vi.fn(),
   query: vi.fn(),
-  spawn: vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })),
+  bootstrap: vi.fn(),
 }))
 vi.mock('electron', () => ({
   app: {
@@ -25,7 +25,7 @@ vi.mock('electron', () => ({
     getLoginItemSettings: mocks.query,
   },
 }))
-vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
+vi.mock('node:child_process', () => ({ execFileSync: mocks.bootstrap }))
 
 import { launchesAtSignIn, loginItem, setLaunchAtSignIn } from '../src/main/loginItem'
 
@@ -75,10 +75,10 @@ describe('Windows startup', () => {
         launcherPaths(box.root).config,
       ]),
     )
-    expect(mocks.spawn).toHaveBeenCalledWith(entry.path, entry.args, {
-      detached: true,
+    expect(mocks.bootstrap).toHaveBeenCalledWith(entry.path, [...entry.args, '-StartHidden'], {
       windowsHide: true,
       stdio: 'ignore',
+      timeout: 10_000,
     })
     expect(await config()).toMatchObject({
       enabled: true,
@@ -92,13 +92,13 @@ describe('Windows startup', () => {
 
   it('turns off the watcher and removes the same sign-in entry when disabled', async () => {
     setLaunchAtSignIn(true)
-    mocks.spawn.mockClear()
+    mocks.bootstrap.mockClear()
     setLaunchAtSignIn(false)
     expect(await config()).toMatchObject({ enabled: false })
     expect(mocks.register).toHaveBeenLastCalledWith(
       expect.objectContaining({ name: 'Threadlight', openAtLogin: false }),
     )
-    expect(mocks.spawn).not.toHaveBeenCalled()
+    expect(mocks.bootstrap).not.toHaveBeenCalled()
   })
 
   it('keeps --no-start setup isolated from the real profile and launches nothing', async () => {
@@ -106,19 +106,19 @@ describe('Windows startup', () => {
     setLaunchAtSignIn(true, { userData: box.root, startWatcher: false })
     expect(await config()).toMatchObject({ enabled: true, owner: null })
     expect(mocks.register).toHaveBeenCalledWith(loginItem(true, box.root))
-    expect(mocks.spawn).not.toHaveBeenCalled()
+    expect(mocks.bootstrap).not.toHaveBeenCalled()
   })
 
   it('preserves the previous watcher configuration if Windows refuses the sign-in change', async () => {
     setLaunchAtSignIn(true)
     const previous = await config()
-    mocks.spawn.mockClear()
+    mocks.bootstrap.mockClear()
     mocks.register.mockImplementationOnce(() => {
       throw new Error('Registration refused')
     })
     expect(() => setLaunchAtSignIn(false)).toThrow('Registration refused')
     expect(await config()).toEqual(previous)
-    expect(mocks.spawn).not.toHaveBeenCalled()
+    expect(mocks.bootstrap).not.toHaveBeenCalled()
   })
 
   it('recognises the previous direct-app entry during an upgrade', () => {
