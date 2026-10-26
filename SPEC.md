@@ -53,6 +53,9 @@ Search results show paths to distinguish repeated names. A workspace row selects
 that exact folder; a separate arrow browses its nested workspaces. Parent-only
 folders browse without selecting. Follow activity remains available. Controls stay
 visible while long folder lists scroll; short results use only the space they need.
+Drive/share rows always show their workspace totals and open their folders, even
+when threads have run at the drive/share root. That root workspace is selectable
+through the explicit "Use …" row inside.
 
 Workspace defaults to the full display work area with small edge margins and the
 taskbar left clear. Only Workspace lets the existing usage bars resize the panel,

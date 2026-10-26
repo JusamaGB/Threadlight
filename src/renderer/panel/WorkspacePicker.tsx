@@ -141,44 +141,51 @@ export function WorkspacePicker({
         className={styles.pickerResults}
         aria-label={searching ? 'Workspace search results' : 'Workspace folders'}
       >
-        {rows.map((entry) => (
-          <div key={entry.key} className={styles.pickerFolder}>
-            <button
-              className={styles.workspaceHeader}
-              aria-pressed={
-                entry.workspace
-                  ? chosen !== null &&
-                    workspaceFolder(chosen) === workspaceFolder(entry.workspace.id)
-                  : undefined
-              }
-              title={entry.path}
-              onClick={() => (entry.workspace ? onPick(entry.workspace.id) : browse(entry))}
-            >
-              <span className={styles.pickerFolderName}>
-                <span className={styles.workspaceName}>{nameOf(entry)}</span>
-                {searching && <span className={styles.pickerPath}>{entry.path}</span>}
-              </span>
-              {!entry.workspace && (
-                <>
-                  <span className={styles.workspaceCount}>
-                    {entry.count} {entry.count === 1 ? 'workspace' : 'workspaces'}
-                  </span>
-                  <span className={styles.caret}>▸</span>
-                </>
-              )}
-            </button>
-            {entry.workspace && entry.children.length > 0 && (
+        {rows.map((entry) => {
+          // A drive/share remains a navigation row even when threads ran at its root.
+          // Its root workspace can be selected with "Use …" after opening it.
+          const browseRow = !entry.workspace || (!searching && entry.parent === '')
+          return (
+            <div key={entry.key} className={styles.pickerFolder}>
               <button
-                className={styles.pickerBrowse}
-                aria-label={`Browse ${nameOf(entry)}`}
-                title={`Browse folders inside ${entry.path}`}
-                onClick={() => browse(entry)}
+                className={styles.workspaceHeader}
+                aria-pressed={
+                  !browseRow && entry.workspace
+                    ? chosen !== null &&
+                      workspaceFolder(chosen) === workspaceFolder(entry.workspace.id)
+                    : undefined
+                }
+                title={entry.path}
+                onClick={() => (browseRow ? browse(entry) : onPick(entry.workspace!.id))}
               >
-                ▸
+                <span className={styles.pickerFolderName}>
+                  <span className={styles.workspaceName}>
+                    {browseRow ? entry.name : nameOf(entry)}
+                  </span>
+                  {searching && <span className={styles.pickerPath}>{entry.path}</span>}
+                </span>
+                {browseRow && (
+                  <>
+                    <span className={styles.workspaceCount}>
+                      {entry.count} {entry.count === 1 ? 'workspace' : 'workspaces'}
+                    </span>
+                    <span className={styles.caret}>▸</span>
+                  </>
+                )}
               </button>
-            )}
-          </div>
-        ))}
+              {!browseRow && entry.workspace && entry.children.length > 0 && (
+                <button
+                  className={styles.pickerBrowse}
+                  aria-label={`Browse ${nameOf(entry)}`}
+                  title={`Browse folders inside ${entry.path}`}
+                  onClick={() => browse(entry)}
+                >
+                  ▸
+                </button>
+              )}
+            </div>
+          )
+        })}
         {rows.length === 0 && (
           <p className={styles.pickerEmpty} role="status">
             {searching

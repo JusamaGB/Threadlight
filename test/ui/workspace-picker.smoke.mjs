@@ -17,6 +17,7 @@ export async function checkWorkspacePicker(page, capture) {
       { id: 'C:/Projects/shared', name: 'shared' },
       { id: 'Z:/General', name: 'General' },
       { id: 'Z:/General/lib', name: 'lib' },
+      { id: 'Z:/', name: 'Z:' },
       { id: '//server/team/app', name: 'app' },
     ],
     codex: [
@@ -39,6 +40,24 @@ export async function checkWorkspacePicker(page, capture) {
     assert.equal(await applications.inputValue(), 'both')
     assert.equal(await drive.inputValue(), 'c:')
     assert.equal(await choose('shared').count(), 1)
+    await drive.selectOption('')
+    const zDrive = results.getByRole('button', { name: /^Z: 4 workspaces/ })
+    await capture('workspace-picker-drives')
+    await zDrive.click()
+    await applications.waitFor()
+    assert.equal(
+      await drive.inputValue(),
+      'z:',
+      'a drive with its own threads still opens its folders',
+    )
+    await page.getByRole('button', { name: 'Use Z:', exact: true }).waitFor()
+    assert.equal(
+      await page.evaluate(
+        async () => (await window.threadlight.getSettings()).combinedFocusWorkspace,
+      ),
+      null,
+    )
+    await drive.selectOption('c:')
     await search.fill('other')
     await choose('other C:/Projects/other').waitFor()
     await applications.selectOption('claude')
