@@ -42,10 +42,13 @@ export async function checkActivityRings(page, capture) {
     await patch('idle', false)
     await ring('claude').waitFor()
     const baseline = await geometry('claude')
-    for (const thinking of [true, false]) {
+    // Reasoning can resume repeatedly between tools/replies within the same task.
+    for (const thinking of [true, false, true, false, true]) {
       await patch('working', thinking)
       for (const provider of ['claude', 'codex']) {
         assert.equal(await ring(provider).getAttribute('data-active'), 'true')
+        assert.equal(await ring(provider).getAttribute('data-thinking'), thinking ? 'true' : null)
+        assert.equal(await ring(provider).locator('g[mask]').count(), thinking ? 1 : 0)
         assert.notEqual(
           await ring(provider).evaluate((el) => getComputedStyle(el).animationName),
           'none',
@@ -62,6 +65,24 @@ export async function checkActivityRings(page, capture) {
         'no red working dot remains',
       )
     }
+    const maskIds = await Promise.all(
+      ['claude', 'codex'].map((provider) => ring(provider).locator('mask').getAttribute('id')),
+    )
+    assert.equal(new Set(maskIds).size, 2, 'each thread owns its thinking mask')
+    await capture('activity-rings-mid-task-thinking')
+    await patch('working', true, 0.85)
+    for (const provider of ['claude', 'codex']) {
+      assert.equal(
+        await ring(provider).locator('circle[data-level]').getAttribute('data-level'),
+        'red',
+      )
+      const fill = await geometry(provider)
+      assert.ok(
+        Math.abs(Number(fill.offset) / Number(fill.length) - 0.15) < 0.00001,
+        'thinking still displays live context progress',
+      )
+    }
+    await patch('working', false)
     await capture('activity-rings-tool-progress')
     await patch('waiting', false, 0.65, {
       kind: 'approval',
@@ -71,6 +92,7 @@ export async function checkActivityRings(page, capture) {
     })
     for (const provider of ['claude', 'codex']) {
       assert.equal(await ring(provider).getAttribute('data-active'), null)
+      assert.equal(await ring(provider).getAttribute('data-thinking'), null)
       assert.equal(
         await ring(provider).evaluate((el) => getComputedStyle(el).animationName),
         'none',
@@ -84,6 +106,11 @@ export async function checkActivityRings(page, capture) {
     await patch('idle', true)
     for (const provider of ['claude', 'codex']) {
       assert.equal(await ring(provider).getAttribute('data-active'), null)
+      assert.equal(
+        await ring(provider).locator('g[mask]').count(),
+        0,
+        'stale thinking on idle never changes the wheel',
+      )
       assert.equal(
         await ring(provider).evaluate((el) => getComputedStyle(el).animationName),
         'none',
@@ -105,7 +132,7 @@ export async function checkActivityRings(page, capture) {
     assert.equal(await ring('claude').evaluate((el) => getComputedStyle(el).animationName), 'none')
     assert.deepEqual(await geometry('claude'), baseline)
     console.log(
-      'PASS: Claude/Codex context rings animate during all working phases, stop on idle/waiting, preserve measured fill/colour and reduced motion, and replace the red dot.',
+      'PASS: Claude/Codex wheels become dotted for repeated mid-task thinking, keep spinning through active work, stop on idle/waiting, and preserve live context fill/colour and reduced motion.',
     )
   } finally {
     await page.emulateMedia({ reducedMotion: 'no-preference' })

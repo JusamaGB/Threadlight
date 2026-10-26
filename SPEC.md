@@ -188,7 +188,10 @@ thumb, preserving provider gradients to the panel edge. Drag, wheel, track click
 and keyboard scrolling remain available; dragging keeps an unpinned panel open.
 
 Context circles spin for the full `working` state, including thinking, tools and
-reply generation, replacing the flashing red row dot. Idle/waiting circles are
+replies. Whenever thinking resumes, including mid-task with known context, the
+wheel switches to a dotted appearance using the same thinking flag as the Now line.
+The dots mask the measured context arc without changing its percentage or colour.
+The wheel replaces the flashing red row dot. Idle/waiting circles are
 still; amber attention markers remain. Context percentages, arc fill and threshold
 colours are unchanged. A working thread without a context reading shows a neutral
 dashed activity track with no percentage arc. Reduced motion keeps the ring still.
