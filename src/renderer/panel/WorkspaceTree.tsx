@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 
 import type { Session, ThreadNode, Workspace } from '../../shared/types'
 import { en } from '../i18n/en'
@@ -85,18 +85,24 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
 function Nodes({
   nodes,
   renderRow,
+  depth = 0,
 }: {
   nodes: ThreadNode[]
   renderRow: (s: Session) => ReactNode
+  depth?: number
 }) {
   return (
     <>
       {nodes.map((node) => (
-        <div key={node.session.id}>
+        <div
+          key={node.session.id}
+          // Each guide adds 14px of margin and a 1px border; the tint stays at the panel edge.
+          style={{ '--thread-inset': `${depth * 15}px` } as CSSProperties}
+        >
           {renderRow(node.session)}
           {node.children.length > 0 && (
             <div className={styles.children}>
-              <Nodes nodes={node.children} renderRow={renderRow} />
+              <Nodes nodes={node.children} renderRow={renderRow} depth={depth + 1} />
             </div>
           )}
         </div>

@@ -412,7 +412,7 @@
 }
 
 .row[data-provider]::before {
-  left: 0;
+  left: calc(0px - var(--thread-inset, 0px));
   transform: scaleX(-1);
 }
 

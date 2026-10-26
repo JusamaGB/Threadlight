@@ -911,10 +911,8 @@ export function Panel() {
               <ElectricMotion source={motion.source} label={motion.label} edgeToEdge />
             </div>
           )}
-          {showVoiceActivity && (
-            <span className={styles.microphoneStatus}>
-              {openMicListening || voice.state === 'listening' ? 'Microphone on' : 'Microphone off'}
-            </span>
+          {showVoiceActivity && !openMicListening && voice.state !== 'listening' && (
+            <span className={styles.microphoneStatus}>no active Mic</span>
           )}
           {pickingWorkspace ? (
             <>

@@ -48,8 +48,10 @@ leave, panel resizing, and the existing voice-command caller.
 
 All five panel subpages (Agent, Settings, Shared Spaces, workspace picker and
 Changes) keep their title centered and place the existing back chevron on the
-right. The header's left side shows microphone on/off while voice activity is
-visible. Header controls retain their existing navigation and pinning behavior.
+right. While voice activity is visible, the header's left side shows "no active
+Mic" when the microphone is off. Listening/speaking activity already indicates an
+active microphone, so it has no additional header label. Header controls retain
+their existing navigation and pinning behavior.
 
 The Agent's empty state shows its input without usage instructions. Voice activity
 keeps a compact status row; a caption appears only when there is text, grows to fit

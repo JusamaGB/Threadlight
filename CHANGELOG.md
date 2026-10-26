@@ -6,6 +6,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Kept nested thread gradients flush with the panel edge at every depth while
+  preserving thread indentation and guide lines.
+
+- Removed the redundant microphone-on label; an inactive microphone now shows
+  "no active Mic" in the header.
+
 - Fixed Both + Workspace matching across ordinary and extended Windows drive/UNC
   paths; Shared Spaces uses the same folder comparison and drive grouping.
 - Preserved the latest vibrant orange active-wheel and glossy blue-shine preview.
