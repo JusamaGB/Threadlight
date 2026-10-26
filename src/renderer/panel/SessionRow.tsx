@@ -16,6 +16,7 @@ import { providerName, sessionProvider, workspaceFolder } from '../../shared/pro
 import { CodexPlan } from './CodexPlan'
 
 interface SessionRowProps {
+  striped?: boolean
   showProvider?: boolean
   session: Session
   relay: RelayStatus | undefined
@@ -64,6 +65,7 @@ export function SessionRow(props: SessionRowProps) {
     <div
       className={expanded ? `${styles.row} ${styles.expanded}` : styles.row}
       data-session-id={session.id}
+      data-striped={props.striped || undefined}
       data-workspace-folder={workspaceFolder(session.git?.root || session.cwd) || undefined}
       data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
     >

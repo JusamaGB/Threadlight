@@ -192,7 +192,11 @@ beside the header reconnects or cuts them and saves the choice. Cut ends spark g
 (static with reduced motion). Native gutter clicks pass through except for this
 clip; the card and its menus remain interactive.
 
-Thread rows have 3px top and bottom padding, leaving 6px between adjacent contents.
+Thread rows have 1.5px top and bottom padding, leaving 3px between adjacent
+contents, and a 1px gap between the title and status lines. Active, Recent and
+workspace lists alternate the existing background and raised colours. Striping
+follows visible thread order through nested children and workspace/provider groups;
+hover and expanded rows use the hover colour. Workspace group padding is halved too.
 Git ahead/behind counts sit on the second row, before any running task timer,
 leaving the top row for the title and this thread's diff totals.
 Last active has no inline marker. Resting the pointer on a thread for one second
@@ -453,7 +457,7 @@ Stored as JSON in `%APPDATA%/Threadlight/settings.json` (with a `version`), vali
 
 Tokens (from the Pascal-style dark theme the prototype used), defined once in `theme.css`:
 `--bg #171717  --raised #1e1e1e  --hover #212121  --border rgba(255,255,255,.10)  --fg #fafafa  --muted #a1a1a1  --faint #6b6b6b  --green #2ecc71  --red #e74c3c  --amber #f0ad4e  --accent #7fb2ff  --purple #a371f7  --radius 10px`.
-Composer mirrors Claude's: `#2f2f2f` pill, `#454545` edge, blue mic disc. Font stack: `"Segoe UI Variable", "Segoe UI", system-ui`. Animations respect `prefers-reduced-motion`. Tight spacing: 10 px gutters, 6 px row padding.
+Composer mirrors Claude's: `#2f2f2f` pill, `#454545` edge, blue mic disc. Font stack: `"Segoe UI Variable", "Segoe UI", system-ui`. Animations respect `prefers-reduced-motion`. Tight spacing: 10 px gutters, 3 px total vertical thread row padding.
 
 ## 12. Public-repo hygiene checklist
 

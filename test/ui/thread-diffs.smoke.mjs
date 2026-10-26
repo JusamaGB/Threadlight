@@ -171,7 +171,7 @@ export async function checkThreadDiffs(page, capture) {
       'Git tracker sits at the right of the second row',
     )
     assert.equal(layout.inlineAge, false, 'last active time no longer takes up row space')
-    assert.equal(layout.padding, 6, 'adjacent thread contents have six pixels of padding')
+    assert.equal(layout.padding, 3, 'adjacent thread contents have three pixels of padding')
     await badge('Claude').hover()
     const tip = page.getByRole('tooltip')
     await tip.waitFor()

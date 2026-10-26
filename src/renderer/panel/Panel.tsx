@@ -947,10 +947,11 @@ export function Panel() {
   ]
 
   /** One thread row, the same in the recent list and inside a workspace. */
-  const renderRow = (session: Session) => (
+  const renderRow = (session: Session, index: number) => (
     <SessionRow
       key={session.id}
       session={session}
+      striped={index % 2 === 1}
       showProvider={provider === 'both'}
       relay={relays.get(session.id)}
       composing={session.id === compose?.sessionId}

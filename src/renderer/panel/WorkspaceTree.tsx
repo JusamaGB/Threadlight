@@ -15,7 +15,7 @@ interface WorkspaceTreeProps {
   /** Shown when nothing falls inside the chosen time window. */
   emptyMessage: ReactNode
   /** Renders a thread exactly as the recent list does. */
-  renderRow: (session: Session) => ReactNode
+  renderRow: (session: Session, index: number) => ReactNode
 }
 
 /** The recent list's rows, wrapped in workspace groups like the Claude sidebar. */
@@ -33,15 +33,29 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
     )
   }
 
+  // Number visible rows in display order, including children, so stripes do not restart at
+  // each parent or provider. Keep provider-owned arrays intact when merging one folder.
+  const threads = only ? shown.flatMap((workspace) => workspace.threads) : []
+  if (only && shown.length > 1) threads.sort((a, b) => compareSessionOrder(a.session, b.session))
+  const indexes = new Map<string, number>()
+  const numberRows = (nodes: ThreadNode[]) => {
+    for (const node of nodes) {
+      indexes.set(node.session.id, indexes.size)
+      numberRows(node.children)
+    }
+  }
+  numberRows(
+    only
+      ? threads
+      : shown.filter((workspace) => isOpen(workspace.id)).flatMap((workspace) => workspace.threads),
+  )
+  const renderIndexedRow = (session: Session) => renderRow(session, indexes.get(session.id) ?? 0)
+
   if (only) {
-    // One selected folder can contain several providers. Merge its root threads by activity;
-    // children stay attached to their parent, and adapter-owned arrays are never reordered.
-    const threads = shown.flatMap((workspace) => workspace.threads)
-    if (shown.length > 1) threads.sort((a, b) => compareSessionOrder(a.session, b.session))
     return (
       <section className={styles.workspace}>
         <div className={styles.workspaceThreads}>
-          <Nodes nodes={threads} renderRow={renderRow} />
+          <Nodes nodes={threads} renderRow={renderIndexedRow} />
         </div>
       </section>
     )
@@ -72,7 +86,7 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
             </button>
             {open && (
               <div className={styles.workspaceThreads}>
-                <Nodes nodes={workspace.threads} renderRow={renderRow} />
+                <Nodes nodes={workspace.threads} renderRow={renderIndexedRow} />
                 {workspace.hiddenCount > 0 && (
                   <button className={styles.showMore} onClick={() => onShowMore(workspace.id)}>
                     {en.workspaces.showMore(workspace.hiddenCount)}
