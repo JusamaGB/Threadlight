@@ -4,6 +4,7 @@ export interface MotionPose {
   wheel: number
   warmth: number
   rest: number
+  audioReveal: number
   input: AudioEnergy
   output: AudioEnergy
 }
@@ -11,6 +12,7 @@ export const restingPose = (): MotionPose => ({
   wheel: 0,
   warmth: 0,
   rest: 1,
+  audioReveal: 1,
   input: { ...SILENT_AUDIO },
   output: { ...SILENT_AUDIO },
 })
@@ -25,16 +27,22 @@ export function advancePose(
   const dt = Math.max(0, Math.min(100, elapsed))
   const ease = (current: number, target: number, ms: number) =>
     current + (target - current) * (1 - Math.exp(-dt / ms))
-  for (const channel of ['input', 'output'] as const) {
-    for (const key of ['level', 'low', 'mid', 'high'] as const) {
-      const next = unit(snapshot[channel][key])
-      pose[channel][key] = ease(pose[channel][key], next, next > pose[channel][key] ? 45 : 170)
-    }
-  }
   // Real speech has precedence over the background work state, including interruptions.
   const speaking = Math.max(unit(snapshot.input.level), unit(snapshot.output.level)) > 0.035
   const wheel = !speaking && ['thinking', 'transcribing', 'waiting'].includes(snapshot.mode)
   pose.wheel = ease(pose.wheel, wheel ? 1 : 0, header ? 180 : speaking ? 70 : 115)
+  // Finish the header's asymptotic opening at full width before audio can move it.
+  if (header && !wheel && pose.wheel < 0.005) pose.wheel = 0
+  pose.audioReveal = header && pose.wheel > 0 ? 0 : ease(pose.audioReveal, 1, 120)
+  for (const channel of ['input', 'output'] as const) {
+    for (const key of ['level', 'low', 'mid', 'high'] as const) {
+      if (header && pose.wheel > 0) pose[channel][key] = 0
+      else {
+        const next = unit(snapshot[channel][key]) * pose.audioReveal
+        pose[channel][key] = ease(pose[channel][key], next, next > pose[channel][key] ? 45 : 170)
+      }
+    }
+  }
   pose.warmth = ease(pose.warmth, wheel ? 1 : 0, 150)
   pose.rest = ease(pose.rest, snapshot.mode === 'idle' && !speaking ? 1 : 0, 180)
 }
@@ -89,8 +97,11 @@ export class MotionGeometry {
     const strands = compact ? 5 : 7
     const segments = compact ? 48 : 104
     const t = reduced ? 0 : time
-    const both = pose.input.level > 0.045 && pose.output.level > 0.045
-    const output = pose.output.level > pose.input.level
+    // Also cover scrubbed previews and direct poses, which bypass advancePose.
+    const inputAudio = edgeToEdge && pose.wheel > 0 ? SILENT_AUDIO : pose.input
+    const outputAudio = edgeToEdge && pose.wheel > 0 ? SILENT_AUDIO : pose.output
+    const both = inputAudio.level > 0.045 && outputAudio.level > 0.045
+    const output = outputAudio.level > inputAudio.level
     // The wheel touches the left wall, centred on the divider. Its existing
     // strands stretch to the right while the left end stays at that wall.
     const divider = Math.min(9, height * 0.3)
@@ -251,9 +262,9 @@ export class MotionGeometry {
       }
     }
     if (both) {
-      drawBody(pose.input, false, -height * 0.19, 0.46)
-      drawBody(pose.output, true, height * 0.19, 0.46)
-    } else drawBody(output ? pose.output : pose.input, output, 0, 1)
+      drawBody(inputAudio, false, -height * 0.19, 0.46)
+      drawBody(outputAudio, true, height * 0.19, 0.46)
+    } else drawBody(output ? outputAudio : inputAudio, output, 0, 1)
     return this.vertices.subarray(0, this.count)
   }
 
