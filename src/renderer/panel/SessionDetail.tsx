@@ -95,6 +95,7 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
                     sessionId={session.id}
                     item={item}
                     cwd={session.cwd}
+                    gitRoot={session.git?.root ?? null}
                     version={session.lastActiveAt}
                   />
                 )}

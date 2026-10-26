@@ -823,6 +823,24 @@ span.planStep {
   color: var(--amber);
 }
 
+/* Keep the file's counter on its line, with its shared diff viewer beneath it. */
+.stepFiles > li {
+  display: block;
+}
+
+.stepFile {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stepDiffLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+}
+
 /* Why the step is there, as the thread put it. */
 .stepWhy {
   margin: 0;

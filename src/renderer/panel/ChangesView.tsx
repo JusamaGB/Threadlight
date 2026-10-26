@@ -75,28 +75,46 @@ function FileRow(props: {
   )
 }
 
-function FileDiffView({
+export function FileDiffView({
   sessionId,
   path,
   stamp,
+  resolvePath = false,
 }: {
   sessionId: string
-  path: string
+  path: string | null
   stamp: string
+  /** Transcript paths can have different casing from Git's canonical file names on Windows. */
+  resolvePath?: boolean
 }) {
-  const [diff, setDiff] = useState<FileDiff | null>(null)
+  const [result, setResult] = useState<{ path: string | null; diff: FileDiff } | null>(null)
   useEffect(() => {
     let live = true
-    void window.threadlight.getFileDiff(sessionId, path).then((found) => live && setDiff(found))
+    const read = async () => {
+      let file = path
+      if (resolvePath && file) {
+        const changes = await window.threadlight.getChanges(sessionId)
+        file =
+          changes?.files.find((candidate) => candidate.path.toLowerCase() === file?.toLowerCase())
+            ?.path ?? null
+      }
+      const diff: FileDiff = file
+        ? await window.threadlight.getFileDiff(sessionId, file)
+        : { kind: 'unavailable' }
+      if (live) setResult({ path: file, diff })
+    }
+    void read().catch(() => live && setResult({ path: null, diff: { kind: 'unavailable' } }))
     return () => {
       live = false
     }
-  }, [sessionId, path, stamp])
+  }, [sessionId, path, stamp, resolvePath])
 
-  const openFile = (
+  const diff = result?.diff
+  const file = result?.path
+  const openFile = file && (
     <button
       className={styles.fileOpen}
-      onClick={() => window.threadlight.openChangedFile(sessionId, path)}
+      onClick={() => window.threadlight.openChangedFile(sessionId, file)}
     >
       {en.changes.open}
     </button>

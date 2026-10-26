@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { stepActivity } from '../src/main/sessions/stepActivity'
 import { replayPlan } from '../src/main/sessions/transcript'
-import { fileRows } from '../src/shared/stepFiles'
+import { fileRows, repositoryPath } from '../src/shared/stepFiles'
 
 let clock = 0
 /** One transcript line: an assistant block in message `id`, or a tool result. */
@@ -53,6 +53,18 @@ const transcript = [
 ]
 
 describe('step activity', () => {
+  it('maps transcript paths against the git root, including a nested working folder', () => {
+    expect(repositoryPath('src/a.ts', 'Z:/repo/app', 'z:\\REPO')).toBe('app/src/a.ts')
+    expect(repositoryPath('Z:\\repo\\src\\a.ts', 'Z:/repo/app', 'Z:/repo')).toBe('src/a.ts')
+    expect(repositoryPath('../shared/a.ts', 'Z:/repo/app', 'Z:/repo/')).toBe('shared/a.ts')
+    expect(repositoryPath('Z:/other/a.ts', 'Z:/repo', 'Z:/repo')).toBeNull()
+    expect(repositoryPath('Z:/repo-copy/a.ts', 'Z:/repo', 'Z:/repo')).toBeNull()
+    expect(repositoryPath('../../outside.ts', 'Z:/repo/app', 'Z:/repo')).toBeNull()
+    expect(repositoryPath('Z:/repo', 'Z:/repo', 'Z:/repo')).toBeNull()
+    expect(repositoryPath('src/a.ts', null, 'Z:/repo')).toBeNull()
+    expect(repositoryPath('src/a.ts', 'Z:/repo', null)).toBeNull()
+  })
+
   it('gives each step what was done while it was in progress', () => {
     const read = stepActivity(transcript, 'Read the code')
     expect(read.tools).toEqual([{ name: 'Read', count: 1 }])

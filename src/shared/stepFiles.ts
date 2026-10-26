@@ -48,3 +48,26 @@ function absolute(path: string, cwd: string | null): string {
   if (/^([a-z]:|\/)/i.test(norm) || !cwd) return norm
   return `${cwd.replaceAll('\\', '/').replace(/\/+$/, '')}/${norm}`
 }
+
+/** Step paths are absolute or cwd-relative; the Changes API accepts only repository-relative paths. */
+export function repositoryPath(
+  path: string,
+  cwd: string | null,
+  root: string | null,
+): string | null {
+  if (!root) return null
+  const normalize = (value: string) => {
+    const parts: string[] = []
+    for (const part of value.replaceAll('\\', '/').split('/')) {
+      if (part === '.') continue
+      if (part === '..') parts.pop()
+      else parts.push(part)
+    }
+    return parts.join('/').replace(/\/+$/, '')
+  }
+  const full = normalize(absolute(path, cwd))
+  const base = normalize(root)
+  return full.toLowerCase().startsWith(`${base.toLowerCase()}/`)
+    ? full.slice(base.length + 1) || null
+    : null
+}

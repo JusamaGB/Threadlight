@@ -5,7 +5,9 @@ import type { PlanItem, StepActivity } from '../../shared/types'
 import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { clip } from '../lib/format'
-import { fileRows, type FileRow } from '../../shared/stepFiles'
+import { fileRows, repositoryPath, type FileRow } from '../../shared/stepFiles'
+import { FileDiffView } from './ChangesView'
+import { Tip } from './Tip'
 import styles from './Panel.module.css'
 
 interface StepViewProps {
@@ -13,6 +15,7 @@ interface StepViewProps {
   item: PlanItem
   /** The thread's working folder, so file paths read short. */
   cwd: string | null
+  gitRoot: string | null
   /** Changes whenever the thread does something, so a step in progress keeps up. */
   version: number
 }
@@ -23,7 +26,7 @@ interface StepViewProps {
  * (✗ for a failed one), the other tools it used and what it last said. Read from the thread's
  * transcript each time it changes.
  */
-export function StepView({ sessionId, item, cwd, version }: StepViewProps) {
+export function StepView({ sessionId, item, cwd, gitRoot, version }: StepViewProps) {
   const { content: step, status } = item
   const now = useNow(1000)
   const [activity, setActivity] = useState<StepActivity | null | undefined>(undefined)
@@ -70,7 +73,7 @@ export function StepView({ sessionId, item, cwd, version }: StepViewProps) {
       {why}
       {time && <p className={styles.stepNote}>{time}</p>}
       {empty && <p className={styles.stepNote}>{en.step.nothing}</p>}
-      <FileList rows={rows} cwd={cwd} pending={false} />
+      <FileList rows={rows} cwd={cwd} pending={false} diff={{ sessionId, gitRoot, version }} />
       {commands.length > 0 && (
         <ul className={styles.stepList} aria-label={en.step.commands}>
           {commands.map((command, index) => (
@@ -103,11 +106,14 @@ function FileList({
   rows,
   cwd,
   pending,
+  diff,
 }: {
   rows: FileRow[]
   cwd: string | null
   pending: boolean
+  diff?: { sessionId: string; gitRoot: string | null; version: number }
 }) {
+  const [open, setOpen] = useState<string | null>(null)
   if (!rows.length) return null
   const anyPlanned = rows.some((row) => row.planned)
   const mark = (row: FileRow) =>
@@ -125,21 +131,47 @@ function FileList({
             : en.step.unplanned
         }`
   return (
-    <ul className={styles.stepList} aria-label={en.step.files}>
+    <ul className={`${styles.stepList} ${styles.stepFiles}`} aria-label={en.step.files}>
       {rows.map((row) => (
         <li
           key={row.path}
-          title={tip(row)}
           data-unplanned={anyPlanned && !row.planned ? '' : undefined}
           data-untouched={row.planned && !row.changed ? '' : undefined}
         >
-          {anyPlanned && <span className={styles.stepMark}>{mark(row)}</span>}
-          <span className={styles.stepName}>{shortPath(row.path, cwd)}</span>
-          {row.changed && row.changed.added > 0 && (
-            <span className={styles.added}>+{row.changed.added}</span>
-          )}
-          {row.changed && row.changed.removed > 0 && (
-            <span className={styles.removed}>−{row.changed.removed}</span>
+          <div className={styles.stepFile}>
+            {anyPlanned && <span className={styles.stepMark}>{mark(row)}</span>}
+            <span className={styles.stepName} title={tip(row)}>
+              {shortPath(row.path, cwd)}
+            </span>
+            {diff && row.changed && (row.changed.added > 0 || row.changed.removed > 0) && (
+              <Tip
+                as="button"
+                className={`${styles.diff} ${styles.diffLink} ${styles.stepDiffLink}`}
+                text={en.step.diffSummary(row.path, row.changed.added, row.changed.removed)}
+                aria-label={en.step.showDiff(shortPath(row.path, cwd))}
+                aria-expanded={open === row.path}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setOpen(open === row.path ? null : row.path)
+                }}
+              >
+                {row.changed.added > 0 && (
+                  <span className={styles.added}>+{row.changed.added}</span>
+                )}
+                {row.changed.removed > 0 && (
+                  <span className={styles.removed}>−{row.changed.removed}</span>
+                )}
+              </Tip>
+            )}
+          </div>
+          {diff && row.changed && open === row.path && (
+            <FileDiffView
+              key={`${row.path}:${diff.version}`}
+              sessionId={diff.sessionId}
+              path={repositoryPath(row.path, cwd, diff.gitRoot)}
+              stamp={String(diff.version)}
+              resolvePath
+            />
           )}
         </li>
       ))}

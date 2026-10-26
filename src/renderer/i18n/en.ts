@@ -83,6 +83,9 @@ export const en = {
     plannedUnchanged: 'Planned, but not changed on this step',
     unplanned: 'Changed, but not in the plan',
     commands: 'Commands run',
+    showDiff: (path: string) => `Show diff for ${path}`,
+    diffSummary: (path: string, added: number, removed: number) =>
+      `${path} · approximately ${added} lines added, ${removed} removed on this step. Click to toggle the current uncommitted diff.`,
   },
   workspaces: {
     showMore: (n: number) => `Show ${n} more`,

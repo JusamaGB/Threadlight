@@ -332,6 +332,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Checklist file counters now show an immediate hover summary and toggle the shared
+  file diff viewer, with keyboard support and clear feedback for unavailable diffs.
+
 - Codex history scans use the native item-type column and yield between threads so
   long conversations do not block panel hover, leave and blur events. Duplicate hover
   messages are ignored, including delayed requests after the pointer has left the dot.
