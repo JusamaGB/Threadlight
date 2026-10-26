@@ -67,6 +67,63 @@ available through their existing controls. `Panel` owns the shared header,
 `VoicePresence` owns the content-sized caption and `AgentView` owns the chat input
 and history.
 
+### Connected Agent header motion
+
+The orange working wheel and the edge-to-edge voice ribbon are two poses of one
+mesh and one canvas. The wheel sits against the left wall, centred on the grey
+header divider. As speech opens the ribbon, its existing strands stretch rightward;
+interruptions reverse that same continuous morph without replacing the surface.
+
+The header canvas has a 9px upper band and 27px below the divider. Its small wheel
+stays flush with the left edge throughout the morph. Ribbon crests have more vertical range below the bar,
+with soft compression above it to keep the title and controls legible. A fixed
+12px top inset in the activity row keeps status/caption text clear of both poses.
+
+Ribbon colours evolve through smooth spatial and temporal noise, with no wrapped
+colour-sweep clock. Quiet header colours continue drifting at a capped frame
+rate. Reduced motion, waiting/error stillness, offscreen suspension, Canvas
+fallback and the existing microphone/playback telemetry remain in place. Dot,
+microphone-pill and composer surfaces keep their existing layout and motion.
+
+### Thread-specific diffs
+
+Row diff badges and their opened viewer use the chat's provider-recorded changes,
+independent of the checkout's HEAD or other writers. Successful recorded edits
+combine where possible; incomplete/missing history is explicit. Workspace-wide
+diff actions are reserved for the later workspace-wire feature. See
+[Thread-specific changes](THREAD-DIFF-SPEC.md) for ownership, coverage and validation.
+
+### Workspace links and provider-coloured attention
+
+The panel uses a 300px card and adds a 16px transparent gutter on the left
+inside the native window. Wires link listed rows with the same normalized Git
+worktree root (or known working folder when no Git root is available), across
+Claude and Codex. Separate worktrees and unknown folders stay unlinked. Up to three
+external lanes share overlapping routes; hovering, keyboard focus or clicking a
+row highlights its route, with Escape clearing the trace. Row expansion, scrolling,
+filtering and live reordering update measured paths. The first lane sits four pixels
+outside the card; overlapping lanes step outward. Wires default off. A small U-clip
+beside the header reconnects or cuts them and saves the choice. Cut ends spark gently
+(static with reduced motion). Native gutter clicks pass through except for this
+clip; the card and its menus remain interactive.
+
+Thread rows have 3px top and bottom padding, leaving 6px between adjacent contents.
+Git ahead/behind counts sit on the second row immediately before its time or timer,
+leaving the top row for the title and this thread's diff totals.
+
+Active spinning indicators use vibrant Claude-orange strands and a glossy
+Codex-blue outward sweep. The voice ribbon retains its own evolving palette.
+While minimised, pending input in the listed Active/Recent threads instead shows
+the approved pool/hold/drop/splash in that thread's provider colour. The pending
+thread remains selected until answered, so unrelated activity does not switch its
+colour. A narrow transparent, non-focusable, click-through native window follows
+the dot's display down to the bottom work-area/taskbar edge. Opening Threadlight,
+starting voice capture, disabling the provider or clearing pending input hides it.
+The dot keeps its existing hover/click target under the decorative overlay.
+Reduced motion holds the provider-coloured wheel and bead steady; hidden overlays
+schedule no animation. A dot too close to the bottom edge also uses the steady pose.
+The production renderer shares the preview's provider palettes and drop physics.
+
 ### Agent footer settings
 
 The footer provider, model and Codex effort labels open their corresponding setting

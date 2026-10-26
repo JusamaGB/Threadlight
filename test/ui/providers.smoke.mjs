@@ -18,6 +18,8 @@ import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar } from './toolbar.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
+import { checkThreadDiffs } from './thread-diffs.smoke.mjs'
+import { checkWorkspaceLinks } from './workspace-links.smoke.mjs'
 import { checkThreadBadges } from './thread-badges.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
@@ -260,6 +262,7 @@ checks: try {
           },
           getSettings: async () => (await window.mockState()).settings,
           getSnapshot: async () => (await window.mockState()).snapshot,
+          getAttentionMotion: async () => ({ active: false }),
           getSessions: async () => (await window.mockState()).snapshot.sessions,
           updateSettings: async (patch) => {
             const result = await window.mockUpdate(patch)
@@ -410,6 +413,39 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'compact-tips') {
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
+    )
+    await checkTips(page, row)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'compact-layout') {
+    await checkThreadDiffs(page, capture)
+    await checkWorkspaceLinks(page, capture)
+    await checkToolbar(page)
+    await checkSpacesSetup(page, spacesProof, capture)
+    await checkMemory(page, memoryProof, capture)
+    await checkSpaces(page, spacesProof, memoryProof.store, capture)
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
+    )
+    await checkTips(page, row)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'visual-updates') {
+    await checkWorkspaceLinks(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'thread-diff') {
+    await checkThreadDiffs(page, capture)
+    await checkChecklistDiff(page, row, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   await checkWorkspacePaths(page, capture)
   await checkThreadBadges(page, capture)
   assert.deepEqual(errors, [])

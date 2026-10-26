@@ -33,7 +33,7 @@ import { codexDeepLink } from './codex/identity'
 import { codexProcesses } from './codex/live'
 import { SessionService } from './sessions/service'
 import { PLAN_CONTEXT, readStepActivity } from './sessions/stepActivity'
-import { listChanges, readFileDiff } from './sessions/gitChanges'
+import { ThreadChanges } from './sessions/threadChanges'
 import { GitStates } from './sessions/gitDiff'
 import { Tracker } from './sessions/tracker'
 import { SettingsStore } from './settings'
@@ -123,6 +123,11 @@ async function start(): Promise<void> {
   const codexSessions = new SessionService(codexTracker, () => {
     if (enabled('codex')) publish()
   })
+  const threadChanges = new ThreadChanges({
+    history: codex.history,
+    transcript: (id) => tracker.transcriptPath(id),
+    changed: () => publish(),
+  })
   const sources = { claude: claudeSessions, codex: codexSessions }
   const polling = new Set<Provider>()
   function syncPolling(ms: number) {
@@ -138,18 +143,21 @@ async function start(): Promise<void> {
   }
   function publish() {
     const snapshot = sessions.snapshot
+    windows.setAttention(snapshot.sessions)
     windows.send(IPC.sessionsChanged, snapshot.sessions)
     windows.panel.webContents.send(IPC.snapshotChanged, snapshot)
   }
   const sessions = {
     get snapshot() {
-      return combinedSnapshot(
-        settings.settings.enabledProviders,
-        {
-          claude: excludeAgentChats(claudeSessions.snapshot, agentSessionIds),
-          codex: excludeAgentChats(codexSessions.snapshot, agentSessionIds),
-        },
-        settings.settings.maxSessions,
+      return threadChanges.annotate(
+        combinedSnapshot(
+          settings.settings.enabledProviders,
+          {
+            claude: excludeAgentChats(claudeSessions.snapshot, agentSessionIds),
+            codex: excludeAgentChats(codexSessions.snapshot, agentSessionIds),
+          },
+          settings.settings.maxSessions,
+        ),
       )
     },
     get sessions() {
@@ -272,9 +280,13 @@ async function start(): Promise<void> {
   ipcMain.on(IPC.dotDragEnd, () => windows.endDrag())
   ipcMain.on(IPC.resetDotPosition, () => windows.resetDotPosition())
   ipcMain.on(IPC.panelResize, (_event, height: unknown) => windows.resizePanel(Number(height)))
+  ipcMain.handle(IPC.getAttentionMotion, () => windows.attentionMotion)
   ipcMain.on(IPC.panelClose, () => windows.closePanel())
   ipcMain.on(IPC.panelLeave, () => windows.closeOnPointerLeave())
   ipcMain.on(IPC.panelStayOpen, (_event, on: unknown) => windows.setStayOpen(on === true))
+  ipcMain.on(IPC.workspaceWireControl, (event, bounds: unknown) => {
+    if (event.sender === windows.panel.webContents) windows.setWorkspaceWireControl(bounds)
+  })
   ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
     if (typeof appId !== 'string') return
     if (appId.startsWith('codex:')) {
@@ -313,23 +325,14 @@ async function start(): Promise<void> {
       ? holds.answerOffer(sessionId, choice)
       : { ok: false, reason: 'Invalid answer.' },
   )
-  // The Changes view. A thread is named by its id; its repository comes from Threadlight's own
-  // scan, and only files that are among its changes are ever read or opened.
-  const rootOf = (sessionId: unknown) =>
+  // Recorded thread changes, independent of HEAD and every other writer in its worktree.
+  const changeSession = (sessionId: unknown) =>
     typeof sessionId === 'string'
-      ? (everySession(sessions.snapshot).find((s) => s.id === sessionId)?.git?.root ?? null)
+      ? everySession(sessions.snapshot).find((s) => s.id === sessionId)
       : null
-  const changedPath = async (sessionId: unknown, path: unknown) => {
-    const root = rootOf(sessionId)
-    if (!root || typeof path !== 'string') return null
-    const files = await listChanges(root)
-    return files.some((f) => f.path === path) ? { root, path } : null
-  }
   ipcMain.handle(IPC.getChanges, async (_event, sessionId: unknown) => {
-    const root = rootOf(sessionId)
-    if (!root) return null
-    const session = everySession(sessions.snapshot).find((s) => s.id === sessionId)
-    return { branch: session?.git?.branch ?? null, files: await listChanges(root) }
+    const session = changeSession(sessionId)
+    return session ? threadChanges.changes(session) : null
   })
   // A plan step's activity, read from the thread's own transcript, which Threadlight's scan found.
   ipcMain.handle(IPC.getStepActivity, (_event, sessionId: unknown, step: unknown) => {
@@ -338,13 +341,17 @@ async function start(): Promise<void> {
     return path ? readStepActivity(path, step) : null
   })
   ipcMain.handle(IPC.getFileDiff, async (_event, sessionId: unknown, path: unknown) => {
-    const found = await changedPath(sessionId, path)
-    return found ? readFileDiff(found.root, found.path) : { kind: 'unavailable' }
+    const session = changeSession(sessionId)
+    return session && typeof path === 'string'
+      ? threadChanges.file(session, path)
+      : { kind: 'unavailable' }
   })
   ipcMain.on(IPC.openChangedFile, (_event, sessionId: unknown, path: unknown) => {
-    void changedPath(sessionId, path).then((found) => {
-      if (found) void shell.openPath(join(found.root, found.path))
-    })
+    const session = changeSession(sessionId)
+    if (session && typeof path === 'string')
+      void threadChanges.absolute(session, path).then((found) => {
+        if (found) void shell.openPath(found)
+      })
   })
   ipcMain.on(IPC.copyText, (_event, text: unknown) => {
     if (typeof text === 'string' && text.length <= 20_000) clipboard.writeText(text)
@@ -609,6 +616,7 @@ async function start(): Promise<void> {
   })
   ipcMain.on(IPC.talkState, (_event, state: unknown) => {
     if (state === 'idle' || state === 'listening' || state === 'transcribing') {
+      windows.setTalking(state !== 'idle')
       windows.dot.webContents.send(IPC.talkState, state)
     }
   })
@@ -662,6 +670,7 @@ async function start(): Promise<void> {
     quit: () => app.quit(),
   })
 
+  const threadDiffPolling = setInterval(() => threadChanges.refreshListed(), SCAN_INTERVAL_MS)
   let agentRetiredForQuit = false
   let retiringForQuit = false
   app.on('before-quit', (event) => {
@@ -675,6 +684,7 @@ async function start(): Promise<void> {
     })
   })
   app.on('will-quit', () => {
+    clearInterval(threadDiffPolling)
     holds.releaseAll() // Claude carries on with every held card itself from here on
     codexHolds.releaseAll()
     hotkey.dispose()

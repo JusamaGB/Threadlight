@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IPC } from '../src/shared/ipc'
+import type { Session } from '../src/shared/types'
 
 const state = vi.hoisted(() => ({
   saved: { x: 1200, y: 200 },
@@ -32,6 +33,7 @@ vi.mock('electron', () => {
       }
       on = vi.fn()
       setAlwaysOnTop = vi.fn()
+      setIgnoreMouseEvents = vi.fn()
       loadFile = vi.fn()
       focus = vi.fn()
       hide() {
@@ -64,6 +66,88 @@ describe('panel movement and available height', () => {
     state.cursor = { x: 1205, y: 205 }
   })
   afterEach(() => vi.useRealTimers())
+
+  it('keeps the external wire gutter click-through while the card remains interactive', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    const bounds = windows.panel.getBounds()
+    expect(bounds.width).toBe(316)
+    state.cursor = { x: bounds.x + 8, y: bounds.y + 30 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor.x = bounds.x + 25
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+  })
+
+  it('accepts clicks on the header wire clip while the rest of the gutter passes through', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    const bounds = windows.panel.getBounds()
+    windows.setWorkspaceWireControl({ top: 1, height: 24 })
+    state.cursor = { x: bounds.x + 8, y: bounds.y + 40 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor.y = bounds.y + 12
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    // An upward-opening popup can move the header down within its native window.
+    windows.setWorkspaceWireControl({ top: 70, height: 24 })
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor.y = bounds.y + 80
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    windows.setWorkspaceWireControl(null)
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+  })
+
+  it('shows provider-coloured attention only while minimised, with capture taking priority', () => {
+    const windows = new WindowManager()
+    const thread = {
+      id: 'codex:needs-input',
+      state: 'waiting',
+      attention: null,
+      lastActiveAt: 10,
+    } as Session
+    windows.setAttention([thread])
+    expect(windows.attentionMotion.active).toBe(false)
+    windows.setClaudeRunning(true)
+    expect(windows.attentionMotion).toMatchObject({ active: true, provider: 'codex', floor: 840 })
+    windows.openPanel()
+    expect(windows.attentionMotion.active).toBe(false)
+    windows.closePanel()
+    expect(windows.attentionMotion.active).toBe(true)
+    windows.setOpenMicLive(true)
+    expect(windows.attentionMotion.active).toBe(false)
+    windows.setOpenMicLive(false)
+    windows.setTalking(true)
+    expect(windows.attentionMotion.active).toBe(false)
+    windows.setTalking(false)
+    expect(windows.attentionMotion.active).toBe(true)
+    windows.setAttention([])
+    expect(windows.attentionMotion.active).toBe(false)
+  })
+
+  it('keeps one waiting provider stable, then switches when that thread is answered', () => {
+    const windows = new WindowManager()
+    windows.setClaudeRunning(true)
+    const claude = {
+      id: 'claude-waiting',
+      state: 'waiting',
+      attention: null,
+      lastActiveAt: 10,
+    } as Session
+    const codex = { ...claude, id: 'codex:waiting', lastActiveAt: 20 } as Session
+    windows.setAttention([claude])
+    windows.setAttention([claude, codex])
+    expect(windows.attentionMotion.provider).toBe('claude')
+    windows.setAttention([{ ...claude, state: 'idle' }, codex])
+    expect(windows.attentionMotion.provider).toBe('codex')
+    windows.setClaudeRunning(false)
+    expect(windows.attentionMotion.active).toBe(false)
+  })
 
   it('refreshes room during each drag without resetting the expanded view', () => {
     const windows = new WindowManager()
@@ -155,7 +239,7 @@ describe('panel movement and available height', () => {
       opensDown: false,
       fresh: false,
     })
-    expect(windows.panel.getBounds()).toMatchObject({ x: -620, y: 8, height: 614 })
+    expect(windows.panel.getBounds()).toMatchObject({ x: -594, y: 8, height: 614 })
     windows.endDrag()
     windows.dragDot(0, 98)
     expect(windows.panel.webContents.send).toHaveBeenLastCalledWith(IPC.panelOpened, {

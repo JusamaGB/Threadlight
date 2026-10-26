@@ -1,8 +1,14 @@
 /* The panel card. The window is sized to this card, so it must not stretch. */
+.panelStage {
+  position: relative;
+  width: 316px;
+  padding-left: 16px;
+  box-sizing: border-box;
+}
 .card {
   position: relative;
   box-sizing: border-box;
-  width: 342px;
+  width: 300px;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -151,12 +157,14 @@
 
 /* All subpages share a right-hand back chevron and a centered title. */
 .back {
-  width: 14px;
-  order: 1;
-  margin-left: auto;
-  font-size: 16px;
-  line-height: 1;
-  color: var(--muted);
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--fg);
 }
 
 .pageHeading {
@@ -391,7 +399,7 @@
 .rowButton {
   display: block;
   width: 100%;
-  padding: 6px 10px;
+  padding: 3px 10px;
 }
 
 /* Overlay the whole row so raised details and cards don't interrupt the narrow edge tint. */
@@ -627,6 +635,7 @@
 }
 
 .rowBottom > .age,
+.rowBottom > .diff,
 .rowBottom > .taskTimer {
   margin-left: 8px;
 }
@@ -729,7 +738,7 @@
 /* Open ↗ on an expanded row's top line; the space keeps the title clear. */
 .rowOpen {
   position: absolute;
-  top: 6px;
+  top: 3px;
   right: 10px;
   color: var(--muted);
   font-size: 11px;
@@ -1537,8 +1546,8 @@ span.planStep {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -9px;
-  height: 18px;
+  bottom: -27px;
+  height: 36px;
   z-index: 3;
   pointer-events: none;
 }

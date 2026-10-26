@@ -65,6 +65,13 @@ export async function checkChecklistDiff(page, row, capture) {
                 behind: 0,
                 worktrees: [],
               },
+              threadDiff: {
+                files: 2,
+                added: 5,
+                removed: 1,
+                revision: 'checklist-own-diff',
+                complete: true,
+              },
               plan: [
                 {
                   content: 'Update the preview',
@@ -94,7 +101,7 @@ export async function checkChecklistDiff(page, row, capture) {
     const tooltip = page.getByRole('tooltip')
     await tooltip.waitFor()
     assert.match(await tooltip.innerText(), /2 lines added, 1 removed on this step/)
-    assert.match(await tooltip.innerText(), /current uncommitted diff/)
+    assert.match(await tooltip.innerText(), /this thread's recorded file diff/)
     assert.deepEqual(await calls(), [], 'hovering does not read diffs')
     await capture('checklist-diff-hover')
     await link('src/a.ts').click()
@@ -172,7 +179,15 @@ export async function checkChecklistDiff(page, row, capture) {
     })
     // The pre-existing Changes caller must still render and open a file.
     await row('Claude')
-      .getByRole('button', { name: /main · 2 files changed/ })
+      .getByRole('button', { name: /Thread diff · 2 files changed/ })
+      .hover()
+    const worktreeTip = page.getByRole('tooltip')
+    await worktreeTip.waitFor()
+    assert.match(await worktreeTip.innerText(), /Thread diff · 2 files changed/)
+    assert.doesNotMatch(await worktreeTip.innerText(), /Worktree total/)
+    await capture('thread-diff-tooltip')
+    await row('Claude')
+      .getByRole('button', { name: /Thread diff · 2 files changed/ })
       .click()
     await page.getByRole('button', { name: /edit a.ts/ }).click()
     await page.getByText('new content 2 shared/src/a.ts', { exact: true }).waitFor()

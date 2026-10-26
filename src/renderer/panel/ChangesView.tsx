@@ -6,13 +6,12 @@ import styles from './Panel.module.css'
 
 interface ChangesViewProps {
   sessionId: string
-  /** Changes when the thread's git numbers do, so the list is read again. */
+  /** Recorded thread revision, including edits made while worktree totals stay unchanged. */
   stamp: string
 }
 
 /**
- * A thread's changes since the last commit: one row per file, and one file's diff open at a
- * time, like threads. A diff is fetched only when its file is opened. Read-only.
+ * This thread's recorded net changes. Each file is loaded only when opened.
  */
 export function ChangesView({ sessionId, stamp }: ChangesViewProps) {
   const [changes, setChanges] = useState<Changes | null | undefined>(undefined)
@@ -20,18 +19,23 @@ export function ChangesView({ sessionId, stamp }: ChangesViewProps) {
 
   useEffect(() => {
     let live = true
-    void window.threadlight.getChanges(sessionId).then((found) => live && setChanges(found))
+    void window.threadlight
+      .getChanges(sessionId)
+      .then((found) => live && setChanges(found))
+      .catch(() => live && setChanges(null))
     return () => {
       live = false
     }
   }, [sessionId, stamp])
 
   if (changes === undefined) return <p className={styles.changesNote}>{en.changes.loading}</p>
-  if (!changes || changes.files.length === 0) {
-    return <p className={styles.changesNote}>{en.changes.none}</p>
-  }
+  if (!changes) return <p className={styles.changesNote}>{en.changes.historyUnavailable}</p>
   return (
     <div className={styles.changes}>
+      {changes.complete === false && <p className={styles.changesNote}>{en.changes.partial}</p>}
+      {!changes.files.length && changes.complete !== false && (
+        <p className={styles.changesNote}>{en.changes.none}</p>
+      )}
       {changes.files.map((file) => (
         <FileRow
           key={file.path}
@@ -84,7 +88,7 @@ export function FileDiffView({
   sessionId: string
   path: string | null
   stamp: string
-  /** Transcript paths can have different casing from Git's canonical file names on Windows. */
+  /** Match transcript paths to the provider's recorded filename casing/separators. */
   resolvePath?: boolean
 }) {
   const [result, setResult] = useState<{ path: string | null; diff: FileDiff } | null>(null)
@@ -95,8 +99,11 @@ export function FileDiffView({
       if (resolvePath && file) {
         const changes = await window.threadlight.getChanges(sessionId)
         file =
-          changes?.files.find((candidate) => candidate.path.toLowerCase() === file?.toLowerCase())
-            ?.path ?? null
+          changes?.files.find(
+            (candidate) =>
+              candidate.path.replace(/\\/g, '/').toLowerCase() ===
+              file?.replace(/\\/g, '/').toLowerCase(),
+          )?.path ?? null
       }
       const diff: FileDiff = file
         ? await window.threadlight.getFileDiff(sessionId, file)

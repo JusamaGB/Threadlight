@@ -59,7 +59,7 @@ new-chat creation, dependency scheduling and workflow profiles remain future wor
 
 Setup creates the workspace's collaboration space. In **Handoffs**, add named sectors/folders
 for notes, decisions, scratchpads, images and documents. The map, folder, item and task
-views stay inside the existing 342-pixel panel. Map/List, search, Back and saved drafts
+views stay inside the 300-pixel panel. Map/List, search, Back and saved drafts
 let you browse without starting agent work.
 
 Existing material stays **Unassigned** until you explicitly preview and confirm its

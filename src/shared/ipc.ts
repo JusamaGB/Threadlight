@@ -19,6 +19,7 @@ import type { MemoryInput, MemoryReply, MemorySnapshot } from './memory'
 import type { SpacesInput, SpacesReply, SpacesSnapshot } from './spaces'
 import type { LiveVoiceEvent, LiveVoiceResult } from './liveVoice'
 import type { MotionSnapshot } from './motion'
+import type { AttentionMotion } from './attentionMotion'
 import type { DraftResult } from './messaging'
 import type {
   Changes,
@@ -31,6 +32,8 @@ import type {
 } from './types'
 
 export const IPC = {
+  attentionMotion: 'motion:attention',
+  getAttentionMotion: 'motion:get-attention',
   spacesRequest: 'spaces:request',
   spacesChanged: 'spaces:changed',
   spacesRespond: 'spaces:respond',
@@ -81,6 +84,7 @@ export const IPC = {
   panelLeave: 'panel:leave',
   panelPointerOutside: 'panel:pointer-outside',
   panelStayOpen: 'panel:stay-open',
+  workspaceWireControl: 'panel:wire-control',
   openInClaude: 'claude:open-thread',
   answerQuestion: 'hold:answer-question',
   answerNextStep: 'hold:answer-next-step',
@@ -128,6 +132,8 @@ export type TalkState = 'idle' | 'listening' | 'transcribing'
 
 /** What the preload script exposes on `window.threadlight`. */
 export interface ThreadlightApi {
+  getAttentionMotion(): Promise<AttentionMotion>
+  onAttentionMotion(listener: (state: AttentionMotion) => void): () => void
   getMotion(): Promise<MotionSnapshot>
   setMotion(snapshot: MotionSnapshot): void
   onMotion(listener: (snapshot: MotionSnapshot) => void): () => void
@@ -169,6 +175,7 @@ export interface ThreadlightApi {
   onPanelPointerOutside(listener: () => void): () => void
   /** While on, clicking elsewhere does not close the panel (the active or full list pinned open). */
   setStayOpen(on: boolean): void
+  setWorkspaceWireControl(bounds: { top: number; height: number } | null): void
   openInClaude(appId: string): void
 
   /** Relays `text` to a session in the background. Resolves once accepted, not when replied. */

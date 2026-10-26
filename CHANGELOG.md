@@ -6,6 +6,27 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Restored the compact 300px panel and 6px between adjacent thread contents.
+  Moved Git ahead/behind counts beside the time on the second row.
+
+- Connected same-folder/worktree threads with traceable wires in a 16px transparent
+  gutter outside the panel. Hover, focus or click highlights a workspace's route.
+  The first wire stays four pixels from the card. Wires default off; a sparking
+  U-clip beside the header toggles them and remembers the choice.
+- Added the provider-coloured pool, drop and taskbar splash while minimised when
+  a listed thread needs input. Opening the panel or capturing voice stops it;
+  reduced motion holds a steady wheel and bead.
+
+- Applied the vibrant Claude-orange active wheel and glossy Codex-blue outward
+  shine to the application dot and connected header.
+
+- Thread badges and diff viewers now use each Claude/Codex chat's own recorded
+  changes. Repeated edits combine where supported; incomplete histories are
+  labelled explicitly. Workspace Git totals no longer substitute for thread diffs.
+
+- Connected the Agent's orange wheel at the left end of the divider to a richer
+  voice ribbon that stretches rightward, with smoothly evolving colours.
+
 - Moved the Agent's inactive microphone text beside its status, such as
   "Ready - No active Mic", clearing it from the header.
 

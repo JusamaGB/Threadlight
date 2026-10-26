@@ -48,7 +48,7 @@ export function ContextMenu({ x, y, anchor, items, onClose, label }: ContextMenu
     const top = opensDown ? card.top : card.top - extra
     const bottom = opensDown ? card.bottom + extra : card.bottom
     setPosition({
-      left: Math.max(4, Math.min(x, window.innerWidth - width - 4)),
+      left: Math.max(card.left + 4, Math.min(x, card.right - width - 4)),
       top: Math.max(
         top + 4,
         Math.min(at ? (opensDown ? at.bottom + 2 : at.top - height - 2) : y, bottom - height - 4),

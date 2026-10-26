@@ -109,7 +109,7 @@ export interface CurrentStep {
   content: string
 }
 
-/** Lines added and removed in a folder since its last commit. */
+/** Line additions and removals within the stated repository or thread scope. */
 export interface DiffStat {
   added: number
   removed: number
@@ -161,6 +161,15 @@ export type FileDiff =
 export interface Changes {
   branch: string | null
   files: ChangedFile[]
+  /** False when recorded edits could not safely be combined into one net diff. */
+  complete?: boolean
+}
+
+/** Recorded changes belonging to this chat, independent of the worktree's HEAD. */
+export interface ThreadDiffSummary extends DiffStat {
+  files: number
+  revision: string
+  complete: boolean
 }
 
 /** A linked pull request; Codex attachments do not expose its current remote state. */
@@ -207,6 +216,8 @@ export interface Session {
   live: boolean
   /** Its git folder's state; null outside git, or before the first count. */
   git: GitState | null
+  /** Null/absent means the provider's recorded edit history is unavailable. */
+  threadDiff?: ThreadDiffSummary | null
   /** How full its context is, 0 to 1, as the Claude app's Context ring shows; null if unknown. */
   contextUsed: number | null
   /** Set while the thread is waiting on the user; its card replaces the usual details. */

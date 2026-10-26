@@ -67,7 +67,7 @@ export async function checkToolbar(page) {
   await page.keyboard.press('Enter')
   await page.getByRole('button', { name: 'Filter applications: Claude', exact: true }).waitFor()
   await chooseSource('Both')
-  await page.setViewportSize({ width: 342, height: 900 })
+  await page.setViewportSize({ width: 316, height: 900 })
   for (const opensDown of [true, false]) {
     await page.evaluate(async (opensDown) => {
       const snapshot = await window.threadlight.getSnapshot()
@@ -85,7 +85,7 @@ export async function checkToolbar(page) {
       menu: document.querySelector('[role="menu"]').getBoundingClientRect().toJSON(),
       header: document.querySelector('header').getBoundingClientRect().toJSON(),
     }))
-    assert.ok(position.menu.left >= 0 && position.menu.right <= 342)
+    assert.ok(position.menu.left >= 16 && position.menu.right <= 316)
     if (opensDown) assert.ok(position.menu.top >= position.header.bottom)
     else assert.ok(position.menu.bottom <= position.header.top)
     await page.keyboard.press('Escape')

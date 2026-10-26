@@ -84,7 +84,7 @@ export const en = {
     commands: 'Commands run',
     showDiff: (path: string) => `Show diff for ${path}`,
     diffSummary: (path: string, added: number, removed: number) =>
-      `${path} · approximately ${added} lines added, ${removed} removed on this step. Click to toggle the current uncommitted diff.`,
+      `${path} · approximately ${added} lines added, ${removed} removed on this step. Click to toggle this thread's recorded file diff.`,
   },
   workspaces: {
     showMore: (n: number) => `Show ${n} more`,
@@ -129,6 +129,7 @@ export const en = {
     answerInClaude: 'Answer in Claude ↗',
   },
   git: {
+    worktreeTotal: 'Worktree total',
     noBranch: 'no branch',
     filesChanged: (n: number) => (n === 1 ? '1 file changed' : `${n} files changed`),
     newOf: (n: number) => `${n} new`,
@@ -140,10 +141,14 @@ export const en = {
     worktrees: (n: number) => `${n} worktrees`,
   },
   changes: {
-    title: 'Changes',
+    title: 'Thread diff',
     files: (n: number) => (n === 1 ? '1 file' : `${n} files`),
     loading: 'Reading changes…',
-    none: 'Nothing has changed since the last commit.',
+    none: 'No recorded file changes in this thread.',
+    historyUnavailable: "This thread's recorded changes are unavailable.",
+    partialShort: 'Incomplete recorded history',
+    partial:
+      'Some recorded edits could not be combined. Those files show their separate recorded patches.',
     mark: { added: 'new', modified: 'edit', deleted: 'gone' } as Record<
       'added' | 'modified' | 'deleted',
       string

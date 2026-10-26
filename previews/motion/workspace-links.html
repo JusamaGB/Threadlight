@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Threadlight · Workspace wires proposal</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #0d121a;
+      color: #e5ebf3;
+      font:
+        14px/1.5 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 38px 24px;
+    }
+    .eyebrow {
+      color: #8eabc4;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    h1 {
+      font-size: 27px;
+      font-weight: 500;
+      margin: 6px 0 10px;
+    }
+    .intro {
+      color: #a1afc2;
+      max-width: 660px;
+      margin-bottom: 25px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 316px minmax(0, 1fr);
+      gap: 42px;
+      align-items: start;
+    }
+    .panel-stage {
+      position: relative;
+      width: 316px;
+      max-width: 100%;
+      padding-left: 16px;
+      isolation: isolate;
+    }
+    .panel {
+      width: 100%;
+      border: 1px solid #383838;
+      border-radius: 12px;
+      overflow: hidden;
+      color: #e7e7e7;
+      background: #161616;
+      font:
+        12px/1.4 'Segoe UI',
+        sans-serif;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 10px;
+      height: 25px;
+      border-bottom: 1px solid #363636;
+      white-space: nowrap;
+    }
+    .header strong {
+      font-size: 12px;
+    }
+    .context {
+      color: #aaa;
+      font-size: 11px;
+      border-left: 1px solid #393939;
+      padding-left: 7px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tools {
+      margin-left: auto;
+      color: #777;
+      font-size: 14px;
+    }
+    .scroll {
+      overflow-y: auto;
+      max-height: 426px;
+      scrollbar-width: thin;
+      scrollbar-color: #4b4b4b transparent;
+    }
+    .content {
+      position: relative;
+      isolation: isolate;
+    }
+    .wire-viewport {
+      position: absolute;
+      left: 0;
+      right: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .wire-toggle {
+      position: absolute;
+      top: 1px;
+      left: 0;
+      width: 16px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #888;
+      cursor: pointer;
+    }
+    .wire-toggle .clip {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.25;
+    }
+    .wire-toggle[data-connected='true'] {
+      color: #80c5b5;
+    }
+    .wire-toggle[data-connected='true'] .spark {
+      display: none;
+    }
+    .wire-toggle:focus-visible {
+      outline: 1px solid #5faff0;
+      outline-offset: -2px;
+      border-radius: 4px;
+    }
+    .spark {
+      stroke: #ffc777;
+      stroke-width: 1;
+      stroke-linecap: round;
+      fill: #fff1cb;
+      transform-origin: 9px 12px;
+      animation: wireSpark 4.8s ease-out infinite;
+    }
+    .wire-toggle:hover .spark {
+      animation: none;
+      opacity: 1;
+    }
+    @keyframes wireSpark {
+      0%,
+      7% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      12% {
+        opacity: 0.25;
+        transform: scale(0.8);
+      }
+      18% {
+        opacity: 0.65;
+        transform: scale(0.95);
+      }
+      28%,
+      100% {
+        opacity: 0.3;
+        transform: scale(0.85);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .spark {
+        animation: none;
+        opacity: 0.7;
+      }
+    }
+    .wires {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    .wire-back {
+      fill: none;
+      stroke: #161616;
+      stroke-width: 3;
+    }
+    .wire {
+      fill: none;
+      stroke: var(--wire-colour);
+      stroke-width: 1;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.48;
+      transition: opacity 120ms;
+    }
+    .wire-group[data-highlight] .wire {
+      opacity: 1;
+      stroke-width: 1.6;
+    }
+    .panel-stage[data-tracing] .wire-group:not([data-highlight]) .wire {
+      opacity: 0.12;
+    }
+    .thread-row {
+      position: relative;
+    }
+    .thread-row::before,
+    .thread-row::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 10px;
+      pointer-events: none;
+      z-index: 1;
+      background: linear-gradient(
+        to right,
+        color-mix(in srgb, var(--provider-colour) 20%, transparent),
+        transparent
+      );
+    }
+    .thread-row::before {
+      left: 0;
+    }
+    .thread-row::after {
+      right: 0;
+      transform: scaleX(-1);
+    }
+    .thread-row[data-provider='claude'] {
+      --provider-colour: #d5a27f;
+    }
+    .thread-row[data-provider='codex'] {
+      --provider-colour: #5faff0;
+    }
+    .thread-row[data-match] {
+      background: color-mix(in srgb, var(--group-colour) 7%, #161616);
+    }
+    .thread {
+      display: block;
+      width: 100%;
+      background: transparent;
+      border: 0;
+      color: inherit;
+      text-align: left;
+      padding: 3px 10px 3px calc(10px + var(--depth) * 15px);
+      font: inherit;
+      cursor: pointer;
+    }
+    .thread:hover {
+      background: #ffffff04;
+    }
+    .thread:focus-visible {
+      outline: 1px solid #7aa8cb;
+      outline-offset: -2px;
+    }
+    .top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .dot-slot {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      width: 6px;
+      height: 6px;
+    }
+    .ring {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 14px;
+      height: 14px;
+    }
+    .ring circle {
+      fill: none;
+      stroke-width: 1.5;
+    }
+    .ring .track {
+      stroke: #353535;
+    }
+    .ring .fill {
+      stroke: #999;
+      stroke-linecap: round;
+    }
+    .ring[data-level='amber'] .fill {
+      stroke: #dcab4f;
+    }
+    .ring[data-level='red'] .fill {
+      stroke: #e86c5f;
+    }
+    .ring[data-thinking] {
+      animation: think 0.9s linear infinite;
+    }
+    @keyframes think {
+      to {
+        transform: translate(-50%, -50%) rotate(360deg);
+      }
+    }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+    .dot[data-state='working'] {
+      background: #d66a61;
+    }
+    .dot[data-state='waiting'] {
+      background: #e8ad44;
+    }
+    .title {
+      min-width: 0;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+    }
+    .diff {
+      flex: none;
+      display: flex;
+      gap: 4px;
+      font-size: 10px;
+    }
+    .added {
+      color: #62cd8d;
+    }
+    .removed {
+      color: #e67a70;
+    }
+    .bottom {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-left: 14px;
+      margin-top: 2px;
+      font-size: 11px;
+      color: #8f8f8f;
+    }
+    .stage {
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+    }
+    .age {
+      flex: none;
+      color: #999;
+    }
+    .detail {
+      margin: 0 10px 6px 36px;
+      padding: 8px;
+      border-radius: 5px;
+      background: #202020;
+      color: #aaa;
+      font-size: 11px;
+    }
+    .detail p {
+      margin: 3px 0;
+    }
+    .guide {
+      position: absolute;
+      left: 14px;
+      top: 0;
+      bottom: 0;
+      border-left: 1px solid #383838;
+    }
+    .usage {
+      display: flex;
+      height: 3px;
+      gap: 2px;
+    }
+    .usage span {
+      flex: 1;
+      background: #78b4e7;
+    }
+    .usage span:last-child {
+      background: #c5a06d;
+    }
+    .panel-stage[data-links='off'] .wire-viewport {
+      display: none;
+    }
+    .panel-stage[data-links='off'] .thread-row[data-match] {
+      background: #161616;
+    }
+    .caption {
+      color: #8b9caf;
+      font-size: 12px;
+      margin-top: 10px;
+      max-width: 316px;
+    }
+    .controls {
+      display: grid;
+      gap: 18px;
+    }
+    .controls label {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: #bdcad9;
+    }
+    select,
+    .controls button {
+      border: 1px solid #344354;
+      border-radius: 6px;
+      background: #17212c;
+      color: #e2e9f2;
+      padding: 7px 10px;
+      font: inherit;
+    }
+    select {
+      min-width: 0;
+      flex: 1;
+    }
+    .controls button {
+      cursor: pointer;
+    }
+    .controls button[aria-pressed='true'] {
+      border-color: var(--group-colour, #7bb6e9);
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .legend button {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+    }
+    .swatch {
+      width: 14px;
+      height: 2px;
+      background: var(--group-colour);
+    }
+    .control-label {
+      color: #9fb1c5;
+      font-size: 12px;
+      margin: 0 0 8px;
+    }
+    .trace-summary {
+      min-height: 70px;
+      font-size: 12px;
+      color: #a9bbcf;
+      overflow-wrap: anywhere;
+    }
+    .plan {
+      border-top: 1px solid #2b3746;
+      padding-top: 17px;
+      color: #a8b7c9;
+      font-size: 13px;
+    }
+    .plan h2 {
+      margin: 0 0 9px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #e1e9f1;
+    }
+    .plan ul {
+      padding-left: 18px;
+      margin: 0;
+    }
+    .plan li {
+      margin-bottom: 8px;
+    }
+    @media (max-width: 760px) {
+      .layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 25px;
+      }
+      main {
+        padding: 25px 18px;
+      }
+      .controls {
+        max-width: 480px;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ring[data-thinking] {
+        animation: none;
+      }
+      .wire {
+        transition: none;
+      }
+    }
+  </style>
+  <main>
+    <span class="eyebrow">Design proposal · sample threads</span>
+    <h1>Trace the shared workspace</h1>
+    <p class="intro">
+      A wire connects Claude and Codex threads in the same folder. Hover or focus a thread to follow
+      its connection, or hold a trace with the buttons beside the preview.
+    </p>
+    <div class="layout">
+      <div>
+        <div class="panel-stage" data-links="off">
+          <button
+            class="wire-toggle"
+            data-wire-toggle
+            data-connected="false"
+            aria-label="Show workspace wires"
+            title="Show workspace wires"
+            aria-pressed="false"
+          >
+            <svg width="16" height="24" viewBox="0 0 16 24" aria-hidden="true">
+              <path class="clip" d="M16 5H12Q9 5 9 8V10M9 14V16Q9 19 12 19H16" />
+              <g class="spark">
+                <path d="M7 12 4.5 11M10 10.5 12 8.5M10 13.5 12 15.5" />
+                <circle cx="9" cy="12" r="0.8" />
+              </g>
+            </svg>
+          </button>
+          <div class="panel" aria-label="Threadlight workspace wires preview">
+            <div class="header">
+              <strong id="view-label">Recent · 12</strong><span class="context">Both · General</span
+              ><span class="tools" aria-hidden="true">✧　⚙</span>
+            </div>
+            <div class="scroll">
+              <div class="content">
+                <div class="rows"></div>
+              </div>
+            </div>
+            <div class="usage" aria-hidden="true"><span></span><span></span></div>
+          </div>
+          <div class="wire-viewport"><svg class="wires" aria-hidden="true"></svg></div>
+        </div>
+        <p class="caption">
+          Wires sit in a 16px strip outside the 300px panel. Titles and stats keep their full space.
+          Click a thread to expand it.
+        </p>
+      </div>
+      <div class="controls">
+        <label
+          >List
+          <select id="scenario" aria-label="List">
+            <option value="interleaved">Interleaved threads</option>
+            <option value="active">Active threads</option>
+            <option value="workspace">One workspace</option>
+          </select></label
+        >
+        <p>
+          Click the sparking clip beside the header to connect the wires. Click again to cut them.
+        </p>
+        <label><input type="checkbox" id="show-links" /> Show workspace wires</label>
+        <label><input type="checkbox" id="shared-rail" /> Layer wires on one rail</label>
+        <div>
+          <p class="control-label">Hold a trace · Escape to clear</p>
+          <div class="legend"></div>
+        </div>
+        <div class="trace-summary" role="status" aria-live="polite">
+          Hover a thread to trace its workspace.
+        </div>
+        <div><button id="reorder">Change thread order</button></div>
+        <div class="plan">
+          <h2>Proposed behaviour</h2>
+          <ul>
+            <li>
+              Same full folder path, across both providers. Separate worktrees remain separate.
+            </li>
+            <li>
+              Keep the existing list order. Wires follow the rows as they expand, move or scroll.
+            </li>
+            <li>
+              Only groups with two or more listed threads get a wire. Unknown folders stay unlinked.
+            </li>
+            <li>
+              Hover or keyboard focus highlights a connection. Context wheels and row actions keep
+              their existing roles.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script type="module" src="./workspace-links.ts"></script>
+</html>

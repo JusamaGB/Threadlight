@@ -78,6 +78,15 @@ describe('validatePatch', () => {
 })
 
 describe('SettingsStore', () => {
+  it('defaults workspace wires off and remembers the header clip across restarts', async () => {
+    const store = new SettingsStore(box.root)
+    expect((await store.load()).workspaceWires).toBe(false)
+    await store.update({ workspaceWires: true })
+    expect((await new SettingsStore(box.root).load()).workspaceWires).toBe(true)
+    await store.update({ workspaceWires: false })
+    expect((await new SettingsStore(box.root).load()).workspaceWires).toBe(false)
+    expect(validatePatch({ workspaceWires: 'on' }).ok).toBe(false)
+  })
   it('migrates Agent defaults and preserves provider-specific choices across switches', async () => {
     await writeFile(
       join(box.root, 'settings.json'),

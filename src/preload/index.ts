@@ -19,6 +19,8 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: ThreadlightApi = {
+  getAttentionMotion: () => ipcRenderer.invoke(IPC.getAttentionMotion),
+  onAttentionMotion: (listener) => subscribe(IPC.attentionMotion, listener),
   getMotion: () => ipcRenderer.invoke(IPC.getMotion),
   setMotion: (snapshot) => ipcRenderer.send(IPC.motion, snapshot),
   onMotion: (listener) => subscribe(IPC.motion, listener),
@@ -53,6 +55,7 @@ const api: ThreadlightApi = {
   leavePanel: () => ipcRenderer.send(IPC.panelLeave),
   onPanelPointerOutside: (listener) => subscribe<void>(IPC.panelPointerOutside, listener),
   setStayOpen: (on) => ipcRenderer.send(IPC.panelStayOpen, on),
+  setWorkspaceWireControl: (bounds) => ipcRenderer.send(IPC.workspaceWireControl, bounds),
   openInClaude: (appId) => ipcRenderer.send(IPC.openInClaude, appId),
 
   sendMessage: (sessionId, text) => ipcRenderer.invoke(IPC.sendMessage, sessionId, text),

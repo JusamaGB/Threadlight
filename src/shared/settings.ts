@@ -1,6 +1,6 @@
 // Threadlight's settings: one schema, validated with zod, with a default for every field.
 // The main process owns the file; the UI only ever sends changes through IPC.
-// Every setting here has a control in the panel's settings view.
+// Settings are controlled through the panel and its settings view.
 
 import { z } from 'zod'
 import { DEFAULT_ENABLED_PROVIDERS, PROVIDERS } from './providers'
@@ -30,6 +30,8 @@ export const settingsSchema = z.object({
   openOn: z.enum(['hover', 'click']).default('hover'),
   /** Start Threadlight when you sign in to Windows. Off until you turn it on. */
   launchAtSignIn: z.boolean().default(false),
+  /** The header's wire clip connects/disconnects workspace links. Opt in on first use. */
+  workspaceWires: z.boolean().default(false),
   /**
    * What the full list (the "recent" view) shows: the most recent threads, one workspace with
    * all its threads (the workspace of the thread last open in Claude), or every workspace as
