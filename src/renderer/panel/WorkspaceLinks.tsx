@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { WORKSPACE_GUTTER } from '../../shared/attentionMotion'
 import { layoutWorkspaceWires } from '../../shared/workspaceWires'
+import { HeaderWire } from '../motion/HeaderWire'
 import styles from './WorkspaceLinks.module.css'
 
 const colours = ['#80c5b5', '#b2a1e4', '#d1b480', '#7fb9d7']
@@ -202,22 +203,7 @@ export function WorkspaceLinks({
           }
         }}
       >
-        <svg width="16" height="24" viewBox="0 0 16 24" aria-hidden="true">
-          <path
-            className={styles.clip}
-            d={
-              enabled
-                ? 'M16 5H12Q9 5 9 8V16Q9 19 12 19H16'
-                : 'M16 5H12Q9 5 9 8V10M9 14V16Q9 19 12 19H16'
-            }
-          />
-          {!enabled && (
-            <g className={styles.spark}>
-              <path d="M7 12 4.5 11M10 10.5 12 8.5M10 13.5 12 15.5" />
-              <circle cx="9" cy="12" r="0.8" />
-            </g>
-          )}
-        </svg>
+        <HeaderWire connected={enabled} />
       </button>
       <div ref={host} className={styles.links} data-workspace-links aria-hidden />
     </>
