@@ -176,6 +176,37 @@ export async function checkWorkspaceLinks(page, capture) {
       }),
     )
     await page.waitForFunction(() => document.querySelectorAll('[data-wire-key]').length === 0)
+    await page.evaluate(() => {
+      const proof = window.proof,
+        originals = proof.wireSnapshot.sessions
+      const sessions = [...originals, { ...originals[0], id: 'outside-last' }].map((session, i) => {
+        const root =
+          i === 0 || i === 2
+            ? 'C:/short'
+            : i === 1 || i === 17
+              ? 'C:/long'
+              : i === 3 || i === 4
+                ? 'C:/inner'
+                : i >= 18
+                  ? 'C:/outside'
+                  : `C:/unique-${i}`
+        return { ...session, cwd: root, git: { ...originals[0].git, root } }
+      })
+      proof.emit('onSnapshot', { ...proof.wireSnapshot, sessions })
+    })
+    await page.waitForFunction(() => document.querySelectorAll('[data-wire-key]').length === 4)
+    const lanes = await page
+      .locator('[data-wire-key]')
+      .evaluateAll((groups) =>
+        Object.fromEntries(
+          groups.map((group) => [group.dataset.wireKey, Number(group.dataset.railX)]),
+        ),
+      )
+    assert.deepEqual(lanes, { 'c:/long': 12, 'c:/short': 8, 'c:/inner': 8, 'c:/outside': 12 })
+    await page.locator('[data-workspace-thread-list]').evaluate((list) => {
+      list.scrollTop = 0
+    })
+    await capture('workspace-wires-longest-closest')
     console.log(
       'PASS: production outside wires preserve row width, link exact cross-provider worktrees, exclude unknown/separate paths and follow hover, expansion, scroll and filtering.',
     )

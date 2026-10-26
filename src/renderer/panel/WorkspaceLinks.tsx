@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { WORKSPACE_GUTTER } from '../../shared/attentionMotion'
+import { layoutWorkspaceWires } from '../../shared/workspaceWires'
 import styles from './WorkspaceLinks.module.css'
 
 const colours = ['#80c5b5', '#b2a1e4', '#d1b480', '#7fb9d7']
@@ -78,24 +79,21 @@ export function WorkspaceLinks({
       svg.setAttribute('viewBox', `0 0 ${WORKSPACE_GUTTER} ${list.clientHeight}`)
       svg.setAttribute('width', String(WORKSPACE_GUTTER))
       svg.setAttribute('height', String(list.clientHeight))
-      const laneEnds: number[] = []
-      const linked = [...groups]
-        .filter(([, ys]) => ys.length > 1)
-        .sort((a, b) => a[1][0]! - b[1][0]!)
+      const linked = [...groups].filter(([, ys]) => ys.length > 1)
+      const routes = layoutWorkspaceWires(
+        linked.map(([key, ys]) => ({ key, first: ys[0]!, last: ys.at(-1)! })),
+      )
       if (held && !linked.some(([key]) => key === held)) held = null
-      for (const [key, ys] of linked) {
-        const first = ys[0]!,
-          last = ys.at(-1)!
-        let lane = laneEnds.findIndex((end) => end < first)
-        if (lane < 0) lane = laneEnds.length
-        laneEnds[lane] = last
-        const x = WORKSPACE_GUTTER - 4 - (lane % 3) * 4,
-          r = Math.min(3, WORKSPACE_GUTTER - x, (last - first) / 2)
+      for (const { key, first, last, lane, x } of routes) {
+        const ys = groups.get(key)!
+        const r = Math.min(3, WORKSPACE_GUTTER - x, (last - first) / 2)
         let path = `M 16 ${first} H ${x + r} Q ${x} ${first} ${x} ${first + r} V ${last - r} Q ${x} ${last} ${x + r} ${last} H 16`
         for (const y of ys.slice(1, -1)) path += ` M ${x} ${y} H 16`
         const group = document.createElementNS(svg.namespaceURI, 'g')
         group.setAttribute('data-wire-key', key)
         group.setAttribute('data-members', String(ys.length))
+        group.setAttribute('data-lane', String(lane))
+        group.setAttribute('data-rail-x', String(x))
         group.setAttribute('stroke', colourOf(key))
         for (const className of ['back', 'wire']) {
           const line = document.createElementNS(svg.namespaceURI, 'path')

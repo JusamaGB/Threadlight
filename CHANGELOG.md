@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Layered worktree wires by measured vertical span: longest closest to the panel,
+  shorter overlapping wires farther out, and separate groups back at the closest lane.
+
 - Stabilised thread order during messages, tool progress and permission pauses.
   Threads now reorder when their task finishes and goes idle, across both providers
   and Recent/Active/Workspace lists, while live activity details keep updating.

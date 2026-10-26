@@ -1,4 +1,5 @@
 import { workspaceFolder } from '../../src/shared/providers'
+import { layoutWorkspaceWires } from '../../src/shared/workspaceWires'
 
 type Thread = {
   id: string
@@ -207,18 +208,6 @@ function render() {
       name: threads[0].cwd!.replaceAll('\\', '/').replace(/\/+$/, '').split('/').at(-1)!,
       colour: colours[allKeys.indexOf(key) % colours.length],
     }))
-  // Disjoint vertical intervals reuse a lane; overlapping workspaces stay separate.
-  const laneEnds: number[] = []
-  for (const group of [...groups].sort(
-    (a, b) => shown.indexOf(a.threads[0]) - shown.indexOf(b.threads[0]),
-  )) {
-    const first = shown.indexOf(group.threads[0]),
-      last = shown.indexOf(group.threads.at(-1)!)
-    let lane = laneEnds.findIndex((end) => end < first)
-    if (lane < 0) lane = laneEnds.length
-    laneEnds[lane] = last
-    group.lane = lane
-  }
   if (held && !groups.some((group) => group.key === held)) held = null
   rows.innerHTML = shown
     .map((thread) => {
@@ -285,10 +274,8 @@ function draw() {
   viewport.style.top = `${list.top - outside.top}px`
   viewport.style.height = `${scroll.clientHeight}px`
   wires.setAttribute('viewBox', `0 0 ${outside.width} ${scroll.clientHeight}`)
-  layout = groups.map((group) => ({
+  const measured = groups.map((group) => ({
     key: group.key,
-    lane: group.lane,
-    railX: sharedRail.checked ? 12 : 12 - (group.lane % 3) * 4,
     points: group.threads.map((thread) => {
       const ring = rows
         .querySelector<HTMLElement>(`[data-thread-id="${thread.id}"] .dot-slot`)!
@@ -300,6 +287,22 @@ function draw() {
       }
     }),
   }))
+  const routes = layoutWorkspaceWires(
+    measured.map((group) => ({
+      key: group.key,
+      first: group.points[0].y,
+      last: group.points.at(-1)!.y,
+    })),
+  )
+  layout = routes.map((route) => {
+    groups.find((group) => group.key === route.key)!.lane = route.lane
+    return {
+      key: route.key,
+      lane: route.lane,
+      railX: sharedRail.checked ? 12 : route.x,
+      points: measured.find((group) => group.key === route.key)!.points,
+    }
+  })
   wires.innerHTML = layout
     .map((group) => {
       const lane = group.railX

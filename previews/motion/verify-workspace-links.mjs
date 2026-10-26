@@ -35,6 +35,18 @@ try {
     ),
   )
   assert.equal(new Set(initial.groups.map((group) => group.lane)).size, 3)
+  const assertSpanOrder = (layout) => {
+    for (const a of layout)
+      for (const b of layout) {
+        const firstA = a.points[0].y,
+          lastA = a.points.at(-1).y,
+          firstB = b.points[0].y,
+          lastB = b.points.at(-1).y
+        if (firstA <= lastB && lastA >= firstB && lastA - firstA > lastB - firstB)
+          assert.ok(a.railX > b.railX, 'longer overlapping routes stay closer to the card')
+      }
+  }
+  assertSpanOrder(initial.layout)
   const row = (id) => page.locator(`[data-thread-id="${id}"]`)
   await row('motion').hover()
   assert.equal(await page.locator('.thread-row[data-match]').count(), 4)
@@ -49,6 +61,7 @@ try {
     initial.layoutVersion,
   )
   const expanded = await inspect()
+  assertSpanOrder(expanded.layout)
   assert.ok(expanded.layout.find((group) => group.key === main.key).points.at(-1).y > before + 40)
   await page
     .locator('.panel-stage')

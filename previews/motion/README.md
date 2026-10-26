@@ -73,8 +73,11 @@ The application derives groups from the rows already listed and follows their
 measured positions without intercepting existing controls. Focused browser checks
 cover mixed providers, filtering, unknown paths, expansion and scrolling.
 The proposal uses the 300px card and adds a 16px transparent gutter on its left.
-Three external lanes can be reused by overlapping groups; the highlighted route
-paints last. A shared-rail toggle demonstrates all groups using the same line.
+Within each overlapping group, the longest measured route is closest to the card;
+shorter overlapping routes step outwards, while disjoint groups reuse the closest
+lane. Crowded groups compress their spacing within the gutter. The preview and
+application share this layout function, and the highlighted route paints last.
+A shared-rail toggle demonstrates all groups using the same line.
 Neither mode consumes title or status space inside the card.
 
 The application now reserves that transparent gutter inside its native window

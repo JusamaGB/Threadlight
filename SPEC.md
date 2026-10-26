@@ -110,8 +110,11 @@ thread history. The action is disabled without a known Git root. See
 The panel uses a 300px card and adds a 16px transparent gutter on the left
 inside the native window. Wires link listed rows with the same normalized Git
 worktree root (or known working folder when no Git root is available), across
-Claude and Codex. Separate worktrees and unknown folders stay unlinked. Up to three
-external lanes share overlapping routes; hovering, keyboard focus or clicking a
+Claude and Codex. Separate worktrees and unknown folders stay unlinked. Within each
+overlapping group, the longest measured top-to-bottom route stays closest to the
+card and shorter overlapping routes step outward. Disjoint groups reuse the closest
+lane. Crowded groups compress lane spacing within the gutter without wrapping a
+shorter route back inward. Hovering, keyboard focus or clicking a
 row highlights its route, with Escape clearing the trace. Row expansion, scrolling,
 filtering and live reordering update measured paths. The first lane sits four pixels
 outside the card; overlapping lanes step outward. Wires default off. A small U-clip
