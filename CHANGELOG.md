@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Both + Workspace interleaves Claude and Codex chats by latest activity, newest
+  first, while keeping side threads beneath their parent.
+
 - Fixed Both + Workspace matching across ordinary and extended Windows drive/UNC
   paths; Shared Spaces uses the same folder comparison and drive grouping.
 - Preserved the latest vibrant orange active-wheel and glossy blue-shine preview.

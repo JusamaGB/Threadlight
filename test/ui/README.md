@@ -9,7 +9,8 @@ do not download a browser.
 Set `THREADLIGHT_UI_FOCUS=workspace` to run the toolbar checks and mixed Windows path regression:
 Both + Workspace loads both providers from initially empty trees, combines ordinary
 and extended drive/UNC paths in the picker, and preserves original IDs when loading
-threads, saving a selection and switching providers.
+threads, saving a selection and switching providers. It also checks merged newest-first
+ordering, stable ties, nested side threads, workspace isolation and live activity reordering.
 
 The test serves the built renderer on a temporary loopback port with synthetic IPC.
 It never launches Electron, either chat CLI, or a hook server, and needs no accounts.

@@ -409,7 +409,7 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
-  await checkWorkspacePaths(page)
+  await checkWorkspacePaths(page, capture)
   assert.deepEqual(errors, [])
   if (process.env.THREADLIGHT_UI_FOCUS === 'workspace') {
     await checkToolbar(page)

@@ -17,6 +17,12 @@ Not affiliated with or endorsed by Anthropic. It reads files the Claude app and 
 
 ### Panel pinning and view controls (26 October 2026)
 
+With Both selected, Workspace shows one combined list for the chosen folder.
+Top-level threads from Claude and Codex are ordered by their last activity, newest
+first, with stable thread-ID ordering for equal timestamps. Side threads remain
+nested beneath their parent. All continues to show separate collapsible provider
+workspace groups.
+
 Pinning and the chosen list are independent. Double-clicking the header's bare
 background immediately toggles pinned/unpinned without changing Active, Recent,
 Workspace or All, the selected workspace, or expanded rows. A third click has no

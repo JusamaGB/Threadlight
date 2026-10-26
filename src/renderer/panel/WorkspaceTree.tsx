@@ -32,19 +32,29 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
     )
   }
 
+  if (only) {
+    // One selected folder can contain several providers. Merge its root threads by activity;
+    // children stay attached to their parent, and adapter-owned arrays are never reordered.
+    const threads = shown.flatMap((workspace) => workspace.threads)
+    if (shown.length > 1)
+      threads.sort(
+        (a, b) =>
+          b.session.lastActiveAt - a.session.lastActiveAt ||
+          a.session.id.localeCompare(b.session.id),
+      )
+    return (
+      <section className={styles.workspace}>
+        <div className={styles.workspaceThreads}>
+          <Nodes nodes={threads} renderRow={renderRow} />
+        </div>
+      </section>
+    )
+  }
+
   return (
     <>
       {shown.map((workspace) => {
-        const open = only !== null || isOpen(workspace.id)
-        if (only) {
-          return (
-            <section key={workspace.id} className={styles.workspace}>
-              <div className={styles.workspaceThreads}>
-                <Nodes nodes={workspace.threads} renderRow={renderRow} />
-              </div>
-            </section>
-          )
-        }
+        const open = isOpen(workspace.id)
         return (
           <section key={workspace.id} className={styles.workspace}>
             <button
