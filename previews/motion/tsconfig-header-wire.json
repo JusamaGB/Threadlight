@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["header-wire.ts", "wire-electricity.ts"]
+}

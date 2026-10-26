@@ -18,6 +18,13 @@ design previews, not a desktop overlay or an application feature flag.
   its divider, its rightward stretch and the expressive, evolving voice ribbon.
   Controls switch states, vary voice energy and scrub the connected morph without
   opening a microphone or interacting with the installed application.
+- `/header-wire.html` compares the existing header toggle with a closer, softly
+  lit loop carrying fast, generative white current. Connected and cut details
+  appear together; grey cut ends spark when a pulse arrives. Timing, intensity,
+  branches and particles vary per burst, with occasional clusters. The preview
+  supports keyboard toggling, paused inspection, slow playback and reduced motion.
+  Its renderer reuses sampled geometry and SVG elements, and preserves complete
+  travel through delayed frames. This treatment is preview-only.
 - `/workspace-links.html` is a proposal using sample threads. Thin wires connect
   listed Claude and Codex threads with the exact same normalized workspace folder.
   Hover/focus traces a group; preview buttons hold that trace, switch list filters,
@@ -41,6 +48,8 @@ node previews/motion/verify-provider-colours.mjs
 node previews/motion/verify-idle.mjs
 node previews/motion/verify-header.mjs
 node previews/motion/verify-workspace-links.mjs
+node previews/motion/verify-header-wire.mjs
+node previews/motion/verify-wire-continuity.mjs
 ```
 
 The scripts use local Playwright or `THREADLIGHT_PLAYWRIGHT`, matching the app's
@@ -49,6 +58,13 @@ Synthetic screenshots and filmstrips go under ignored `screenshots-local/` by
 default, or `THREADLIGHT_SCREENSHOTS`. `original-geometry.ts` preserves the
 comparison baseline. The preview does not control an installed application,
 microphone, account, user files or the Windows taskbar.
+
+For focused header-wire work, typecheck with
+`node node_modules/typescript/bin/tsc -p previews/motion/tsconfig-header-wire.json`.
+The continuity check covers 24, 30 and 60 FPS, an 80 ms delayed frame, complete
+endpoint travel and reuse of SVG elements. `node previews/motion/profile-wire.mjs`
+reports draw costs and browser frame intervals; those measurements depend on the
+machine and are not an FPS guarantee.
 
 ## Workspace wires preview and application integration
 
