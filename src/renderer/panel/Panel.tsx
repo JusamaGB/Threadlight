@@ -941,7 +941,7 @@ export function Panel() {
           {pickingWorkspace ? (
             <>
               <button
-                className={`${styles.back} ${styles.pageBack}`}
+                className={styles.back}
                 onClick={() => setPickingWorkspace(false)}
                 aria-label={en.settings.back}
                 title={en.settings.back}
@@ -962,12 +962,14 @@ export function Panel() {
               >
                 ‹
               </button>
-              <span className={styles.heading}>{changesHeading}</span>
+              <span className={`${styles.heading} ${styles.pageHeading}`} title={changesHeading}>
+                {changesHeading}
+              </span>
             </>
           ) : showAgent ? (
             <>
               <button
-                className={`${styles.back} ${styles.pageBack}`}
+                className={styles.back}
                 onClick={() => setShowAgent(false)}
                 aria-label={en.settings.back}
                 title={en.settings.back}
@@ -995,7 +997,7 @@ export function Panel() {
           ) : showSettings ? (
             <>
               <button
-                className={`${styles.back} ${styles.pageBack}`}
+                className={styles.back}
                 onClick={() => setShowSettings(false)}
                 aria-label={en.settings.back}
                 title={en.settings.back}

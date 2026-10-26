@@ -346,6 +346,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- All page headers use a centered title and left-hand back arrow, including Changes
+  and Shared Spaces. Long titles truncate before reaching the navigation controls.
+
 - Checklist file counters now show an immediate hover summary and toggle the shared
   file diff viewer, with keyboard support and clear feedback for unavailable diffs.
 
