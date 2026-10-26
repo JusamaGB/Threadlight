@@ -66,13 +66,16 @@ individual workspace returns to exact-folder scope. Inside a folder, the first
 navigation row starts with a centred, left-pointing back arrow without a visible
 button border; the top level has no arrow.
 
-Workspace defaults to the full display work area with small edge margins and the
-taskbar left clear. Only Workspace lets the existing usage bars resize the panel,
+Workspace grows with its content up to a saved maximum, defaulting to the full
+display work area with small edge margins and the taskbar left clear. Empty and
+short workspaces shrink to their contents; longer lists scroll at the limit. Only
+Workspace lets the existing usage bars resize the panel,
 with no extra strip, button or icon. The whole bottom usage strip shows the resize cursor
 and accepts dragging, including its left and right edges. Dragging previews height
-and saves on release; Arrow keys adjust by 10px, Home selects the minimum and End
-the available height. The
-last pick becomes Workspace's default across restarts. Smaller displays clamp the
+and saves the maximum on release. A drag starts at the visible panel height, even
+when the saved maximum is larger. Arrow keys adjust the maximum by 10px, Home
+selects the minimum and End the available height. The last pick becomes Workspace's
+maximum across restarts. Changing content never overwrites it. Smaller displays clamp the
 shown height without overwriting the saved preference. Other views and pages keep
 content-sized layout. Drag capture protects an unpinned panel and quota tooltips
 remain available on the bars.

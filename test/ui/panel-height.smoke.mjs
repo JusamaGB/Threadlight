@@ -5,6 +5,11 @@ export async function checkWorkspaceHeight(page, capture) {
   const initial = await page.evaluate(() => window.threadlight.getSettings())
   const card = page.locator('[data-card]')
   const grip = page.getByRole('separator', { name: 'Resize Workspace height' })
+  const setRows = (count) =>
+    page.evaluate(
+      async (count) => window.proof.emit('onSnapshot', await window.mockWorkspaceRows(count)),
+      count,
+    )
   const choose = async (name) => {
     await page.locator('header [data-thread-view]').click({ button: 'right' })
     await page.getByRole('menuitem', { name, exact: true }).click()
@@ -28,6 +33,7 @@ export async function checkWorkspaceHeight(page, capture) {
         workspacePanelHeight: null,
       })
     })
+    await setRows(40)
     await choose('Workspace')
     await heightIs(900)
     assert.equal(await grip.locator('button, svg').count(), 0, 'no visible resize control')
@@ -68,6 +74,41 @@ export async function checkWorkspaceHeight(page, capture) {
       async () => (await window.threadlight.getSettings()).workspacePanelHeight === 700,
     )
     await capture('workspace-picked-height')
+    await setRows(0)
+    const emptyHeight = await card.evaluate((el) => el.getBoundingClientRect().height)
+    assert.ok(emptyHeight < 120, 'an empty workspace uses only its empty-state content')
+    assert.equal(await card.evaluate((el) => getComputedStyle(el).maxHeight), '700px')
+    assert.equal(
+      await page.evaluate(
+        async () => (await window.threadlight.getSettings()).workspacePanelHeight,
+      ),
+      700,
+    )
+    await capture('workspace-empty-height')
+    await setRows(4)
+    const shortHeight = await card.evaluate((el) => el.getBoundingClientRect().height)
+    assert.ok(
+      shortHeight > emptyHeight && shortHeight < 700,
+      'sparse workspaces grow only to their content',
+    )
+    const shortStrip = await strip.boundingBox()
+    const shortX = shortStrip.x + shortStrip.width / 2,
+      shortY = shortStrip.y + shortStrip.height - 2
+    await page.mouse.move(shortX, shortY)
+    await page.mouse.down()
+    await page.mouse.move(shortX, shortY - 40)
+    await page.mouse.up()
+    await heightIs(Math.round(shortHeight - 40))
+    assert.equal(
+      await page.evaluate(
+        async () => (await window.threadlight.getSettings()).workspacePanelHeight,
+      ),
+      Math.round(shortHeight - 40),
+      'dragging a short panel starts at its visible bottom, not the old maximum',
+    )
+    await page.evaluate(() => window.threadlight.updateSettings({ workspacePanelHeight: 700 }))
+    await setRows(40)
+    await heightIs(700)
     for (const name of ['Recent', 'Active', 'All']) {
       await choose(name)
       assert.equal(await grip.count(), 0)
@@ -103,9 +144,10 @@ export async function checkWorkspaceHeight(page, capture) {
       async () => (await window.threadlight.getSettings()).workspacePanelHeight === 900,
     )
     console.log(
-      'PASS: full-height Workspace, full-width bottom resize cursor/drag, quota tooltips, saved drag/keyboard height, reload, smaller-screen clamp and normal sizing in other views.',
+      'PASS: Workspace shrinks to empty/sparse content, grows to its saved maximum, drags from its visible height, persists limits, clamps on smaller screens and keeps other views content-sized.',
     )
   } finally {
+    await setRows(null)
     await page.evaluate((settings) => window.threadlight.updateSettings(settings), initial)
     await page.setViewportSize({ width: 460, height: 900 })
     await page.reload()

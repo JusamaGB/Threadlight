@@ -117,6 +117,7 @@ let codexQuota = {
 }
 let workspacePaths = null
 let workspaceFolders = null
+let workspaceRows = null
 let workspaceViews = {}
 const source = (provider) => ({
   provider,
@@ -131,12 +132,22 @@ const source = (provider) => ({
     {
       id: workspacePaths?.[provider] ?? folder,
       name: 'shared',
-      threadCount: 1,
+      threadCount: workspaceRows ?? 1,
       activeCount: 1,
       anyWorking: false,
       threads:
         !workspacePaths || workspaceViews[provider]?.expanded?.includes(workspacePaths[provider])
-          ? [{ session: chats[provider], children: [] }]
+          ? Array.from({ length: workspaceRows ?? 1 }, (_, i) => ({
+              session:
+                workspaceRows === null
+                  ? chats[provider]
+                  : {
+                      ...chats[provider],
+                      id: `${provider === 'codex' ? 'codex:' : ''}height-${provider}-${i}`,
+                      title: `Workspace height ${provider} ${i}`,
+                    },
+              children: [],
+            }))
           : [],
       hiddenCount: 0,
       worktrees: 0,
@@ -230,6 +241,10 @@ checks: try {
   })
   await page.exposeFunction('mockWorkspaceFolders', (folders) => {
     workspaceFolders = folders
+    return state().snapshot
+  })
+  await page.exposeFunction('mockWorkspaceRows', (count) => {
+    workspaceRows = count
     return state().snapshot
   })
   await page.addInitScript(

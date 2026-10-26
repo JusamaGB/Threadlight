@@ -1020,8 +1020,7 @@ export function Panel() {
           data-workspace-height={workspaceView || undefined}
           // Room above the card, when opening upwards, keeps the card in place on screen.
           style={{
-            maxHeight,
-            height: workspaceView ? workspaceHeight : undefined,
+            maxHeight: workspaceView ? workspaceHeight : maxHeight,
             marginTop: opensDown ? 0 : room,
           }}
           onMouseLeave={leave}

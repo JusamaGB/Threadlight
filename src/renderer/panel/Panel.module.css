@@ -19,7 +19,7 @@
 
 .card[data-workspace-height] .sessions,
 .card[data-workspace-height] .sessions > .list {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
 }
 

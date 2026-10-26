@@ -34,14 +34,16 @@ export function WorkspaceResize({
       aria-valuemax={Math.round(maxHeight)}
       aria-valuenow={Math.round(height)}
       aria-disabled={saving || undefined}
-      title="Drag to resize Workspace height"
+      title="Drag to set Workspace maximum height"
       onPointerDown={(event) => {
         if (event.button !== 0 || saving) return
         event.preventDefault()
         event.currentTarget.focus({ preventScroll: true })
         event.currentTarget.setPointerCapture(event.pointerId)
         event.currentTarget.setAttribute('data-workspace-resizing', '')
-        drag.current = { y: event.screenY, start: height, value: height }
+        const actualHeight =
+          event.currentTarget.closest('[data-card]')?.getBoundingClientRect().height ?? height
+        drag.current = { y: event.screenY, start: actualHeight, value: actualHeight }
       }}
       onPointerMove={(event) => {
         if (!drag.current) return
