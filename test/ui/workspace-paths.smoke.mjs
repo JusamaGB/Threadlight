@@ -75,6 +75,7 @@ export async function checkWorkspacePaths(page, capture) {
   }
   await checkMergedWorkspace(page, capture)
   await checkAllDrivesWorkspace(page, capture)
+  await checkDriveRoots(page, capture)
   await page.evaluate(async (initial) => {
     window.proof.emit('onSnapshot', await window.mockWorkspacePaths(null))
     await window.threadlight.updateSettings(initial)
@@ -82,6 +83,113 @@ export async function checkWorkspacePaths(page, capture) {
   }, initial)
   console.log(
     'PASS: Both + Workspace loads both path formats, deduplicates the picker and preserves provider IDs.',
+  )
+}
+
+async function checkDriveRoots(page, capture) {
+  const view = page.locator('header [data-thread-view]')
+  const results = page.locator('#workspace-folders')
+  const chooseDrive = async (drive) => {
+    await page.getByRole('button', { name: /^Choose workspace:/ }).click()
+    await results.locator(`button[title="${drive}:"]`).click()
+    await page.getByRole('button', { name: `Use ${drive}:`, exact: true }).click()
+  }
+  const waitCount = async (count) => {
+    await page.waitForFunction(
+      (count) => document.querySelectorAll('[data-session-id]').length === count,
+      count,
+    )
+    assert.equal(await view.innerText(), `Workspace · ${count}`)
+    await page.getByRole('button', { name: 'Choose workspace: Z:', exact: true }).waitFor()
+  }
+  const fixture = async (paths, rootRecorded) => {
+    await page.evaluate(
+      async ({ paths, rootRecorded }) => {
+        await window.threadlight.updateSettings({
+          enabledProviders: ['claude', 'codex'],
+          workspaceAllDrives: false,
+          listMode: 'workspace',
+          listWindowHours: 168,
+          combinedFocusWorkspace: null,
+          focusWorkspace: null,
+          codexFocusWorkspace: null,
+        })
+        await window.mockWorkspacePaths(paths)
+        const folders = {
+          claude: [{ id: paths.claude, name: 'General' }],
+          codex: [{ id: paths.codex, name: 'nested' }],
+        }
+        // The root exists in old history, but has no threads in the current time window.
+        if (rootRecorded) folders.claude.push({ id: 'Z:/', name: 'Z:' })
+        window.proof.emit('onSnapshot', await window.mockWorkspaceFolders(folders))
+      },
+      { paths, rootRecorded },
+    )
+    if ((await view.getAttribute('data-thread-view')) !== 'workspace') {
+      await view.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Workspace', exact: true }).click()
+    }
+  }
+  await fixture({ claude: 'Z:/General', codex: 'C:/Projects/other' }, true)
+  await chooseDrive('Z')
+  await waitCount(1)
+  assert.deepEqual(
+    await page
+      .locator('[data-session-id]')
+      .evaluateAll((rows) => rows.map((row) => row.dataset.provider)),
+    ['claude'],
+  )
+  assert.equal(
+    await page.evaluate(async () => (await window.threadlight.getSettings()).listWindowHours),
+    168,
+  )
+  await capture('workspace-drive-root-known')
+
+  const paths = { claude: 'Z:/General', codex: '\\\\?\\Z:\\General\\nested' }
+  await fixture(paths, false)
+  await chooseDrive('Z')
+  await waitCount(2)
+  assert.deepEqual(
+    await page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'views').at(-1)[1]),
+    ['claude', 'codex'].map((provider) => ({
+      provider,
+      view: { expanded: [paths[provider]], showAll: [paths[provider]] },
+    })),
+  )
+  await capture('workspace-drive-root-without-root-thread')
+  await page.reload()
+  await view.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Workspace', exact: true }).click()
+  await waitCount(2)
+  for (const [name, count] of [
+    ['Claude', 1],
+    ['Codex', 1],
+    ['Both', 2],
+  ]) {
+    await page.getByRole('button', { name: /^Filter applications:/ }).click()
+    await page.getByRole('menuitem', { name, exact: true }).click()
+    if (name !== 'Both') await chooseDrive('Z')
+    await waitCount(count)
+  }
+  await page.getByRole('button', { name: /^Choose workspace:/ }).click()
+  await results.locator('button[title="Z:"]').click()
+  await results.getByRole('button', { name: 'General', exact: true }).click()
+  await page.waitForFunction(() => document.querySelectorAll('[data-session-id]').length === 1)
+  assert.deepEqual(
+    await page
+      .locator('[data-session-id]')
+      .evaluateAll((rows) => rows.map((row) => row.dataset.provider)),
+    ['claude'],
+  )
+  assert.equal(
+    await page.evaluate(async () => (await window.threadlight.getSettings()).workspaceAllDrives),
+    false,
+  )
+  await page.evaluate(async () =>
+    window.proof.emit('onSnapshot', await window.mockWorkspaceFolders(null)),
+  )
+  console.log(
+    'PASS: drive roots include descendant workspaces with and without root-thread history; seven-day filter, drive isolation, original loading IDs, provider modes, reload and exact-folder selection.',
   )
 }
 

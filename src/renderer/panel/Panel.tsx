@@ -9,7 +9,13 @@ import {
 } from 'react'
 
 import { matchThread, parseVoiceCommand } from '../../shared/match'
-import { DEFAULT_ENABLED_PROVIDERS, sessionProvider, workspaceFolder } from '../../shared/providers'
+import {
+  DEFAULT_ENABLED_PROVIDERS,
+  isWorkspaceRoot,
+  sessionProvider,
+  workspaceFolder,
+  workspaceInScope,
+} from '../../shared/providers'
 import type { Session, ThreadNode } from '../../shared/types'
 import { Composer } from '../composer/Composer'
 import { useDotDrag } from '../hooks/useDotDrag'
@@ -738,7 +744,7 @@ export function Panel() {
     view === 'all' &&
     listMode !== 'recent' &&
     (!voiceSelection || voiceWorkspace !== null)
-  // Workspace can combine all known folders, or focus on one folder.
+  // Workspace can combine all drives, a drive/share's workspaces, or one exact folder.
   // A voice-selected workspace temporarily narrows either saved selection.
   const allDrives = (settings?.workspaceAllDrives ?? false) && voiceWorkspace === null
   const chosen =
@@ -750,7 +756,11 @@ export function Panel() {
   const focusId = allDrives
     ? null
     : (voiceWorkspace ??
-      (chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
+      (chosen &&
+      snapshot.allWorkspaces.some(
+        (w) =>
+          sameFolder(w.id, chosen) || (isWorkspaceRoot(chosen) && workspaceInScope(w.id, chosen)),
+      )
         ? chosen
         : snapshot.currentWorkspace))
   const focus = allDrives
@@ -763,12 +773,7 @@ export function Panel() {
       : null
   const emptyWindow = <TimeWindowMessage hours={settings?.listWindowHours ?? 24} />
   const focusGroups = snapshot.workspaces.filter(
-    (w) =>
-      allDrives ||
-      (focusId &&
-        (provider === 'both'
-          ? workspaceFolder(w.id) === workspaceFolder(focusId)
-          : sameFolder(w.id, focusId))),
+    (w) => allDrives || (focusId && workspaceInScope(w.id, focusId)),
   )
   const focusGroupKeys = (allDrives ? snapshot.allWorkspaces : focusGroups)
     .map((w) => w.id)

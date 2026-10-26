@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { workspaceFolder } from '../../shared/providers'
+import { isWorkspaceRoot, workspaceFolder } from '../../shared/providers'
 import {
   searchWorkspaces,
   workspaceExplorer,
@@ -197,15 +197,15 @@ export function WorkspacePicker({
               />
             </svg>
           </button>
-          {folder.workspace && !searching ? (
+          {(folder.workspace || isWorkspaceRoot(folder.path)) && !searching ? (
             <button
               className={styles.pickerChoose}
               title={folder.path}
               aria-label={`Use ${folder.path}`}
               aria-pressed={
-                chosen !== null && workspaceFolder(chosen) === workspaceFolder(folder.workspace.id)
+                chosen !== null && workspaceFolder(chosen) === workspaceFolder(folder.path)
               }
-              onClick={() => onPick(folder.workspace!.id)}
+              onClick={() => onPick(folder.workspace?.id ?? folder.path)}
             >
               <span className={styles.pickerUseLabel}>Use</span>
               <span>{folder.path}</span>

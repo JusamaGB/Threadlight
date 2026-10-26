@@ -18,6 +18,25 @@ export const workspaceFolder = (id: string) =>
     .replace(/\/+$/, '')
     .toLowerCase()
 
+/** Drive/share roots select their known workspaces; ordinary folders keep exact scope. */
+export function isWorkspaceRoot(id: string): boolean {
+  const key = workspaceFolder(id)
+  return (
+    /^[a-z]:$/.test(key) ||
+    /^\/\/[^/]+\/[^/]+$/.test(key) ||
+    id.replace(/^(claude|codex):/, '') === '/'
+  )
+}
+
+export function workspaceInScope(id: string, selected: string): boolean {
+  const folder = workspaceFolder(id)
+  const root = workspaceFolder(selected)
+  if (folder === root) return true
+  if (!isWorkspaceRoot(selected)) return false
+  if (!root) return folder.startsWith('/') && !folder.startsWith('//')
+  return folder.startsWith(`${root}/`)
+}
+
 /** Workspace folders can be identical across apps; their tree state must stay separate. */
 export function providerView(enabled: Provider[], provider: Provider, view: TreeView): TreeView {
   if (enabled.length < 2) return view

@@ -5,6 +5,8 @@ import {
   sessionProvider,
   workspaceFolder,
   workspaceKey,
+  isWorkspaceRoot,
+  workspaceInScope,
 } from '../src/shared/providers'
 import { parseSettings, validatePatch } from '../src/shared/settings'
 import { findInSnapshot } from '../src/shared/snapshot'
@@ -14,6 +16,29 @@ import type { Provider, Session, Snapshot } from '../src/shared/types'
 const folder = 'C:/synthetic/shared'
 
 describe('workspace folder comparisons', () => {
+  it.each([
+    ['codex:Z:', 'claude:Z:\\General', true],
+    ['claude:Z:/', 'codex:\\\\?\\z:\\General\\nested', true],
+    ['Z:', 'codex:Z:/', true],
+    ['Z:', 'codex:C:/General', false],
+    ['Z:', 'codex:Z:relative', false],
+    ['//server/team', 'codex:\\\\?\\UNC\\SERVER\\team\\project', true],
+    ['//server/team', '//server/teammate/project', false],
+    ['//server/team', '//other/team/project', false],
+    ['/', '/home/project', true],
+    ['/', '//server/share/project', false],
+    ['Z:/General', 'codex:Z:/General', true],
+    ['Z:/General', 'codex:Z:/General/nested', false],
+    ['Z:/General', 'codex:Z:/General-other', false],
+  ])('selects the correct scope %s -> %s: %s', (scope, path, expected) => {
+    expect(workspaceInScope(path, scope)).toBe(expected)
+  })
+
+  it('recognizes drive/share roots without requiring a thread directly at the root', () => {
+    expect(isWorkspaceRoot('codex:\\\\?\\Z:\\')).toBe(true)
+    expect(isWorkspaceRoot('claude:\\\\server\\share')).toBe(true)
+    expect(isWorkspaceRoot('Z:/General')).toBe(false)
+  })
   it.each([
     ['claude:C:\\synthetic\\shared', 'codex:\\\\?\\C:\\synthetic\\shared'],
     ['claude:c:/SYNTHETIC/shared/', 'codex://?/C:/synthetic/shared'],

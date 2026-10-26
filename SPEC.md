@@ -47,7 +47,12 @@ view. Active, Workspace and All keep their current count display.
 The workspace picker browses known thread folders, grouped by drive or UNC share;
 it does not scan unrelated files on disk. Its Claude/Codex/Both selector uses the
 same application setting as the main header. Both combines equivalent folder paths
-while retaining each provider's original selection ID. The picker opens at All
+while retaining each provider's original selection ID.
+Selecting a drive or network-share root includes its known descendant
+workspaces within the chosen time window, even when no recent thread ran directly
+at the root. Selecting an ordinary workspace folder still selects only that exact
+folder. Root selections use the same saved per-application workspace setting.
+The picker opens at All
 drives and offers parent/child navigation. Inside a selectable folder, one compact
 row contains the parent arrow and `Use <full folder path>` selection link. Only
 "Use" is accented at rest; hovering either part or focusing the link accents the
