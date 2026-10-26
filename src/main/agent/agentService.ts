@@ -1,3 +1,8 @@
+import type {
+  Announcement,
+  AnnouncementCommand,
+  AnnouncementReply,
+} from '../../shared/conversationEvents'
 import { mkdir } from 'node:fs/promises'
 import { z } from 'zod'
 import {
@@ -46,6 +51,15 @@ const responseSchema = z.discriminatedUnion('action', [
   }),
 ])
 interface Options {
+  announcements?: {
+    next: (owner: string, since: number) => Announcement | undefined
+    commit: (a: Announcement) => boolean
+    settle: (
+      owner: string,
+      id: string,
+      state: 'announced' | 'uncertain' | 'suppressed' | 'deferred',
+    ) => void
+  }
   communication?: (
     actor: () => import('../../shared/communication').CommunicationActor,
   ) => import('../threadRead/server').ThreadReadConnection
@@ -58,6 +72,7 @@ interface Options {
   snapshot: () => Snapshot
   cli: (provider: AgentProvider) => Promise<CliCommand | null>
   onChange: (state: AgentState) => void
+  onConversation?: (state: AgentState, spaceId?: string) => void
   onRateLimit: (value: unknown) => void
   codexClient?: () => Promise<CodexTransport>
   onLive?: (event: LiveVoiceEvent) => void
@@ -65,6 +80,57 @@ interface Options {
 
 /** The sole owner of the active Agent, independent of the monitored applications. */
 export class AgentService {
+  private announcement?: Announcement
+  private announcementSend?: Promise<AnnouncementReply>
+  private voiceStartedAt = 0
+  async announcementCommand(id: unknown, command: AnnouncementCommand): Promise<AnnouncementReply> {
+    if (
+      id !== this.voiceSession ||
+      !this.voiceSession ||
+      !(this.run instanceof CodexAgentRun) ||
+      !this.current.conversationId ||
+      !this.options.announcements
+    )
+      return { ok: false, reason: 'This Live session is closed.' }
+    const owner = this.current.conversationId,
+      port = this.options.announcements
+    if (command.action === 'next') {
+      if (this.announcement) return { ok: true }
+      this.announcementSend = undefined
+      this.announcement = port.next(owner, this.voiceStartedAt)
+      return { ok: true, announcement: this.announcement }
+    }
+    const a = this.announcement
+    if (!a || a.id !== command.id || a.owner !== owner)
+      return { ok: false, reason: 'Announcement changed.' }
+    if (command.action === 'settle') {
+      port.settle(owner, a.id, command.outcome)
+      this.announcement = undefined
+      return { ok: true }
+    }
+    if (this.announcementSend) return this.announcementSend
+    if (!port.commit(a)) {
+      port.settle(owner, a.id, 'suppressed')
+      this.announcement = undefined
+      return { ok: false, reason: 'The cards changed before speech.' }
+    }
+    try {
+      const sending = this.run
+        .announce(a.text)
+        .then(() => ({ ok: true as const }))
+        .catch(() => {
+          port.settle(owner, a.id, 'uncertain')
+          if (this.announcement === a) this.announcement = undefined
+          return { ok: false as const, reason: 'Spoken update was not confirmed.' }
+        })
+      this.announcementSend = sending
+      return await sending
+    } catch {
+      port.settle(owner, a.id, 'uncertain')
+      this.announcement = undefined
+      return { ok: false, reason: 'Spoken update was not confirmed.' }
+    }
+  }
   private humanInput?: { id: string; text: string; at: number }
   private liveInput = ''
   private evidence: ThreadEvidenceStore
@@ -112,6 +178,7 @@ export class AgentService {
     this.locked = true
     const retired = this.run && this.state.ended ? this.close() : this.retirement
     this.voiceSession = id
+    this.voiceStartedAt = Date.now()
     const operation = this.operation
     try {
       await Promise.all([retired, this.voiceRetirement])
@@ -147,6 +214,14 @@ export class AgentService {
 
   async stopLive(id?: unknown): Promise<void> {
     if (this.voiceSession && (id === undefined || id === this.voiceSession)) {
+      if (this.announcement) {
+        this.options.announcements?.settle(
+          this.announcement.owner,
+          this.announcement.id,
+          'uncertain',
+        )
+        this.announcement = undefined
+      }
       this.voiceSession = null
       if (this.run instanceof CodexAgentRun) this.voiceRetirement = this.run.stopLive()
       await this.voiceRetirement
@@ -421,6 +496,7 @@ export class AgentService {
           this.options.communication!(() => ({
             id: run?.current.conversationId ?? communicationOwner,
             kind: 'agent',
+            conversationId: run?.current.conversationId ?? communicationOwner,
             humanInput: this.humanInput,
             target: run?.current.sessionId
               ? provider === 'codex'
@@ -454,7 +530,16 @@ export class AgentService {
             .reverse()
             .find((item) => item.kind === 'you' && item.id?.startsWith('live:'))
         : undefined
-      if (speech?.id && speech.text && this.liveInput !== `${speech.id}:${speech.text}`) {
+      if (speech && !speech.liveComplete) {
+        this.humanInput = undefined
+        this.liveInput = ''
+      }
+      if (
+        speech?.liveComplete &&
+        speech.id &&
+        speech.text &&
+        this.liveInput !== `${speech.id}:${speech.text}`
+      ) {
         this.liveInput = `${speech.id}:${speech.text}`
         this.humanInput = { id: speech.id, text: speech.text, at: Date.now() }
       }
@@ -530,6 +615,7 @@ export class AgentService {
 
   private publish(state: AgentState): void {
     this.state = { ...state, revision: this.state.revision + 1 }
+    this.options.onConversation?.(this.current, this.options.communicationProject?.())
     this.options.onChange(this.current)
   }
 }

@@ -352,6 +352,11 @@ export class CodexAgentRun {
       this.expiry = setTimeout(() => void this.close(), minutes * 60_000)
   }
 
+  async announce(text: string): Promise<void> {
+    if (!this.live || !this.record) throw new Error('Live is closed.')
+    await this.live.announce(text)
+  }
+
   async openLive(text: string): Promise<AgentResult> {
     if (!this.live || !this.record || !this.client || this.state.live !== 'ready')
       return { ok: false, reason: 'Live is not ready.' }

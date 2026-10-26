@@ -217,6 +217,41 @@ describe('plugin enrollment authority and recovery', () => {
     for (let i = 0; i < 9; i++) server.connections.request(request())
     expect(() => server.connections.request(request())).toThrow('Too many')
   })
+  it('requires paired writable enrollment for private runtime registration and never exposes tokens as tools', async () => {
+    const endpoint = await server.start(0),
+      r = request('claude')
+    server.connections.request(r)
+    const post = (body: unknown, secret = r.secret, origin?: string) =>
+      fetch(endpoint.replace('/mcp', `/plugin/runtime/${r.id}`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${secret}`,
+          ...(origin ? { Origin: origin } : {}),
+        },
+        body: JSON.stringify(body),
+      })
+    const registration = { action: 'register', socket: 'test', token: 'PRIVATE_NATIVE_TEST_TOKEN' }
+    expect((await post(registration)).status).toBe(401)
+    approve(server.connections, r.id, { assignee: randomUUID(), readOnly: true })
+    expect((await post(registration, 'invalid')).status).toBe(401)
+    expect((await post(registration, r.secret, 'http://example.test')).status).toBe(403)
+    const forbidden = await post(registration)
+    expect(forbidden.status).toBe(400)
+    expect(JSON.stringify(await forbidden.json())).not.toContain(registration.token)
+    expect(
+      (
+        await post({
+          action: 'register',
+          socket: 'test',
+          token: registration.token,
+          target: randomUUID(),
+        })
+      ).status,
+    ).toBe(400)
+    server.connections.reject(r.id)
+    expect((await post({ action: 'unregister' })).status).toBe(401)
+  })
 })
 
 type Reply = {

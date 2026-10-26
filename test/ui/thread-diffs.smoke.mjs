@@ -122,6 +122,21 @@ export async function checkThreadDiffs(page, capture) {
     thread(provider).getByRole('button', { name: /^Thread diff · 1 file changed/ })
   const back = () => page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   try {
+    // Pending counts are explicit; publishing metadata/diffs replaces the placeholder in-place.
+    await page.evaluate(() => {
+      const current = window.proof.threadDiff.current
+      window.proof.emit('onSnapshot', {
+        ...current,
+        sessions: current.sessions.map((session) => ({
+          ...session,
+          threadDiff: null,
+          threadDiffStatus: 'loading',
+          git: { ...session.git, pending: true },
+        })),
+      })
+    })
+    await page.getByLabel('Loading thread changes').first().waitFor()
+    await page.evaluate(() => window.proof.emit('onSnapshot', window.proof.threadDiff.current))
     await badge('Claude').waitFor()
     assert.equal((await badge('Claude').innerText()).replace(/\s/g, ''), '+2−1')
     assert.equal((await badge('Codex').innerText()).replace(/\s/g, ''), '+4−2')
@@ -206,7 +221,7 @@ export async function checkThreadDiffs(page, capture) {
       }
       window.proof.emit('onSnapshot', proof.current)
     })
-    await page.getByText(/Some recorded edits could not be combined/).waitFor()
+    await page.getByText(/Some uncommitted edits could not be attributed/).waitFor()
     await capture('thread-diff-partial-history')
     await page.evaluate(() => {
       const proof = window.proof.threadDiff
@@ -225,6 +240,22 @@ export async function checkThreadDiffs(page, capture) {
       .getByText("This thread's recorded changes are unavailable.", { exact: true })
       .waitFor()
     await back()
+    // A commit clears the badge even when the older recorded history was partial.
+    await page.evaluate(() => {
+      const proof = window.proof.threadDiff
+      window.proof.emit('onSnapshot', {
+        ...proof.current,
+        sessions: proof.current.sessions.map((session) => ({
+          ...session,
+          threadDiff: { files: 0, added: 0, removed: 0, complete: false, revision: 'committed' },
+        })),
+      })
+    })
+    await page
+      .getByRole('button', { name: /^Thread diff/ })
+      .first()
+      .waitFor({ state: 'detached' })
+    await capture('thread-diff-committed-clear')
     await page.evaluate(() => {
       const proof = window.proof.threadDiff
       window.proof.emit('onSnapshot', {

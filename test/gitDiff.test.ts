@@ -46,16 +46,22 @@ describe('GitStates', () => {
       worktrees: [],
     }
     const count = vi.fn(async () => state)
-    const states = new GitStates(changes, () => time, count)
+    const states = new GitStates(
+      changes,
+      () => time,
+      count,
+      async (root) => ({ root, gitDir: 'missing-git-dir', commonDir: 'missing-git-dir' }),
+    )
     expect(states.get('repo')).toBeNull() // first ask: counting starts
-    await vi.waitFor(() => expect(changes).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(changes).toHaveBeenCalledTimes(2))
     expect(states.get('repo')).toEqual(state)
     expect(count).toHaveBeenCalledTimes(1) // not due again yet
     time = 5000
     states.get('repo')
     await vi.waitFor(() => expect(count).toHaveBeenCalledTimes(2))
-    expect(changes).toHaveBeenCalledTimes(1) // same count: nothing to show
+    expect(changes).toHaveBeenCalledTimes(2) // same count: nothing to show
     expect(states.get('')).toBeNull()
+    await states.close()
   })
 })
 

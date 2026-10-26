@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Threadlight pearl</title>
+  <defs>
+    <radialGradient id="pearl" cx="37%" cy="30%" r="94%">
+      <stop offset="0" stop-color="#fff1d7" />
+      <stop offset=".20" stop-color="#e9a67c" />
+      <stop offset=".43" stop-color="#ae8cce" />
+      <stop offset=".67" stop-color="#63aef1" />
+      <stop offset=".85" stop-color="#172d4c" />
+    </radialGradient>
+  </defs>
+  <circle cx="128" cy="128" r="120" fill="url(#pearl)" />
+</svg>

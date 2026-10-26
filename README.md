@@ -25,6 +25,13 @@ Codex destinations can queue until their native owner releases them. Unknown out
 review rather than an automatic retry. See [implementation and evidence](THREAD-COMMUNICATION-VALIDATION.md)
 for the precise supported paths and remaining voice acceptance test.
 
+Agent conversations now show background question and result cards inline, using the existing
+request controls. Cards retain their originating chat and exact response identity; several
+workers can wait independently. Active GPT Live sessions announce new events at a native
+conversation pause. Results and speech receipts are saved, and uncertain announcements are
+not replayed. Local STT does not start Live. See the
+[conversation event implementation and validation](CONVERSATION-EVENTS-SPEC.md).
+
 Native questions can be answered in their current cards. To answer a card through the Agent,
 select **Answer through Agent** on that card first, then give an explicit answer. Expired cards,
 replacement questions and peer requests cannot reuse a human decision. Closing the mic does not
@@ -254,3 +261,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Licence
 
 [MIT](LICENSE) © 2026 Julius Deane. Third-party notices are in [NOTICE](NOTICE).
+
+### Claude runtime wakeup preview
+
+An enrolled Claude chat can now opt in with `memory_enable_wakeup`. Threadlight
+registers the existing runtime, sends inbox notifications, and records a durable
+recipient claim followed by an explicit completion acknowledgement. Duplicate
+wakeups cannot grant a second execution. Native credentials remain private to
+the bridge and application memory. `memory_disable_wakeup` revokes registration.
+
+Automatic delivery remains release-gated pending a real Claude Desktop
+conversation test on **Wednesday, 28 October 2026**. The local test switch
+`THREADLIGHT_CLAUDE_WAKEUP_TEST=1` admits only the already-probed runtime hash; it
+is for acceptance testing. It does not admit competing CLI resumes or closed
+Desktop chats. See the Wednesday checklist in
+[communication validation](THREAD-COMMUNICATION-VALIDATION.md).

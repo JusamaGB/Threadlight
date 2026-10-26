@@ -24,9 +24,27 @@ require.extensions['.ts'] = (module, file) =>
 const { AgentService } = require('../src/main/agent/agentService.ts')
 const { DEFAULT_SETTINGS } = require('../src/shared/settings.ts')
 const { chromium } = require(process.env.THREADLIGHT_PLAYWRIGHT || 'playwright')
+const { DatabaseSync } = require('node:sqlite')
+const { CommunicationStore } = require('../src/main/communication/store.ts')
+const { ConversationEventService } = require('../src/main/communication/conversationEvents.ts')
+const eventDb = new DatabaseSync(':memory:'),
+  eventStore = new CommunicationStore(eventDb),
+  eventFeed = new ConversationEventService(eventStore)
+const eventSnapshot = {
+  messages: [],
+  questions: [],
+  workflows: [],
+  assignments: [],
+  events: [],
+  cursor: 0,
+  snapshotRequired: false,
+  nativeRequests: [],
+}
+const projectFeed = (owner) => eventFeed.project(owner, eventSnapshot, () => 'Build')
 const folder = mkdtempSync(join(tmpdir(), 'threadlight-live-check-'))
 let browser, page, service, readServer, target
 const readProof = process.env.THREADLIGHT_LIVE_THREAD_READ === '1'
+const announcementProof = process.env.THREADLIGHT_LIVE_ANNOUNCEMENT === '1'
 const bufferedOpening = process.env.THREADLIGHT_LIVE_BUFFERED === '1'
 if (bufferedOpening) assert.ok(process.env.THREADLIGHT_LIVE_INITIAL_WAV)
 let message =
@@ -75,6 +93,26 @@ const waitReady = async (agent) => {
     }),
     cli: async () => ({ command: process.env.THREADLIGHT_CODEX_CLI, prefixArgs: [] }),
     onChange: () => {},
+    onConversation: (state) => {
+      if (state.conversationId)
+        eventFeed.register(
+          state.conversationId,
+          state.sessionId ? `codex:${state.sessionId}` : undefined,
+        )
+    },
+    announcements: announcementProof
+      ? {
+          next: (owner, since) => {
+            projectFeed(owner)
+            return eventFeed.reserve(owner, since)
+          },
+          commit: (a) => {
+            projectFeed(a.owner)
+            return eventFeed.commit(a)
+          },
+          settle: (owner, id, state) => eventFeed.settle(owner, id, state),
+        }
+      : undefined,
     onRateLimit: () => {},
     onLive: (event) => {
       void page.evaluate((e) => window.voiceEvent?.(e), event).catch(() => {})
@@ -120,15 +158,27 @@ const waitReady = async (agent) => {
     message = `What did the Codex chat named "${title}" say last? Read it now and tell me its colour.`
     expected = /amber/i
   }
+  eventStore.onChange = () =>
+    void page.evaluate(() => window.communicationChanged?.()).catch(() => {})
   service = new AgentService(options)
   await page.exposeFunction('startVoice', (id, sdp) => service.startLive(id, sdp))
   await page.exposeFunction('openVoice', (id, text) => service.openLive(id, text))
   await page.exposeFunction('getAgent', () => service.current)
+  await page.exposeFunction('announceVoice', (id, command) =>
+    service.announcementCommand(id, command),
+  )
   await page.exposeFunction('stopVoice', (id) => service.stopLive(id))
   await page.evaluate(() => {
     window.threadlight = {
       getAgent: window.getAgent,
       agentLiveStart: window.startVoice,
+      agentAnnouncement: window.announceVoice,
+      onCommunication: (fn) => {
+        window.communicationChanged = fn
+        return () => {
+          window.communicationChanged = null
+        }
+      },
       agentLiveOpen: window.openVoice,
       agentLiveStop: window.stopVoice,
       onAgentLive: (fn) => {
@@ -139,6 +189,7 @@ const waitReady = async (agent) => {
       },
     }
     window.phases = []
+    window.liveEvents = []
   })
   const { build } = await import('vite')
   const built = await build({
@@ -167,10 +218,33 @@ const waitReady = async (agent) => {
     const processor = window.context.createScriptProcessor(512, 1, 1)
     window.testProcessor = processor
     osc.connect(gain).connect(processor).connect(dest)
-    window.connection = new window.LiveVoiceConnection(dest.stream, 16000, (phase, error) =>
-      window.phases.push({ phase, error }),
+    window.connection = new window.LiveVoiceConnection(
+      dest.stream,
+      16000,
+      (phase, error) => window.phases.push({ phase, error }),
+      window.context,
     )
     window.connection.audio.muted = true
+    window.connection.channel.addEventListener('message', ({ data }) => {
+      try {
+        const e = JSON.parse(data)
+        window.liveEvents.push({
+          type: e.type,
+          keys: Object.keys(e),
+          at: Date.now(),
+          event_id: e.event_id,
+          client_event_id: e.client_event_id,
+          turn_id: e.turn_id,
+          item_id: e.item_id,
+          turn: e.turn,
+          item: e.item,
+          start_ms: e.start_ms,
+          end_ms: e.end_ms,
+        })
+      } catch {
+        /* Ignore non-JSON native transport frames in diagnostics. */
+      }
+    })
     processor.onaudioprocess = (e) =>
       window.connection.process(e.inputBuffer.getChannelData(0), e.outputBuffer.getChannelData(0))
     osc.start()
@@ -230,6 +304,52 @@ const waitReady = async (agent) => {
       speech.connect(window.testProcessor)
       speech.start()
     }, wave)
+  } else if (announcementProof) {
+    expected = /Build has returned a result/i
+    await page.evaluate(() => {
+      window.connection.listen()
+      window.connection.audio.volume = 0
+    })
+    if (process.env.THREADLIGHT_LIVE_PROBE_INPUT) {
+      const bytes = [...readFileSync(process.env.THREADLIGHT_LIVE_PROBE_INPUT)]
+      await page.evaluate(async (bytes) => {
+        const buffer = await window.context.decodeAudioData(new Uint8Array(bytes).buffer)
+        const speech = window.context.createBufferSource()
+        speech.buffer = buffer
+        speech.connect(window.testProcessor)
+        speech.start()
+      }, bytes)
+      await new Promise((r) => setTimeout(r, 12000))
+    }
+    const id = crypto.randomUUID(),
+      targetId = crypto.randomUUID()
+    eventStore.transaction(() =>
+      eventStore.put(
+        'message',
+        {
+          id,
+          operationId: crypto.randomUUID(),
+          sender: service.current.conversationId,
+          senderKind: 'agent',
+          rootId: id,
+          kind: 'request',
+          body: 'Synthetic background test',
+          at: Date.now(),
+          deliveries: [
+            {
+              target: targetId,
+              phase: 'completed',
+              attemptId: crypto.randomUUID(),
+              reason: 'Native result fixture',
+              reply: 'Tests finished.',
+              observedAt: Date.now(),
+            },
+          ],
+        },
+        'Result',
+      ),
+    )
+    projectFeed(service.current.conversationId)
   } else if (!bufferedOpening) await page.evaluate((text) => window.connection.open(text), message)
   const spokenAnswer = () =>
     service.current.items.some(
@@ -246,6 +366,23 @@ const waitReady = async (agent) => {
     spokenAnswer(),
     'Expected a native spoken answer matching THREADLIGHT_LIVE_EXPECT, not just a filler acknowledgment',
   )
+  if (announcementProof) {
+    const until = Date.now() + 45000
+    while (
+      eventFeed
+        .get(service.current.conversationId)
+        .cards.some(
+          (c) => c.speech === 'pending' || c.speech === 'reserved' || c.speech === 'submitted',
+        ) &&
+      Date.now() < until
+    )
+      await new Promise((r) => setTimeout(r, 200))
+    assert.equal(
+      eventFeed.get(service.current.conversationId).cards[0]?.speech,
+      'announced',
+      'Production scheduler must observe completion and audio playback',
+    )
+  }
   // Let the native completed-item event persist the final transcript before stopping.
   await new Promise((r) => setTimeout(r, 2500))
   if (process.env.THREADLIGHT_LIVE_TEST_WAV) {
@@ -323,6 +460,21 @@ const waitReady = async (agent) => {
     stats.some((s) => s.bytes > 0),
     'Expected incoming native audio packets',
   )
+  if (announcementProof) {
+    writeFileSync(
+      join(folder, 'announcement-events.json'),
+      JSON.stringify(
+        {
+          events: await page.evaluate(() => window.liveEvents),
+          items: service.current.items,
+          stats,
+        },
+        null,
+        2,
+      ),
+    )
+    console.log('Announcement evidence:', folder)
+  }
   const id = service.current.conversationId
   await page.evaluate(() => {
     window.connection.stop()
@@ -332,13 +484,14 @@ const waitReady = async (agent) => {
   assert.equal(service.current.ended, false, 'Closing voice retains the Agent conversation')
   assert.equal(service.current.conversationId, id)
   const history = await service.read(id)
-  assert.ok(
-    history.items.some(
-      (i) =>
-        i.kind === 'you' &&
-        (process.env.THREADLIGHT_LIVE_INITIAL_WAV ? expected.test(i.text) : i.text === message),
-    ),
-  )
+  if (!announcementProof)
+    assert.ok(
+      history.items.some(
+        (i) =>
+          i.kind === 'you' &&
+          (process.env.THREADLIGHT_LIVE_INITIAL_WAV ? expected.test(i.text) : i.text === message),
+      ),
+    )
   assert.ok(history.items.some((i) => i.kind === 'agent' && i.text.trim()))
   assert.notEqual(service.store.get(id).archiveState, 'archived')
   await service.close()
@@ -363,7 +516,9 @@ const waitReady = async (agent) => {
     )
   }
   console.log(
-    'PASS: ChatGPT-authenticated WebRTC, opening sent once, native reply transcript and audio packets, voice history, retained conversation on mic close and archive on End.',
+    announcementProof
+      ? 'PASS: production journal, scoped feed, pause scheduler, native speech, matching completed transcript and observed playback; retained conversation on mic close.'
+      : 'PASS: ChatGPT-authenticated WebRTC, opening sent once, native reply transcript and audio packets, voice history, retained conversation on mic close and archive on End.',
   )
 })()
   .catch((error) => {
@@ -371,8 +526,21 @@ const waitReady = async (agent) => {
     process.exitCode = 1
   })
   .finally(async () => {
+    if (announcementProof && page) {
+      const events = await page.evaluate(() => window.liveEvents).catch(() => [])
+      writeFileSync(
+        join(folder, 'announcement-diagnostic.json'),
+        JSON.stringify(
+          { events, items: service?.current.items, cards: eventStore.list('conversation') },
+          null,
+          2,
+        ),
+      )
+      console.log('Live diagnostics:', folder)
+    }
     await service?.close()
     await target?.close()
     readServer?.close()
     await browser?.close()
+    eventDb.close()
   })

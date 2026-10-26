@@ -3,6 +3,7 @@ import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { execFileSync } from 'node:child_process'
 import { ThreadDiffLedger, recordedPath } from '../src/main/sessions/threadDiff'
 import {
   ClaudeDiffReplay,
@@ -279,8 +280,28 @@ describe('thread diff source and caller integration', () => {
         'CREATE TABLE thread_items(thread_id TEXT,item_json TEXT,rollout_ordinal INTEGER,item_type TEXT)',
       )
       const insert = db.prepare('INSERT INTO thread_items VALUES (?,?,?,?)')
-      insert.run('a', JSON.stringify(codex('one', patch('old', 'own A'))), 1, 'fileChange')
-      insert.run('b', JSON.stringify(codex('two', patch('old', 'own B'))), 2, 'fileChange')
+      const git = (...args: string[]) =>
+        execFileSync('git', ['-C', home, ...args], { windowsHide: true })
+      git('init')
+      git('config', 'user.email', 'test@example.com')
+      git('config', 'user.name', 'Test')
+      const file = join(home, 'shared.ts')
+      await writeFile(file, 'old\nother\n')
+      git('add', '.')
+      git('commit', '-m', 'baseline')
+      await writeFile(file, 'own A\nown B\n')
+      insert.run(
+        'a',
+        JSON.stringify(codex('one', patch('old', 'own A'), 'update', file)),
+        1,
+        'fileChange',
+      )
+      insert.run(
+        'b',
+        JSON.stringify(codex('two', patch('other', 'own B', 2), 'update', file)),
+        2,
+        'fileChange',
+      )
       let time = 0,
         notices = 0
       const service = new ThreadChanges({
@@ -291,10 +312,12 @@ describe('thread diff source and caller integration', () => {
       })
       const a = {
         id: 'codex:a',
-        cwd: 'C:/repo',
-        git: { root: 'C:/repo', branch: 'main', files: 99, added: 9999 },
+        cwd: home,
+        git: { root: home, branch: 'main', files: 99, added: 9999 },
       } as Session
       const b = { ...a, id: 'codex:b' }
+      // A cold chat may be seen before Git root discovery. Arrival must bypass the old 5s throttle.
+      expect(await service.changes({ ...a, git: null })).toBeNull()
       const changes = await service.changes(a)
       expect(changes?.files).toEqual([
         { path: 'shared.ts', status: 'modified', added: 1, removed: 1, binary: false },
@@ -306,8 +329,15 @@ describe('thread diff source and caller integration', () => {
       expect(service.summary(a)).toMatchObject({ added: 1, removed: 1, files: 1 })
       const revision = service.summary(a)!.revision
       service.annotate({ sessions: [a, b], workspaces: [] } as unknown as Snapshot)
-      insert.run('a', JSON.stringify(codex('three', patch('own A', 'updated A'))), 3, 'fileChange')
-      time = 6000
+      insert.run(
+        'a',
+        JSON.stringify(codex('three', patch('own A', 'updated A'), 'update', file)),
+        3,
+        'fileChange',
+      )
+      await writeFile(file, 'updated A\nown B\n')
+      // Hook/filesystem invalidation must refresh even with no polling-clock advance.
+      service.invalidate(home)
       service.refreshListed()
       await service.changes(a)
       expect(service.summary(a)!.revision).not.toBe(revision)
@@ -322,6 +352,14 @@ describe('thread diff source and caller integration', () => {
       expect(annotated.sessions[0]!.threadDiff?.added).toBe(1)
       expect(annotated.workspaces[0]!.threads[0]!.children[0]!.session.threadDiff?.files).toBe(1)
       expect(snapshot.sessions[0]!.threadDiff).toBeUndefined()
+      git('add', 'shared.ts')
+      git('commit', '-m', 'commit both chats')
+      time = 12000
+      expect((await service.changes(a))?.files).toEqual([])
+      expect(service.summary(a)).toMatchObject({ files: 0, added: 0, removed: 0, complete: true })
+      expect((await service.changes(b))?.files).toEqual([])
+      const restarted = new ThreadChanges({ history, transcript: () => null, changed: () => {} })
+      expect((await restarted.changes(a))?.files).toEqual([])
       expect(await readFile(history)).toBeTruthy()
     } finally {
       db.close()

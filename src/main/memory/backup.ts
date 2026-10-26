@@ -178,7 +178,9 @@ export function readBackup(file: string) {
           .prepare('SELECT id,kind,data FROM communication_records LIMIT 200001')
           .all()
           .map((row) => {
-            const kind = z.enum(['message', 'workflow', 'assignment', 'question']).parse(row.kind)
+            const kind = z
+              .enum(['message', 'workflow', 'assignment', 'question', 'conversation'])
+              .parse(row.kind)
             const value = communicationRecordSchemas[kind].parse(JSON.parse(String(row.data)))
             if (value.id !== row.id) throw new Error('Invalid communication identity.')
             return { kind, value }
@@ -217,7 +219,7 @@ export function readBackup(file: string) {
               .object({
                 seq: number,
                 id,
-                kind: z.enum(['message', 'question', 'assignment', 'workflow']),
+                kind: z.enum(['message', 'question', 'assignment', 'workflow', 'conversation']),
                 space: id.nullable(),
                 action: z.string().max(500),
                 at: number,

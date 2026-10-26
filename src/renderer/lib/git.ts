@@ -36,7 +36,9 @@ export function gitSentence(git: GitState): string {
     en.git.worktreeTotal,
     git.root,
     git.branch ?? en.git.noBranch,
-    changed ?? (git.ahead || git.behind ? null : en.git.clean),
+    git.pending
+      ? 'Repository counts loading'
+      : (changed ?? (git.ahead || git.behind ? null : en.git.clean)),
     git.ahead > 0 && en.git.toPush(git.ahead),
     git.behind > 0 && en.git.behind(git.behind),
   ]
@@ -54,6 +56,7 @@ export function threadDiffSentence(diff: ThreadDiffSummary): string {
     en.git.filesChanged(diff.files),
     diff.added > 0 && `+${compact(diff.added)}`,
     diff.removed > 0 && `−${compact(diff.removed)}`,
+    en.changes.uncommitted,
     !diff.complete && en.changes.partialShort,
   ]
     .filter(Boolean)

@@ -38,6 +38,8 @@ export interface AgentHistoryPage {
 
 /** One line of the conversation: what you said, what it said, or a step it took. */
 export interface AgentItem {
+  /** Ephemeral native Live turn boundary; partial speech cannot authorize a response. */
+  liveComplete?: boolean
   source?: ThreadToolReceipt
   sourceHistorical?: boolean
   id?: string

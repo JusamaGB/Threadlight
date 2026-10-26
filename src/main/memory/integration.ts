@@ -1,3 +1,5 @@
+import { ConversationEventService } from '../communication/conversationEvents'
+import { z } from 'zod'
 import { basename, join } from 'node:path'
 import { readFile, stat } from 'node:fs/promises'
 import { backup } from 'node:sqlite'
@@ -23,6 +25,7 @@ export async function startMemory(
   let server: MemoryServer | null = null
   let issue = ''
   let communication: CommunicationService | null = null
+  let conversations: ConversationEventService | null = null
   const pending = new Map<
     string,
     { resolve: (r: { reply: string }) => void; reject: (e: Error) => void; accepted?: () => void }
@@ -79,8 +82,12 @@ export async function startMemory(
         ...memory.space(spaceId),
         root: memory.executionContext(spaceId)?.root,
       }),
-      deliver: (message, destination, accepted) =>
-        new Promise((resolve, reject) => {
+      deliver: (message, destination, accepted) => {
+        if (destination.transport === 'claude-runtime-inbox') {
+          if (!server) return Promise.reject(new Error('Runtime registry unavailable.'))
+          return server.runtime.deliver(message, destination, accepted)
+        }
+        return new Promise((resolve, reject) => {
           const attemptId = message.deliveries.find((d) => d.target === destination.id)!.attemptId
           if (!server?.endpoint)
             return reject(
@@ -113,8 +120,10 @@ export async function startMemory(
             pending.delete(attemptId)
             reject(Object.assign(new Error(result.reason), { deliveryRejected: true }))
           }
-        }),
+        })
+      },
     })
+    conversations = new ConversationEventService(memory.communications)
     memory.communicationService = communication
     store.executionContext = () => {
       throw new Error(
@@ -169,7 +178,61 @@ export async function startMemory(
       const input = request as { action: string; arguments?: unknown; expectedRevision?: number }
       const actor: CommunicationActor = { id: 'human', kind: 'human' }
       let value: unknown
-      if (input.action === 'snapshot') value = communication.snapshot(actor)
+      if (input.action.startsWith('conversation_')) {
+        if (!conversations) throw new Error('Conversation feed is unavailable.')
+        const a = z
+          .object({
+            owner: z.string().min(1).max(512),
+            cardId: z.string().max(600).optional(),
+            revision: z.number().int().positive().optional(),
+            operationId: z.string().uuid().optional(),
+            response: z.unknown().optional(),
+            answer: z.string().max(16000).optional(),
+          })
+          .strict()
+          .parse(input.arguments)
+        const feed = conversations.project(
+          a.owner,
+          communication.snapshot(actor),
+          (id) => delivery.find(id)?.title ?? id,
+        )
+        if (input.action === 'conversation_feed') value = feed
+        else if (input.action === 'conversation_catchup') {
+          conversations.catchUp(a.owner)
+          value = { ok: true }
+        } else if (input.action === 'conversation_open') {
+          const card = feed.cards.find((c) => c.id === a.cardId)
+          const source = card && delivery.find(card.source)
+          if (!source) throw new Error('Source chat is unavailable.')
+          value = source.appId
+        } else {
+          const card = conversations.card(a.owner, a.cardId ?? '', a.revision ?? 0)
+          const scopedActor = { ...actor, conversationId: a.owner }
+          if (input.action === 'conversation_focus')
+            value = communication.focusRequest(card.requestId!, scopedActor)
+          else if (input.action === 'conversation_answer') {
+            if (!a.operationId) throw new Error('An answer operation ID is required.')
+            value = await communication.execute(
+              card.kind === 'native' ? 'respond_native_request' : 'answer_request',
+              card.kind === 'native'
+                ? {
+                    id: card.requestId,
+                    generation: card.generation,
+                    expectedRevision: card.request?.revision,
+                    operationId: a.operationId,
+                    response: a.response,
+                  }
+                : {
+                    id: card.requestId,
+                    generation: card.generation,
+                    operationId: a.operationId,
+                    answer: a.answer,
+                  },
+              scopedActor,
+            )
+          } else throw new Error('Unknown conversation action.')
+        }
+      } else if (input.action === 'snapshot') value = communication.snapshot(actor)
       else if (input.action === 'reconcile_delivery') {
         const a = input.arguments as {
           id: string
@@ -179,7 +242,10 @@ export async function startMemory(
         }
         value = communication.reconcile(a.id, a.attemptId, a.outcome, a.evidence, actor)
       } else if (input.action === 'focus_request')
-        value = communication.focusRequest(String(input.arguments), actor)
+        value = communication.focusRequest(String(input.arguments), {
+          ...actor,
+          conversationId: delivery.conversationOwner?.(),
+        })
       else if (input.action === 'configure')
         value = store!.atomicCommunication(() => {
           const candidate = input.arguments as { mode?: string; spaceId?: string }
@@ -362,6 +428,15 @@ export async function startMemory(
     {
       store: () => store,
       communication: () => communication,
+      conversations: () => conversations,
+      conversationFeed: (owner: string) =>
+        conversations && communication
+          ? conversations.project(
+              owner,
+              communication.snapshot({ id: 'human', kind: 'human' }),
+              (id) => delivery.find(id)?.title ?? id,
+            )
+          : undefined,
       server: () => server,
       send: async (target: string, body: string) => {
         if (!communication)
@@ -370,6 +445,21 @@ export async function startMemory(
           const matches = await delivery.destinations(target)
           if (matches.length !== 1 || !matches[0]?.send)
             return { ok: false as const, reason: matches[0]?.reason ?? 'Destination unavailable.' }
+          if (matches[0].transport === 'claude-runtime-inbox') {
+            try {
+              const value = await communication.execute(
+                'send_message',
+                { operationId: randomUUID(), targets: [target], body, intent: 'send' },
+                { id: 'human', kind: 'human' },
+              )
+              return { ok: true as const, value }
+            } catch (error) {
+              return {
+                ok: false as const,
+                reason: error instanceof Error ? error.message : 'Runtime delivery unavailable.',
+              }
+            }
+          }
         }
         return communication.submitLegacy(target, body, (receiptId) =>
           delivery.send(target, body, undefined, receiptId),

@@ -9,89 +9,62 @@
 // Several threads often share one folder, and a scan runs every second, so each folder is
 // counted at most every REFRESH_MS, in the background; the scan only ever reads the last count.
 
-import { execFile } from 'node:child_process'
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { DiffStat, GitState } from '../../shared/types'
+import { findGitRepository } from './gitRepository'
+import { runGit } from './gitProcess'
+export { GitStates } from './gitStates'
 
-/** How often a folder is counted again. */
-const REFRESH_MS = 5000
 /** Bigger new files are not read; they are counted as one changed file, not by lines. */
 const MAX_NEW_FILE_BYTES = 1024 * 1024
 const MAX_NEW_FILES = 200
-const GIT_TIMEOUT_MS = 10_000
 /** The branch "behind" is measured against, the first of these that exists. */
 const MAIN_BRANCHES = ['main', 'master']
 
-interface Entry {
-  state: GitState | null
-  countedAt: number
-  counting: boolean
-}
-
-export class GitStates {
-  private folders = new Map<string, Entry>()
-
-  constructor(
-    /** Called when a folder's count changes, so the list can show it. */
-    private readonly onChange: () => void,
-    private readonly now: () => number = Date.now,
-    private readonly count: (folder: string) => Promise<GitState | null> = readGitState,
-  ) {}
-
-  /** The folder's last count (null if none yet, or not a git folder); recounts it when due. */
-  get(folder: string): GitState | null {
-    if (!folder) return null
-    let entry = this.folders.get(folder)
-    if (!entry) {
-      entry = { state: null, countedAt: -Infinity, counting: false } // never counted: due now
-      this.folders.set(folder, entry)
-    }
-    if (!entry.counting && this.now() - entry.countedAt >= REFRESH_MS) this.recount(folder, entry)
-    return entry.state
-  }
-
-  private recount(folder: string, entry: Entry): void {
-    entry.counting = true
-    void this.count(folder)
-      .catch(() => null)
-      .then((state) => {
-        const changed = JSON.stringify(state) !== JSON.stringify(entry.state)
-        entry.state = state
-        entry.countedAt = this.now()
-        entry.counting = false
-        if (changed) this.onChange()
-      })
-  }
-}
-
 /** Everything the list shows about a folder's repository; null if it is not in one. */
-export async function readGitState(folder: string): Promise<GitState | null> {
-  const top = (await git(folder, ['rev-parse', '--show-toplevel']))?.trim()
-  if (!top) return null // not a repository, or git is missing
-  const counted = (await countChanges(top)) ?? { added: 0, removed: 0, files: 0, newFiles: 0 }
-  const head = (await git(top, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim()
-  const branch = head && head !== 'HEAD' ? head : null // "HEAD": detached, no branch
-  let main: string | null = null
-  for (const name of MAIN_BRANCHES) {
-    if ((await git(top, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])) !== null) {
-      main = name
-      break
-    }
-  }
+export async function readGitState(
+  folder: string,
+  metadata?: (state: GitState) => void,
+): Promise<GitState | null> {
+  const repository = await findGitRepository(folder)
+  if (!repository) return null
+  const { root: top, gitDir } = repository
+  const head = (await readFile(join(gitDir, 'HEAD'), 'utf8').catch(() => '')).trim()
+  if (!head) return null
+  const branch = head.startsWith('ref: refs/heads/') ? head.slice('ref: refs/heads/'.length) : null
+  metadata?.({
+    root: top,
+    branch,
+    added: 0,
+    removed: 0,
+    files: 0,
+    newFiles: 0,
+    ahead: 0,
+    behind: 0,
+    worktrees: [],
+    pending: true,
+  })
+  const [counted, branches, tracking, trees] = await Promise.all([
+    countChanges(top),
+    git(top, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/main', 'refs/heads/master']),
+    git(top, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD']),
+    git(top, ['worktree', 'list', '--porcelain']),
+  ])
+  if (!counted) return null
+  const names = branches?.trim().split(/\r?\n/) ?? []
+  const main = MAIN_BRANCHES.find((name) => names.includes(name)) ?? null
   const onMain = main !== null && branch === main
-  const behind = main && !onMain ? await countCommits(top, `HEAD..${main}`) : 0
-  // To push: ahead of the branch's upstream; never pushed, then everything ahead of main.
-  const tracking = await git(top, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'])
-  const ahead =
+  const [behind, ahead] = await Promise.all([
+    main && !onMain ? countCommits(top, `HEAD..${main}`) : 0,
     tracking !== null
       ? Number.parseInt(tracking.trim().split(/\s+/)[1] ?? '0', 10) || 0
       : main && !onMain
-        ? await countCommits(top, `${main}..HEAD`)
-        : 0
-  const worktrees = parseWorktrees((await git(top, ['worktree', 'list', '--porcelain'])) ?? '')
-  return { ...counted, root: top, branch, ahead, behind, worktrees }
+        ? countCommits(top, `${main}..HEAD`)
+        : 0,
+  ])
+  return { ...counted, root: top, branch, ahead, behind, worktrees: parseWorktrees(trees ?? '') }
 }
 
 /**
@@ -101,14 +74,20 @@ export async function readGitState(folder: string): Promise<GitState | null> {
 export async function countChanges(
   folder: string,
 ): Promise<(DiffStat & { files: number; newFiles: number }) | null> {
-  const tracked = await git(folder, ['diff', 'HEAD', '--numstat', '--no-renames', '-z'])
-  if (tracked === null) return null // not a repository, no commit yet, or git is missing
+  const [tracked, untracked] = await Promise.all([
+    git(folder, ['diff', 'HEAD', '--numstat', '--no-renames', '-z']),
+    git(folder, ['ls-files', '--others', '--exclude-standard', '-z']),
+  ])
+  if (tracked === null || untracked === null) return null // not a repository, no commit yet, or git is missing
   const diff = parseNumstat(tracked)
   const changed = tracked.split('\0').filter((record) => record.includes('\t')).length
-  const untracked = (await git(folder, ['ls-files', '--others', '--exclude-standard', '-z'])) ?? ''
-  const fresh = untracked.split('\0').filter(Boolean)
-  for (const path of fresh.slice(0, MAX_NEW_FILES)) {
-    diff.added += await lineCount(join(folder, path))
+  const fresh = (untracked ?? '').split('\0').filter(Boolean)
+  // Bounded file reads keep large untracked directories from serializing metadata.
+  for (let i = 0; i < Math.min(fresh.length, MAX_NEW_FILES); i += 8) {
+    const counts = await Promise.all(
+      fresh.slice(i, Math.min(i + 8, MAX_NEW_FILES)).map((path) => lineCount(join(folder, path))),
+    )
+    diff.added += counts.reduce((sum, count) => sum + count, 0)
   }
   return { ...diff, files: changed + fresh.length, newFiles: fresh.length }
 }
@@ -151,12 +130,5 @@ async function lineCount(path: string): Promise<number> {
 }
 
 function git(folder: string, args: string[]): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile(
-      'git',
-      ['-C', folder, ...args],
-      { windowsHide: true, timeout: GIT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
-      (error, stdout) => resolve(error ? null : stdout),
-    )
-  })
+  return runGit(folder, args).catch(() => null)
 }

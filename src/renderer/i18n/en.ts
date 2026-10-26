@@ -142,16 +142,17 @@ export const en = {
   },
   changes: {
     title: 'Thread diff',
+    uncommitted: 'Uncommitted',
     worktreeTitle: 'Worktree diff',
     worktreeNone: 'No uncommitted changes in this worktree.',
     worktreeUnavailable: "This thread's Git worktree is unavailable.",
     files: (n: number) => (n === 1 ? '1 file' : `${n} files`),
     loading: 'Reading changes…',
-    none: 'No recorded file changes in this thread.',
+    none: 'No uncommitted changes from this thread.',
     historyUnavailable: "This thread's recorded changes are unavailable.",
-    partialShort: 'Incomplete recorded history',
+    partialShort: 'Incomplete attribution',
     partial:
-      'Some recorded edits could not be combined. Those files show their separate recorded patches.',
+      'Some uncommitted edits could not be attributed. Only matching recorded changes are shown.',
     mark: { added: 'new', modified: 'edit', deleted: 'gone' } as Record<
       'added' | 'modified' | 'deleted',
       string

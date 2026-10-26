@@ -121,3 +121,162 @@ The probe kept the native token in memory. Its final cleanup redacts test regist
 This establishes native transport feasibility, not production readiness. Next acceptance work is authenticated enrollment/registration, transactional claims and receipt recovery, disconnect/revocation races, ambiguous duplicate owners, and an actual Desktop-hosted end-to-end run with visible message history and permission/question cards. The existing Desktop runtime's metadata advertises peer messaging, and Desktop shares the hook configuration, but no message was injected into that user's running chat. [Desktop shared configuration](https://code.claude.com/docs/en/desktop#shared-configuration).
 
 Production admission remains unchanged. This investigation adds the reproducible live probe and this report only.
+
+## Runtime inbox integration build — 26 October 2026
+
+The proposed live-runtime transport is now implemented, including the production
+MCP bridge, private registration endpoint, Windows pipe-owner verification,
+recipient claims, completion acknowledgements, journal replies and composer
+routing. The production release allowlist remains empty until the real Desktop
+acceptance below passes. This supersedes the investigation's statement that the
+adapter is not yet integrated; it does not change the concurrent-resume refusal.
+
+### Implementation and recovery contract
+
+- The human-approved Claude plugin connection calls `memory_enable_wakeup`. The
+  MCP bridge receives Claude's exported inbox variables directly; this was
+  verified with the installed runtime. No new unauthenticated hook registration
+  endpoint is used. The model supplies only its connection ID.
+- The main process validates the actual Windows pipe server PID, process creation
+  time, executable hash and unique live-session record. Before writing, it
+  verifies ownership again through the same handle used for the write. Native
+  `LOCAL` pipe names are supported. Credentials stay in memory and are excluded
+  from tool results, the journal, backups and renderer snapshots.
+- Registration is bound to a writable enrolled workflow participant. Its lease
+  lasts 45 seconds, renewed by the bridge every 20 seconds without model calls.
+  Disabling, revoking, restore and app shutdown invalidate the capability. Late
+  registration results cannot restore a disabled capability. Re-pairing after
+  an application restart uses the existing human approval flow.
+- One persisted attempt yields at most one new execution claim. Claim retries
+  report `already_claimed`; even a lost claim response does not authorize a
+  second execution. Completion is idempotent for the same claim and body;
+  contradictory completions fail. Uncertain claimed work stays uncertain across
+  restart and requires reconciliation.
+- A pipe write leaves the message `submitting`. A verified recipient claim
+  produces `accepted` and a durable acknowledgement event. Explicit correlated
+  completion produces `completed` and a saved result DM. The UI labels these
+  states **Acknowledged by Claude** and **Result received**. A turn ending alone
+  does not establish either fact.
+- Questions are saved through the existing question tools. Claude completes the
+  current delivery with the pending question ID when yielding. A human answer
+  queues a distinct message with its own claim, avoiding a blocked writer.
+  Delivery completion still does not accept assignment outputs.
+- Missing acknowledgement after 60 seconds, loss of registration, revocation or
+  an incomplete pipe write becomes uncertainty, never a resend. A claimed
+  delivery has a maximum observation window of 12 hours. The current native
+  inbound policy may silently hold/refuse a notification; a write is never
+  presented as confirmation.
+- Existing Codex delivery remains unchanged. Claude composer sends use the
+  journal and inbox adapter. Legacy memory handoffs are explicitly blocked from
+  this transport and direct the user to the communication workflow; they cannot
+  fall through to a competing native resume. Closed Claude processes remain
+  unsupported by this adapter.
+
+### Reproducible validation
+
+`test/live/claude-wakeup.proof.mjs` runs a disposable Claude process with the real
+packaged MCP bridge, production MemoryServer, runtime registry, communication
+service and SQLite journal. It exercises human enrollment, automatic wakeup,
+claim, result, a question, yielding, human answer and a second automatic wakeup.
+It asserts exact native identity and persisted correlated results. It does not
+count as a Desktop-hosted conversation or microphone test.
+
+Run explicitly from the repository in PowerShell:
+
+```powershell
+$env:THREADLIGHT_COMMUNICATION_PROOF = '1'
+$env:THREADLIGHT_CLAUDE_WAKEUP_TEST = '1'
+node test/live/claude-wakeup.proof.mjs
+```
+
+The first native integration checks exposed harness setup errors (a null folder
+field, a paused test project and missing observed-model metadata), and the
+adapter's initial omission of Windows' LOCAL pipe namespace. These were fixed;
+the actual recipient/model/pause checks were retained. The original pipeline
+passed in `Z:/Temp/threadlight-wakeup-4n6EBM/proof.json`; the extended question
+round trip passed in `Z:/Temp/threadlight-wakeup-mhEARX/proof.json`. Final build
+validation is recorded below.
+
+### Wednesday release acceptance — 28 October 2026
+
+**Required before enabling production automatic Claude wakeup.** Kris operates
+the real Claude Desktop conversation; Codex observes the evidence. Do not mark
+this complete based on the CLI proof or synthetic UI tests.
+
+1. Build the checkout and install/update the Claude plugin from this build.
+   Confirm `memory_enable_wakeup`, `threadlight_claim_delivery` and
+   `threadlight_complete_delivery` appear in the actual Desktop conversation.
+   Run Threadlight in the explicit `THREADLIGHT_CLAUDE_WAKEUP_TEST=1` acceptance
+   mode. Only the probed executable hash is admitted by this switch.
+2. Use a disposable **real Claude Desktop Code conversation**, enroll its exact
+   native chat into the test project's workflow and enable communication. Select
+   its observed model and enable the project's dispatch policy. Human-approve
+   the plugin connection; ask that chat to enable wakeup. Record the Desktop
+   version, Claude binary hash, native chat ID and runtime generation.
+3. Let the chat go idle. Send a harmless request from Threadlight, continue the
+   Agent conversation, and verify the same Desktop chat visibly receives it.
+   Confirm one native process, one claim and one correlated result in history.
+4. Repeat during a running tool and with two queued requests. Verify delivery
+   ordering, the original work continuing, correct destination identity and no
+   duplicated work. Redeliver a notification in the bounded test harness and
+   verify the saved claim prevents another execution.
+5. Have Claude raise a question card, answer it through Threadlight, and verify
+   the answer resumes that same chat and returns its result. Exercise a native
+   permission card separately: peer text must never approve it; only the exact
+   human response may use the native approval path. Include microphone use.
+6. Disable wakeup, revoke the enrollment, exercise native hold/refuse, close the
+   chat, and restart Threadlight during an unconfirmed delivery. Verify no
+   hidden resume, automatic replay, fabricated receipt or credential leakage.
+   Re-pairing must preserve the old attempt as uncertain until reviewed.
+7. Save the journal and redacted native/UI evidence, record pass/fail for each
+   case, and identify the exact tested executable hash. Only after every required
+   case passes, add that hash to `desktopVerified` in `claudeRuntime.ts`,
+   update the deliberate production-gate test for that signed-off hash, run
+   focused regression checks and a build, and retest once without the test
+   environment switch. A future runtime hash requires fresh verification.
+
+No Wednesday sign-off or production enablement has been inferred from the date.
+
+### Wednesday follow-up — additional workers and remote destinations
+
+After the real Claude Desktop tests on Wednesday, 28 October 2026, extend
+destination support through the same capability model. This is the next planned
+work item, not a claim that remote execution is already supported or a scheduled
+background job.
+
+- Inventory each additional worker/runtime and remote host. Bind identity to
+  host, provider and native chat; never route by title or a machine-local ID alone.
+- Advertise read, send, queue, observe, question response and approval response
+  separately, with current generation, freshness and an unavailable reason.
+- Admit each operation only after its actual execution, observation and response
+  path has passed an integration test. Enrollment or reachability alone does not
+  establish wakeup, completion or response capability.
+- Reuse the durable communication journal, correlated receipts, claims where
+  supported, authorization, reconciliation and exact request routing. Remote
+  connections require authenticated host binding and reconnect/restart proofs.
+- Keep unsupported operations unavailable. A worker can support sending before
+  it supports native approvals; the interface must state that limitation.
+
+Then implement the conversation card and spoken return path described in
+`CONVERSATION-EVENTS-SPEC.md`. Its model applies to local and remote adapters,
+while each adapter retains its own admission gate.
+
+### Final integration validation — 26 October 2026
+
+- Final native proof: `Z:/Temp/threadlight-wakeup-SWQwP6/proof.json`. The real
+  packaged MCP bridge registered the existing native process, received a saved
+  claim and correlated completion, then completed a question/yield/human-answer
+  round trip with distinct claims in the same native chat. The report explicitly
+  records `desktopSignOff: false`.
+- 145 focused regression tests passed across nine test files, covering runtime
+  enrollment and leases, recipient/attempt/generation checks, claim replay,
+  immutable completion, restart uncertainty, authorization and existing
+  communication/memory/Agent behavior.
+- Production build, TypeScript checks, focused ESLint and `git diff --check`
+  passed. Generated plugin packaging and consistency checks passed.
+- The communication UI smoke test passed, including saved receipt labels
+  **Acknowledged by Claude** and **Result received**, durable history reload,
+  question answers and native response routing. Its IPC is synthetic; this is
+  not a Claude Desktop conversation test.
+- Production `desktopVerified` remains empty. No application restart, installed
+  plugin update or production wakeup enablement was performed by this build.

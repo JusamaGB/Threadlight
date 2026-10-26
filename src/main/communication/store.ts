@@ -1,3 +1,4 @@
+import type { ConversationRecord } from '../../shared/conversationEvents'
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type {
@@ -10,6 +11,7 @@ import type {
 import { communicationRecordSchemas } from '../../shared/communication'
 
 export interface Records {
+  conversation: ConversationRecord
   message: CommunicationMessage
   workflow: Workflow
   assignment: Assignment

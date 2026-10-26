@@ -459,6 +459,7 @@ export class CodexTracker {
           backgroundTasks: [],
           live,
           git,
+          gitFolders: gitFolders.filter((folder): folder is string => !!folder),
           contextUsed: tailSummary.contextUsed,
           attention,
           permissionMode: str(row['approval_mode']),

@@ -1,3 +1,4 @@
+import { LiveAnnouncements } from './liveAnnouncements'
 import type { LiveVoicePhase } from '../../shared/liveVoice'
 import { SILENT_AUDIO, type AudioEnergy } from '../../shared/motion'
 import { AudioEnergyMeter } from './audioEnergy'
@@ -24,6 +25,9 @@ export class LiveVoiceConnection {
   private timer?: ReturnType<typeof setTimeout>
   private replyTimer?: ReturnType<typeof setTimeout>
   private meter?: AudioEnergyMeter
+  private unsubscribeAnnouncements?: () => void
+  private announcements?: LiveAnnouncements
+  private announcementTimer?: ReturnType<typeof setInterval>
 
   constructor(
     stream: MediaStream,
@@ -32,6 +36,29 @@ export class LiveVoiceConnection {
     private audioContext?: AudioContext,
   ) {
     this.backlog = new LiveAudioBuffer(sampleRate)
+    if (window.threadlight.agentAnnouncement) {
+      this.announcements = new LiveAnnouncements((command) =>
+        window.threadlight.agentAnnouncement(this.id, command),
+      )
+      this.unsubscribeAnnouncements = window.threadlight.onCommunication?.(() =>
+        this.announcements?.invalidate(),
+      )
+      this.announcementTimer = setInterval(
+        () =>
+          void this.announcements?.tick(
+            this.active &&
+              !this.paused &&
+              !this.opening &&
+              this.backlog.length === 0 &&
+              !this.audio.paused &&
+              !this.audio.muted &&
+              !!this.meter &&
+              this.audioContext?.state === 'running',
+            this.outputEnergy.level,
+          ),
+        200,
+      )
+    }
     this.peer.addTrack(stream.getAudioTracks()[0]!, stream)
     this.channel = this.peer.createDataChannel('oai-events')
     // An open transport is not yet a ready model. Register before negotiating so an
@@ -45,6 +72,7 @@ export class LiveVoiceConnection {
         return
       }
       if (!event || typeof event !== 'object') return
+      this.announcements?.event(event)
       if (event.type === 'session.started') {
         this.sessionStarted = true
         this.checkConnection?.()
@@ -222,6 +250,7 @@ export class LiveVoiceConnection {
   /** Called on the existing audio clock. Bounded buffering preserves the handoff boundary. */
   process(input: Float32Array, output: Float32Array): void {
     output.fill(0)
+    if (!this.paused && this.active) this.announcements?.input(input)
     if (this.cancelled || this.paused || (!this.active && !this.bufferAudio)) return
     if (
       !this.backlog.append(input, this.bufferAudio && (!this.active || this.backlog.length > 0))
@@ -238,6 +267,9 @@ export class LiveVoiceConnection {
   stop(): void {
     if (this.cancelled) return
     this.cancelled = true
+    clearInterval(this.announcementTimer)
+    this.announcements?.close()
+    this.unsubscribeAnnouncements?.()
     clearTimeout(this.timer)
     clearTimeout(this.replyTimer)
     this.checkConnection = undefined

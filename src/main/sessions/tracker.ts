@@ -280,6 +280,7 @@ export class Tracker {
             now - task.startedAt < TASK_GIVE_UP_MS && (!task.foreground || state === 'working'),
         ),
         git: this.options.gitFor?.(gitFolder(app, summary, cwd)) ?? null,
+        gitFolders: [gitFolder(app, summary, cwd)],
         live: live.has(id),
         contextUsed: contextUsed(summary, app?.model ?? null),
         attention: attentionFor(state, summary, this.options.held?.(id) ?? null),

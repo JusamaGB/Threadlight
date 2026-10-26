@@ -19,6 +19,8 @@ const protocol = JSON.parse(
   readFileSync(new URL('./memory-protocol.json', import.meta.url), 'utf8'),
 )
 const connections = new Map()
+const wakeups = new Map()
+const wakeupRequests = new Map()
 const objectSchema = (properties, required) => ({
   type: 'object',
   properties,
@@ -31,6 +33,14 @@ const connectionId = {
   description: 'The connection ID returned for THIS chat. Never reuse another chat’s ID.',
 }
 const tools = [
+  ...(provider === 'claude'
+    ? ['enable', 'disable'].map((action) => ({
+        name: `memory_${action}_wakeup`,
+        description: `${action === 'enable' ? 'Enable automatic inbox notifications for THIS human-enrolled Claude runtime when the user requests it. Runtime credentials stay private to this bridge; the app reports release-gate readiness.' : 'Disable automatic inbox notifications for this enrolled runtime.'}`,
+        inputSchema: objectSchema({ connectionId }, ['connectionId']),
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      }))
+    : []),
   {
     name: 'memory_connect',
     description:
@@ -152,7 +162,48 @@ async function call(name, args) {
   const record = connections.get(id)
   if (!record)
     throw new Error('No connection for this chat. Call memory_connect with a label first.')
+  if (name === 'memory_enable_wakeup' || name === 'memory_disable_wakeup') {
+    if (provider !== 'claude' || Object.keys(arguments_).length)
+      throw new Error('Use only this Claude connectionId.')
+    const ticket = (wakeupRequests.get(id) ?? 0) + 1
+    wakeupRequests.set(id, ticket)
+    clearInterval(wakeups.get(id))
+    wakeups.delete(id)
+    if (name === 'memory_disable_wakeup')
+      return content(await post(`/plugin/runtime/${id}`, { action: 'unregister' }, record.secret))
+    const socket = process.env.CLAUDE_CODE_MESSAGING_SOCKET,
+      token = process.env.CLAUDE_CODE_MESSAGING_TOKEN
+    if (!socket || !token)
+      throw new Error(
+        'This Claude runtime did not export an inbox. Reopen this chat with the current plugin; do not resume it in a second process.',
+      )
+    const register = () =>
+      post(`/plugin/runtime/${id}`, { action: 'register', socket, token }, record.secret)
+    const result = await register()
+    if (wakeupRequests.get(id) !== ticket)
+      return content({ enabled: false, reason: 'A newer wakeup setting superseded this request.' })
+    // Lease renewal does not send prompts. A lost lease never replays a task.
+    let renewing = false
+    const timer = setInterval(async () => {
+      if (renewing) return
+      renewing = true
+      try {
+        await register()
+      } catch {
+        clearInterval(timer)
+        if (wakeups.get(id) === timer) wakeups.delete(id)
+      } finally {
+        renewing = false
+      }
+    }, 20000)
+    timer.unref()
+    wakeups.set(id, timer)
+    return content(result)
+  }
   if (name === 'memory_disconnect') {
+    wakeupRequests.set(id, (wakeupRequests.get(id) ?? 0) + 1)
+    clearInterval(wakeups.get(id))
+    wakeups.delete(id)
     await post('/plugin/connect', { action: 'disconnect', id, secret: record.secret })
     connections.delete(id)
     return content({ disconnected: true })
@@ -243,6 +294,7 @@ process.stdin.on('data', (chunk) => {
   }
 })
 process.stdin.on('end', () => {
+  for (const timer of wakeups.values()) clearInterval(timer)
   // Best effort only; app-side expiry/revocation remains authoritative after a crash.
   void Promise.allSettled(
     [...connections.values()].map(({ id, secret }) =>

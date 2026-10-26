@@ -482,7 +482,7 @@ describe('Workflow progression and native response authority', () => {
     await expect(f.service.execute('respond_native_request', input, agent)).rejects.toThrow(
       'explicit',
     )
-    f.service.focusRequest(id, f.human)
+    f.service.focusRequest(id, { ...f.human, conversationId: 'agent' })
     await expect(f.service.execute('respond_native_request', input, f.peer(f.a))).rejects.toThrow(
       'Peer',
     )
@@ -528,7 +528,7 @@ describe('Workflow progression and native response authority', () => {
       expiresAt: 2000,
       questions: [{ question: 'Colour?', options: [{ label: 'Blue' }, { label: 'Green' }] }],
     })
-    f.service.focusRequest(id, f.human)
+    f.service.focusRequest(id, { ...f.human, conversationId: 'agent' })
     const input = {
       operationId: randomUUID(),
       id,

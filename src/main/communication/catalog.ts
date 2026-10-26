@@ -14,6 +14,11 @@ export class CommunicationCatalog {
     private session: (id: string) => Session | undefined,
     private admitted: (id: string) => Promise<boolean> = async () => false,
     private held: (id: string) => Promise<boolean> = async () => true,
+    private runtime?: (
+      id: string,
+    ) => Promise<
+      Pick<Destination, 'send' | 'queue' | 'generation' | 'reason' | 'transport'> | undefined
+    >,
   ) {}
   async find(target?: string, query = ''): Promise<Destination[]> {
     const rows: CatalogEntry[] = []
@@ -40,6 +45,10 @@ export class CommunicationCatalog {
       rows.slice(0, 100).map(async (row): Promise<Destination> => {
         const id = row.provider === 'codex' ? `codex:${row.nativeId}` : row.nativeId
         const observed = this.session(id)
+        const runtime =
+          target && row.provider === 'claude' && !row.archived
+            ? await this.runtime?.(id)
+            : undefined
         const admitted = !!target && !row.archived && !!row.workspace && (await this.admitted(id))
         const send = admitted && !observed?.live && !(await this.held(id))
         this.cache.set(id, {
@@ -69,6 +78,7 @@ export class CommunicationCatalog {
                   ? 'Native desktop ownership prevents ordinary sends. The inbox remains available to an enrolled participant.'
                   : 'Native wakeup has not passed the ownership gate. The message is available in the participant inbox.',
           observedAt: Date.now(),
+          ...runtime,
         }
       }),
     )

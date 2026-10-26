@@ -1,3 +1,4 @@
+import type { AnnouncementCommand, AnnouncementReply } from './conversationEvents'
 // The one contract between the UI (renderer) and the Node side (main).
 // Channel names and payload types live here so both sides stay in step.
 
@@ -106,6 +107,7 @@ export const IPC = {
   getFileDiff: 'changes:file',
   openChangedFile: 'changes:open',
   agentGet: 'agent:get',
+  agentAnnouncement: 'agent:announcement',
   agentLiveStart: 'agent:live-start',
   agentLiveOpen: 'agent:live-open',
   agentLiveStop: 'agent:live-stop',
@@ -253,6 +255,7 @@ export interface ThreadlightApi {
 
   /** The agent conversation Threadlight hosts (agentRun.ts). */
   getAgent(): Promise<AgentState>
+  agentAnnouncement(sessionId: string, command: AnnouncementCommand): Promise<AnnouncementReply>
   agentLiveStart(sessionId: string, sdp: string): Promise<LiveVoiceResult>
   agentLiveOpen(sessionId: string, text: string): Promise<AgentResult>
   agentLiveStop(sessionId: string): void

@@ -165,6 +165,15 @@ export class MemoryStore {
             if (['submitting', 'accepted'].includes(delivery.phase)) delivery.phase = 'unknown'
             else if (delivery.phase === 'queued') delivery.phase = 'held'
           }
+        if (row.kind === 'conversation' && 'cards' in row.value)
+          for (const card of row.value.cards) {
+            if (['reserved', 'submitted'].includes(card.speech)) card.speech = 'uncertain'
+            if (card.kind === 'native' && ['pending', 'submitting'].includes(card.state)) {
+              card.state = 'unavailable'
+              card.speech = 'suppressed'
+              card.revision++
+            }
+          }
         if (row.kind === 'question')
           Object.assign(row.value, { state: 'expired', generation: randomUUID() })
         this.communications.put(row.kind, row.value, 'Restored; coordination paused')

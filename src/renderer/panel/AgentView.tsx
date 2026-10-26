@@ -1,4 +1,4 @@
-import { CommunicationView } from '../communication/CommunicationView'
+import { ConversationTimeline } from '../communication/ConversationTimeline'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { agentBusy, type AgentConversation, type AgentItem } from '../../shared/agent'
@@ -213,10 +213,29 @@ export function AgentView() {
   const model = hasConversation ? agent.model : selectedModel
   const reasoning = hasConversation ? agent.reasoning : selectedReasoning
 
-  // Keep the newest line in view.
-  useEffect(() => {
+  const following = useRef(true)
+  const [unread, setUnread] = useState(false)
+  const trackScroll = () => {
+    const element = log.current
+    if (!element) return
+    following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48
+    if (following.current) setUnread(false)
+  }
+  const showUpdates = () => {
+    following.current = true
+    setUnread(false)
     log.current?.scrollTo({ top: log.current.scrollHeight })
-  }, [agent.revision, reading])
+  }
+  useEffect(() => {
+    const element = log.current
+    if (!element) return
+    const observer = new MutationObserver(() => {
+      if (following.current) element.scrollTo({ top: element.scrollHeight })
+      else setUnread(true)
+    })
+    observer.observe(element, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [reading?.id])
 
   const read = async (id: string) => {
     const page = await window.threadlight.agentReadPage(id)
@@ -235,9 +254,18 @@ export function AgentView() {
   if (reading) {
     return (
       <div className={styles.agent}>
-        <CommunicationView compact owner={agent.conversationId} />
-        <div className={styles.agentLog} ref={log}>
-          <Lines items={reading.items} historical />
+        {unread && (
+          <button className={styles.agentEnd} onClick={showUpdates}>
+            New updates
+          </button>
+        )}
+        <div className={styles.agentLog} ref={log} onScroll={trackScroll}>
+          <ConversationTimeline
+            owner={reading.id}
+            items={reading.items}
+            historical
+            lines={(items) => <Lines items={items} historical />}
+          />
           {reading.cursor && (
             <button
               className={styles.agentEnd}
@@ -297,7 +325,6 @@ export function AgentView() {
 
   return (
     <div className={styles.agent}>
-      <CommunicationView compact owner={agent.conversationId} />
       {selectionChanged && (
         <div className={styles.agentSelection} role="status">
           <p>
@@ -320,18 +347,30 @@ export function AgentView() {
           </span>
         </div>
       )}
-      <div className={styles.agentLog} ref={log}>
-        <Lines
+      {unread && (
+        <button className={styles.agentEnd} onClick={showUpdates}>
+          New updates
+        </button>
+      )}
+      <div className={styles.agentLog} ref={log} onScroll={trackScroll}>
+        <ConversationTimeline
+          owner={agent.conversationId}
+          live={!!agent.live}
           items={agent.items}
-          select={
-            busy || sending
-              ? undefined
-              : (ref) => {
-                  void window.threadlight
-                    .agentSend(`Read the selected chat using threadRef ${ref}.`)
-                    .then((result) => setError(result.ok ? null : result.reason))
-                }
-          }
+          lines={(items) => (
+            <Lines
+              items={items}
+              select={
+                busy || sending
+                  ? undefined
+                  : (ref) => {
+                      void window.threadlight
+                        .agentSend(`Read the selected chat using threadRef ${ref}.`)
+                        .then((result) => setError(result.ok ? null : result.reason))
+                    }
+              }
+            />
+          )}
         />
         {agentBusy(agent) && (
           <p className={styles.agentProgress}>
@@ -363,7 +402,7 @@ export function AgentView() {
             </div>
           </div>
         )}
-        {agent.requests[0] && (
+        {!agent.conversationId && agent.requests[0] && (
           <AgentRequestCard
             key={agent.requests[0].id}
             request={agent.requests[0]}

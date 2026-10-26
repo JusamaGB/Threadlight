@@ -46,13 +46,21 @@ const terminal = new Set(['completed', 'rejected', 'cancelled'])
 const human: CommunicationActor = { id: 'human', kind: 'human' }
 export class CommunicationService {
   clearFocus() {
-    this.focusedRequest = undefined
+    this.focusedRequests.clear()
   }
-  private focusedRequest?: { id: string; at: number }
+  private focusedRequests = new Map<
+    string,
+    { id: string; generation: string; revision?: number; at: number }
+  >()
   focusRequest(id: string, actor: CommunicationActor) {
-    if (actor.kind !== 'human' || !this.pendingNative(actor).some((r) => r.id === id))
-      throw new Error('Choose a current request card.')
-    this.focusedRequest = { id, at: this.now() }
+    const request = this.pendingNative(actor).find((r) => r.id === id)
+    if (actor.kind !== 'human' || !request) throw new Error('Choose a current request card.')
+    this.focusedRequests.set(actor.conversationId ?? actor.id, {
+      id,
+      generation: request.generation,
+      revision: request.revision,
+      at: this.now(),
+    })
     return { id }
   }
   private recoveryIssue = false
@@ -394,6 +402,102 @@ export class CommunicationService {
     actor: CommunicationActor,
   ): Promise<unknown> {
     if (this.closed) throw new Error('Communication service is closed.')
+    if (action === 'claim_delivery' || action === 'complete_delivery') {
+      const i =
+        action === 'claim_delivery'
+          ? communicationSchemas.claim_delivery.parse(raw)
+          : communicationSchemas.complete_delivery.parse(raw)
+      return this.store.transaction(() => {
+        const m = this.store.get('message', i.id)
+        this.check(actor, m.spaceId ?? actor.spaceId)
+        if (
+          actor.kind !== 'participant' ||
+          !actor.target ||
+          !actor.runtimeGeneration ||
+          actor.runtimeGeneration !== i.generation
+        )
+          throw new Error('An authenticated current recipient runtime is required.')
+        const d = m.deliveries.find((d) => d.target === actor.target && d.attemptId === i.attemptId)
+        if (!d || d.transport !== 'claude-runtime-inbox' || d.generation !== i.generation)
+          throw new Error('Delivery belongs to another recipient or runtime generation.')
+        if (action === 'claim_delivery') {
+          if (d.claim)
+            return {
+              status: d.phase === 'completed' ? 'completed' : 'already_claimed',
+              claimId: d.claim.id,
+            }
+          if (d.phase !== 'submitting')
+            throw new Error(
+              'Delivery is not available for a new claim. Reconcile uncertain work first.',
+            )
+          this.check(
+            { id: m.sender, kind: m.senderKind, target: m.senderTarget, spaceId: m.spaceId },
+            m.spaceId,
+          )
+          if (m.spaceId) {
+            const workflow = this.workflow(m.spaceId),
+              project = this.deps.project(m.spaceId)
+            if (
+              !workflow ||
+              workflow.paused ||
+              workflow.expiresAt <= this.now() ||
+              project.paused ||
+              project.expiresAt <= this.now() ||
+              (m.workflowRevision && m.workflowRevision !== workflow.revision)
+            )
+              throw new Error('Project authority changed before the delivery was claimed.')
+          }
+          d.claim = { id: randomUUID(), actor: actor.id, generation: i.generation, at: this.now() }
+          d.phase = 'accepted'
+          d.reason = 'Recipient runtime claimed this delivery.'
+          d.observedAt = this.now()
+          this.store.put('message', m, 'Recipient acknowledged delivery')
+          return { status: 'claimed', claimId: d.claim.id, message: m }
+        }
+        const completion = communicationSchemas.complete_delivery.parse(raw)
+        if (
+          !d.claim ||
+          d.claim.id !== completion.claimId ||
+          d.claim.actor !== actor.id ||
+          d.claim.generation !== actor.runtimeGeneration
+        )
+          throw new Error('Completion does not own the delivery claim.')
+        if (d.phase === 'completed') {
+          if (d.reply !== completion.body || d.questionId !== completion.questionId)
+            throw new Error('Completion already recorded with different content.')
+          return { status: 'completed', claimId: d.claim.id }
+        }
+        if (d.phase !== 'accepted')
+          throw new Error('Delivery outcome is uncertain; reconcile it before completing.')
+        if (
+          !completion.questionId &&
+          this.store
+            .list('question')
+            .some(
+              (q) =>
+                q.originMessageId === m.id &&
+                q.senderTarget === actor.target &&
+                q.state === 'pending',
+            )
+        )
+          throw new Error(
+            'Complete this yield with the pending questionId; it is not a task result.',
+          )
+        if (completion.questionId) {
+          const q = this.store.get('question', completion.questionId)
+          if (q.senderTarget !== actor.target || q.originMessageId !== m.id)
+            throw new Error('The question does not belong to this delivery.')
+        }
+        this.patch(m.id, d.attemptId, {
+          questionId: completion.questionId,
+          phase: 'completed',
+          reply: completion.body,
+          reason: 'Recipient acknowledged completion.',
+        })
+        this.recordReply(m, d.target, completion.body)
+        return { status: 'completed', claimId: d.claim.id }
+      })
+    }
     if (action === 'review_plan') {
       const i = communicationSchemas.review_plan.parse(raw)
       this.check(actor, i.spaceId)
@@ -464,7 +568,25 @@ export class CommunicationService {
         throw new Error('This native request is no longer answerable here.')
       if (actor.kind === 'participant')
         throw new Error('Peer agents cannot answer human native cards.')
+      if (i.expectedRevision !== undefined && request.revision !== i.expectedRevision)
+        throw new Error('This request changed. Read the current card.')
+      if (
+        this.store
+          .list('message')
+          .some(
+            (m) =>
+              m.kind === 'answer' &&
+              m.rootId === request.id &&
+              m.deliveries.some(
+                (d) =>
+                  d.generation === request.generation &&
+                  ['submitting', 'completed', 'unknown'].includes(d.phase),
+              ),
+          )
+      )
+        throw new Error('A response was already submitted. Check the current card before retrying.')
       if (actor.kind !== 'human') {
+        const focusedRequest = this.focusedRequests.get(actor.conversationId ?? actor.id)
         const answers =
           i.response.action === 'answer'
             ? i.response.text
@@ -472,9 +594,11 @@ export class CommunicationService {
               : Object.values(i.response.answers ?? {})
             : [i.response.action]
         if (
-          this.focusedRequest?.id !== request.id ||
+          focusedRequest?.id !== request.id ||
+          focusedRequest.generation !== request.generation ||
+          focusedRequest.revision !== request.revision ||
           !actor.humanInput ||
-          actor.humanInput.at < this.focusedRequest.at ||
+          actor.humanInput.at < focusedRequest.at ||
           !answers.length ||
           !answers.every((a) =>
             this.humanAnswer(
@@ -782,6 +906,16 @@ export class CommunicationService {
     if (action === 'ask_question') {
       const i = communicationSchemas.ask_question.parse(raw)
       this.check(actor, i.spaceId)
+      if (i.originMessageId) {
+        const origin = this.store.get('message', i.originMessageId)
+        if (
+          !this.canRead(actor, origin) ||
+          (origin.spaceId && origin.spaceId !== i.spaceId) ||
+          (actor.kind === 'participant' &&
+            !origin.deliveries.some((d) => d.target === actor.target))
+        )
+          throw new Error('Question origin is not an authorized delivery to this participant.')
+      }
       const w = this.workflow(i.spaceId)
       const audience = w?.participants.find((p) => p.id === i.audience)?.target ?? i.audience
       if (audience !== 'human' && !w?.participants.some((p) => p.target === audience))
@@ -811,6 +945,7 @@ export class CommunicationService {
           id: randomUUID(),
           spaceId: i.spaceId,
           taskId: i.taskId,
+          originMessageId: i.originMessageId,
           body: i.body,
           choices: i.choices,
           sender: actor.id,
@@ -1177,6 +1312,7 @@ export class CommunicationService {
             this.patch(m.id, d.attemptId, {
               phase: 'submitting',
               generation: destination.generation,
+              transport: destination.transport,
               reason: '',
             })
           if (m.spaceId && this.deps.reserve) this.deps.reserve(m.spaceId, record)

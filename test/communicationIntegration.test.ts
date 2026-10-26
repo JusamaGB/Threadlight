@@ -203,7 +203,7 @@ describe('Communication real callers, recovery and native capabilities', () => {
     expect(
       adapter.respond(request.id, request.generation, {
         action: 'answer',
-        answers: { Colour: 'Blue' },
+        answers: { colour: 'Blue' },
       }).ok,
     ).toBe(true)
     expect(respond).toHaveBeenCalledWith('epoch:wire-1', {

@@ -22,7 +22,11 @@ import { checkToolbar, checkRecentLimit } from './toolbar.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkWorkspacePicker } from './workspace-picker.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
-import { setupCommunication, checkCommunication } from './communication.smoke.mjs'
+import {
+  setupCommunication,
+  checkCommunication,
+  checkConversationEvents,
+} from './communication.smoke.mjs'
 import { checkThreadDiffs } from './thread-diffs.smoke.mjs'
 import { checkWorkspaceLinks } from './workspace-links.smoke.mjs'
 import { checkActivityRings } from './activity-rings.smoke.mjs'
@@ -206,6 +210,7 @@ checks: try {
     page,
     require(join(root, 'src/main/communication/service.ts')).CommunicationService,
     memoryProof.store,
+    require(join(root, 'src/main/communication/conversationEvents.ts')).ConversationEventService,
   )
   testPage = page
   spacesProof = await setupSpaces(
@@ -472,6 +477,11 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'conversation-events') {
+    await checkConversationEvents(page, communicationProof, memoryProof.store, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'communication') {
     await checkCommunication(page, communicationProof, memoryProof.store, capture)
     assert.deepEqual(errors, [])

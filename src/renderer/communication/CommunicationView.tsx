@@ -1,3 +1,4 @@
+import { AgentRequestCard } from '../panel/AgentRequestCard'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   CommunicationSnapshot,
@@ -287,7 +288,13 @@ export function CommunicationView({
               <p className={styles.body}>{m.body}</p>
               {m.deliveries.map((d) => (
                 <p key={d.attemptId}>
-                  {d.phase === 'inbox' ? 'Saved in inbox · native wakeup not confirmed' : d.phase}
+                  {d.claim && d.phase === 'accepted'
+                    ? 'Acknowledged by Claude'
+                    : d.claim && d.phase === 'completed'
+                      ? 'Result received'
+                      : d.phase === 'inbox'
+                        ? 'Saved in inbox · native wakeup not confirmed'
+                        : d.phase}
                   {d.reason ? ` · ${d.reason}` : ''}
                 </p>
               ))}
@@ -358,7 +365,7 @@ export function CommunicationView({
   )
 }
 
-function Question({
+export function Question({
   title,
   choices,
   busy,
@@ -630,7 +637,7 @@ function WorkflowEditor({
   )
 }
 
-function NativeRequest({
+export function NativeRequest({
   request,
   busy,
   focus,
@@ -641,69 +648,46 @@ function NativeRequest({
   focus: () => Promise<boolean>
   answer: (response: NativeCommunicationResponse) => Promise<boolean>
 }) {
-  const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [text, setText] = useState('')
   const [focused, setFocused] = useState(false)
-  const questions = request.questions ?? []
   return (
     <article aria-label="Live request">
-      <strong>{request.title}</strong>
-      {request.detail && <p className={styles.body}>{request.detail}</p>}
-      <p>
-        {request.target} · Available until {new Date(request.expiresAt).toLocaleTimeString()}
-      </p>
       <button disabled={busy} onClick={async () => setFocused(await focus())}>
         {focused ? 'Selected for your next Agent answer' : 'Answer through Agent'}
       </button>
-      {request.kind === 'approval' ? (
-        <>
-          <button disabled={busy} onClick={() => void answer({ action: 'allow' })}>
-            Allow once
-          </button>
-          <button disabled={busy} onClick={() => void answer({ action: 'deny' })}>
-            Deny
-          </button>
-        </>
-      ) : (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            void answer({ action: 'answer', ...(questions.length ? { answers } : { text }) })
-          }}
-        >
-          {questions.length ? (
-            questions.map((q) => (
-              <label key={q.question}>
-                {q.question}
-                <input
-                  value={answers[q.question] ?? ''}
-                  maxLength={4000}
-                  onChange={(e) =>
-                    setAnswers((previous) => ({ ...previous, [q.question]: e.target.value }))
-                  }
-                />
-              </label>
-            ))
-          ) : (
-            <input
-              aria-label="Native answer"
-              value={text}
-              maxLength={4000}
-              onChange={(e) => setText(e.target.value)}
-            />
-          )}
-          <button
-            disabled={
-              busy ||
-              (questions.length
-                ? questions.some((q) => !answers[q.question]?.trim())
-                : !text.trim())
-            }
-          >
-            Send answer
-          </button>
-        </form>
-      )}
+      <AgentRequestCard
+        request={{
+          id: request.id,
+          title: request.title,
+          detail: request.detail ?? '',
+          kind: request.nativeKind ?? (request.kind === 'approval' ? 'approval' : 'questions'),
+          canAllow: request.canAllow ?? true,
+          questions:
+            request.kind === 'approval'
+              ? undefined
+              : request.questions?.length
+                ? request.questions.map((q) => ({
+                    id: q.id ?? q.question,
+                    text: q.question,
+                    options: q.options?.map((o) => o.label) ?? [],
+                    other: q.other ?? true,
+                  }))
+                : [{ id: 'text', text: request.title, options: [], other: true }],
+        }}
+        count={1}
+        onRespond={async (_id, response) => {
+          const result = await answer(
+            response.action === 'answer' && !request.questions?.length
+              ? { action: 'answer', text: response.answers.text }
+              : response,
+          )
+          return result
+            ? { ok: true }
+            : {
+                ok: false,
+                reason: 'The response was not confirmed. Check the card before retrying.',
+              }
+        }}
+      />
     </article>
   )
 }

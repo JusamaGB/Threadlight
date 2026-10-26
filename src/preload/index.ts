@@ -85,6 +85,7 @@ const api: ThreadlightApi = {
   getFileDiff: (sessionId, path) => ipcRenderer.invoke(IPC.getFileDiff, sessionId, path),
   openChangedFile: (sessionId, path) => ipcRenderer.send(IPC.openChangedFile, sessionId, path),
   getAgent: () => ipcRenderer.invoke(IPC.agentGet),
+  agentAnnouncement: (id, command) => ipcRenderer.invoke(IPC.agentAnnouncement, id, command),
   agentLiveStart: (id, sdp) => ipcRenderer.invoke(IPC.agentLiveStart, id, sdp),
   agentLiveOpen: (id, text) => ipcRenderer.invoke(IPC.agentLiveOpen, id, text),
   agentLiveStop: (id) => ipcRenderer.send(IPC.agentLiveStop, id),

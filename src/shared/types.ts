@@ -119,6 +119,8 @@ export interface DiffStat {
 
 /** Where a thread's git folder stands (see gitDiff.ts). */
 export interface GitState extends DiffStat {
+  /** Root/branch are ready; repository counts have not completed yet. */
+  pending?: boolean
   /** The repository's top folder. */
   root: string
   /** Files changed since the last commit, and of those, new files git does not track yet. */
@@ -163,11 +165,11 @@ export type FileDiff =
 export interface Changes {
   branch: string | null
   files: ChangedFile[]
-  /** False when recorded edits could not safely be combined into one net diff. */
+  /** False when recorded ownership cannot cover all potentially relevant pending edits. */
   complete?: boolean
 }
 
-/** Recorded changes belonging to this chat, independent of the worktree's HEAD. */
+/** Uncommitted Git changes attributable to this chat's recorded edits. */
 export interface ThreadDiffSummary extends DiffStat {
   files: number
   revision: string
@@ -220,8 +222,12 @@ export interface Session {
   live: boolean
   /** Its git folder's state; null outside git, or before the first count. */
   git: GitState | null
-  /** Null/absent means the provider's recorded edit history is unavailable. */
+  /** Ordered provider-backed candidates; only displayed chats schedule Git work. */
+  gitFolders?: string[]
+  gitStatus?: 'loading' | 'ready' | 'unavailable'
+  /** Null/absent means recorded ownership or current Git changes are unavailable. */
   threadDiff?: ThreadDiffSummary | null
+  threadDiffStatus?: 'loading' | 'ready' | 'unavailable'
   /** How full its context is, 0 to 1, as the Claude app's Context ring shows; null if unknown. */
   contextUsed: number | null
   /** Set while the thread is waiting on the user; its card replaces the usual details. */

@@ -33,7 +33,7 @@ interface SessionRowProps {
 
 /** The badge and opened viewer share this chat's recorded diff, never its worktree total. */
 function ThreadCount({ diff, onOpen }: { diff: ThreadDiffSummary; onOpen: () => void }) {
-  if (!diff.files && diff.complete) return null
+  if (!diff.files) return null
   return (
     <Tip
       className={`${styles.diff} ${styles.diffLink}`}
@@ -108,6 +108,15 @@ export function SessionRow(props: SessionRowProps) {
             )}
           </Tip>
           <span className={titleClass}>{session.title}</span>
+          {!session.threadDiff && session.threadDiffStatus === 'loading' && (
+            <Tip
+              className={styles.diff}
+              text="Loading thread changes"
+              aria-label="Loading thread changes"
+            >
+              �
+            </Tip>
+          )}
           {session.threadDiff && (
             <ThreadCount diff={session.threadDiff} onOpen={props.onShowChanges} />
           )}

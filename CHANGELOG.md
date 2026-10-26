@@ -6,6 +6,24 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Git badges now prioritize displayed chats, share worktree scans, publish branch
+  metadata before expensive counts, and bound background Git concurrency. Hook and
+  filesystem changes invalidate cached diffs promptly, with loading indicators and
+  polling recovery. Git reads drain safely on failure and shutdown.
+
+- Conversation return events now reuse the existing cards inside Agent history,
+  retain exact request identity and independent worker state, and persist result
+  and speech receipts. Active GPT Live conversations can announce new events at a
+  verified pause through their existing connection. Local STT remains separate;
+  uncertain speech is not replayed. Claude Desktop wakeup still requires the
+  Wednesday acceptance test.
+
+- Added Claude existing-runtime inbox delivery with authenticated plugin registration,
+  verified Windows pipe ownership, durable execution claims, completion acknowledgements
+  and correlated result history. Duplicate notifications do not authorize repeat work.
+  Automatic release remains gated on the real Claude Desktop test scheduled for
+  Wednesday, 28 October; concurrent CLI resumes remain disabled.
+
 - Required explicit human answers for native question cards; option mentions,
   negated choices and ambiguous alternatives no longer count as selections.
   Codex card answers also require the panel's main frame as their IPC caller.

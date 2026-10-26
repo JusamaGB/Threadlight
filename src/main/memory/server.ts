@@ -5,6 +5,7 @@ import { MemoryError, MemoryStore } from './store'
 import { agentActions, toolSchemas, memoryTools, memoryInstructions } from './protocol'
 import { MemoryConnections } from './connections'
 import { randomBytes } from 'node:crypto'
+import { ClaudeRuntimeInbox } from '../communication/claudeRuntime'
 import {
   communicationInstructions,
   communicationSchemas,
@@ -18,9 +19,11 @@ export class MemoryServer {
   private server: Server | null = null
   endpoint: string | null = null
   readonly connections: MemoryConnections
+  readonly runtime: ClaudeRuntimeInbox
   private ownedCommunication = new Map<string, () => CommunicationActor>()
   revokeCommunication() {
     this.ownedCommunication.clear()
+    this.runtime.clear()
   }
   connectCommunication(actor: () => CommunicationActor) {
     if (!this.endpoint) throw new Error('Communication endpoint is unavailable.')
@@ -36,6 +39,7 @@ export class MemoryServer {
   }
   constructor(private readonly store: MemoryStore) {
     this.connections = new MemoryConnections(store)
+    this.runtime = new ClaudeRuntimeInbox(store.communications)
   }
   async start(port = 47618) {
     const server = createServer((request, response) => {
@@ -54,7 +58,9 @@ export class MemoryServer {
         this.connections.handle(request, finish)
         return
       }
-      const connection = request.url?.match(/^\/plugin\/mcp\/([a-f0-9-]{36})$/)?.[1]
+      const runtimeConnection = request.url?.match(/^\/plugin\/runtime\/([a-f0-9-]{36})$/)?.[1]
+      const connection =
+        runtimeConnection ?? request.url?.match(/^\/plugin\/mcp\/([a-f0-9-]{36})$/)?.[1]
       const communicationOnly = request.url === '/communication'
       if (request.url !== '/mcp' && !connection && !communicationOnly) return finish(404)
       let actor: import('./store').MemoryActor | undefined
@@ -94,6 +100,49 @@ export class MemoryServer {
         if (response.writableEnded) return
         let id: string | number | null = null
         try {
+          if (runtimeConnection) {
+            const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+            if (body.action === 'unregister') {
+              z.object({ action: z.literal('unregister') })
+                .strict()
+                .parse(body)
+              this.runtime.unregister(runtimeConnection)
+              return finish(200, { disconnected: true })
+            }
+            const input = z
+              .object({
+                action: z.literal('register'),
+                socket: z.string().max(240),
+                token: z.string().max(1024),
+              })
+              .strict()
+              .parse(body)
+            return finish(
+              200,
+              await this.runtime.register(
+                runtimeConnection,
+                () => {
+                  const actor = this.store.communicationActor(
+                    this.connections.authenticate(
+                      runtimeConnection,
+                      request.headers.authorization!.slice(7),
+                    ),
+                  )
+                  if (
+                    !actor.spaceId ||
+                    !this.store.communicationService
+                      ?.workflow(actor.spaceId)
+                      ?.participants.some((p) => p.target === actor.target && p.communicate)
+                  )
+                    throw new Error(
+                      'Enable communication for this enrolled workflow participant first.',
+                    )
+                  return actor
+                },
+                { socket: input.socket, token: input.token },
+              ),
+            )
+          }
           const msg = z
             .object({
               jsonrpc: z.literal('2.0'),
@@ -136,10 +185,39 @@ export class MemoryServer {
               try {
                 if (!this.store.communicationService)
                   throw new Error('Thread communication is unavailable.')
+                if (
+                  connection &&
+                  ['claim_delivery', 'complete_delivery'].includes(communicationAction)
+                ) {
+                  const recipient = this.store.communicationActor(
+                    this.connections.authenticate(
+                      connection,
+                      request.headers.authorization!.slice(7),
+                    ),
+                  )
+                  const capability = recipient.target
+                    ? await this.runtime.destination(recipient.target)
+                    : undefined
+                  if (!capability?.send)
+                    throw new Error('The recipient runtime is no longer verified.')
+                }
                 const value = await this.store.communicationService.execute(
                   communicationAction,
                   params.arguments,
-                  communicationActor ?? this.store.communicationActor(actor!),
+                  communicationActor ??
+                    (connection
+                      ? this.runtime.actor(
+                          connection,
+                          this.store.communicationActor(
+                            this.connections.authenticate(
+                              connection,
+                              request.headers.authorization!.slice(7),
+                            ),
+                          ),
+                        )
+                      : this.store.communicationActor(
+                          this.store.authenticate(request.headers.authorization!.slice(7)),
+                        )),
                 )
                 return finish(200, {
                   jsonrpc: '2.0',
@@ -210,7 +288,11 @@ export class MemoryServer {
               error: { code: -32601, message: 'Method not supported' },
             })
           finish(200, { jsonrpc: '2.0', id, result })
-        } catch {
+        } catch (error) {
+          if (runtimeConnection)
+            return finish(400, {
+              error: error instanceof Error ? error.message : 'Runtime registration failed.',
+            })
           finish(400, {
             jsonrpc: '2.0',
             id,
@@ -233,6 +315,7 @@ export class MemoryServer {
     return this.endpoint
   }
   close() {
+    this.runtime.close()
     this.ownedCommunication.clear()
     this.connections.close()
     this.server?.closeAllConnections()

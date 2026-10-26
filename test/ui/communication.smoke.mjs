@@ -1,7 +1,12 @@
 /* global window */
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-export async function setupCommunication(page, CommunicationService, memory) {
+export async function setupCommunication(
+  page,
+  CommunicationService,
+  memory,
+  ConversationEventService,
+) {
   const native = []
   const destinations = ['claude', 'codex'].map((provider) => ({
     id: `${provider === 'codex' ? 'codex:' : ''}${randomUUID()}`,
@@ -35,12 +40,43 @@ export async function setupCommunication(page, CommunicationService, memory) {
       return { ok: true }
     },
   })
+  const feed = new ConversationEventService(memory.communications)
   memory.communicationService = service
   memory.communications.onChange = () => {
     void page.evaluate(() => window.proof?.emit('onCommunication')).catch(() => {})
   }
   await page.exposeFunction('mockCommunication', async (request) => {
     try {
+      if (request.action.startsWith('conversation_')) {
+        const a = request.arguments
+        const snapshot = feed.project(
+          a.owner,
+          service.snapshot(human),
+          (id) => destinations.find((d) => d.id === id)?.title ?? id,
+        )
+        if (request.action === 'conversation_feed') return { ok: true, value: snapshot }
+        const card = feed.card(a.owner, a.cardId, a.revision)
+        if (request.action === 'conversation_focus')
+          return {
+            ok: true,
+            value: service.focusRequest(card.requestId, { ...human, conversationId: a.owner }),
+          }
+        if (request.action === 'conversation_answer')
+          return {
+            ok: true,
+            value: await service.execute(
+              'respond_native_request',
+              {
+                operationId: a.operationId,
+                id: card.requestId,
+                generation: card.generation,
+                expectedRevision: card.request.revision,
+                response: a.response,
+              },
+              { ...human, conversationId: a.owner },
+            ),
+          }
+      }
       const value =
         request.action === 'snapshot'
           ? service.snapshot(human)
@@ -68,7 +104,7 @@ export async function setupCommunication(page, CommunicationService, memory) {
       return { ok: false, reason: error.message }
     }
   })
-  return { service, destinations, native, human, close: () => service.close() }
+  return { service, feed, destinations, native, human, close: () => service.close() }
 }
 export async function checkCommunication(page, proof, memory, capture) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -105,6 +141,34 @@ export async function checkCommunication(page, proof, memory, capture) {
     .waitFor()
   const message = memory.communications.list('message')[0]
   assert.match(message.body, /\nKeep/)
+  const claimed = {
+    ...message,
+    id: randomUUID(),
+    operationId: randomUUID(),
+    body: 'Claude runtime receipt fixture',
+    deliveries: [
+      {
+        target: proof.destinations[0].id,
+        attemptId: randomUUID(),
+        phase: 'accepted',
+        transport: 'claude-runtime-inbox',
+        generation: 'ui-runtime',
+        reason: '',
+        observedAt: Date.now(),
+        claim: { id: randomUUID(), actor: 'recipient', generation: 'ui-runtime', at: Date.now() },
+      },
+    ],
+  }
+  memory.communications.transaction(() =>
+    memory.communications.put('message', claimed, 'Recipient acknowledged delivery'),
+  )
+  await view.getByText('Acknowledged by Claude', { exact: true }).waitFor()
+  claimed.deliveries[0].phase = 'completed'
+  claimed.deliveries[0].reply = 'Result recorded'
+  memory.communications.transaction(() =>
+    memory.communications.put('message', claimed, 'Recipient acknowledged completion'),
+  )
+  await view.getByText('Result received', { exact: true }).waitFor()
   await proof.service.tick()
   assert.equal(memory.communications.get('message', message.id).deliveries[0].phase, 'inbox')
   const question = await proof.service.execute(
@@ -132,8 +196,10 @@ export async function checkCommunication(page, proof, memory, capture) {
     expiresAt: Date.now() + 60000,
   })
   await page.evaluate(() => window.proof.emit('onCommunication'))
-  await view.getByLabel('Native answer', { exact: true }).fill('Continue with the reviewed plan')
-  await view.getByRole('button', { name: 'Send answer', exact: true }).click()
+  await view
+    .getByLabel('Confirm native continuation', { exact: true })
+    .fill('Continue with the reviewed plan')
+  await view.getByRole('button', { name: 'Submit', exact: true }).click()
   assert.equal(proof.native.length, 0)
   await capture('communication-workflow-and-history')
   await page.reload()
@@ -152,5 +218,110 @@ export async function checkCommunication(page, proof, memory, capture) {
     .waitFor()
   console.log(
     'PASS: actual UI workflow setup, discovery, multiline DM, durable reload, project answer and native response routing.',
+  )
+}
+
+export async function checkConversationEvents(page, proof, memory, capture) {
+  const owner = `codex:${randomUUID()}`,
+    other = `codex:${randomUUID()}`
+  proof.feed.register(owner, owner, undefined, 'hello')
+  proof.feed.register(other, other)
+  const at = Date.now()
+  for (const d of proof.destinations) {
+    memory.communications.transaction(() =>
+      memory.communications.put(
+        'message',
+        {
+          id: randomUUID(),
+          operationId: randomUUID(),
+          rootId: randomUUID(),
+          sender: owner,
+          senderKind: 'agent',
+          body: 'Background work',
+          kind: 'request',
+          at,
+          deliveries: [
+            {
+              target: d.id,
+              phase: 'accepted',
+              generation: 'g',
+              attemptId: randomUUID(),
+              reason: '',
+              observedAt: at,
+            },
+          ],
+        },
+        'Accepted',
+      ),
+    )
+    proof.native.push({
+      id: randomUUID(),
+      generation: randomUUID(),
+      revision: 1,
+      target: d.id,
+      kind: 'question',
+      title: `${d.provider} layout choice`,
+      startedAt: at + 1,
+      expiresAt: at + 60000,
+      questions: [
+        {
+          id: 'layout',
+          question: 'Pick a layout',
+          other: false,
+          options: [{ label: 'Wide' }, { label: 'Compact' }],
+        },
+      ],
+    })
+  }
+  const setAgent = async (id) =>
+    page.evaluate(
+      (id) =>
+        window.proof.agent({
+          provider: 'codex',
+          model: 'test-model',
+          status: 'ready',
+          ended: false,
+          conversationId: id,
+          sessionId: id.slice(6),
+          items: [{ id: 'hello', kind: 'you', text: 'Continue while the workers run.' }],
+          requests: [],
+        }),
+      id,
+    )
+  await page.evaluate(() =>
+    window.threadlight.updateSettings({ voiceTarget: 'agent', agentProvider: 'codex' }),
+  )
+  await setAgent(owner)
+  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  const first = page.getByRole('region', { name: 'Communication claude native card', exact: true })
+  const second = page.getByRole('region', { name: 'Communication codex native card', exact: true })
+  await first.waitFor()
+  await second.waitFor()
+  await first.getByRole('radio', { name: 'Wide', exact: true }).check()
+  await first.getByRole('button', { name: 'Submit', exact: true }).click()
+  await first.getByText(/answered here/).waitFor()
+  assert.equal(await second.getByRole('button', { name: 'Submit', exact: true }).isEnabled(), true)
+  proof.native.length = 0
+  await page.evaluate(() => window.proof.emit('onCommunication'))
+  await second.getByText(/unavailable/).waitFor()
+  const result = memory.communications.list('message').find((m) => m.sender === owner)
+  result.deliveries[0].phase = 'completed'
+  result.deliveries[0].reply = 'Actual returned result'
+  result.deliveries[0].observedAt = Date.now()
+  memory.communications.transaction(() => memory.communications.put('message', result, 'Result'))
+  await page.getByText('Actual returned result', { exact: true }).waitFor()
+  const ids = proof.feed.get(owner).cards.map((c) => c.id)
+  await capture('conversation-native-cards-and-results')
+  await setAgent(other)
+  await first.waitFor({ state: 'detached' })
+  assert.equal(await page.getByText('Actual returned result', { exact: true }).count(), 0)
+  await setAgent(owner)
+  await page.getByText('Actual returned result', { exact: true }).waitFor()
+  assert.deepEqual(
+    proof.feed.get(owner).cards.map((c) => c.id),
+    ids,
+  )
+  console.log(
+    'PASS: inline existing cards, independent workers, precise answer, native disappearance, result event and conversation isolation.',
   )
 }

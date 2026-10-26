@@ -3,6 +3,7 @@ import type { MemoryDeliveryContext } from '../../shared/memory'
 import { MemoryStore } from './store'
 
 export interface MemoryDelivery {
+  conversationOwner?: () => string | undefined
   nativeRequests?: () => import('../../shared/communication').NativeCommunicationRequest[]
   respondNative?: (
     id: string,
@@ -88,6 +89,14 @@ export class MemoryDispatcher {
         if (task.state !== 'queued') continue
         if (this.delivery.destinations) {
           const candidates = await this.delivery.destinations(task.assignee)
+          if (candidates[0]?.transport === 'claude-runtime-inbox') {
+            this.store.updateDelivery(task.id, {
+              state: 'blocked',
+              reason:
+                'Use the communication workflow for Claude runtime delivery and durable claims. Legacy handoffs cannot resume a live Claude chat.',
+            })
+            continue
+          }
           if (candidates.length !== 1 || !candidates[0]?.send) {
             if (!candidates[0]?.queue)
               this.store.updateDelivery(task.id, {

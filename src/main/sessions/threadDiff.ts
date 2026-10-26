@@ -22,6 +22,7 @@ export type RecordedChange = {
 }
 type FileState = {
   path: string
+  paths: string[]
   renamed: boolean
   initialized: boolean
   baselineExists: boolean
@@ -43,6 +44,13 @@ export interface RecordedFile {
 export interface ThreadDiffData {
   summary: ThreadDiffSummary
   files: RecordedFile[]
+}
+export interface ThreadEditEvidence {
+  absolute: string
+  paths: string[]
+  events: DiffLine[][]
+  complete: boolean
+  renamed: boolean
 }
 export const textLines = (text: string): string[] => {
   if (!text) return []
@@ -192,6 +200,7 @@ export class ThreadDiffLedger {
     if (!file) {
       file = {
         path: change.path,
+        paths: [change.path],
         renamed: false,
         initialized: false,
         baselineExists: change.kind !== 'add',
@@ -331,6 +340,7 @@ export class ThreadDiffLedger {
         }
         this.entries.delete(key)
         file.path = change.move
+        file.paths.push(change.move)
         file.renamed = true
         this.entries.set(pathKey(change.move), file)
       }
@@ -344,6 +354,21 @@ export class ThreadDiffLedger {
     file.tail = before.length
     file.sealed = true
     file.initialized = true
+  }
+
+  /** Keep intermediate/reverted edits available when they still exist in Git's index. */
+  evidence(): ThreadEditEvidence[] {
+    const net = new Map(this.data().files.map((file) => [file.absolute, file.diff]))
+    return [...this.entries.values()].map((file) => ({
+      absolute: file.path,
+      paths: file.paths,
+      events:
+        net.get(file.path)?.kind === 'text'
+          ? [...file.events, (net.get(file.path) as Extract<FileDiff, { kind: 'text' }>).lines]
+          : file.events,
+      complete: this.complete && !file.partial,
+      renamed: file.renamed,
+    }))
   }
 
   data(root: string | null = null): ThreadDiffData {

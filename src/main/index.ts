@@ -95,14 +95,17 @@ async function start(): Promise<void> {
       windows.panel.webContents.send(IPC.communicationChanged)
   })
   // Each folder's git state, counted in the background; a new count is shown at once.
-  const gitStates = new GitStates(() => void sessions.refresh())
+  const gitStates = new GitStates((root, invalidated) => {
+    if (invalidated) threadChanges.invalidate(root)
+    publish()
+  })
   const tracker = new Tracker({
     paths,
     hooks,
     windowHours: initial.listWindowHours,
     maxSessions: initial.maxSessions,
     held: (id) => holds.held(id),
-    gitFor: (folder) => gitStates.get(folder),
+    gitFor: (folder) => gitStates.peek(folder),
     hiddenFolder: () => agentWorkspace,
   })
   const claudeSessions = new SessionService(tracker, (snapshot) => {
@@ -128,7 +131,7 @@ async function start(): Promise<void> {
   const codexTracker = new CodexTracker(
     codex,
     codexHolds,
-    (folder) => gitStates.get(folder),
+    (folder) => gitStates.peek(folder),
     (id, cwd) =>
       agentSessionIds.has(id) ||
       win32.normalize(cwd.replace(/^\\\\\?\\/, '')).toLowerCase() ===
@@ -165,13 +168,15 @@ async function start(): Promise<void> {
   const sessions = {
     get snapshot() {
       return threadChanges.annotate(
-        combinedSnapshot(
-          settings.settings.enabledProviders,
-          {
-            claude: excludeAgentChats(claudeSessions.snapshot, agentSessionIds),
-            codex: excludeAgentChats(codexSessions.snapshot, agentSessionIds),
-          },
-          settings.settings.maxSessions,
+        gitStates.annotate(
+          combinedSnapshot(
+            settings.settings.enabledProviders,
+            {
+              claude: excludeAgentChats(claudeSessions.snapshot, agentSessionIds),
+              codex: excludeAgentChats(codexSessions.snapshot, agentSessionIds),
+            },
+            settings.settings.maxSessions,
+          ),
         ),
       )
     },
@@ -190,14 +195,42 @@ async function start(): Promise<void> {
       ),
     start: syncPolling,
   }
+  const invalidateGitForHook = (payload: unknown, provider: Provider) => {
+    if (!isObject(payload)) return
+    // Prompt, permission and pre-tool events cannot yet contain completed file changes.
+    if (
+      ![
+        'PostToolUse',
+        'PostToolUseFailure',
+        'Stop',
+        'SessionStart',
+        'SessionEnd',
+        'Interrupt',
+      ].includes(String(payload.hook_event_name))
+    )
+      return
+    if (/^(Read|Glob|Grep|WebFetch|WebSearch)$/.test(String(payload.tool_name))) return
+    const id =
+      typeof payload.session_id === 'string'
+        ? provider === 'codex'
+          ? `codex:${payload.session_id}`
+          : payload.session_id
+        : null
+    const session = id ? everySession(sessions.snapshot).find((item) => item.id === id) : undefined
+    if (session?.git?.root) gitStates.invalidate(session.git.root)
+  }
   // Codex hooks use a separate port and contracts. Claude's routes and plugin stay intact.
   startHookServer({
     port: 47616,
     status: () => ({ app: 'threadlight-codex', version: app.getVersion() }),
-    onEvent: (payload) => codexHolds.event(payload),
+    onEvent: (payload) => {
+      codexHolds.event(payload)
+      invalidateGitForHook(payload, 'codex')
+    },
     onAsk: (payload, reply, dropped) => {
       if (isObject(payload) && agentSessionIds.has(`codex:${payload.session_id}`)) return false
       codexHolds.event(payload)
+      invalidateGitForHook(payload, 'codex')
       if (!enabled('codex') || /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')) return false
       const held = codexHolds.hold(payload, reply)
       if (held) dropped(() => codexHolds.dropped(reply))
@@ -206,6 +239,7 @@ async function start(): Promise<void> {
     onStop: (payload, reply, dropped) => {
       if (isObject(payload) && agentSessionIds.has(`codex:${payload.session_id}`)) return false
       codexHolds.event(payload)
+      invalidateGitForHook(payload, 'codex')
       if (!enabled('codex') || /^(Codex|ChatGPT)$/.test(foregroundTitle() || '')) return false
       const held = codexHolds.hold(payload, reply)
       if (held) dropped(() => codexHolds.dropped(reply))
@@ -224,6 +258,7 @@ async function start(): Promise<void> {
       hookEvents += 1
       if (!enabled('claude')) return
       hooks.apply(payload)
+      invalidateGitForHook(payload, 'claude')
       void claudeSessions.refresh()
     },
     // The question-card hook waits here for an answer (or to be let go).
@@ -259,6 +294,7 @@ async function start(): Promise<void> {
       if (!sessionId || event['stop_hook_active'] === true) return false
       dropped(() => holds.dropped(reply))
       hooks.apply(payload) // the turn has ended: idle, so the next-step card can show
+      invalidateGitForHook(payload, 'claude')
       void claudeSessions.refresh().then(() => {
         if (!enabled('claude')) return reply(null)
         const attention = everySession(claudeSessions.snapshot).find(
@@ -468,6 +504,7 @@ async function start(): Promise<void> {
   )
   ipcMain.handle(IPC.getRelays, () => [...relays.list(), ...codexRelays.list()])
 
+  const memoryRuntime: { current?: import('./communication/claudeRuntime').ClaudeRuntimeInbox } = {}
   const communicationCatalog = new CommunicationCatalog(
     [new ClaudeReadAdapter(paths), new CodexReadAdapter(codex)],
     () => settings.settings.enabledProviders,
@@ -475,10 +512,12 @@ async function start(): Promise<void> {
     async (id) =>
       id.startsWith('codex:') && (await codexCommunicationAdmitted(await findCodexCli(codex))),
     async (id) => !id.startsWith('codex:') || (await codexHeld(codex.locks, id.slice(6))),
+    (id) => memoryRuntime.current?.destination(id) ?? Promise.resolve(undefined),
   )
   const communicationOwners: AgentService[] = []
   const ownedCommunicationRequests = new OwnedRequests(() => communicationOwners)
   const stopMemory = await startMemory(app.getPath('userData'), windows.panel, {
+    conversationOwner: () => communicationOwners[0]?.current.conversationId ?? undefined,
     destinations: (target, query) => communicationCatalog.find(target, query),
     nativeRequests: () => [
       ...holds.communicationRequests(),
@@ -506,6 +545,7 @@ async function start(): Promise<void> {
           ? codexRelays.send(id, text, context, receiptId)
           : relays.send(id, text, context, receiptId),
   })
+  memoryRuntime.current = stopMemory.server()?.runtime
   try {
     stopMemory.communication()?.importLegacy(messageStore.list())
   } catch {
@@ -592,6 +632,17 @@ async function start(): Promise<void> {
   await threadReads.start()
   app.once('will-quit', () => threadReads.close())
   const agent = new AgentService({
+    announcements: {
+      next: (owner, since) => {
+        stopMemory.conversationFeed(owner)
+        return stopMemory.conversations()?.reserve(owner, since)
+      },
+      commit: (a) => {
+        stopMemory.conversationFeed(a.owner)
+        return stopMemory.conversations()?.commit(a) ?? false
+      },
+      settle: (owner, id, state) => stopMemory.conversations()?.settle(owner, id, state),
+    },
     communication: (actor) => {
       const server = stopMemory.server()
       if (!server) throw new Error('Communication unavailable.')
@@ -613,6 +664,21 @@ async function start(): Promise<void> {
       windows.panel.webContents.send(IPC.agentChanged, state)
       windows.panel.webContents.send(IPC.communicationChanged)
     },
+    onConversation: (state, spaceId) => {
+      if (state.conversationId)
+        stopMemory
+          .conversations()
+          ?.register(
+            state.conversationId,
+            state.sessionId
+              ? state.provider === 'codex'
+                ? `codex:${state.sessionId}`
+                : state.sessionId
+              : undefined,
+            spaceId,
+            state.items.at(-1)?.id ?? `line:${state.items.length - 1}`,
+          )
+    },
     onRateLimit: (info) => usage.note(info),
     onLive: (event) => windows.panel.webContents.send(IPC.agentLiveEvent, event),
   })
@@ -622,10 +688,17 @@ async function start(): Promise<void> {
     .catch(() =>
       console.error('Agent history metadata is unavailable; monitoring remains available.'),
     )
-  for (const record of agent.store.all())
+  for (const record of agent.store.all()) {
+    stopMemory
+      .conversations()
+      ?.register(
+        record.id,
+        record.provider === 'codex' ? `codex:${record.providerId}` : record.providerId,
+      )
     agentSessionIds.add(
       record.provider === 'codex' ? `codex:${record.providerId}` : record.providerId,
     )
+  }
   // Complete previously requested cleanup before allowing a history continuation to race it.
   await agent.retryArchives().catch(() => {})
   let spaces: SpacesService | null = null
@@ -663,6 +736,21 @@ async function start(): Promise<void> {
               state.provider === 'codex' ? `codex:${state.sessionId}` : state.sessionId,
             )
         },
+        onConversation: (state, spaceId) => {
+          if (state.conversationId)
+            stopMemory
+              .conversations()
+              ?.register(
+                state.conversationId,
+                state.sessionId
+                  ? state.provider === 'codex'
+                    ? `codex:${state.sessionId}`
+                    : state.sessionId
+                  : undefined,
+                spaceId,
+                state.items.at(-1)?.id ?? `line:${state.items.length - 1}`,
+              )
+        },
         onRateLimit: (info) => usage.note(info),
       },
       (snapshot) => {
@@ -684,6 +772,27 @@ async function start(): Promise<void> {
   const trustedAgentInput = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) =>
     event.sender === windows.panel.webContents && event.senderFrame === event.sender.mainFrame
   ipcMain.handle(IPC.agentGet, () => agent.current)
+  ipcMain.handle(IPC.agentAnnouncement, (event, id: unknown, command: unknown) => {
+    if (
+      event.sender !== windows.panel.webContents ||
+      event.senderFrame !== event.sender.mainFrame ||
+      settings.settings.voiceMode !== 'gpt-live'
+    )
+      return { ok: false, reason: 'Not the active panel.' }
+    const c = command as { action?: string; id?: string; outcome?: string }
+    if (
+      !c ||
+      !['next', 'speak', 'settle'].includes(c.action ?? '') ||
+      (c.action !== 'next' && (typeof c.id !== 'string' || c.id.length > 80)) ||
+      (c.action === 'settle' &&
+        !['announced', 'uncertain', 'suppressed', 'deferred'].includes(c.outcome ?? ''))
+    )
+      return { ok: false, reason: 'Invalid announcement command.' }
+    return agent.announcementCommand(
+      id,
+      command as import('./../shared/conversationEvents').AnnouncementCommand,
+    )
+  })
   ipcMain.handle(IPC.agentLiveStart, (event, id: unknown, sdp: unknown) =>
     trustedAgentInput(event) && settings.settings.voiceMode === 'gpt-live'
       ? agent.startLive(id, sdp)
@@ -829,7 +938,10 @@ async function start(): Promise<void> {
     quit: () => app.quit(),
   })
 
-  const threadDiffPolling = setInterval(() => threadChanges.refreshListed(), SCAN_INTERVAL_MS)
+  const threadDiffPolling = setInterval(() => {
+    gitStates.refreshListed()
+    threadChanges.refreshListed()
+  }, SCAN_INTERVAL_MS)
   let agentRetiredForQuit = false
   let retiringForQuit = false
   app.on('before-quit', (event) => {
@@ -837,13 +949,19 @@ async function start(): Promise<void> {
     event.preventDefault()
     if (retiringForQuit) return
     retiringForQuit = true
-    void Promise.allSettled([agent.close(), spaces?.close(), messageStore.flush()]).finally(() => {
+    void Promise.allSettled([
+      agent.close(),
+      spaces?.close(),
+      messageStore.flush(),
+      gitStates.close(),
+    ]).finally(() => {
       agentRetiredForQuit = true
       app.quit()
     })
   })
   app.on('will-quit', () => {
     clearInterval(threadDiffPolling)
+    void gitStates.close()
     holds.releaseAll() // Claude carries on with every held card itself from here on
     codexHolds.releaseAll()
     hotkey.dispose()

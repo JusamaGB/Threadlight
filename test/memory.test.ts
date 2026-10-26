@@ -98,12 +98,42 @@ describe('shared memory authority', () => {
       file = join(box.root, 'backup.sqlite')
     execute({ action: 'revise_item', id: item.id, expectedRevision: 1, body: 'Version two' })
     execute({ action: 'update_space', id: space.id, paused: false, durationMinutes: 30 })
+    const conversationId = randomUUID()
+    store.communications.transaction(() =>
+      store.communications.put(
+        'conversation',
+        {
+          id: conversationId,
+          owner: 'voice-test',
+          cards: [
+            {
+              id: 'result:test',
+              revision: 1,
+              at: 1,
+              updatedAt: 1,
+              source: 'test',
+              title: 'Test result',
+              kind: 'result',
+              state: 'completed',
+              body: 'Saved result',
+              speech: 'submitted',
+              announcementId: randomUUID(),
+            },
+          ],
+        },
+        'Test feed',
+      ),
+    )
     await backup(store.databaseForBackup(), file)
     execute({ action: 'purge_item', id: item.id })
     store.restoreFrom(file)
     expect(store.read({}, item.id, 1).revision.body).toBe('Original evidence.')
     expect(store.read({}, item.id, 2).revision.body).toBe('Version two')
     expect(store.space(space.id).paused).toBe(true)
+    expect(store.communications.get('conversation', conversationId).cards[0]).toMatchObject({
+      body: 'Saved result',
+      speech: 'uncertain',
+    })
     expect(() => store.authenticate(credentials.token)).toThrow('capability')
     const damaged = new DatabaseSync(file)
     damaged
