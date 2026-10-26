@@ -1599,10 +1599,8 @@ span.planStep {
 }
 
 .workspaceResizeArea {
-  position: relative;
   display: flex;
   flex-direction: column;
-  padding-top: 10px;
   cursor: ns-resize;
   touch-action: none;
 }
@@ -1611,34 +1609,9 @@ span.planStep {
   cursor: inherit;
 }
 
-.workspaceResize {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translateX(-50%);
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 10px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--bg);
-  color: var(--faint);
-  opacity: 0;
-  cursor: ns-resize;
-  touch-action: none;
-  z-index: 1;
-}
-
-.usageBars:hover .workspaceResize,
-.workspaceResize:focus-visible,
-.workspaceResizeArea[data-workspace-resizing] .workspaceResize {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.workspaceResize:focus-visible {
+.workspaceResizeArea:focus-visible {
   outline: 1px solid var(--faint);
+  outline-offset: -1px;
 }
 
 .usage {

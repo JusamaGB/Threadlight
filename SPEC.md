@@ -44,15 +44,15 @@ settings changes update the header in turn. Minus/plus never change or pin the
 view. Active, Workspace and All keep their current count display.
 
 Workspace defaults to the full display work area with small edge margins and the
-taskbar left clear. Only Workspace shows a height grip when the usage bars are
-hovered or keyboard-focused. The whole bottom usage strip shows the resize cursor
+taskbar left clear. Only Workspace lets the existing usage bars resize the panel,
+with no extra strip, button or icon. The whole bottom usage strip shows the resize cursor
 and accepts dragging, including its left and right edges. Dragging previews height
 and saves on release; Arrow keys adjust by 10px, Home selects the minimum and End
 the available height. The
 last pick becomes Workspace's default across restarts. Smaller displays clamp the
 shown height without overwriting the saved preference. Other views and pages keep
 content-sized layout. Drag capture protects an unpinned panel and quota tooltips
-remain available around the grip.
+remain available on the bars.
 
 Clicking the view/count label cycles Active → Recent → Workspace → Active. Its
 existing right-click menu also offers All. Switching views while pinned keeps the

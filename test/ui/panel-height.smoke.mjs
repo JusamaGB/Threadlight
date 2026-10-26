@@ -30,12 +30,12 @@ export async function checkWorkspaceHeight(page, capture) {
     })
     await choose('Workspace')
     await heightIs(900)
-    assert.equal(await grip.evaluate((el) => getComputedStyle(el).opacity), '0')
+    assert.equal(await grip.locator('button, svg').count(), 0, 'no visible resize control')
     await page.getByLabel(/^Claude · 5-hour limit/).hover()
     await page.getByRole('tooltip').filter({ hasText: 'Claude · 5-hour limit' }).waitFor()
-    assert.equal(await grip.evaluate((el) => getComputedStyle(el).opacity), '1')
     const strip = page.locator('[class*="_workspaceResizeArea_"]')
     const box = await strip.boundingBox()
+    assert.equal(box.height, 8, 'only the existing two usage bars take up space')
     // The left, centre and right of the actual bottom strip must all be draggable;
     // the old tiny grip above it passed keyboard/drag checks but was hard to find.
     for (const x of [box.x + 12, box.x + box.width / 2, box.x + box.width - 12]) {
@@ -51,7 +51,7 @@ export async function checkWorkspaceHeight(page, capture) {
     const x = box.x + box.width - 12
     const y = box.y + box.height - 2
     await page.mouse.move(x, y)
-    await capture('workspace-full-height-grip')
+    await capture('workspace-full-height-usage-resize')
     const before = await page.evaluate(
       () => window.proof.calls.filter((c) => c[0] === 'leavePanel').length,
     )
