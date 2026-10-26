@@ -115,7 +115,7 @@ export function SessionRow(props: SessionRowProps) {
               text="Loading thread changes"
               aria-label="Loading thread changes"
             >
-              �
+              &hellip;
             </Tip>
           )}
           {session.threadDiff && (
@@ -131,8 +131,11 @@ export function SessionRow(props: SessionRowProps) {
           <span className={styles.stage} data-tone={line?.tone}>
             {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
           </span>
-          {session.git && (session.git.ahead > 0 || session.git.behind > 0) && (
+          {session.git && (
             <Tip data-git-tracker="" className={styles.diff} text={gitLine(session.git)}>
+              {!session.git.ahead && !session.git.behind && (
+                <span className={styles.branch}>{session.git.branch ?? en.git.noBranch}</span>
+              )}
               {session.git.ahead > 0 && <span className={styles.ahead}>↑{session.git.ahead}</span>}
               {session.git.behind > 0 && (
                 <span className={styles.behind}>↓{session.git.behind}</span>

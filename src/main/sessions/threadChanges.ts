@@ -18,6 +18,7 @@ type Entry = {
   root: string | null
   version: number
   latest: Session
+  dirty: boolean
   running?: Promise<void>
   data: ThreadDiffData | null
   replay?: ClaudeDiffReplay
@@ -59,7 +60,15 @@ export class ThreadChanges {
   private entry(session: Session): Entry {
     let entry = this.entries.get(session.id)
     if (!entry) {
-      entry = { checked: -Infinity, data: null, input: '', root: null, version: 0, latest: session }
+      entry = {
+        checked: -Infinity,
+        data: null,
+        input: '',
+        root: null,
+        version: 0,
+        latest: session,
+        dirty: false,
+      }
       this.entries.set(session.id, entry)
       if (this.entries.size > 128) {
         const oldest = [...this.entries].find(([id, value]) => id !== session.id && !value.running)
@@ -67,12 +76,18 @@ export class ThreadChanges {
       }
     }
     const root = session.git?.root ?? null
-    const input = `${root ?? ''}\0${session.cwd}\0${session.lastActiveAt}`
+    const input = `${root ?? ''}\0${session.cwd}`
     if (entry.input !== input) {
       if (entry.root !== root) entry.data = null
       entry.input = input
       entry.root = root
       entry.version++
+      entry.checked = -Infinity
+    }
+    if (entry.latest.lastActiveAt !== session.lastActiveAt) {
+      // Native activity can advance throughout a read, even without a file edit.
+      // Publish that valid read and coalesce newer activity into one follow-up.
+      entry.dirty = true
       entry.checked = -Infinity
     }
     entry.latest = session
@@ -82,6 +97,7 @@ export class ThreadChanges {
     return entry
   }
   private refresh(session: Session, entry: Entry) {
+    entry.dirty = false
     const version = entry.version
     const before = entry.data?.summary.revision
     const first = entry.checked === -Infinity
@@ -121,11 +137,12 @@ export class ThreadChanges {
         }
         if (version !== entry.version) return
         entry.data = next
-        entry.checked = this.options.now?.() ?? Date.now()
+        entry.checked = entry.dirty ? -Infinity : (this.options.now?.() ?? Date.now())
       })
       .finally(() => {
         entry.running = undefined
-        if (version !== entry.version) this.refresh(entry.latest, entry)
+        if (entry.latest.git?.root && (version !== entry.version || entry.dirty))
+          this.refresh(entry.latest, entry)
         if (first || before !== entry.data?.summary.revision) this.options.changed()
       })
   }

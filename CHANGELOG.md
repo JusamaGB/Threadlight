@@ -6,6 +6,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Fixed Git metadata disappearing during folder rechecks and diff reads restarting
+  throughout an active chat. Clean branches remain visible; the loading indicator
+  no longer contains a replacement character.
+
 - **Launch at sign-in** now starts a quiet Windows launcher. Threadlight waits for
   Claude or Codex to open before showing its dot, with one startup setting. Opening
   both starts one copy; quitting Threadlight is respected until another desktop app

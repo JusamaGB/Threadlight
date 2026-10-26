@@ -743,6 +743,14 @@
   color: var(--green);
 }
 
+.branch {
+  max-width: 90px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
 /* Commits waiting to be pushed. */
 .ahead {
   color: var(--accent);

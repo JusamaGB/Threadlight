@@ -41,8 +41,14 @@ used. Missing history or failed Git reads return unavailable; a successfully rea
 clean checkout clears even an incomplete historical ledger. Zero-file summaries
 never display a badge.
 
-The cache is independent per chat and refreshes at most every five seconds. Git
-snapshots are shared briefly between chats with the same worktree root.
+The cache is independent per chat, with five-second polling and earlier refreshes
+for activity and repository events. Git snapshots are shared briefly between chats
+with the same worktree root.
+Native activity updates coalesce into a follow-up read rather than discarding an
+in-flight result for the same repository. Background rechecks of a previously
+non-repository folder retain the verified fallback until a new repository is
+actually discovered. The branch remains visible when its diff and commit counts
+are zero.
 Claude transcripts replay incrementally by byte, retaining incomplete UTF-8/JSON
 tails and resetting on truncation/replacement. Codex projection reads are bounded
 by record count and payload size. Large content/history limits are explicit in

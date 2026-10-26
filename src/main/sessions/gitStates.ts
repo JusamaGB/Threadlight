@@ -178,7 +178,7 @@ export class GitStates {
       const found = this.folders.get(gitPathKey(folder))!
       if (state) return { ...session, git: state, gitStatus: 'ready' }
       // Resolve candidates in precedence order, rather than scanning every fallback at startup.
-      if (found.running || found.repository) {
+      if (found.repository || (found.running && found.checked === -Infinity)) {
         pending =
           !!found.running ||
           !!(found.repository && this.roots.get(gitPathKey(found.repository.root))?.running)

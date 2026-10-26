@@ -43,6 +43,44 @@ const deferred = <T>() => {
 }
 
 describe('Git startup scheduling', () => {
+  it.each([false, true])(
+    'keeps verified Git data during an earlier negative-folder recheck (repository appears: %s)',
+    async (appears) => {
+      const root = join(tmpdir(), 'not-created-git-fallback')
+      const parent = join(tmpdir(), 'not-created-git-parent')
+      const recheck = deferred<ReturnType<typeof repository> | null>()
+      let now = 0
+      const locate = vi.fn(async (folder: string) => {
+        if (folder === parent) return now ? recheck.promise : null
+        return repository(root)
+      })
+      const states = new GitStates(
+        () => {},
+        () => now,
+        async (folder) => state(folder),
+        locate,
+      )
+      const input = snapshot([{ ...session('a', parent), gitFolders: [parent, root] }])
+      try {
+        states.annotate(input)
+        await vi.waitFor(() => expect(states.annotate(input).sessions[0]!.git?.root).toBe(root))
+        now = 30001
+        expect(states.annotate(input).sessions[0]).toMatchObject({
+          gitStatus: 'ready',
+          git: { root, branch: 'main' },
+        })
+        expect(states.annotate(input).sessions[0]!.git?.root).toBe(root)
+        recheck.resolve(appears ? repository(parent) : null)
+        await vi.waitFor(() =>
+          expect(states.annotate(input).sessions[0]!.git?.root).toBe(appears ? parent : root),
+        )
+      } finally {
+        recheck.resolve(null)
+        await states.close()
+      }
+    },
+  )
+
   it('shares work across subfolders, publishes branch metadata before counts, and never demands lookup-only chats', async () => {
     const root = join(tmpdir(), 'not-created-git-latency')
     const complete = deferred<GitState | null>()

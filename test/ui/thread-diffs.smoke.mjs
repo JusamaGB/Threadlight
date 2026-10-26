@@ -136,6 +136,8 @@ export async function checkThreadDiffs(page, capture) {
       })
     })
     await page.getByLabel('Loading thread changes').first().waitFor()
+    assert.equal((await page.getByLabel('Loading thread changes').first().innerText()).trim(), '…')
+    assert.equal((await page.locator('body').innerText()).includes('\uFFFD'), false)
     await page.evaluate(() => window.proof.emit('onSnapshot', window.proof.threadDiff.current))
     await badge('Claude').waitFor()
     assert.equal((await badge('Claude').innerText()).replace(/\s/g, ''), '+2−1')
@@ -256,6 +258,56 @@ export async function checkThreadDiffs(page, capture) {
       .first()
       .waitFor({ state: 'detached' })
     await capture('thread-diff-committed-clear')
+    await page.evaluate(() => {
+      const proof = window.proof.threadDiff
+      window.proof.emit('onSnapshot', {
+        ...proof.current,
+        sessions: proof.current.sessions.map((session) => ({
+          ...session,
+          git: {
+            ...session.git,
+            branch: 'main',
+            ahead: 0,
+            behind: 0,
+            files: 0,
+            added: 0,
+            removed: 0,
+          },
+          threadDiff: { files: 0, added: 0, removed: 0, complete: true, revision: 'clean' },
+        })),
+      })
+    })
+    await thread('Claude')
+      .locator('[data-git-tracker]')
+      .getByText('main', { exact: true })
+      .waitFor()
+    assert.equal(await page.getByRole('button', { name: /^Thread diff/ }).count(), 0)
+    await capture('thread-diff-clean-branch-visible')
+    await page.evaluate(() => {
+      const proof = window.proof.threadDiff
+      window.proof.emit('onSnapshot', {
+        ...proof.current,
+        sessions: proof.current.sessions.map((session) => ({
+          ...session,
+          git: {
+            ...session.git,
+            branch: 'feature/a-very-long-branch-name-for-a-compact-panel',
+            ahead: 0,
+            behind: 0,
+          },
+        })),
+      })
+    })
+    const branch = thread('Claude').locator('[data-git-tracker] > span')
+    await branch
+      .filter({ hasText: 'feature/a-very-long-branch-name-for-a-compact-panel' })
+      .waitFor()
+    assert.equal(
+      await branch.evaluate(
+        (element) => element.clientWidth <= 90 && element.scrollWidth > element.clientWidth,
+      ),
+      true,
+    )
     await page.evaluate(() => {
       const proof = window.proof.threadDiff
       window.proof.emit('onSnapshot', {
