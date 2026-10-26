@@ -544,8 +544,16 @@
 .pickerFolder {
   display: flex;
 }
+.pickerFolder:nth-child(even) {
+  background: var(--raised);
+}
+.pickerFolder:hover {
+  background: var(--hover);
+}
 .pickerFolder > .workspaceHeader {
   min-width: 0;
+  padding-top: 3px;
+  padding-bottom: 2px;
 }
 .pickerFolderName {
   display: flex;
