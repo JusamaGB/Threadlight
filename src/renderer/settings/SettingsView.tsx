@@ -302,21 +302,29 @@ function HotkeyField({
   )
 }
 
-function Stepper(props: {
+export function Stepper(props: {
   value: number
   min: number
   max: number
   format: (n: number) => string
   disabled?: boolean
+  compact?: boolean
+  label?: string
   onChange: (n: number) => void
 }) {
   const { value, min, max, format, disabled = false, onChange } = props
   return (
-    <span className={disabled ? `${styles.stepper} ${styles.off}` : styles.stepper}>
+    <span
+      className={[styles.stepper, disabled && styles.off, props.compact && styles.compact]
+        .filter(Boolean)
+        .join(' ')}
+      role={props.label ? 'group' : undefined}
+      aria-label={props.label}
+    >
       <button
         disabled={disabled || value <= min}
         onClick={() => onChange(value - 1)}
-        aria-label={en.settings.less}
+        aria-label={props.label ? `Decrease ${props.label}` : en.settings.less}
       >
         −
       </button>
@@ -324,7 +332,7 @@ function Stepper(props: {
       <button
         disabled={disabled || value >= max}
         onClick={() => onChange(value + 1)}
-        aria-label={en.settings.more}
+        aria-label={props.label ? `Increase ${props.label}` : en.settings.more}
       >
         +
       </button>

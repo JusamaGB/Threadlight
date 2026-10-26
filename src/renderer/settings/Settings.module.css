@@ -190,6 +190,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+.stepper.compact {
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: inherit;
+  gap: 0;
+}
+
+.stepper.compact button {
+  width: 11px;
+}
+
+.stepper.compact .value {
+  min-width: 0;
+  padding: 0 1px;
+  font-weight: 600;
+}
+
 .segmented {
   display: inline-flex;
   padding: 1px;

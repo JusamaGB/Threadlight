@@ -15,7 +15,7 @@ import { checkAgentSelection } from './agent-selection.smoke.mjs'
 import { checkPanelHeight } from './panel-height.smoke.mjs'
 import { checkTips, checkLastActive } from './tips.smoke.mjs'
 import { checkNowTimer } from './now-timer.smoke.mjs'
-import { checkToolbar } from './toolbar.smoke.mjs'
+import { checkToolbar, checkRecentLimit } from './toolbar.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
 import { checkThreadDiffs } from './thread-diffs.smoke.mjs'
@@ -413,6 +413,12 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'recent-limit') {
+    await checkRecentLimit(page, capture)
+    await checkToolbar(page)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'thread-hover') {
     await checkThreadDiffs(page, capture)
     await checkLastActive(page, row, capture)

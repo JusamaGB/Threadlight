@@ -27,7 +27,7 @@ import { useRecordedAgentVoice } from '../hooks/useRecordedAgentVoice'
 import { MicSessionRouter, type MicRoute } from '../../shared/voiceCommands'
 import { en } from '../i18n/en'
 import { windowLabel } from '../lib/format'
-import { SettingsView } from '../settings/SettingsView'
+import { SettingsView, Stepper } from '../settings/SettingsView'
 import { SharedSpacesView, type SpacesNavigation } from '../spaces/SharedSpacesView'
 import { AgentView } from './AgentView'
 import { ChangesView } from './ChangesView'
@@ -128,6 +128,7 @@ export function Panel() {
   const [openWorkspaces, setOpenWorkspaces] = useState<string[] | null>(null)
   /** Workspaces showing every thread, not just the most recent few. */
   const [moreWorkspaces, setMoreWorkspaces] = useState<string[]>([])
+  const [savingSessionLimit, setSavingSessionLimit] = useState(false)
   const [version, setVersion] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [voiceSelection, setVoiceSelection] = useState<string | null>(null)
@@ -1053,8 +1054,30 @@ export function Panel() {
                   onContextMenu={onListMenu}
                   onClick={cycleView}
                 >
-                  {viewLabel} · {viewCount}
+                  {headerView === 'recent' ? viewLabel : `${viewLabel} · ${viewCount}`}
                 </button>
+                {headerView === 'recent' && (
+                  <Stepper
+                    compact
+                    label={en.settings.maxSessions}
+                    value={settings?.maxSessions ?? 10}
+                    min={3}
+                    max={25}
+                    format={String}
+                    disabled={!settings || savingSessionLimit}
+                    onChange={async (maxSessions) => {
+                      setSavingSessionLimit(true)
+                      try {
+                        const result = await window.threadlight.updateSettings({ maxSessions })
+                        if (!result.ok) setNotice(result.reason)
+                      } catch {
+                        setNotice('Could not save the session count.')
+                      } finally {
+                        setSavingSessionLimit(false)
+                      }
+                    }}
+                  />
+                )}
                 <div className={styles.sourceWorkspace}>
                   <button
                     className={styles.sourceControl}

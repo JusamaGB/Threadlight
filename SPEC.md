@@ -38,6 +38,11 @@ Workspace or All, the selected workspace, or expanded rows. A third click has no
 additional action; there is no triple-click gesture or delay waiting for one.
 Clicking the pin icon also unpins without resetting the view.
 
+Recent shows a compact `−count+` control in place of its bullet/count, using the
+Sessions listed setting (3–25). Changes save immediately and update Settings;
+settings changes update the header in turn. Minus/plus never change or pin the
+view. Active, Workspace and All keep their current count display.
+
 Clicking the view/count label cycles Active → Recent → Workspace → Active. Its
 existing right-click menu also offers All. Switching views while pinned keeps the
 panel pinned in the newly selected view. Controls, labels and icons in the header

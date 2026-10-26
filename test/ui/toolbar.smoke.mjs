@@ -1,6 +1,71 @@
 /* global window, document */
 import assert from 'node:assert/strict'
 
+export async function checkRecentLimit(page, capture) {
+  const initial = await page.evaluate(() => window.threadlight.getSettings())
+  const view = page.locator('header [data-thread-view]')
+  const control = page.locator('header').getByRole('group', { name: 'Sessions listed' })
+  const value = control.locator(':scope > span')
+  try {
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({ listMode: 'recent', maxSessions: 10 }),
+    )
+    await view.click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+    assert.equal(await view.innerText(), 'Recent')
+    assert.equal((await control.innerText()).replace(/\s/g, ''), '−10+')
+    await control.getByRole('button', { name: 'Decrease Sessions listed', exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('header [role="group"][aria-label="Sessions listed"]')
+          ?.textContent.replace(/\s/g, '') === '−9+',
+    )
+    assert.equal(
+      await page.evaluate(async () => (await window.threadlight.getSettings()).maxSessions),
+      9,
+    )
+    assert.equal(await view.getAttribute('data-thread-view'), 'recent')
+    assert.equal(await page.getByRole('button', { name: 'Unpin' }).count(), 0)
+    await capture('recent-count-compact')
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const row = page.getByText('Sessions listed', { exact: true }).locator('../..')
+    assert.equal(await row.locator('[class*="_value_"]').innerText(), '9')
+    await row.getByRole('button', { name: 'More', exact: true }).click()
+    await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+    await value.getByText('10', { exact: true }).waitFor()
+    await page.evaluate(() => window.threadlight.updateSettings({ maxSessions: 3 }))
+    await value.getByText('3', { exact: true }).waitFor()
+    assert.equal(
+      await control.getByRole('button', { name: 'Decrease Sessions listed' }).isDisabled(),
+      true,
+    )
+    await page.evaluate(() => window.threadlight.updateSettings({ maxSessions: 25 }))
+    await value.getByText('25', { exact: true }).waitFor()
+    assert.equal(
+      await control.getByRole('button', { name: 'Increase Sessions listed' }).isDisabled(),
+      true,
+    )
+    await view.click()
+    await page.locator('header [data-thread-view="workspace"]').waitFor()
+    assert.equal(await control.count(), 0)
+    assert.match(await view.innerText(), /^Workspace · /)
+    await view.click()
+    await page.locator('header [data-thread-view="active"]').waitFor()
+    assert.equal(await control.count(), 0)
+    await view.click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'All', exact: true }).click()
+    assert.equal(await control.count(), 0)
+    console.log(
+      'PASS: compact Recent −count+ saves Sessions listed, syncs both ways with Settings, obeys bounds and leaves other views unchanged.',
+    )
+  } finally {
+    await page.evaluate((settings) => window.threadlight.updateSettings(settings), initial)
+    await view.click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Active', exact: true }).click()
+  }
+}
+
 export async function checkToolbar(page) {
   const initial = await page.evaluate(() => window.threadlight.getSettings())
   const view = page.locator('header [data-thread-view]')

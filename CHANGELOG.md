@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Added compact −count+ controls beside Recent, linked to the Sessions listed
+  setting. Other views retain their existing thread totals.
+
 - Layered worktree wires by measured vertical span: longest closest to the panel,
   shorter overlapping wires farther out, and separate groups back at the closest lane.
 
