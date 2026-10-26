@@ -108,8 +108,11 @@ beside the header reconnects or cuts them and saves the choice. Cut ends spark g
 clip; the card and its menus remain interactive.
 
 Thread rows have 3px top and bottom padding, leaving 6px between adjacent contents.
-Git ahead/behind counts sit on the second row immediately before its time or timer,
+Git ahead/behind counts sit on the second row, before any running task timer,
 leaving the top row for the title and this thread's diff totals.
+Last active has no inline marker. Resting the pointer on a thread for one second
+shows its local time, or its date when at least 24 hours old. Movement, leave,
+scroll and blur cancel the delayed tip; specific diff/context/task tips take priority.
 
 Active spinning indicators use vibrant Claude-orange strands and a glossy
 Codex-blue outward sweep. The voice ribbon retains its own evolving palette.

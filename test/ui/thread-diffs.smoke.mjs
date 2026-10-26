@@ -107,27 +107,29 @@ export async function checkThreadDiffs(page, capture) {
     assert.equal(await page.getByRole('button', { name: /Worktree total/ }).count(), 0)
     const layout = await thread('Claude').evaluate((row) => {
       const tracker = row.querySelector('[data-git-tracker]'),
-        diff = row.querySelector('[role="button"]'),
-        age = tracker.nextElementSibling,
+        diff = row.querySelector('[class*="_diffLink_"]'),
         button = row.querySelector('button'),
         bounds = tracker.getBoundingClientRect(),
-        clock = age.getBoundingClientRect(),
         totals = diff.getBoundingClientRect(),
         style = getComputedStyle(button)
       return {
         text: tracker.textContent,
         trackerY: bounds.y,
         diffY: totals.y,
-        clockY: clock.y,
-        trackerRight: bounds.right,
-        clockLeft: clock.left,
+        right: bounds.right,
+        rowRight: button.getBoundingClientRect().right,
+        inlineAge: !!row.querySelector('[class*="_age_"]'),
         padding: Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom),
       }
     })
     assert.match(layout.text, /↑3↓1/)
     assert.ok(layout.trackerY > layout.diffY, 'Git tracker is below thread diff totals')
-    assert.equal(layout.trackerY, layout.clockY, 'Git tracker shares the time row')
-    assert.ok(layout.trackerRight < layout.clockLeft, 'Git tracker sits to the left of the time')
+    assert.equal(
+      layout.rowRight - layout.right,
+      10,
+      'Git tracker sits at the right of the second row',
+    )
+    assert.equal(layout.inlineAge, false, 'last active time no longer takes up row space')
     assert.equal(layout.padding, 6, 'adjacent thread contents have six pixels of padding')
     await badge('Claude').hover()
     const tip = page.getByRole('tooltip')

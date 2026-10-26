@@ -3,7 +3,7 @@ import type { MouseEvent } from 'react'
 import type { RelayStatus, Session, ThreadDiffSummary } from '../../shared/types'
 import { compact, gitLine, threadDiffSentence } from '../lib/git'
 import { en } from '../i18n/en'
-import { ageText } from '../lib/format'
+import { lastActiveText } from '../lib/format'
 import { relayLine } from '../lib/relay'
 import { AttentionCard, attentionLine } from './AttentionCard'
 import { ContextRing, contextLabel } from './ContextRing'
@@ -27,8 +27,6 @@ interface SessionRowProps {
   onContextMenu: (event: MouseEvent) => void
   /** Opens the composer on this thread (a waiting thread's card uses it for Other). */
   onCompose: () => void
-  /** The Active list leaves the age out: everything there is happening now. */
-  hideAge?: boolean
   /** Opens only this thread's recorded changes. */
   onShowChanges: () => void
 }
@@ -68,7 +66,10 @@ export function SessionRow(props: SessionRowProps) {
       data-workspace-folder={workspaceFolder(session.git?.root || session.cwd) || undefined}
       data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
     >
-      <button
+      <Tip
+        as="button"
+        text={lastActiveText(session.lastActiveAt, now)}
+        restDelay={1000}
         className={styles.rowButton}
         data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
         aria-description={
@@ -120,16 +121,11 @@ export function SessionRow(props: SessionRowProps) {
               )}
             </Tip>
           )}
-          {!(expanded && appId) &&
-            (session.backgroundTasks.length > 0 ? (
-              <TaskTimer tasks={session.backgroundTasks} />
-            ) : (
-              !props.hideAge && (
-                <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
-              )
-            ))}
+          {!(expanded && appId) && session.backgroundTasks.length > 0 && (
+            <TaskTimer tasks={session.backgroundTasks} />
+          )}
         </span>
-      </button>
+      </Tip>
       {expanded && appId && (
         <button className={styles.rowOpen} onClick={() => window.threadlight.openInClaude(appId)}>
           {en.detail.open}

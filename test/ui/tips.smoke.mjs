@@ -1,6 +1,69 @@
 /* global document, window */
 import assert from 'node:assert/strict'
 
+export async function checkLastActive(page, row, capture) {
+  const initial = await page.evaluate(async () => ({
+    snapshot: await window.threadlight.getSnapshot(),
+    settings: await window.threadlight.getSettings(),
+  }))
+  try {
+    await page.evaluate(async () => {
+      await window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] })
+      const snapshot = await window.threadlight.getSnapshot()
+      window.proof.emit('onSnapshot', {
+        ...snapshot,
+        sessions: snapshot.sessions.map((session) => ({
+          ...session,
+          lastActiveAt: Date.now() - (session.provider === 'codex' ? 25 : 6) * 3600000,
+        })),
+      })
+    })
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    const tip = page.getByRole('tooltip')
+    const hover = async (provider) => {
+      const box = await row(provider).boundingBox()
+      await page.mouse.move(box.x + 65, box.y + 8)
+      return box
+    }
+    const box = await hover('Claude')
+    await page.clock.runFor(999)
+    assert.equal(await tip.count(), 0, 'no last active tip before one second')
+    await page.mouse.move(box.x + 66, box.y + 8)
+    await page.clock.runFor(999)
+    assert.equal(await tip.count(), 0, 'movement restarts the one-second wait')
+    await page.clock.runFor(1)
+    await tip.waitFor()
+    assert.match(await tip.innerText(), /^Last active at /)
+    await capture('last-active-time-hover')
+    await page.mouse.move(box.x + 67, box.y + 8)
+    assert.equal(await tip.count(), 0, 'movement dismisses the shown time')
+    await page.locator('header').hover()
+    await page.clock.runFor(1100)
+    assert.equal(await tip.count(), 0, 'leaving cancels the pending time')
+    await hover('Codex')
+    await page.clock.runFor(1000)
+    await tip.waitFor()
+    assert.match(await tip.innerText(), /^Last active on /)
+    await capture('last-active-date-hover')
+    await page.evaluate(() => document.dispatchEvent(new Event('scroll')))
+    assert.equal(await tip.count(), 0, 'scrolling clears the last active tip')
+    await hover('Claude')
+    await page.clock.runFor(500)
+    await page.evaluate(() => document.dispatchEvent(new Event('scroll')))
+    await page.clock.runFor(1000)
+    assert.equal(await tip.count(), 0, 'scrolling cancels a pending time')
+    console.log(
+      'PASS: last active appears after one stationary second, uses time/date at 24 hours and cancels on movement, leave and scroll.',
+    )
+  } finally {
+    await page.clock.resume()
+    await page.evaluate(async ({ snapshot, settings }) => {
+      await window.threadlight.updateSettings(settings)
+      window.proof.emit('onSnapshot', snapshot)
+    }, initial)
+  }
+}
+
 export async function checkTips(page, row) {
   await page.setViewportSize({ width: 316, height: 900 })
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))

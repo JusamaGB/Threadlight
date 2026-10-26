@@ -13,7 +13,7 @@ import { checkMicPill } from './mic-pill.smoke.mjs'
 import { readMotionFrame } from './motion-pixels.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
 import { checkPanelHeight } from './panel-height.smoke.mjs'
-import { checkTips } from './tips.smoke.mjs'
+import { checkTips, checkLastActive } from './tips.smoke.mjs'
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar } from './toolbar.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
@@ -413,6 +413,16 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'thread-hover') {
+    await checkThreadDiffs(page, capture)
+    await checkLastActive(page, row, capture)
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
+    )
+    await checkTips(page, row)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'compact-tips') {
     await page.evaluate(() =>
       window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),

@@ -34,6 +34,7 @@ export function TaskTimer({ tasks }: TaskTimerProps) {
 
   return (
     <span
+      data-tip-anchor=""
       className={styles.taskTimer}
       onMouseMove={(event) => {
         const { left, right } = event.currentTarget.getBoundingClientRect()

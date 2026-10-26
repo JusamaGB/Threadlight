@@ -885,7 +885,6 @@ export function Panel() {
       onToggle={() => onRowClick(session)}
       onContextMenu={(event) => openMenu(event, session)}
       onCompose={() => setCompose({ sessionId: session.id })}
-      hideAge={view === 'active'}
       onShowChanges={() => setChangesFor(session.id)}
     />
   )

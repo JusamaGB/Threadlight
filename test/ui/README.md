@@ -12,6 +12,12 @@ and extended drive/UNC paths in the picker, and preserves original IDs when load
 threads, saving a selection and switching providers. It also checks merged newest-first
 ordering, stable ties, nested side threads, workspace isolation and live activity reordering.
 
+`THREADLIGHT_UI_FOCUS=compact-layout` checks the 300px card, 6px thread spacing,
+Git count placement, wires, compact menus and Shared Spaces. `thread-hover` checks
+the one-second stationary last-active hover, movement/leave/scroll cancellation,
+time/date switching, and immediate context/diff/usage tips. These checks use the
+browser clock and synthetic timestamps.
+
 The test serves the built renderer on a temporary loopback port with synthetic IPC.
 It never launches Electron, either chat CLI, or a hook server, and needs no accounts.
 It exercises the actual settings controls, combined lists and workspaces, draft and

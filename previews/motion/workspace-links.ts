@@ -227,7 +227,7 @@ function render() {
       ${thread.depth ? '<span class="guide" aria-hidden="true"></span>' : ''}
       <button class="thread" aria-expanded="${expanded.has(thread.id)}" aria-description="${thread.provider === 'claude' ? 'Claude' : 'Codex'} chat${thread.cwd ? ', ' + escape(thread.cwd) : ', workspace unavailable'}">
         <span class="top"><span class="dot-slot" title="${thread.context !== null ? 'Context ' + Math.round(thread.context * 100) + '%' : 'Context unavailable'}">${ring(thread)}<span class="dot" data-state="${thread.state}"></span></span><span class="title">${escape(thread.title)}</span>${thread.diff ? `<span class="diff"><span class="added">+${thread.diff[0]}</span><span class="removed">−${thread.diff[1]}</span></span>` : ''}</span>
-        <span class="bottom"><span class="stage">${escape(thread.stage)}</span><span class="age">${thread.age}</span></span>
+        <span class="bottom"><span class="stage">${escape(thread.stage)}</span></span>
       </button>
       ${expanded.has(thread.id) ? '<div class="detail"><p>NOW</p><p>Checking the workspace and preparing the next change.</p><p>✓ Read the current plan</p><p>○ Finish local verification</p></div>' : ''}
     </div>`

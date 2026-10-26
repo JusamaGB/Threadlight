@@ -21,6 +21,8 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
   as?: 'span' | 'button'
   /** What the tip says; shown while the pointer is over the anchor. */
   text: string
+  /** Wait for the pointer to stay still this long. Other tips remain immediate. */
+  restDelay?: number
   /** The anchor: what is hovered. */
   children: ReactNode
   className?: string
@@ -31,20 +33,35 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
  * An immediate note beside the pointer. Nested targets take precedence over their parents.
  * Portalled outside the anchor so row layout and scrolling cannot displace or clip the bubble.
  */
-export function Tip({ as: Tag = 'span', text, children, className, onClick, ...props }: TipProps) {
+export function Tip({
+  as: Tag = 'span',
+  text,
+  restDelay = 0,
+  children,
+  className,
+  onClick,
+  ...props
+}: TipProps) {
   const anchor = useRef<HTMLElement>(null)
   const setAnchor = useCallback((element: HTMLElement | null) => {
     anchor.current = element
   }, [])
   const [point, setPoint] = useState<Point | null>(null)
+  const resting = useRef<Point | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dismiss = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    resting.current = null
     setPoint(null)
   }, [])
   useLayoutEffect(() => {
     // A live snapshot can reorder rows without a mouse movement or scroll event.
+    const candidate = resting.current ?? point
     if (
-      point &&
-      document.elementFromPoint(point.x, point.y)?.closest('[data-tip-anchor]') !== anchor.current
+      candidate &&
+      document.elementFromPoint(candidate.x, candidate.y)?.closest('[data-tip-anchor]') !==
+        anchor.current
     )
       dismiss()
   })
@@ -57,6 +74,7 @@ export function Tip({ as: Tag = 'span', text, children, className, onClick, ...p
       document.removeEventListener('scroll', dismiss, true)
       window.removeEventListener('blur', dismiss)
       window.removeEventListener('resize', dismiss)
+      if (timer.current) clearTimeout(timer.current)
     }
   }, [dismiss])
   const track = (event: MouseEvent<HTMLElement>) => {
@@ -68,7 +86,21 @@ export function Tip({ as: Tag = 'span', text, children, className, onClick, ...p
       dismiss()
       return
     }
-    setPoint({ x: event.clientX, y: event.clientY })
+    const next = { x: event.clientX, y: event.clientY }
+    if (!restDelay) {
+      setPoint(next)
+      return
+    }
+    if (resting.current?.x === next.x && resting.current?.y === next.y) return
+    dismiss()
+    resting.current = next
+    timer.current = setTimeout(() => {
+      timer.current = null
+      if (
+        document.elementFromPoint(next.x, next.y)?.closest('[data-tip-anchor]') === anchor.current
+      )
+        setPoint(next)
+    }, restDelay)
   }
   return (
     <Tag

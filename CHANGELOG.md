@@ -7,7 +7,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 - Restored the compact 300px panel and 6px between adjacent thread contents.
-  Moved Git ahead/behind counts beside the time on the second row.
+  Moved Git ahead/behind counts to the second row. Last active now appears after
+  a one-second stationary hover, with a date for activity at least 24 hours old.
 
 - Connected same-folder/worktree threads with traceable wires in a 16px transparent
   gutter outside the panel. Hover, focus or click highlights a workspace's route.

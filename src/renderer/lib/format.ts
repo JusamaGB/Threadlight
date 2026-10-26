@@ -9,6 +9,14 @@ export function ageText(sinceMs: number, nowMs: number): string {
   return en.age.days(Math.floor(seconds / 86400))
 }
 
+/** An exact local time for recent activity, or its date after 24 hours. */
+export function lastActiveText(sinceMs: number, nowMs: number): string {
+  const date = new Date(sinceMs)
+  return nowMs - sinceMs < 86_400_000
+    ? `Last active at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : `Last active on ${date.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}`
+}
+
 /** A "Show sessions from the last" window as the settings show it: "6h", "24h", "3d", "7d". */
 export function windowLabel(hours: number): string {
   return hours % 24 === 0 && hours > 24 ? `${hours / 24}d` : `${hours}h`
