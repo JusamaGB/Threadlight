@@ -7,7 +7,6 @@ import {
   type WorkspaceFolder,
 } from '../lib/workspaceExplorer'
 import styles from './Panel.module.css'
-import { ThreadScrollbar } from './ThreadScrollbar'
 import { ContextMenu } from './ContextMenu'
 
 interface WorkspacePickerProps {
@@ -73,7 +72,6 @@ export function WorkspacePicker({
           ? 'Claude'
           : 'None'
   const appsAt = appsAnchor?.getBoundingClientRect()
-  const list = useRef<HTMLDivElement>(null)
   const folder = explorer.folders.get(location)
   const searching = query.trim().length > 0
   const rows = searching
@@ -214,8 +212,9 @@ export function WorkspacePicker({
         </button>
       )}
       <div
-        ref={list}
         id="workspace-folders"
+        role="region"
+        tabIndex={0}
         className={styles.pickerResults}
         aria-label={searching ? 'Workspace search results' : 'Workspace folders'}
       >
@@ -272,7 +271,6 @@ export function WorkspacePicker({
           </p>
         )}
       </div>
-      <ThreadScrollbar list={list} label="Scroll workspaces" controls="workspace-folders" />
     </div>
   )
 }

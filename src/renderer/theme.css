@@ -37,6 +37,14 @@ button {
   cursor: pointer;
 }
 
+/* Scrolling stays native; visible tracks and thumbs do not take space from the panel. */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
 html,
 body,
 #root {

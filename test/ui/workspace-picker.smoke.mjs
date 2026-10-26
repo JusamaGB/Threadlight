@@ -187,8 +187,8 @@ export async function checkWorkspacePicker(page, capture) {
     await results.getByRole('button', { name: /^Projects 102 workspaces/ }).click()
     const before = await search.boundingBox()
     assert.ok(await results.evaluate((el) => el.scrollHeight > el.clientHeight))
-    const scrollbar = page.getByRole('scrollbar', { name: 'Scroll workspaces', exact: true })
-    await scrollbar.press('End')
+    assert.equal(await page.getByRole('scrollbar').count(), 0)
+    await results.press('End')
     assert.ok(await results.evaluate((el) => el.scrollTop > 0))
     assert.deepEqual(
       await search.boundingBox(),

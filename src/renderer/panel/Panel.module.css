@@ -1,14 +1,14 @@
 /* The panel card. The window is sized to this card, so it must not stretch. */
 .panelStage {
   position: relative;
-  width: 316px;
+  width: 280px;
   padding-left: 16px;
   box-sizing: border-box;
 }
 .card {
   position: relative;
   box-sizing: border-box;
-  width: 300px;
+  width: 264px;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -289,7 +289,6 @@
 .pickText {
   max-height: 72px;
   overflow-y: auto;
-  scrollbar-width: thin;
   color: var(--fg);
   overflow-wrap: anywhere;
 }
@@ -298,39 +297,6 @@
 
 .list {
   overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.list::-webkit-scrollbar,
-.pickerResults::-webkit-scrollbar {
-  display: none;
-}
-
-.threadScrollTrack {
-  position: absolute;
-  right: 1px;
-  width: 6px;
-  z-index: 2;
-}
-
-.threadScrollThumb {
-  position: absolute;
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  pointer-events: auto;
-}
-
-.threadScrollThumb:hover,
-.threadScrollThumb:focus-visible {
-  border-color: color-mix(in srgb, var(--faint) 60%, transparent);
-}
-
-.threadScrollThumb:focus-visible {
-  outline: 1px solid color-mix(in srgb, var(--faint) 60%, transparent);
-  outline-offset: 1px;
 }
 
 .empty {
@@ -366,7 +332,7 @@
   align-items: center;
   gap: 5px;
   width: 100%;
-  padding: 6px 10px 4px;
+  padding: 6px 6px 4px 10px;
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
@@ -435,7 +401,7 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 22px;
-  padding: 3px 10px;
+  padding: 3px 6px 3px 10px;
   font-size: 11px;
 }
 
@@ -532,7 +498,6 @@
 .pickerResults {
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: none;
   border-top: 1px solid var(--border);
 }
 
@@ -605,7 +570,7 @@
 .rowButton {
   display: block;
   width: 100%;
-  padding: 3px 10px;
+  padding: 3px 6px 3px 10px;
 }
 
 /* Overlay the whole row so raised details and cards don't interrupt the narrow edge tint. */
@@ -1407,7 +1372,6 @@ span.planStep {
 .changes {
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
   padding: 4px 0 8px;
 }
 
@@ -1481,7 +1445,6 @@ span.planStep {
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-size: 10px;
   line-height: 1.5;
-  scrollbar-width: thin;
 }
 
 .diffLine {
@@ -1569,7 +1532,6 @@ span.planStep {
   gap: 5px;
   max-height: 360px;
   overflow-y: auto;
-  scrollbar-width: thin;
   font-size: 11px;
 }
 
@@ -1872,7 +1834,6 @@ span.planStep {
   max-height: 180px;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .agentPastRow {
@@ -1915,14 +1876,12 @@ span.planStep {
 .reply {
   max-height: 160px;
   overflow-y: auto;
-  scrollbar-width: thin;
   white-space: pre-wrap;
 }
 
 .proposedPlan {
   max-height: 240px;
   overflow-y: auto;
-  scrollbar-width: thin;
   color: var(--fg);
   line-height: 1.45;
 }

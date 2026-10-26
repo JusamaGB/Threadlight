@@ -48,7 +48,6 @@
   margin: 2px 0 0;
   max-height: 52px;
   overflow: auto;
-  scrollbar-width: thin;
   font-size: 12px;
   line-height: 1.45;
   color: var(--fg);

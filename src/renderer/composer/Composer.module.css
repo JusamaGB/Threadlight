@@ -125,7 +125,6 @@
   font-size: 12px;
   line-height: 18px;
   user-select: text;
-  scrollbar-width: thin;
 }
 
 .input::placeholder {

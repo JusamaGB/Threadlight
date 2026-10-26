@@ -107,7 +107,7 @@ describe('panel movement and available height', () => {
     const windows = new WindowManager()
     windows.openPanel()
     const bounds = windows.panel.getBounds()
-    expect(bounds.width).toBe(316)
+    expect(bounds.width).toBe(280)
     state.cursor = { x: bounds.x + 8, y: bounds.y + 30 }
     vi.advanceTimersByTime(16)
     expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
@@ -275,7 +275,7 @@ describe('panel movement and available height', () => {
       opensDown: false,
       fresh: false,
     })
-    expect(windows.panel.getBounds()).toMatchObject({ x: -594, y: 8, height: 614 })
+    expect(windows.panel.getBounds()).toMatchObject({ x: -558, y: 8, height: 614 })
     windows.endDrag()
     windows.dragDot(0, 98)
     expect(windows.panel.webContents.send).toHaveBeenLastCalledWith(IPC.panelOpened, {
