@@ -9,8 +9,9 @@ do not download a browser.
 Set `THREADLIGHT_UI_FOCUS=workspace` to run the toolbar checks and mixed Windows path regression:
 Both + Workspace loads both providers from initially empty trees, combines ordinary
 and extended drive/UNC paths in the picker, and preserves original IDs when loading
-threads, saving a selection and switching providers. It also checks merged newest-first
-ordering, stable ties, nested side threads, workspace isolation and live activity reordering.
+threads, saving a selection and switching providers. It also checks merged completion
+ordering, stability during working/waiting updates, stable ties, nested side threads,
+workspace isolation and reordering when the task goes idle.
 
 `THREADLIGHT_UI_FOCUS=compact-layout` checks the 300px card, 6px thread spacing,
 Git count placement, wires, compact menus and Shared Spaces. `thread-hover` checks

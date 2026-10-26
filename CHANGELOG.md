@@ -6,6 +6,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Stabilised thread order during messages, tool progress and permission pauses.
+  Threads now reorder when their task finishes and goes idle, across both providers
+  and Recent/Active/Workspace lists, while live activity details keep updating.
+
 - Made the thread scrollbar track transparent and its thumb outline-only, overlaid
   on the rows so provider gradients continue underneath it.
 

@@ -193,6 +193,8 @@ export interface Session {
   cwd: string
   /** Last activity, in milliseconds since the epoch. */
   lastActiveAt: number
+  /** Position timestamp: held during work and advanced when a task finishes. */
+  orderAt?: number
   /** When the Claude app last had this thread in front; 0 when unknown. */
   focusedAt: number
   /** One line describing where the session is. */
@@ -265,7 +267,7 @@ export interface Snapshot {
   providers?: Provider[]
   /** Retained for an open composer when the combined list's limit hides its row. */
   lookupSessions?: Session[]
-  /** Recent sessions, working first: the Active list and the counts. */
+  /** Recent sessions in completion order: the Active list and the counts. */
   sessions: Session[]
   workspaces: Workspace[]
   /**

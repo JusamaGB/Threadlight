@@ -97,6 +97,7 @@ async function checkMergedWorkspace(page, capture) {
       state,
       attention: null,
       lastActiveAt: now - hoursAgo * 3600_000,
+      orderAt: now - hoursAgo * 3600_000,
     },
     children,
   })
@@ -153,14 +154,22 @@ async function checkMergedWorkspace(page, capture) {
   await waitForOrder(order)
   oldest.session.lastActiveAt = now + 1000
   await emit()
+  await waitForOrder(order)
+  oldest.session.state = 'waiting'
+  oldest.session.lastActiveAt = now + 2000
+  await emit()
+  await waitForOrder(order)
+  oldest.session.state = 'idle'
+  oldest.session.orderAt = now + 3000
+  await emit()
   await waitForOrder(['claude-oldest', ...order.slice(0, -1)])
   assert.equal(
     await middleButton.getAttribute('aria-expanded'),
     'true',
-    'activity reordering preserves the expanded chat',
+    'completion reordering preserves the expanded chat',
   )
   await middleButton.click()
   console.log(
-    'PASS: mixed provider chronology, stable ties, nested side threads, workspace isolation and live reordering.',
+    'PASS: mixed provider completion order, running/waiting stability, stable ties, nesting, workspace isolation and completion reordering.',
   )
 }

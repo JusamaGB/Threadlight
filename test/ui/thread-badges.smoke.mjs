@@ -19,6 +19,7 @@ export async function checkThreadBadges(page, capture) {
   await page.evaluate((snapshot) => {
     const patch = (session) => ({
       ...session,
+      threadDiff: { files: 2, added: 124, removed: 13, complete: true, revision: 'badge-fixture' },
       git: {
         root: 'Z:/General/repo',
         branch: 'main',

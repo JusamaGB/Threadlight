@@ -64,6 +64,36 @@ const titles = (nodes: ThreadNode[]): unknown[] =>
 const byName = (workspaces: Workspace[], name: string) => workspaces.find((w) => w.name === name)!
 
 describe('workspace tree', () => {
+  it('keeps running rows fixed through messages and permission pauses, then reorders on Stop', async () => {
+    const older = await thread('C:\\demo\\stable', 'Older', { agoMs: 2 * HOUR })
+    const newer = await thread('C:\\demo\\stable', 'Newer', { agoMs: HOUR })
+    const t = tracker()
+    const view = { expanded: ['C:\\demo\\stable'], showAll: [] }
+    const read = async () => {
+      const snapshot = await t.snapshot(view)
+      return {
+        recent: snapshot.sessions.map((s) => s.title),
+        tree: titles(byName(snapshot.workspaces, 'stable').threads),
+      }
+    }
+    const original = { recent: ['Newer', 'Older'], tree: ['Newer', 'Older'] }
+    expect(await read()).toEqual(original)
+    hooks.apply({ session_id: older.slice(6), hook_event_name: 'UserPromptSubmit' }, NOW)
+    hooks.apply({ session_id: newer.slice(6), hook_event_name: 'UserPromptSubmit' }, NOW + 1)
+    expect(await read()).toEqual(original)
+    hooks.apply({ session_id: older.slice(6), hook_event_name: 'PostToolUse' }, NOW + 1000)
+    expect(await read()).toEqual(original)
+    hooks.apply(
+      { session_id: older.slice(6), hook_event_name: 'Notification', message: 'needs permission' },
+      NOW + 2000,
+    )
+    expect(await read()).toEqual(original)
+    hooks.apply({ session_id: older.slice(6), hook_event_name: 'Stop' }, NOW + 3000)
+    expect(await read()).toEqual({ recent: ['Older', 'Newer'], tree: ['Older', 'Newer'] })
+    hooks.apply({ session_id: newer.slice(6), hook_event_name: 'PostToolUse' }, NOW + 4000)
+    expect(await read()).toEqual({ recent: ['Older', 'Newer'], tree: ['Older', 'Newer'] })
+  })
+
   it('groups threads by workspace, alphabetically, ignoring case and archived threads', async () => {
     await thread('C:\\demo\\zebra', 'Z1')
     await thread('C:\\demo\\Apple', 'A1')

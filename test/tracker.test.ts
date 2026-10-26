@@ -302,7 +302,7 @@ describe('Tracker', () => {
     expect(session?.state).toBe('idle')
   })
 
-  it('orders working, then waiting, then most recent, and caps the list', async () => {
+  it('uses completion order without a working/waiting shuffle and reserves active slots', async () => {
     await addSession('idle-new', [prompt('a'), textReply('done a')], 2 * MINUTE)
     await addSession('idle-old', [prompt('b'), textReply('done b')], 30 * MINUTE)
     await addSession('waiting', [prompt('c')], 5 * MINUTE)
@@ -314,10 +314,10 @@ describe('Tracker', () => {
     hooks.apply({ session_id: 'working', hook_event_name: 'UserPromptSubmit' }, NOW)
 
     const ids = (await recent()).map((s) => s.id)
-    expect(ids).toEqual(['working', 'waiting', 'idle-new', 'idle-old'])
+    expect(ids).toEqual(['waiting', 'working', 'idle-new', 'idle-old'])
     expect((await recent(tracker({ maxSessions: 2 }))).map((s) => s.id)).toEqual([
-      'working',
       'waiting',
+      'working',
     ])
   })
 

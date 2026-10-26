@@ -109,11 +109,11 @@ describe('combined provider snapshots', () => {
       { id: 'working', state: 'working', at: 20 },
     ]),
   }
-  it('sorts both sources by state then recency and applies one total recent-list limit', () => {
+  it('combines completion order and reserves limited places for active threads', () => {
     const before = structuredClone(sources)
     const both = combinedSnapshot(['claude', 'codex'], sources, 3)
-    expect(both.sessions.map((s) => s.id)).toEqual(['codex:working', 'working', 'codex:shared-id'])
-    expect(both.sessions.map((s) => s.provider)).toEqual(['codex', 'claude', 'codex'])
+    expect(both.sessions.map((s) => s.id)).toEqual(['codex:shared-id', 'codex:working', 'working'])
+    expect(both.sessions.map((s) => s.provider)).toEqual(['codex', 'codex', 'claude'])
     expect(sources).toEqual(before)
     expect(both.currentWorkspace).toBe(`codex:${folder}`)
     expect(findInSnapshot(both, 'shared-id')?.provider).toBe('claude')
@@ -151,7 +151,7 @@ describe('combined provider snapshots', () => {
       },
       1,
     )
-    expect(both.sessions.map((s) => s.id)).toEqual(['codex:working'])
+    expect(both.sessions.map((s) => s.id)).toEqual(['codex:shared-id'])
     expect(findInSnapshot(both, 'shared-id')?.id).toBe('shared-id')
     const single = combinedSnapshot(['codex'], sources, 1)
     expect(findInSnapshot(single, 'shared-id')).toBeUndefined()

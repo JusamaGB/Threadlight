@@ -10,6 +10,7 @@ export interface HookRecord {
   cwd: string | null
   transcriptPath: string | null
   updatedAt: number
+  completedAt?: number
 }
 
 /** Records older than this are dropped: the session is long gone. */
@@ -34,6 +35,10 @@ export class HookStateStore {
       cwd: str(payload['cwd']) ?? previous?.cwd ?? null,
       transcriptPath: str(payload['transcript_path']) ?? previous?.transcriptPath ?? null,
       updatedAt: now,
+      completedAt:
+        event === 'Stop' || (event === 'SessionEnd' && previous?.state !== 'idle')
+          ? now
+          : previous?.completedAt,
     })
   }
 

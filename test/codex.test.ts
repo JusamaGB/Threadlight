@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { CodexHolds } from '../src/main/codex/holds'
 import { codexDeepLink, codexKey } from '../src/main/codex/identity'
 import { writerHeld } from '../src/main/codex/live'
+import * as codexLive from '../src/main/codex/live'
 import {
   codexRelayArgs,
   codexMemoryArgs,
@@ -211,6 +212,66 @@ describe('Codex relay', () => {
 })
 
 describe('read-only Codex discovery', () => {
+  it('orders by completed turns through running native updates in recent and workspace lists', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'threadlight-codex-order-'))
+    temp.push(home)
+    const paths = codexPaths({ CODEX_HOME: home }, home)
+    await mkdir(join(home, 'sessions'), { recursive: true })
+    const rollout = join(home, 'sessions', 'synthetic.jsonl')
+    await writeFile(rollout, '{}\n')
+    const second = '22222222-2222-4222-8222-222222222222'
+    const now = Math.floor(Date.now() / 1000)
+    const state = new DatabaseSync(paths.state)
+    const history = new DatabaseSync(paths.history)
+    const writer = vi.spyOn(codexLive, 'writerHeld').mockResolvedValue(true)
+    try {
+      state.exec(
+        'CREATE TABLE threads (id TEXT, cwd TEXT, name TEXT, archived INTEGER, updated_at INTEGER, rollout_path TEXT)',
+      )
+      history.exec(
+        'CREATE TABLE thread_items(thread_id TEXT, rollout_ordinal INTEGER, item_json TEXT); CREATE TABLE thread_turns(thread_id TEXT,rollout_ordinal INTEGER,status TEXT,started_at INTEGER,completed_at INTEGER)',
+      )
+      for (const [key, title, at] of [
+        [id, 'Older', now - 600],
+        [second, 'Newer', now - 300],
+      ] as const) {
+        state
+          .prepare('INSERT INTO threads VALUES (?,?,?,0,?,?)')
+          .run(key, 'C:/synthetic/shared', title, at, rollout)
+        history
+          .prepare("INSERT INTO thread_turns VALUES (?,1,'completed',?,?)")
+          .run(key, at - 10, at)
+      }
+      const tracker = new CodexTracker(paths, new CodexHolds(() => {}))
+      const read = async () => {
+        const snapshot = await tracker.snapshot({ expanded: ['C:/synthetic/shared'], showAll: [] })
+        return {
+          recent: snapshot.sessions.map((s) => s.title),
+          tree: snapshot.workspaces[0]!.threads.map((n) => n.session.title),
+        }
+      }
+      const original = { recent: ['Newer', 'Older'], tree: ['Newer', 'Older'] }
+      expect(await read()).toEqual(original)
+      for (const key of [id, second])
+        history.prepare("INSERT INTO thread_turns VALUES (?,2,'in_progress',?,NULL)").run(key, now)
+      state.prepare('UPDATE threads SET updated_at=? WHERE id=?').run(now + 10, id)
+      expect(await read()).toEqual(original)
+      state.prepare('UPDATE threads SET updated_at=? WHERE id=?').run(now + 20, second)
+      expect(await read()).toEqual(original)
+      history
+        .prepare(
+          "UPDATE thread_turns SET status='completed',completed_at=? WHERE thread_id=? AND rollout_ordinal=2",
+        )
+        .run(now + 30, id)
+      state.prepare('UPDATE threads SET updated_at=? WHERE id=?').run(now + 30, id)
+      expect(await read()).toEqual({ recent: ['Older', 'Newer'], tree: ['Older', 'Newer'] })
+    } finally {
+      writer.mockRestore()
+      history.close()
+      state.close()
+    }
+  })
+
   it.each([false, true])(
     'reads paginated history read-only (native type column: %s)',
     async (native) => {

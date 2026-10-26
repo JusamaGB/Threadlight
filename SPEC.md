@@ -8,7 +8,7 @@
 A small, unofficial desktop companion for the **Claude desktop app** on Windows.
 
 - A status dot in a screen corner: green when no Claude Code session is working, pulsing red when one is.
-- Click it: it becomes a panel in the same spot listing sessions (active first, then recent), each expandable to its task plan, current step and last result.
+- Click it: it becomes a panel in the same spot listing active or recent sessions, each expandable to its task plan, current step and last result.
 - Right-click a session → **Compose**: type or talk a message to that thread. It is delivered in the background without opening the Claude window. ✓ = delivered, ✓✓ = read and replied.
 - **Talk hotkey** anywhere (including in games): press `Ctrl+Alt+Q`, say _"message docs site, check the build passed"_, press it again. The panel opens with the matched thread and text, counts down, sends.
 - Visible only while the Claude desktop app is running.
@@ -18,10 +18,19 @@ Not affiliated with or endorsed by Anthropic. It reads files the Claude app and 
 ### Panel pinning and view controls (26 October 2026)
 
 With Both selected, Workspace shows one combined list for the chosen folder.
-Top-level threads from Claude and Codex are ordered by their last activity, newest
-first, with stable thread-ID ordering for equal timestamps. Side threads remain
+Top-level threads from Claude and Codex use completion order, newest first, with
+stable thread-ID ordering for equal timestamps. Running threads hold their position
+through messages, tool progress, permission pauses and resumes. A finished task
+advances its position when the thread becomes idle. Side threads remain
 nested beneath their parent. All continues to show separate collapsible provider
 workspace groups.
+
+Live activity still drives time-window membership, the last-active hover, status
+and timers. Ordering has a separate timestamp: native completed turns in Codex,
+Stop/SessionEnd hooks in Claude, or an observed transition to idle/new finished
+reply for older histories. Before completion evidence is available, a newly seen
+thread starts at its observed activity time. Active threads retain places in the
+configured recent-list limit; state changes alone do not reshuffle the chosen rows.
 
 Pinning and the chosen list are independent. Double-clicking the header's bare
 background immediately toggles pinned/unpinned without changing Active, Recent,
