@@ -10,6 +10,12 @@
   cursor: pointer;
 }
 
+.motion {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
 .micPill {
   width: 92px;
   height: 32px;

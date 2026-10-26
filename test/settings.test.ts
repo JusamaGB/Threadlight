@@ -39,6 +39,21 @@ describe('parseSettings', () => {
     expect(parseSettings(null)).toEqual(DEFAULT_SETTINGS)
     expect(parseSettings('nonsense')).toEqual(DEFAULT_SETTINGS)
   })
+
+  it('migrates the old mic preference and keeps voice target independent of activation', () => {
+    expect(parseSettings({ openMic: true }).voiceTarget).toBe('agent')
+    expect(parseSettings({ openMic: false }).voiceTarget).toBe('thread')
+    expect(parseSettings({ openMic: true, voiceTarget: 'thread' }).voiceTarget).toBe('thread')
+    expect(parseSettings({ voiceTarget: 'bad' }).voiceTarget).toBe('thread')
+    for (const voiceTarget of ['agent', 'thread'])
+      for (const talkMode of ['toggle', 'hold'])
+        expect(validatePatch({ voiceTarget, talkMode })).toEqual({
+          ok: true,
+          patch: { voiceTarget, talkMode },
+        })
+    expect(validatePatch({ voiceTarget: 'room' }).ok).toBe(false)
+    expect(parseSettings({ openMic: true })).not.toHaveProperty('openMic')
+  })
 })
 
 describe('focusWorkspace', () => {

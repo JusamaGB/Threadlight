@@ -114,6 +114,7 @@ export class CodexAgentRun {
   private starting: Promise<void> | null = null
   private retirement: Promise<void> | null = null
   private live: CodexLive | null = null
+  private liveGeneration = 0
   private liveWrites: Promise<void> = Promise.resolve()
 
   constructor(private options: CodexAgentOptions) {
@@ -279,15 +280,25 @@ export class CodexAgentRun {
 
   async startLive(sessionId: string, sdp: string): Promise<string> {
     const epoch = this.generation
+    const connection = ++this.liveGeneration
+    clearTimeout(this.expiry)
     this.update({ status: 'starting', live: 'connecting' })
-    await (this.starting = this.start(epoch))
-    if (epoch !== this.generation || !this.client || !this.record)
+    if (!this.client) await (this.starting = this.start(epoch))
+    if (
+      epoch !== this.generation ||
+      connection !== this.liveGeneration ||
+      !this.client ||
+      !this.record
+    )
       throw new Error('Live was cancelled.')
+    if (this.record.pending)
+      throw new Error('Review the unconfirmed message in Earlier before using voice.')
     const account = await this.client.request('account/read', { refreshToken: false })
     if (!isObject(account.account) || account.account.type !== 'chatgpt')
       throw new Error('Live requires the existing ChatGPT sign-in. No API-key fallback is enabled.')
-    if (epoch !== this.generation) throw new Error('Live was cancelled.')
-    this.live = new CodexLive(
+    if (epoch !== this.generation || connection !== this.liveGeneration)
+      throw new Error('Live was cancelled.')
+    const live = new CodexLive(
       this.client,
       this.record.providerId,
       sessionId,
@@ -296,14 +307,34 @@ export class CodexAgentRun {
         if (complete) this.saveLiveItem(item)
       },
       (message) => {
+        if (connection !== this.liveGeneration) return
         this.update({ live: null, ...(message ? { error: message } : {}) })
         this.options.onLive?.({ sessionId, type: message ? 'error' : 'closed', message })
       },
     )
-    const answer = await this.live.start(sdp)
-    if (epoch !== this.generation) throw new Error('Live was cancelled.')
+    this.live = live
+    const answer = await live.start(sdp)
+    if (epoch !== this.generation || connection !== this.liveGeneration || this.live !== live)
+      throw new Error('Live was cancelled.')
     this.update({ status: 'ready', live: 'ready' })
     return answer
+  }
+
+  /** Releasing the microphone detaches voice, leaving the conversation and its work intact. */
+  async stopLive(): Promise<void> {
+    this.liveGeneration++
+    const live = this.live
+    this.live = null
+    this.update({
+      live: null,
+      ...(this.state.status === 'starting' && !this.turn
+        ? { status: this.record ? 'ready' : 'idle' }
+        : {}),
+    })
+    await live?.stop()
+    const minutes = this.options.lifetimeMinutes()
+    if (!this.state.ended && this.state.status === 'ready' && minutes > 0)
+      this.expiry = setTimeout(() => void this.close(), minutes * 60_000)
   }
 
   async openLive(text: string): Promise<AgentResult> {

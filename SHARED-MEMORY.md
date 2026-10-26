@@ -1,13 +1,34 @@
-# Shared memory
+# Shared Spaces: collaboration and handoffs
 
-Threadlight owns a local shared-memory store. It does not edit Codex's generated
-memory, Claude's auto-memory, provider databases or their global configuration.
-Spaces are explicit sharing boundaries; folders organise material within a space.
-The Settings entry is provisional and does not require a larger window.
+Threadlight connects work across Claude and Codex through explicit shared context,
+decisions, assignments and handoffs. Provider-native memory remains with each provider.
+Spaces are sharing boundaries; folders organise material that collaborators need.
+The `memory_*` tool names, plugin identifiers and existing storage paths are retained
+for compatibility. Hooks report activity; scoped tools and supported relays carry
+context and assignments. Discussion entries do not imply live delivery to another chat.
+
+The single Shared Spaces header has one Back button. Handoffs, Ideas and Brainstorm
+stay one tab away. Ideas are saved locally without inference; moving one into
+Brainstorm also makes no model call. Sending a message starts or resumes that idea's
+own Agent conversation using the provider/model configured in Agent settings.
+The ordinary Agent conversation is separate. Only one brainstorm turn runs at a time.
+Existing discussions resume their original model, even after settings change.
+
+Review the mini plan, add assignments and choose exact Claude/Codex chats and a shared
+output folder. Preparation pins the plan and saves unsent tasks atomically. Retries
+reuse operation IDs. Review and authorise individual tasks in Handoffs; dependency
+ordering is manual in this first version. Prepared plans are frozen. Capture a new
+idea for a revised plan. Automatic decomposition, workflow profiles, new worker creation
+and automatic dependent handoffs remain in the coordination roadmap.
+
+Ideas and plan choices live in `shared-spaces/ideas.sqlite`; brainstorm conversation
+metadata lives in `shared-spaces/conversations.json`. Handoffs retain the existing
+`shared-memory/memory.sqlite` store. Export/restore in Handoffs covers shared material
+and assignments, not the Ideas board or provider conversation histories.
 
 ## Human workflow
 
-1. Settings → Shared memory → Open → Create memory space.
+1. Settings → Shared Spaces → Open → Handoffs → Create shared space.
 2. Create folders with descriptions. Choose Map or List; open a folder to publish a
    note, decision draft, scratchpad, reference or managed attachment.
 3. Open an item to inspect versions, author/source, discuss it, accept a version or
@@ -55,7 +76,7 @@ the same shared-memory skill and MCP initialization guidance. Hook trust is sepa
 from memory access; the existing activity/held-card hooks are unchanged.
 
 Ask: **“Connect this chat to Threadlight shared memory, then read its briefing.”**
-The chat returns a verification code. In Threadlight, open Shared memory, select or
+The chat returns a verification code. In Threadlight, open Shared Spaces → Handoffs, select or
 create a space, open Agent access, match the code and choose Review connection.
 Approve only the intended folder subtree and contribution permissions. Tell the chat
 it is approved; it checks that connection ID once and reads the scoped briefing.

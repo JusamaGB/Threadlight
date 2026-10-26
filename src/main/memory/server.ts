@@ -77,7 +77,7 @@ export class MemoryServer {
             result = {
               protocolVersion: '2025-06-18',
               capabilities: { tools: {} },
-              serverInfo: { name: 'Threadlight shared memory', version: '1.0.0' },
+              serverInfo: { name: 'Threadlight Shared Spaces', version: '1.0.0' },
               instructions: memoryInstructions,
             }
           else if (msg.method === 'ping') result = {}

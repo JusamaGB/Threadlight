@@ -32,6 +32,7 @@ export async function setupMemory(page, MemoryStore, MemoryConnections) {
     }
   })
   return {
+    directory,
     store,
     connections,
     execute,
@@ -47,8 +48,8 @@ export async function setupMemory(page, MemoryStore, MemoryConnections) {
 export async function checkMemory(page, proof, capture) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'Open', exact: true }).click()
-  const view = page.getByRole('region', { name: 'Shared memory' })
-  await view.getByRole('button', { name: 'Create memory space', exact: true }).click()
+  const view = page.getByRole('region', { name: 'Handoffs', exact: true })
+  await view.getByRole('button', { name: 'Create shared space', exact: true }).click()
   await view.getByLabel('Title', { exact: true }).fill('Threadlight design')
   await view
     .getByLabel('Description', { exact: true })
@@ -100,14 +101,14 @@ export async function checkMemory(page, proof, capture) {
   await view.getByRole('button', { name: 'Revoke', exact: true }).click()
   await view.getByRole('button', { name: 'Confirm', exact: true }).click()
   assert.throws(() => proof.connections.authenticate(pairing.id, pairing.secret))
-  await view.getByRole('button', { name: 'Back in shared memory' }).click()
+  await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
   await view.getByRole('button', { name: /Research 0 items/ }).click()
   await view.getByRole('button', { name: 'New note', exact: true }).click()
   await view.getByLabel('Title', { exact: true }).fill('Shared context contract')
   await view
     .getByLabel('Text', { exact: true })
     .fill('The map groups material by purpose.\nEach revision retains its source and author.')
-  await view.getByRole('button', { name: 'Back in shared memory' }).click()
+  await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
   await view.getByRole('button', { name: 'New note', exact: true }).click()
   assert.equal(
     await view.getByLabel('Title', { exact: true }).inputValue(),
@@ -118,7 +119,7 @@ export async function checkMemory(page, proof, capture) {
   await view.getByText('The map groups material by purpose.', { exact: false }).waitFor()
   await view.getByLabel('Discuss this item').fill('Keep this context with this item.')
   await capture('memory-item')
-  await view.getByRole('button', { name: 'Back in shared memory' }).click()
+  await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
   await view.getByRole('button', { name: /Shared context contract note/ }).click()
   assert.equal(
     await view.getByLabel('Discuss this item').inputValue(),
@@ -139,7 +140,7 @@ export async function checkMemory(page, proof, capture) {
     await view.getByLabel('Text', { exact: true }).inputValue(),
     'Human revision in progress',
   )
-  await view.getByRole('button', { name: 'Back in shared memory' }).click()
+  await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
   await view.getByRole('button', { name: 'Request review' }).click()
   await view.getByLabel('Title', { exact: true }).fill('Review the shared-memory contract')
   await view
@@ -158,8 +159,8 @@ export async function checkMemory(page, proof, capture) {
   )
   assert.ok((await page.locator('#root > div').boundingBox()).height <= 362)
   await capture('memory-short-panel')
-  await view.getByRole('button', { name: 'Back in shared memory' }).click()
-  await view.getByRole('button', { name: 'Back in shared memory' }).click()
+  await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
+  await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
   const folder = proof.store.snapshot().folders.find((f) => f.title === 'Research')
   proof.store.importAttachment(
     folder.id,
@@ -178,7 +179,8 @@ export async function checkMemory(page, proof, capture) {
     (await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'send'))).length,
     0,
   )
-  await page.getByRole('button', { name: 'Close shared memory' }).click()
+  for (let n = 0; n < 4; n++)
+    await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   console.log(
     'PASS: real memory store through compact UI; folders, map, notes, persistent drafts, stale-edit rejection, tasks, short panel and no provider sends.',

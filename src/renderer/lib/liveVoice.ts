@@ -1,4 +1,6 @@
 import type { LiveVoicePhase } from '../../shared/liveVoice'
+import { SILENT_AUDIO, type AudioEnergy } from '../../shared/motion'
+import { AudioEnergyMeter } from './audioEnergy'
 
 /** Uses the open mic's processed audio track: silence until the initial text is committed. */
 export class LiveVoiceConnection {
@@ -19,11 +21,13 @@ export class LiveVoiceConnection {
   private rejectConnection?: (error: Error) => void
   private timer?: ReturnType<typeof setTimeout>
   private replyTimer?: ReturnType<typeof setTimeout>
+  private meter?: AudioEnergyMeter
 
   constructor(
     stream: MediaStream,
     private sampleRate: number,
     private onState: (phase: LiveVoicePhase, error?: string) => void,
+    private audioContext?: AudioContext,
   ) {
     this.peer.addTrack(stream.getAudioTracks()[0]!, stream)
     this.channel = this.peer.createDataChannel('oai-events')
@@ -62,7 +66,22 @@ export class LiveVoiceConnection {
     this.audio.autoplay = true
     this.audio.muted = true
     this.peer.ontrack = (event) => {
-      this.audio.srcObject = event.streams[0] ?? new MediaStream([event.track])
+      if (this.cancelled) return
+      const remote = event.streams[0] ?? new MediaStream([event.track])
+      this.audio.srcObject = remote
+      // Analysis is a silent branch. The existing audio element remains the only playback path.
+      this.meter?.dispose()
+      this.meter = undefined
+      if (this.audioContext) {
+        try {
+          this.meter = new AudioEnergyMeter(
+            this.audioContext.createMediaStreamSource(remote),
+            this.audioContext,
+          )
+        } catch {
+          /* Visual telemetry must never interrupt an otherwise working voice call. */
+        }
+      }
       void this.audio
         .play()
         .catch(() => this.fail('Audio playback was blocked. Reopen the mic to try again.'))
@@ -81,6 +100,16 @@ export class LiveVoiceConnection {
   }
   get active(): boolean {
     return this.handedOver && !this.cancelled
+  }
+  get outputEnergy(): AudioEnergy {
+    if (
+      this.cancelled ||
+      this.audio.paused ||
+      this.audio.muted ||
+      this.audioContext?.state !== 'running'
+    )
+      return SILENT_AUDIO
+    return this.meter?.read() ?? SILENT_AUDIO
   }
   setPaused(paused: boolean): void {
     this.audio.muted = paused || !this.handedOver || this.opening
@@ -193,6 +222,8 @@ export class LiveVoiceConnection {
     this.unsubscribe()
     this.audio.pause()
     this.audio.srcObject = null
+    this.meter?.dispose()
+    this.meter = undefined
     this.peer.close()
     this.backlog = []
     window.threadlight.agentLiveStop(this.id)

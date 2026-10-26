@@ -7,6 +7,8 @@ import { MicSessionRouter, type MicRoute, type MicSessionMode } from '../../shar
 import type { Candidate } from '../../shared/match'
 import { LiveVoiceConnection } from '../lib/liveVoice'
 import type { LiveVoicePhase } from '../../shared/liveVoice'
+import { SILENT_AUDIO, type AudioEnergy } from '../../shared/motion'
+import { AudioEnergyMeter } from '../lib/audioEnergy'
 
 /** 32 ms frames at 16 kHz: fine enough for the level rules, light on the main thread. */
 const FRAME = 512
@@ -18,6 +20,8 @@ interface OpenMicOptions {
   enabled: boolean
   /** Push-to-talk is recording: the open mic ignores the room until it is done. */
   paused: boolean
+  /** Claude uses local sentence transcription; native conversational audio is Codex-only. */
+  nativeLive?: boolean
   /** Current list titles; refreshed without resetting the microphone session. */
   threads: Candidate[]
   /** Each finished sentence: words joined across short pauses, after a long enough one. */
@@ -38,6 +42,7 @@ interface OpenMicOptions {
 export function useOpenMic({
   enabled,
   paused,
+  nativeLive = true,
   threads,
   onSentence,
   onConversation,
@@ -50,6 +55,8 @@ export function useOpenMic({
   const [openingDraft, setOpeningDraft] = useState('')
   // A visual-only level shared with the divider; audio callbacks need not rerender the panel.
   const level = useRef(0)
+  const energy = useRef<AudioEnergy>(SILENT_AUDIO)
+  const outputEnergy = useRef<AudioEnergy>(SILENT_AUDIO)
   const latest = useRef({ paused, threads, onSentence, onConversation, onStop })
   useEffect(() => {
     latest.current = { paused, threads, onSentence, onConversation, onStop }
@@ -88,6 +95,7 @@ export function useOpenMic({
       // At Whisper's own rate, so an utterance goes to it as it is.
       const context = new AudioContext({ sampleRate: STT_SAMPLE_RATE })
       const source = context.createMediaStreamSource(stream)
+      const meter = new AudioEnergyMeter(source, context)
       const processor = context.createScriptProcessor(FRAME, 1, 1)
       const outgoing = context.createMediaStreamDestination()
       const mute = context.createGain()
@@ -113,21 +121,26 @@ export function useOpenMic({
       setLiveError(null)
       setOpeningDraft('')
       const prepare = () => {
-        if (live || failed || stopped) return
+        if (!nativeLive || live || failed || stopped) return
         // Preparation is provisional. Only the final opening sentence latches its mode.
         setMode('agent')
         latest.current.onConversation?.()
         try {
-          live = new LiveVoiceConnection(outgoing.stream, context.sampleRate, (phase, error) => {
-            if (stopped) return
-            setLivePhase(phase)
-            if (phase === 'off') latest.current.onStop?.()
-            if (error) {
-              failed = true
-              setLiveError(error)
-              if (committed) latest.current.onStop?.()
-            }
-          })
+          live = new LiveVoiceConnection(
+            outgoing.stream,
+            context.sampleRate,
+            (phase, error) => {
+              if (stopped) return
+              setLivePhase(phase)
+              if (phase === 'off') latest.current.onStop?.()
+              if (error) {
+                failed = true
+                setLiveError(error)
+                if (committed) latest.current.onStop?.()
+              }
+            },
+            context,
+          )
           void live.start()
         } catch (error) {
           failed = true
@@ -144,6 +157,8 @@ export function useOpenMic({
         live?.setPaused(latest.current.paused)
         if (latest.current.paused) {
           level.current = 0
+          energy.current = SILENT_AUDIO
+          outputEnergy.current = SILENT_AUDIO
           segmenter.drop()
           sentences.reset()
           generation += 1
@@ -154,6 +169,8 @@ export function useOpenMic({
         let sum = 0
         for (const sample of frame) sum += sample * sample
         level.current = Math.min(1, Math.sqrt(sum / frame.length) * 8)
+        energy.current = meter.read()
+        outputEnergy.current = live?.outputEnergy ?? SILENT_AUDIO
         live?.process(frame, output)
         if (committed) {
           if (!failed) show(level.current > 0.1 ? 'hearing' : 'listening')
@@ -239,7 +256,7 @@ export function useOpenMic({
         if (sentence !== null && !stopped) {
           const route = routing.route(sentence, latest.current.threads)
           setMode(routing.mode)
-          if (route.kind === 'agent') {
+          if (route.kind === 'agent' && nativeLive) {
             opening.push(route.text)
             if (opening.join(' ').length > 32_000) {
               failed = true
@@ -251,6 +268,7 @@ export function useOpenMic({
             setOpeningDraft(opening.join(' '))
             prepare()
           } else {
+            if (route.kind === 'agent') latest.current.onConversation?.()
             if (live) {
               live.stop()
               live = null
@@ -274,6 +292,9 @@ export function useOpenMic({
         live?.stop()
         outgoing.stream.getTracks().forEach((track) => track.stop())
         level.current = 0
+        energy.current = SILENT_AUDIO
+        outputEnergy.current = SILENT_AUDIO
+        meter.dispose()
         processor.onaudioprocess = null
         stream.getTracks().forEach((track) => track.stop()) // the mic light goes off here
         void context.close()
@@ -295,14 +316,18 @@ export function useOpenMic({
     return () => {
       stopped = true
       level.current = 0
+      energy.current = SILENT_AUDIO
+      outputEnergy.current = SILENT_AUDIO
       release()
     }
-  }, [enabled])
+  }, [enabled, nativeLive])
 
   return {
     state: enabled ? state : 'off',
     mode: enabled ? mode : 'undecided',
     level,
+    energy,
+    outputEnergy,
     livePhase: enabled ? livePhase : 'off',
     liveError,
     openingDraft,

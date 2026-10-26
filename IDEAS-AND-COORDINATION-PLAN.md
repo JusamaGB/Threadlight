@@ -1,8 +1,28 @@
 # Threadlight Ideas and Coordination Plan
 
-Status: proposed product and implementation plan. Implementation has not started.
+Status: roadmap with an initial compact Shared Spaces implementation. Later milestones remain proposed.
 
-Date: 25 October 2026.
+Updated: 26 October 2026.
+
+## Initial implemented slice
+
+The approved compact design uses one Shared Spaces header, one Back button, and
+Handoffs, Ideas and Brainstorm tabs. Shared Spaces is the collaboration layer between
+providers, not another personal memory system. Existing shared-context stores,
+enrollment permissions and delivery boundaries remain in place.
+
+The first slice provides durable typed ideas, explicit movement into Brainstorm,
+per-idea Agent conversations separate from the general Agent, an editable mini plan,
+and user-chosen task/provider/existing-chat assignments. Preparation atomically saves
+a pinned plan and unsent assignments in Handoffs. The user reviews and authorises
+each task using the existing transport. Prepared plans remain frozen; dependencies
+are sequenced manually. No new provider chat is created by preparing a plan.
+
+This is a subset of M1–M3, reusing the existing assignment system. The larger workspace,
+dictation capture, workflow profiles, automatic decomposition, model-specific worker
+creation, dependency scheduling, PR relationships and automatic progression below
+remain future work. Brainstorm and dispatch paths were tested with synthetic provider
+boundaries; this slice does not expand claims about live desktop delivery support.
 
 ## 1. Product purpose
 

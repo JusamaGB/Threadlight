@@ -97,6 +97,21 @@ export class MemoryStore {
   databaseForBackup() {
     return this.db
   }
+  /** Prepare a whole reviewed split atomically; no task is authorised by this operation. */
+  prepareHandoff(plan: MemoryInput, assignments: MemoryInput[]): string[] {
+    return this.transaction(() => {
+      const item = this.execute(plan) as MemoryItem
+      return assignments.map(
+        (input) =>
+          (
+            this.execute({
+              ...input,
+              inputs: [{ itemId: item.id, revision: item.revision }],
+            }) as MemoryTask
+          ).id,
+      )
+    })
+  }
   restoreFrom(file: string) {
     if (
       this.tasks().some(

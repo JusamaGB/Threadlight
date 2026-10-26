@@ -24,3 +24,10 @@ Opt-in authenticated tests are documented in `AGENT-CODEX-VALIDATION.md`.
 Recording checks generate an audio stream in the browser and replace `getUserMedia`;
 they never access a microphone or speakers. They verify full-width changing waveform
 pixels, reduced-motion behaviour, preserved drafts, transcription and stopped tracks.
+
+`node test/ui/motion.smoke.mjs` focuses on the electric voice surface. It uses the same
+Playwright and screenshot environment variables, exercises the built panel and dot,
+and establishes a local synthetic WebRTC call using the production voice connection.
+It checks measured microphone and playback levels, muted and stopped audio, caption
+layout, reduced motion, WebGL context loss, and the Canvas fallback. Chromium is
+launched with audio output muted. It requires no microphone, account, or network service.

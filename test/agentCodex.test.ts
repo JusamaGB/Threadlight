@@ -758,6 +758,7 @@ describe('native Live voice', () => {
       onRateLimit: () => {},
     })
     await service.send('Existing work')
+    const originalId = service.current.conversationId
     expect((await service.startLive(voiceId, offer)).ok).toBe(false)
     expect(fake.calls.some((c) => c.method === 'thread/realtime/start')).toBe(false)
     fake.complete()
@@ -766,22 +767,64 @@ describe('native Live voice', () => {
     await service.stopLive('older-session-111111')
     expect(service.current.live).toBe('ready')
     expect((await service.openLive('older-session-111111', 'Do not send')).ok).toBe(false)
-    expect(await service.openLive(voiceId, 'New conversation')).toEqual({ ok: true })
+    expect(service.current.conversationId).toBe(originalId)
+    expect(fake.calls.filter((c) => c.method === 'thread/start')).toHaveLength(1)
+    expect(await service.openLive(voiceId, 'Voice follow-up')).toEqual({ ok: true })
     await service.stopLive(voiceId)
-    expect(service.current.ended).toBe(true)
+    expect(service.current.ended).toBe(false)
+    expect(service.current.status).toBe('working')
     expect(service.current.live).toBeNull()
-    const past = (await service.history()).find((r) => r.title === 'New conversation')!
+    expect(fake.calls.some((c) => c.method === 'thread/archive')).toBe(false)
+    const past = (await service.history()).find((r) => r.id === originalId)!
+    const opening = service.current.items.find((i) => i.text === 'Voice follow-up')!
     fake.history = [
       {
         item: {
           type: 'userMessage',
-          id: service.current.items[0]!.id,
-          content: [{ type: 'text', text: 'New conversation' }],
+          id: opening.id,
+          content: [{ type: 'text', text: 'Voice follow-up' }],
         },
       },
     ]
     expect(
-      (await service.read(past.id)).items.filter((i) => i.text === 'New conversation'),
+      (await service.read(past.id)).items.filter((i) => i.text === 'Voice follow-up'),
     ).toHaveLength(1)
+    fake.complete()
+    await expect.poll(() => service.current.status).toBe('ready')
+    expect(await service.startLive('next-session-111111', offer)).toEqual({ ok: true, sdp: answer })
+    await service.stopLive(voiceId)
+    expect(service.current.live).toBe('ready')
+    await service.stopLive('next-session-111111')
+    expect(await service.send('Typed follow-up')).toEqual({ ok: true })
+    expect(service.current.conversationId).toBe(originalId)
+    await service.close()
+    expect(fake.calls.filter((c) => c.method === 'thread/archive')).toHaveLength(1)
+  })
+
+  it('cancels pending voice setup without ending or recreating the Agent', async () => {
+    const { run, fake } = await fixture()
+    connect(fake)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const handler = fake.handler!
+    fake.handler = async (method, params) => {
+      if (method === 'account/read') await gate
+      return handler(method, params)
+    }
+    const connecting = run.startLive(voiceId, offer)
+    await expect.poll(() => fake.calls.some((c) => c.method === 'account/read')).toBe(true)
+    const id = run.current.conversationId
+    await run.stopLive()
+    release()
+    await expect(connecting).rejects.toThrow('cancelled')
+    expect(run.current.ended).toBe(false)
+    expect(run.current.live).toBeNull()
+    expect(fake.calls.some((c) => c.method === 'thread/realtime/start')).toBe(false)
+    expect(await run.send('Continue after closing the microphone')).toEqual({ ok: true })
+    expect(run.current.conversationId).toBe(id)
+    expect(fake.calls.filter((c) => c.method === 'thread/start')).toHaveLength(1)
+    await run.close()
   })
 })

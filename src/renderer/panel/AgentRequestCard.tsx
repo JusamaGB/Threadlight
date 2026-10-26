@@ -1,8 +1,16 @@
 import { useState } from 'react'
-import type { AgentRequest, AgentResponse } from '../../shared/agent'
+import type { AgentRequest, AgentResponse, AgentResult } from '../../shared/agent'
 import styles from './Panel.module.css'
 
-export function AgentRequestCard({ request, count }: { request: AgentRequest; count: number }) {
+export function AgentRequestCard({
+  request,
+  count,
+  onRespond,
+}: {
+  request: AgentRequest
+  count: number
+  onRespond?: (id: string, response: AgentResponse) => Promise<AgentResult>
+}) {
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -10,7 +18,7 @@ export function AgentRequestCard({ request, count }: { request: AgentRequest; co
     if (sending) return
     setSending(true)
     try {
-      const result = await window.threadlight.agentRespond(request.id, response)
+      const result = await (onRespond ?? window.threadlight.agentRespond)(request.id, response)
       if (!result.ok) setError(result.reason)
     } catch {
       setError('Could not submit this response. Check the current request before retrying.')

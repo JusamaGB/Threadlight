@@ -16,7 +16,9 @@ import type { Settings, SettingsPatch } from './settings'
 import type { SttStatus } from './stt'
 import type { Usage } from './usage'
 import type { MemoryInput, MemoryReply, MemorySnapshot } from './memory'
+import type { SpacesInput, SpacesReply, SpacesSnapshot } from './spaces'
 import type { LiveVoiceEvent, LiveVoiceResult } from './liveVoice'
+import type { MotionSnapshot } from './motion'
 import type { DraftResult } from './messaging'
 import type {
   Changes,
@@ -29,6 +31,9 @@ import type {
 } from './types'
 
 export const IPC = {
+  spacesRequest: 'spaces:request',
+  spacesChanged: 'spaces:changed',
+  spacesRespond: 'spaces:respond',
   memoryRequest: 'memory:request',
   memoryChanged: 'memory:changed',
   memoryImport: 'memory:import',
@@ -53,6 +58,8 @@ export const IPC = {
   openMicLive: 'talk:open-mic-live',
   openMicLevel: 'talk:open-mic-level',
   openMicIndicator: 'talk:open-mic-indicator',
+  motion: 'motion:changed',
+  getMotion: 'motion:get',
   stopOpenMic: 'talk:stop-open-mic',
   openPanelQuietly: 'panel:open-quietly',
   hotkeyProblem: 'hotkey:problem',
@@ -121,6 +128,12 @@ export type TalkState = 'idle' | 'listening' | 'transcribing'
 
 /** What the preload script exposes on `window.threadlight`. */
 export interface ThreadlightApi {
+  getMotion(): Promise<MotionSnapshot>
+  setMotion(snapshot: MotionSnapshot): void
+  onMotion(listener: (snapshot: MotionSnapshot) => void): () => void
+  spacesRequest(input: SpacesInput): Promise<SpacesReply>
+  onSpaces(listener: (snapshot: SpacesSnapshot) => void): () => void
+  spacesRespond(ideaId: string, requestId: string, response: AgentResponse): Promise<AgentResult>
   memoryRequest(input: MemoryInput): Promise<MemoryReply>
   onMemory(listener: (snapshot: MemorySnapshot) => void): () => void
   memoryImport(folderId: string): Promise<MemoryReply>

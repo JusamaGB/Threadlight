@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import type { TalkState } from '../shared/ipc'
+import { IDLE_MOTION, type MotionSnapshot } from '../shared/motion'
 import { FloatingDot } from './dot/Dot'
 import { useSessions } from './hooks/useSessions'
 import { useSettings } from './hooks/useSettings'
@@ -18,6 +19,22 @@ function DotView() {
   useEffect(() => window.threadlight.onTalkState(setTalk), [])
   const [openMic, setOpenMic] = useState(false)
   const [micLevel, setMicLevel] = useState(0)
+  const [motion, setMotion] = useState<MotionSnapshot>(IDLE_MOTION)
+  useEffect(() => {
+    let active = true
+    let updated = false
+    const off = window.threadlight.onMotion((value) => {
+      updated = true
+      setMotion(value)
+    })
+    void window.threadlight.getMotion().then((value) => {
+      if (active && !updated) setMotion(value)
+    })
+    return () => {
+      active = false
+      off()
+    }
+  }, [])
   useEffect(() => {
     let active = true
     let updated = false
@@ -46,6 +63,7 @@ function DotView() {
       openOn={settings?.openOn ?? 'hover'}
       openMic={openMic}
       micLevel={micLevel}
+      motion={motion}
     />
   )
 }

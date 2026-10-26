@@ -1,5 +1,6 @@
 /* global window, document, AudioContext */
 import assert from 'node:assert/strict'
+import { checkVoiceTarget } from './voice-target.smoke.mjs'
 
 /** Uses the provider smoke test's generated audio stream; never opens a real microphone. */
 export async function checkVoiceRouting(page) {
@@ -71,6 +72,9 @@ export async function checkVoiceRouting(page) {
       delete window.proof.finishTranscript
       window.proof.setAudioLevel(volume)
     }, level)
+    // Start the utterance duration after the real audio callback has detected the tone.
+    // Browser/GPU startup can otherwise consume most of a short synthetic utterance.
+    await page.waitForFunction(() => document.documentElement.dataset.openMic === 'hearing')
     await page.waitForTimeout(350)
     await page.evaluate(() => window.proof.setAudioLevel(0))
     await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
@@ -179,6 +183,8 @@ export async function checkVoiceRouting(page) {
   assert.equal((await agentSends()).length, before)
   await close()
   await page.evaluate(() => window.threadlight.updateSettings({ enabledProviders: ['codex'] }))
+
+  await page.evaluate(() => window.threadlight.updateSettings({ agentProvider: 'codex' }))
 
   // A fresh mic session selects native Live and never uses the text-Agent fallback.
   await open()
@@ -372,6 +378,10 @@ export async function checkVoiceRouting(page) {
   await page.evaluate(() => window.proof.finishTranscript('Do not send this'))
   await page.waitForTimeout(150)
   assert.equal((await agentSends()).length, count)
+  await page.evaluate(() => {
+    // Keep the synthetic peer for target/activation coverage below.
+  })
+  await checkVoiceTarget(page)
   await page.evaluate(() => {
     window.RTCPeerConnection = window.proof.nativePeer
   })

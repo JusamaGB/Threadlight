@@ -19,6 +19,13 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: ThreadlightApi = {
+  getMotion: () => ipcRenderer.invoke(IPC.getMotion),
+  setMotion: (snapshot) => ipcRenderer.send(IPC.motion, snapshot),
+  onMotion: (listener) => subscribe(IPC.motion, listener),
+  spacesRequest: (input) => ipcRenderer.invoke(IPC.spacesRequest, input),
+  onSpaces: (listener) => subscribe(IPC.spacesChanged, listener),
+  spacesRespond: (ideaId, requestId, response) =>
+    ipcRenderer.invoke(IPC.spacesRespond, ideaId, requestId, response),
   memoryRequest: (input) => ipcRenderer.invoke(IPC.memoryRequest, input),
   onMemory: (listener) => subscribe(IPC.memoryChanged, listener),
   memoryImport: (folderId) => ipcRenderer.invoke(IPC.memoryImport, folderId),

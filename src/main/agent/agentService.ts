@@ -66,6 +66,7 @@ export class AgentService {
   private past: string
   private claudeWrites: Promise<void> = Promise.resolve()
   private voiceSession: string | null = null
+  private voiceRetirement: Promise<void> = Promise.resolve()
   constructor(private options: Options) {
     this.store = new AgentStore(options.index)
     this.past = transcriptsFolder(options.claudeProjects, options.workspace)
@@ -92,22 +93,22 @@ export class AgentService {
   async startLive(id: unknown, sdp: unknown): Promise<LiveVoiceResult> {
     if (!validVoiceSession(id) || !validVoiceOffer(sdp))
       return { ok: false, reason: 'Invalid Live connection.' }
-    if (this.options.settings().agentProvider !== 'codex')
+    if (this.current.provider !== 'codex')
       return { ok: false, reason: 'Select Codex in Agent settings to use Live voice.' }
     if (this.locked || agentBusy(this.state) || this.voiceSession)
       return { ok: false, reason: 'Finish or stop the current Agent turn before starting Live.' }
     this.locked = true
-    const retired = this.close()
+    const retired = this.run && this.state.ended ? this.close() : this.retirement
     this.voiceSession = id
     const operation = this.operation
     try {
-      await retired
+      await Promise.all([retired, this.voiceRetirement])
       if (operation !== this.operation || this.voiceSession !== id)
         throw new Error('Live was cancelled.')
       await this.store.load()
-      const next = await this.create()
+      const next = this.run ?? (await this.create())
       if (operation !== this.operation || this.voiceSession !== id) {
-        await next.close()
+        if (this.run !== next) await next.close()
         throw new Error('Live was cancelled.')
       }
       if (!(next instanceof CodexAgentRun)) throw new Error('Live requires the Codex Agent.')
@@ -117,7 +118,7 @@ export class AgentService {
         throw new Error('Live was cancelled.')
       return { ok: true, sdp: answer }
     } catch (error) {
-      if (this.voiceSession === id) await this.close()
+      if (this.voiceSession === id) await this.stopLive(id)
       return { ok: false, reason: (error as Error).message }
     } finally {
       this.locked = false
@@ -133,8 +134,11 @@ export class AgentService {
   }
 
   async stopLive(id?: unknown): Promise<void> {
-    if (this.voiceSession && (id === undefined || id === this.voiceSession)) await this.close()
-    else if (id === undefined) await this.retirement
+    if (this.voiceSession && (id === undefined || id === this.voiceSession)) {
+      this.voiceSession = null
+      if (this.run instanceof CodexAgentRun) this.voiceRetirement = this.run.stopLive()
+      await this.voiceRetirement
+    } else if (id === undefined) await this.voiceRetirement
   }
 
   async send(value: unknown): Promise<AgentResult> {
@@ -146,7 +150,7 @@ export class AgentService {
     const operation = this.operation
     try {
       await this.store.load()
-      await this.retirement
+      await Promise.all([this.retirement, this.voiceRetirement])
       if (!this.run || this.state.ended) {
         await this.run?.close()
         this.run = null

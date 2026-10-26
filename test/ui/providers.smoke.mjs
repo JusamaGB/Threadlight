@@ -9,6 +9,7 @@ import { join, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkVoiceRouting } from './voice-routing.smoke.mjs'
 import { checkMicPill } from './mic-pill.smoke.mjs'
+import { readMotionFrame } from './motion-pixels.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
 import { checkPanelHeight } from './panel-height.smoke.mjs'
 import { checkTips } from './tips.smoke.mjs'
@@ -16,6 +17,7 @@ import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar } from './toolbar.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
+import { setupSpaces, checkSpaces } from './spaces.smoke.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(import.meta.url)
@@ -148,8 +150,8 @@ const server = createServer((request, response) => {
   }
 })
 await new Promise((done) => server.listen(0, '127.0.0.1', done))
-let browser, memoryProof, testPage
-try {
+let browser, memoryProof, spacesProof, testPage
+checks: try {
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 460, height: 900 } })
   await page.clock.install()
@@ -159,6 +161,17 @@ try {
     require(join(root, 'src/main/memory/connections.ts')).MemoryConnections,
   )
   testPage = page
+  spacesProof = await setupSpaces(
+    page,
+    {
+      SpacesStore: require(join(root, 'src/main/spaces/store.ts')).SpacesStore,
+      SpacesService: require(join(root, 'src/main/spaces/service.ts')).SpacesService,
+    },
+    memoryProof.store,
+    memoryProof.directory,
+    chats,
+    () => settings,
+  )
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', (error) => {
@@ -215,6 +228,7 @@ try {
       window.threadlight = new Proxy(
         {
           memoryRequest: (input) => window.mockMemory(input),
+          spacesRequest: (input) => window.mockSpaces(input),
           getComposerDraft: async (id) => ({
             ok: true,
             draft: drafts.get(id) || { text: '', revision: 0, updatedAt: 0 },
@@ -241,6 +255,14 @@ try {
           getRelays: async () => [],
           getStt: async () => ({ state: 'missing' }),
           getOpenMicIndicator: async () => ({ live: false, level: 0 }),
+          setMotion: (value) => {
+            window.proof.motion = value
+          },
+          getMotion: async () => ({
+            mode: 'idle',
+            input: { level: 0, low: 0, mid: 0, high: 0 },
+            output: { level: 0, low: 0, mid: 0, high: 0 },
+          }),
           dotClick: () => window.proof.calls.push(['dotClick']),
           leavePanel: () => window.proof.calls.push(['leavePanel']),
           resizePanel: (height) => window.proof.resizes.push(height),
@@ -370,6 +392,9 @@ try {
   await checkPanelHeight(page)
   await checkToolbar(page)
   await checkMemory(page, memoryProof, capture)
+  await checkSpaces(page, spacesProof, memoryProof.store, capture)
+  assert.deepEqual(errors, [])
+  if (process.env.THREADLIGHT_UI_FOCUS === 'spaces') break checks
   await page.reload()
   await compose('Claude')
   await box.fill('Claude draft')
@@ -647,7 +672,14 @@ try {
     'true',
   )
   // The merged open-mic control coexists with both provider switches; saving it never starts it.
-  await page.getByRole('switch', { name: 'Open mic', exact: true }).click()
+  await page.getByLabel('Voice target', { exact: true }).selectOption('agent')
+  await page.getByText('Send countdown', { exact: true }).waitFor({ state: 'detached' })
+  assert.equal(await page.getByText('Send countdown', { exact: true }).count(), 0)
+  assert.equal(await page.getByRole('switch', { name: 'Open mic', exact: true }).count(), 0)
+  await page.getByLabel('Voice target', { exact: true }).selectOption('thread')
+  await page.getByText('Send countdown', { exact: true }).waitFor()
+  await page.getByLabel('Voice target', { exact: true }).selectOption('agent')
+  await page.getByText('Send countdown', { exact: true }).waitFor({ state: 'detached' })
   await capture('provider-toggles')
   await page.getByRole('radio', { name: 'All', exact: true }).click()
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
@@ -693,7 +725,7 @@ try {
   assert.equal(await page.locator('[class*="codexUsage"] [class*="usageFill"]').count(), 0)
   // Use a generated audio stream, never the PC's microphone, to exercise the actual recorder UI.
   await page.evaluate(async () => {
-    await window.threadlight.updateSettings({ openMic: false })
+    await window.threadlight.updateSettings({ voiceTarget: 'thread' })
     window.proof.emit('onStt', { state: 'ready' })
     window.proof.stoppedTracks = 0
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
@@ -759,30 +791,17 @@ try {
   const codexDivider = page.getByRole('status', { name: 'Codex microphone listening', exact: true })
   await codexDivider.waitFor()
   assert.equal(await codexDivider.getAttribute('data-provider'), 'codex')
-  await page.waitForFunction(() => {
-    const canvas = document.querySelector('canvas')
-    if (!canvas) return false
-    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
-    const peaks = []
-    for (let x = 0; x < canvas.width; x++) {
-      for (let y = 0; y < canvas.height / 2 - 3; y++) {
-        if (pixels[(y * canvas.width + x) * 4 + 3] > 100) {
-          peaks.push(x)
-          break
-        }
-      }
-    }
-    return peaks.length && Math.max(...peaks) - Math.min(...peaks) > canvas.width * 0.85
-  })
+  await page.waitForFunction(() => window.proof.motion?.input.level > 0.1)
+  await page.waitForTimeout(600) // finish the idle-to-ribbon morph before checking its full extent
+  const ribbonPixels = await readMotionFrame(waveform)
+  assert.ok(ribbonPixels.count > 0 && ribbonPixels.span > 0.85, JSON.stringify(ribbonPixels))
   const waveBounds = await waveform.boundingBox()
   const entryBounds = await waveform.locator('..').boundingBox()
   assert.ok(waveBounds.width > 220 && Math.abs(waveBounds.width - entryBounds.width) < 1)
   await capture('composer-listening')
-  const firstFrame = await waveform.evaluate((canvas) => canvas.toDataURL())
-  await page.waitForFunction(
-    (first) => document.querySelector('canvas')?.toDataURL() !== first,
-    firstFrame,
-  )
+  const firstFrame = await readMotionFrame(waveform)
+  await page.waitForTimeout(150)
+  assert.notEqual((await readMotionFrame(waveform)).hash, firstFrame.hash)
   await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).click()
   await waveform.waitFor({ state: 'detached' })
   await codexDivider.waitFor({ state: 'detached' })
@@ -802,23 +821,11 @@ try {
   })
   assert.equal(await page.locator('textarea').inputValue(), 'Existing draft')
   assert.equal(await page.locator('textarea').isVisible(), true)
-  const centreMask = () =>
-    waveform.evaluate((canvas) => {
-      const pixels = canvas
-        .getContext('2d')
-        .getImageData(0, Math.floor(canvas.height / 2), canvas.width, 1).data
-      return Array.from({ length: canvas.width }, (_, x) => pixels[x * 4 + 3] > 0).join(',')
-    })
-  await page.waitForFunction(() =>
-    document
-      .querySelector('canvas')
-      ?.getContext('2d')
-      .getImageData(0, 10, 250, 1)
-      .data.some((value) => value > 0),
-  )
-  const stationary = await centreMask()
+  await page.evaluate(() => window.proof.setAudioLevel(0))
+  await page.waitForTimeout(1800) // allow the measured envelope to settle before checking drift
+  const stationary = await readMotionFrame(waveform)
   await page.waitForTimeout(180) // several animation frames: reduced motion must not scroll sideways
-  assert.equal(await centreMask(), stationary)
+  assert.equal((await readMotionFrame(waveform)).hash, stationary.hash)
   assert.equal(
     await codexDivider.evaluate((node) =>
       Number(getComputedStyle(node).getPropertyValue('--spread')),
@@ -846,7 +853,7 @@ try {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.evaluate(async () => {
     window.proof.quietInput = true
-    await window.threadlight.updateSettings({ openMic: true })
+    await window.threadlight.updateSettings({ voiceTarget: 'agent' })
   })
   assert.equal(
     await page
@@ -899,7 +906,7 @@ try {
 
   // The hosted Agent is available independently of monitoring and uses a dynamic catalog.
   await page.evaluate(() =>
-    window.threadlight.updateSettings({ enabledProviders: [], openMic: false }),
+    window.threadlight.updateSettings({ enabledProviders: [], voiceTarget: 'thread' }),
   )
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByLabel('Agent provider', { exact: true }).selectOption('codex')
@@ -1011,6 +1018,7 @@ try {
   throw error
 } finally {
   await browser?.close()
+  spacesProof?.close()
   memoryProof?.close()
   await new Promise((done) => server.close(done))
 }

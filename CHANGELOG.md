@@ -8,6 +8,16 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Shared Spaces now has Handoffs, Ideas and Brainstorm tabs beneath one header and
+  one Back button. Ideas persist locally; per-idea Agent discussions lead to editable
+  mini plans and explicit Claude/Codex task choices. Preparation atomically saves a
+  pinned plan and unsent assignments for review through the existing delivery system.
+  Provider memory stays with its provider; shared material supports collaboration.
+
+- Electric voice ribbons follow microphone input and audible native Agent playback. The same
+  filaments form an amber Catherine wheel during work, with a stable caption area, compact
+  dot and microphone-pill versions, reduced motion, and a Canvas fallback when WebGL is unavailable.
+
 - Claude and Codex plugins now teach shared-memory workflows and bundle scoped MCP
   tools. Chats request a verification code; the compact Agent access view approves
   folder scope and permissions without copying credentials. Explicit per-chat
@@ -304,6 +314,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to one of the other kinds, without going into Settings.
 
 ### Changed
+
+- Voice target now selects Agent conversation or Thread message independently of Toggle /
+  Push to talk. Countdown and Hold apply to thread messages. Closing Agent voice releases
+  the microphone without ending its conversation; reopening continues the same Agent.
 
 - Agent settings combine provider and reasoning on one row and remove model search and refresh controls.
 

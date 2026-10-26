@@ -24,7 +24,7 @@ export async function startMemory(
     server = new MemoryServer(store)
     await server.start()
   } catch (error) {
-    issue = error instanceof Error ? error.message : 'Shared memory is unavailable.'
+    issue = error instanceof Error ? error.message : 'Shared Spaces is unavailable.'
   }
   const snapshot = () => {
     if (!store) throw new Error(issue)
@@ -51,7 +51,7 @@ export async function startMemory(
       return {
         ok: false,
         code: error instanceof MemoryError ? error.code : 'memory_error',
-        reason: error instanceof Error ? error.message : 'Shared memory operation failed.',
+        reason: error instanceof Error ? error.message : 'Shared Spaces operation failed.',
       }
     }
   }
@@ -78,7 +78,7 @@ export async function startMemory(
       const memory = ours(event.sender)
       if (typeof folderId !== 'string') throw new Error('Choose a destination folder.')
       const choice = await dialog.showOpenDialog(panel, {
-        title: 'Add to shared memory',
+        title: 'Add to shared context',
         properties: ['openFile'],
         filters: [
           {
@@ -100,7 +100,7 @@ export async function startMemory(
     safely(async () => {
       const memory = ours(event.sender)
       const choice = await dialog.showSaveDialog(panel, {
-        title: 'Export shared memory backup',
+        title: 'Export handoffs backup',
         defaultPath: 'threadlight-memory.sqlite',
         filters: [{ name: 'SQLite backup', extensions: ['sqlite'] }],
       })
@@ -113,14 +113,14 @@ export async function startMemory(
     safely(async () => {
       const memory = ours(event.sender)
       const choice = await dialog.showOpenDialog(panel, {
-        title: 'Restore shared memory',
+        title: 'Restore handoffs',
         properties: ['openFile'],
         filters: [{ name: 'Threadlight SQLite backup', extensions: ['sqlite'] }],
       })
       if (choice.canceled || !choice.filePaths[0]) return { cancelled: true }
       const confirmation = await dialog.showMessageBox(panel, {
         type: 'warning',
-        message: 'Replace shared memory with this backup?',
+        message: 'Replace shared context and handoffs with this backup?',
         detail:
           'A recovery backup will be saved first. Agent capabilities will be revoked and coordination paused. Native chats are unaffected.',
         buttons: ['Cancel', 'Restore'],
@@ -149,10 +149,13 @@ export async function startMemory(
       )
     }
   }, 1500)
-  return () => {
-    clearInterval(timer)
-    dispatcher?.close()
-    server?.close()
-    store?.close()
-  }
+  return Object.assign(
+    () => {
+      clearInterval(timer)
+      dispatcher?.close()
+      server?.close()
+      store?.close()
+    },
+    { store: () => store },
+  )
 }

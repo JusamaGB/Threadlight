@@ -23,10 +23,12 @@ import { useStt } from '../hooks/useStt'
 import { useUsage } from '../hooks/useUsage'
 import { useOpenMic } from '../hooks/useOpenMic'
 import { useVoice } from '../hooks/useVoice'
+import { useRecordedAgentVoice } from '../hooks/useRecordedAgentVoice'
+import { MicSessionRouter, type MicRoute } from '../../shared/voiceCommands'
 import { en } from '../i18n/en'
 import { windowLabel } from '../lib/format'
 import { SettingsView } from '../settings/SettingsView'
-import { MemoryView } from '../memory/MemoryView'
+import { SharedSpacesView, type SpacesNavigation } from '../spaces/SharedSpacesView'
 import { AgentView } from './AgentView'
 import { ChangesView } from './ChangesView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
@@ -37,6 +39,9 @@ import { CodexUsageBar, UsageBar } from './UsageBar'
 import { WorkspacePicker } from './WorkspacePicker'
 import { sameFolder, WorkspaceTree } from './WorkspaceTree'
 import { MicDivider } from './MicDivider'
+import { motionMode } from '../../shared/motion'
+import { useMotion } from '../hooks/useMotion'
+import { VoicePresence } from '../motion/VoicePresence'
 
 type View = 'active' | 'all'
 
@@ -94,6 +99,7 @@ export function Panel() {
   /** The settings list takes over the panel's card while this is true. */
   const [showSettings, setShowSettings] = useState(false)
   const [showMemory, setShowMemory] = useState(false)
+  const spacesNavigation = useRef<SpacesNavigation>(null)
   /** The agent conversation takes over the card, like settings. */
   const [showAgent, setShowAgent] = useState(false)
   // The agent keeps working while another page shows; its button then says so.
@@ -137,6 +143,7 @@ export function Panel() {
   const [room, setRoom] = useState(0)
   const [heard, setHeard] = useState<{ text: string; n: number } | null>(null)
   const [voiceError, setVoiceError] = useState<string | null>(null)
+  const [voiceCaption, setVoiceCaption] = useState('')
   const [cancelToken, setCancelToken] = useState(0)
   /**
    * How the panel behaves when the pointer leaves. Normal: it closes. Double-click the
@@ -148,14 +155,10 @@ export function Panel() {
   const card = useRef<HTMLDivElement>(null)
   const drag = useDotDrag()
 
-  /**
-   * The open mic is live: opened by the talk toggle (hotkey or mic button) when Settings has
-   * Open mic on with the Toggle talk mode, closed by the next press. Never opened by the
-   * setting alone.
-   */
+  /** Agent Toggle listens until the next press; selecting a target never opens the mic. */
   const [micLive, setMicLive] = useState(false)
   const [recordingProvider, setRecordingProvider] = useState<'claude' | 'codex'>('claude')
-  const openMicMode = settings?.openMic === true && settings.talkMode === 'toggle'
+  const openMicMode = settings?.voiceTarget === 'agent' && settings.talkMode === 'toggle'
   const openMicModeRef = useRef(openMicMode)
   useEffect(() => {
     openMicModeRef.current = openMicMode
@@ -179,6 +182,17 @@ export function Panel() {
 
   const limitHandler = useRef<() => void>(() => {})
   const voice = useVoice(useCallback(() => limitHandler.current(), []))
+  const {
+    send: sendAgentSpeech,
+    close: closeAgentSpeech,
+    error: recordedAgentError,
+    draft: recordedAgentDraft,
+  } = useRecordedAgentVoice(settings?.voiceTarget === 'agent')
+  const cancelVoice = voice.cancel
+  const recordingTarget = useRef<'agent' | 'thread'>('thread')
+  const recordingAgent = useRef<'claude' | 'codex'>('claude')
+  const recordingGeneration = useRef(0)
+  const routeSentence = useRef<(route: MicRoute) => void>(() => {})
   const enabledKey = enabled.join()
   useEffect(() => {
     previousProviders.current = enabled
@@ -187,6 +201,19 @@ export function Panel() {
   useEffect(
     () =>
       window.threadlight.onSettings((next) => {
+        if (
+          next.voiceTarget !== settingsRef.current?.voiceTarget ||
+          next.talkMode !== settingsRef.current?.talkMode ||
+          next.agentProvider !== settingsRef.current?.agentProvider
+        ) {
+          recordingGeneration.current++
+          startedBy.current = null
+          cancelVoice()
+          setMicLive(false)
+          void closeAgentSpeech()
+          countdownUntil.current = 0
+          setCancelToken((n) => n + 1)
+        }
         const enabled = next.enabledProviders
         if (previousProviders.current.join() === enabled.join()) return
         if (compose)
@@ -220,7 +247,7 @@ export function Panel() {
         setCancelToken((n) => n + 1)
         // A saved voice countdown must never restart when a source is enabled again.
       }),
-    [compose, expanded],
+    [compose, expanded, cancelVoice, closeAgentSpeech],
   )
 
   // A hover or click opens the panel fresh on Active; the talk hotkey keeps what it just filled in.
@@ -296,22 +323,44 @@ export function Panel() {
 
   /** Turns finished speech into a composer for the right thread, or asks which thread. */
   const finishTalk = useCallback(async () => {
+    const mine = recordingGeneration.current
+    const target = recordingTarget.current
     let text: string
     try {
       text = (await voice.stop()).trim()
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error))
-      window.threadlight.openPanelQuietly()
+      if (mine === recordingGeneration.current) {
+        setNotice(error instanceof Error ? error.message : String(error))
+        window.threadlight.openPanelQuietly()
+      }
       return
     } finally {
       startedBy.current = null
     }
-    if (!text) return // nothing said: the dot just goes back to normal
+    if (!text || mine !== recordingGeneration.current) return
+    setVoiceCaption(text)
+    if (target === 'agent') {
+      const route = new MicSessionRouter().route(text, sessionsRef.current)
+      if (route.kind !== 'agent') routeSentence.current(route)
+      else {
+        setNotice(null)
+        setShowSettings(false)
+        setPickingWorkspace(false)
+        setChangesFor(null)
+        setShowAgent(true)
+        window.threadlight.openPanelQuietly()
+        await sendAgentSpeech(route.text)
+      }
+      return
+    }
     const command = parseVoiceCommand(text)
     const candidates = sessionsRef.current.map((s) => ({ id: s.id, title: s.title }))
     const match = command ? matchThread(command.thread, candidates) : null
     setNotice(null)
     setShowSettings(false)
+    setShowAgent(false)
+    setPickingWorkspace(false)
+    setChangesFor(null)
     if (command && match) {
       // Voice sends count down first, so a misheard sentence can be stopped; on Hold they
       // wait in the composer until Send is clicked.
@@ -328,11 +377,12 @@ export function Panel() {
       setView('all')
     }
     window.threadlight.openPanelQuietly()
-  }, [voice])
+  }, [voice, sendAgentSpeech])
 
   const micToggle = useCallback(async () => {
     setVoiceError(null)
     if (voice.state === 'idle') {
+      setVoiceCaption('')
       try {
         startedBy.current = 'mic'
         setRecordingProvider(compose ? sessionProvider(compose.sessionId) : 'claude')
@@ -344,8 +394,10 @@ export function Panel() {
     } else if (voice.state === 'listening') {
       try {
         const text = (await voice.stop()).trim()
-        if (text) setHeard((previous) => ({ text, n: (previous?.n ?? 0) + 1 }))
-        else setVoiceError(en.voice.nothingHeard)
+        if (text) {
+          setVoiceCaption(text)
+          setHeard((previous) => ({ text, n: (previous?.n ?? 0) + 1 }))
+        } else setVoiceError(en.voice.nothingHeard)
       } catch (error) {
         setVoiceError(error instanceof Error ? error.message : String(error))
       } finally {
@@ -372,7 +424,10 @@ export function Panel() {
       return
     }
     if (voice.state !== 'idle') return
-    if (!openMicModeRef.current && settingsRef.current?.enabledProviders.length === 0) {
+    if (
+      settingsRef.current?.voiceTarget !== 'agent' &&
+      settingsRef.current?.enabledProviders.length === 0
+    ) {
       setNotice(en.sources.paused)
       setShowSettings(true)
       window.threadlight.openPanelQuietly()
@@ -385,19 +440,37 @@ export function Panel() {
     }
     // With the open mic on, the toggle opens and closes a live mic instead of one recording.
     if (openMicModeRef.current) {
+      const mine = recordingGeneration.current
+      await closeAgentSpeech()
+      if (mine !== recordingGeneration.current || !openMicModeRef.current) return
+      setVoiceCaption('')
       toggleLive()
+      window.threadlight.openPanelQuietly()
       return
     }
     try {
       startedBy.current = 'hotkey'
-      setRecordingProvider('claude')
+      setVoiceCaption('')
+      recordingTarget.current = settingsRef.current?.voiceTarget ?? 'thread'
+      recordingAgent.current = agent.provider ?? settingsRef.current?.agentProvider ?? 'claude'
+      setRecordingProvider(recordingTarget.current === 'agent' ? recordingAgent.current : 'claude')
       await voice.start()
+      window.threadlight.openPanelQuietly()
     } catch {
       startedBy.current = null
       setNotice(en.voice.micBlocked)
       window.threadlight.openPanelQuietly()
     }
-  }, [micLive, voice, stt.state, finishTalk, micToggle, toggleLive])
+  }, [
+    micLive,
+    voice,
+    stt.state,
+    finishTalk,
+    micToggle,
+    toggleLive,
+    closeAgentSpeech,
+    agent.provider,
+  ])
 
   useEffect(() => window.threadlight.onTalkToggle(() => void onTalk()), [onTalk])
 
@@ -486,16 +559,68 @@ export function Panel() {
     voiceFocusPending.current = null
   })
 
+  const handleSentence = (route: MicRoute) => {
+    if (route.kind === 'agent') {
+      void sendAgentSpeech(route.text)
+      return
+    }
+    if (route.kind !== 'command' && route.kind !== 'unmatched') return
+    setShowSettings(false)
+    setShowAgent(false)
+    setPickingWorkspace(false)
+    setChangesFor(null)
+    setPicking(null)
+    window.threadlight.openPanelQuietly()
+    changeHold('pinned')
+    if (route.kind === 'unmatched') {
+      setNotice(en.openMic.unmatched(route.text))
+      return
+    }
+    const command = route.command
+    if (command.kind === 'ambiguous') {
+      setNotice(en.openMic.ambiguous(command.titles))
+      return
+    }
+    setNotice(null)
+    if (command.kind === 'open') {
+      setVoiceSelection(null)
+      setVoiceWorkspace(null)
+      voiceFocusPending.current = null
+      return
+    }
+    const selected = voiceThreads.get(command.threadId)
+    if (!selected) return
+    const folder =
+      voiceFolders.get(selected.id) ??
+      snapshot.workspaces.find((w) => sameFolder(w.id, selected.cwd))?.id ??
+      null
+    setVoiceSelection(selected.id)
+    setVoiceWorkspace(folder)
+    if (folder) {
+      setOpenWorkspaces((open) => [...new Set([...(open ?? []), folder])])
+      setMoreWorkspaces((more) => [...new Set([...more, folder])])
+    }
+    setExpanded(selected.id)
+    setMenu(null)
+    voiceFocusPending.current = selected.id
+  }
+  useEffect(() => {
+    routeSentence.current = handleSentence
+  })
+
   // The first completed sentence chooses a route until this microphone session closes.
   const {
     state: openMic,
     mode: micMode,
     level: openMicLevel,
+    energy: openMicEnergy,
+    outputEnergy,
     livePhase,
-    liveError,
-    openingDraft,
+    liveError: continuousError,
+    openingDraft: continuousDraft,
   } = useOpenMic({
     enabled: micLive && stt.state === 'ready',
+    nativeLive: (agent.provider ?? settings?.agentProvider) === 'codex',
     paused: voice.state !== 'idle',
     threads: [...voiceThreads.values()],
     onStop: () => setMicLive(false),
@@ -506,49 +631,33 @@ export function Panel() {
       setShowAgent(true)
       window.threadlight.openPanelQuietly()
     },
-    onSentence: (route) => {
-      if (route.kind !== 'command' && route.kind !== 'unmatched') return
-      setShowSettings(false)
-      setShowAgent(false)
-      setPickingWorkspace(false)
-      setChangesFor(null)
-      setPicking(null)
-      window.threadlight.openPanelQuietly()
-      changeHold('pinned')
-      if (route.kind === 'unmatched') {
-        setNotice(en.openMic.unmatched(route.text))
-        return
-      }
-      const command = route.command
-      if (command.kind === 'ambiguous') {
-        setNotice(en.openMic.ambiguous(command.titles))
-        return
-      }
-      setNotice(null)
-      if (command.kind === 'open') {
-        setVoiceSelection(null)
-        setVoiceWorkspace(null)
-        voiceFocusPending.current = null
-        return
-      }
-      const selected = voiceThreads.get(command.threadId)
-      if (!selected) return
-      const folder =
-        voiceFolders.get(selected.id) ??
-        snapshot.workspaces.find((w) => sameFolder(w.id, selected.cwd))?.id ??
-        null
-      setVoiceSelection(selected.id)
-      setVoiceWorkspace(folder)
-      if (folder) {
-        setOpenWorkspaces((open) => [...new Set([...(open ?? []), folder])])
-        setMoreWorkspaces((more) => [...new Set([...more, folder])])
-      }
-      setExpanded(selected.id)
-      setMenu(null)
-      voiceFocusPending.current = selected.id
-    },
+    onSentence: handleSentence,
   })
+  const liveError =
+    settings?.voiceTarget === 'agent' ? (recordedAgentError ?? continuousError) : null
+  const openingDraft = recordedAgentError ? recordedAgentDraft : continuousDraft
   const openMicListening = openMic === 'listening' || openMic === 'hearing'
+  const visualMode = motionMode({
+    recording: voice.state,
+    microphone: openMicListening,
+    agent: agent.status,
+    waitingForReply:
+      livePhase === 'waiting' ||
+      !!sessions.find((s) => s.id === voiceSendId && s.state === 'working'),
+    failed: !!liveError || openMic === 'blocked' || !!voiceError,
+  })
+  const motion = useMotion(
+    visualMode,
+    voice.state === 'listening' ? voice.energy : openMicEnergy,
+    outputEnergy,
+  )
+  const lastVoiceItem = agent.items.findLast((item) => item.kind === 'you' || item.kind === 'agent')
+  const motionCaption =
+    voice.state !== 'idle'
+      ? voiceCaption
+      : showAgent
+        ? lastVoiceItem?.text || openingDraft || voiceCaption
+        : voiceCaption
   useEffect(() => window.threadlight.setOpenMicLive(openMicListening), [openMicListening])
   useEffect(() => window.threadlight.onStopOpenMic(() => setMicLive(false)), [])
   useEffect(() => {
@@ -876,15 +985,12 @@ export function Panel() {
             <>
               <button
                 className={styles.back}
-                aria-label="Close shared memory"
-                onClick={() => {
-                  setShowMemory(false)
-                  window.threadlight.setStayOpen(hold !== 'normal')
-                }}
+                aria-label="Back in Shared Spaces"
+                onClick={() => spacesNavigation.current?.back()}
               >
                 ‹
               </button>
-              <span className={`${styles.heading} ${styles.pageHeading}`}>Shared memory</span>
+              <span className={`${styles.heading} ${styles.pageHeading}`}>Shared Spaces</span>
             </>
           ) : showSettings ? (
             <>
@@ -973,6 +1079,18 @@ export function Panel() {
           )}
         </header>
 
+        {(voice.state !== 'idle' ||
+          micLive ||
+          (showAgent && !pickingWorkspace && !changesFor) ||
+          voiceSendId) && (
+          <VoicePresence
+            source={motion.source}
+            label={motion.label}
+            microphone={openMicListening || voice.state === 'listening'}
+            caption={motionCaption}
+          />
+        )}
+
         {pickingWorkspace && (
           <div className={styles.list}>
             <WorkspacePicker
@@ -1032,7 +1150,8 @@ export function Panel() {
           </>
         )}
 
-        <MemoryView
+        <SharedSpacesView
+          navigationRef={spacesNavigation}
           visible={showMemory && !showAgent && !pickingWorkspace && changesFor === null}
           sessions={snapshot.lookupSessions ?? snapshot.sessions}
           onClose={() => {

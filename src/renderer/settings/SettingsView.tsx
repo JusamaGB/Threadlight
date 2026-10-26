@@ -73,14 +73,26 @@ export function SettingsView({
         </Row>
         {!settings.enabledProviders.length && <p className={styles.footer}>{en.sources.paused}</p>}
       </Group>
-      <Group label="Shared memory">
-        <Row label="Notes, sectors and assignments">
+      <Group label="Shared Spaces">
+        <Row label="Ideas, brainstorms and handoffs">
           <button className={styles.small} onClick={onOpenMemory}>
             Open
           </button>
         </Row>
       </Group>
       <Group label={en.settings.voice}>
+        <Row label={en.settings.voiceTarget} error={errors.voiceTarget}>
+          <select
+            aria-label={en.settings.voiceTarget}
+            value={settings.voiceTarget}
+            onChange={(event) =>
+              save({ voiceTarget: event.target.value as Settings['voiceTarget'] })
+            }
+          >
+            <option value="agent">{en.settings.agentConversation}</option>
+            <option value="thread">{en.settings.threadMessage}</option>
+          </select>
+        </Row>
         <Row label={en.settings.talkHotkey} error={errors.talkHotkey}>
           <span className={styles.pair}>
             <HotkeyField
@@ -98,46 +110,31 @@ export function SettingsView({
             />
           </span>
         </Row>
-        <Row label={en.settings.countdown}>
-          <span className={styles.pair}>
-            {/* Hold switches the countdown off: the seconds grey out until it is let go. */}
-            <button
-              className={settings.voiceHold ? `${styles.small} ${styles.on}` : styles.small}
-              aria-pressed={settings.voiceHold}
-              title={en.settings.holdSendHint}
-              onClick={() => save({ voiceHold: !settings.voiceHold })}
-            >
-              {en.settings.holdSend}
-            </button>
-            <Stepper
-              value={settings.voiceCountdownSeconds}
-              min={1}
-              max={10}
-              format={(n) => `${n} s`}
-              disabled={settings.voiceHold}
-              onChange={(voiceCountdownSeconds) => save({ voiceCountdownSeconds })}
-            />
-          </span>
-        </Row>
+        {settings.voiceTarget === 'thread' && (
+          <Row label={en.settings.countdown}>
+            <span className={styles.pair}>
+              {/* Hold switches the countdown off: the seconds grey out until it is let go. */}
+              <button
+                className={settings.voiceHold ? `${styles.small} ${styles.on}` : styles.small}
+                aria-pressed={settings.voiceHold}
+                title={en.settings.holdSendHint}
+                onClick={() => save({ voiceHold: !settings.voiceHold })}
+              >
+                {en.settings.holdSend}
+              </button>
+              <Stepper
+                value={settings.voiceCountdownSeconds}
+                min={1}
+                max={10}
+                format={(n) => `${n} s`}
+                disabled={settings.voiceHold}
+                onChange={(voiceCountdownSeconds) => save({ voiceCountdownSeconds })}
+              />
+            </span>
+          </Row>
+        )}
         <Row label={en.settings.speechModel}>
           <ModelStatus stt={stt} />
-        </Row>
-        <Row
-          label={en.settings.openMic}
-          disabled={settings.talkMode !== 'toggle'}
-          hint={
-            settings.talkMode !== 'toggle'
-              ? en.settings.openMicNeedsToggle
-              : stt.state === 'ready'
-                ? en.settings.openMicHint
-                : en.settings.openMicNeedsModel
-          }
-        >
-          <Toggle
-            on={settings.openMic}
-            label={en.settings.openMic}
-            onChange={(openMic) => save({ openMic })}
-          />
         </Row>
       </Group>
 

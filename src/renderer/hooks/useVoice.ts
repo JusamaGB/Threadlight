@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { STT_SAMPLE_RATE } from '../../shared/stt'
+import { SILENT_AUDIO, type AudioEnergy } from '../../shared/motion'
+import { AudioEnergyMeter } from '../lib/audioEnergy'
 
 export type VoiceState = 'idle' | 'listening' | 'transcribing'
 
@@ -25,38 +27,50 @@ interface Recording {
 export function useVoice(onLimit: () => void) {
   const [state, setState] = useState<VoiceState>('idle')
   const [level, setLevel] = useState(0)
+  const energy = useRef<AudioEnergy>(SILENT_AUDIO)
   const recording = useRef<Recording | null>(null)
+  const generation = useRef(0)
+  const acquiring = useRef(false)
+  const transcribing = useRef(false)
   const limit = useRef(onLimit)
   useEffect(() => {
     limit.current = onLimit
   }, [onLimit])
 
-  const release = useCallback(() => {
-    const current = recording.current
-    recording.current = null
+  const release = useCallback((current = recording.current) => {
+    if (recording.current === current) recording.current = null
     if (!current) return
     window.clearInterval(current.levelTimer)
     window.clearTimeout(current.limitTimer)
     current.stream.getTracks().forEach((track) => track.stop()) // the mic light goes off here
     void current.context.close()
+    energy.current = SILENT_AUDIO
     setLevel(0)
   }, [])
 
   const start = useCallback(async () => {
-    if (recording.current) return
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    })
+    if (recording.current || acquiring.current || transcribing.current) return
+    acquiring.current = true
+    const mine = ++generation.current
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      })
+    } finally {
+      acquiring.current = false
+    }
+    if (mine !== generation.current) {
+      stream.getTracks().forEach((track) => track.stop())
+      return
+    }
     const context = new AudioContext()
-    const analyser = context.createAnalyser()
-    analyser.fftSize = 512
-    context.createMediaStreamSource(stream).connect(analyser)
-    const samples = new Float32Array(analyser.fftSize)
+    const meter = new AudioEnergyMeter(context.createMediaStreamSource(stream), context)
     const recorder = new MediaRecorder(stream)
     const chunks: Blob[] = []
     recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
@@ -67,10 +81,8 @@ export function useVoice(onLimit: () => void) {
       chunks,
       context,
       levelTimer: window.setInterval(() => {
-        analyser.getFloatTimeDomainData(samples)
-        let sum = 0
-        for (const s of samples) sum += s * s
-        setLevel(Math.min(1, Math.sqrt(sum / samples.length) * 8))
+        energy.current = meter.read()
+        setLevel(energy.current.level)
       }, LEVEL_INTERVAL_MS),
       limitTimer: window.setTimeout(() => limit.current(), MAX_RECORD_MS),
     }
@@ -80,29 +92,45 @@ export function useVoice(onLimit: () => void) {
   /** Stops recording and transcribes it. Resolves to '' when nothing was said. */
   const stop = useCallback(async (): Promise<string> => {
     const current = recording.current
-    if (!current) return ''
+    if (!current || transcribing.current) return ''
+    transcribing.current = true
+    const mine = generation.current
     const stopped = new Promise<void>((resolve) => (current.recorder.onstop = () => resolve()))
     current.recorder.stop()
     await stopped
-    release()
+    release(current)
+    if (mine !== generation.current) {
+      transcribing.current = false
+      return ''
+    }
     setState('transcribing')
     try {
       const audio = await decodeTo16k(new Blob(current.chunks, { type: current.recorder.mimeType }))
-      return await window.threadlight.transcribe(audio)
+      if (mine !== generation.current) return ''
+      const text = await window.threadlight.transcribe(audio)
+      return mine === generation.current ? text : ''
     } finally {
-      setState('idle')
+      transcribing.current = false
+      if (mine === generation.current) setState('idle')
     }
   }, [release])
 
   const cancel = useCallback(() => {
-    recording.current?.recorder.stop()
+    generation.current++
+    if (recording.current?.recorder.state !== 'inactive') recording.current?.recorder.stop()
     release()
     setState('idle')
   }, [release])
 
-  useEffect(() => release, [release])
+  useEffect(
+    () => () => {
+      generation.current++
+      release()
+    },
+    [release],
+  )
 
-  return { state, level, start, stop, cancel }
+  return { state, level, energy, start, stop, cancel }
 }
 
 /** Decodes the recording and resamples it to the 16 kHz mono Whisper expects. */

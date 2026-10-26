@@ -1,5 +1,6 @@
-/* global window, document */
+/* global window */
 import assert from 'node:assert/strict'
+import { readMotionFrame } from './motion-pixels.mjs'
 
 export async function checkMicPill(page, capture) {
   await page.evaluate(() => window.proof.emit('onOpenMicLive', true))
@@ -14,13 +15,7 @@ export async function checkMicPill(page, capture) {
   await pill.hover()
   assert.equal(await opens(), before)
   await page.evaluate(() => window.proof.emit('onOpenMicLevel', 0.7))
-  await page.waitForFunction(() => {
-    const canvas = document.querySelector('canvas')
-    return canvas
-      ?.getContext('2d')
-      .getImageData(0, 4, canvas.width, 1)
-      .data.some((v) => v > 0)
-  })
+  assert.ok((await readMotionFrame(pill.getByRole('img'))).count > 0)
   await capture('open-mic-pill')
   await page.getByRole('button', { name: 'Close microphone', exact: true }).click()
   assert.equal(await opens(), before)

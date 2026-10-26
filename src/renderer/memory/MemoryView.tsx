@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type FormEvent,
+  type Ref,
+} from 'react'
 import type {
   MemoryFolder,
   MemoryInput,
@@ -50,10 +58,12 @@ export function MemoryView({
   visible,
   sessions,
   onClose,
+  navigationRef,
 }: {
   visible: boolean
   sessions: Session[]
   onClose: () => void
+  navigationRef?: Ref<{ back: () => void; openTask: (id: string) => void }>
 }) {
   const [data, setData] = useState(empty)
   const [routes, setRoutes] = useState<Route[]>([])
@@ -164,6 +174,20 @@ export function MemoryView({
       })
     } else onClose()
   }, [form, connection, confirm, routes, onClose])
+  useImperativeHandle(
+    navigationRef,
+    () => ({
+      back,
+      openTask: (id: string) => {
+        setRoutes([{ kind: 'task', id }])
+        setForm(null)
+        setConfirm(null)
+        setConnection(null)
+        setError('')
+      },
+    }),
+    [back],
+  )
   useEffect(() => {
     if (!visible) return
     const key = (event: KeyboardEvent) => {
@@ -192,7 +216,7 @@ export function MemoryView({
       ? 'Agent access'
       : route?.kind === 'activity'
         ? 'Activity'
-        : (space?.title ?? 'Memory spaces'))
+        : (space?.title ?? 'Handoffs'))
   const newFolder = (f: MemoryFolder) =>
     data.events.some(
       (e) => e.entityId === f.id && e.seq > data.seen && e.action === 'Folder created',
@@ -234,22 +258,8 @@ export function MemoryView({
   }
 
   return (
-    <section className={styles.view} hidden={!visible} aria-label="Shared memory">
-      <div className={styles.navigation}>
-        <button aria-label="Back in shared memory" onClick={back}>
-          ‹
-        </button>
-        <strong title={heading}>{heading}</strong>
-        <button
-          onClick={() => {
-            setRoutes([])
-            setForm(null)
-          }}
-          aria-label="Memory home"
-        >
-          ⌂
-        </button>
-      </div>
+    <section className={styles.view} hidden={!visible} aria-label="Handoffs">
+      {route && <p className={styles.hint}>Handoffs / {heading}</p>}
       {error && (
         <p className={styles.error} role="alert">
           {error}
@@ -262,7 +272,7 @@ export function MemoryView({
             <p>
               {confirm.action === 'purge_item'
                 ? 'Permanently remove this item and its versions. Copies already sent to native chats and exported backups remain outside this deletion.'
-                : 'This changes shared memory for every enrolled participant. Folder moves and merges can block pending output destinations.'}
+                : 'This changes shared material for every enrolled participant. Folder moves and merges can block pending output destinations.'}
             </p>
             <button disabled={busy} className={styles.action} onClick={() => void mutate(confirm)}>
               Confirm
@@ -479,7 +489,8 @@ export function MemoryView({
         ) : !route ? (
           <>
             <p className={styles.hint}>
-              Shared notes, images and decisions across your enrolled chats.
+              Context, decisions and handoffs between your Claude and Codex chats. Share only what
+              collaborators need; each provider keeps its own memory.
             </p>
             {(data.connections ?? []).some((c) => c.state === 'pending') && (
               <p role="status" className={styles.hint}>
@@ -494,11 +505,11 @@ export function MemoryView({
                 onClick={() => navigate({ kind: 'space', id: s.id })}
               >
                 <strong>{s.title}</strong>
-                <span>{s.description || 'Shared memory space'}</span>
+                <span>{s.description || 'Collaboration space'}</span>
               </button>
             ))}
             <button className={styles.action} onClick={() => setForm('space')}>
-              Create memory space
+              Create shared space
             </button>
             <button
               className={styles.action}
@@ -517,7 +528,7 @@ export function MemoryView({
           <>
             <div className={styles.toolbar}>
               <input
-                aria-label="Search shared memory"
+                aria-label="Search shared context"
                 placeholder="Search notes and folders…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -864,7 +875,7 @@ export function MemoryView({
             <p className={styles.hint}>
               {data.endpoint
                 ? `Local tools ready: ${data.endpoint}`
-                : 'Memory tools are offline. Check whether another application owns port 47618.'}
+                : 'Collaboration tools are offline. Check whether another application owns port 47618.'}
             </p>
             {(data.connections ?? [])
               .filter((c) => c.state === 'pending')
@@ -1215,7 +1226,7 @@ function MemoryForm({
       <h3>
         {
           {
-            space: 'Create memory space',
+            space: 'Create shared space',
             folder: 'Create folder',
             note: 'Publish note',
             revise: 'Propose revision',
@@ -1322,7 +1333,7 @@ function MemoryForm({
           <label>
             Enrolled chat
             <select name="assignee">
-              <option value="">Memory-only capability</option>
+              <option value="">Shared-context access only</option>
               {sessions.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.title} · {s.provider ?? 'claude'}
@@ -1340,9 +1351,9 @@ function MemoryForm({
             <input type="checkbox" name="delegate" /> Allow scoped automatic delegation when enabled
           </label>
           <p className={styles.hint}>
-            Background assignments receive temporary scoped tools automatically. To use memory in an
-            existing open chat, use the shared-memory plugin and review its connection request here.
-            Manual configuration is also available.
+            Background assignments receive temporary scoped tools automatically. To share context
+            with an existing open chat, use the Threadlight plugin and review its connection request
+            here. Manual configuration is also available.
           </p>
         </>
       )}

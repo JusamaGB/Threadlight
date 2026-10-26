@@ -56,6 +56,12 @@ export const messagingPaths = (userData: string) => ({
   store: join(userData, 'message-recovery.json'),
 })
 
+export const spacesPaths = (userData: string) => ({
+  store: join(userData, 'shared-spaces', 'ideas.sqlite'),
+  workspace: join(userData, 'shared-spaces', 'brainstorm'),
+  index: join(userData, 'shared-spaces', 'conversations.json'),
+})
+
 export function codexPaths(env: NodeJS.ProcessEnv = process.env, home = homedir()): CodexPaths {
   const root = env['CODEX_HOME'] || join(home, '.codex')
   return {

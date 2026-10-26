@@ -195,12 +195,16 @@ const expected = new RegExp(process.env.THREADLIGHT_LIVE_EXPECT || 'voice connec
     void window.context.close()
   })
   await service.stopLive()
+  assert.equal(service.current.ended, false, 'Closing voice retains the Agent conversation')
+  assert.equal(service.current.conversationId, id)
   const history = await service.read(id)
   assert.ok(history.items.some((i) => i.kind === 'you' && i.text === message))
   assert.ok(history.items.some((i) => i.kind === 'agent' && i.text.trim()))
+  assert.notEqual(service.store.get(id).archiveState, 'archived')
+  await service.close()
   assert.equal(service.store.get(id).archiveState, 'archived')
   console.log(
-    'PASS: ChatGPT-authenticated WebRTC, opening sent once, native reply transcript and audio packets, voice history, stop and archive.',
+    'PASS: ChatGPT-authenticated WebRTC, opening sent once, native reply transcript and audio packets, voice history, retained conversation on mic close and archive on End.',
   )
 })()
   .catch((error) => {

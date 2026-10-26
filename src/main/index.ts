@@ -42,6 +42,10 @@ import { SttService } from './stt/service'
 import { createTray } from './tray'
 import { WindowManager } from './windows'
 import { startMemory } from './memory/integration'
+import { spacesPaths } from './sessions/paths'
+import { SpacesStore } from './spaces/store'
+import { SpacesService } from './spaces/service'
+import { registerSpaces } from './spaces/integration'
 
 const SCAN_INTERVAL_MS = 1000
 const CLAUDE_CHECK_INTERVAL_MS = 2000
@@ -475,6 +479,50 @@ async function start(): Promise<void> {
     )
   // Complete previously requested cleanup before allowing a history continuation to race it.
   await agent.retryArchives().catch(() => {})
+  let spaces: SpacesService | null = null
+  let spacesIssue = ''
+  try {
+    const files = spacesPaths(app.getPath('userData'))
+    spaces = new SpacesService(
+      new SpacesStore(files.store),
+      stopMemory.store,
+      () => sessions.snapshot.lookupSessions ?? sessions.snapshot.sessions,
+      {
+        workspace: files.workspace,
+        index: files.index,
+        claudeProjects: paths.projectsDir,
+        settings: () => settings.settings,
+        snapshot: () => ({
+          sessions: [],
+          workspaces: [],
+          allWorkspaces: [],
+          currentWorkspace: null,
+          currentThreadId: null,
+        }),
+        cli: async (provider) =>
+          provider === 'codex' ? findCodexCli(codex) : (cli ??= await findClaudeCli(paths)),
+        onChange: (state) => {
+          if (state.sessionId)
+            agentSessionIds.add(
+              state.provider === 'codex' ? `codex:${state.sessionId}` : state.sessionId,
+            )
+        },
+        onRateLimit: (info) => usage.note(info),
+      },
+      (snapshot) => {
+        if (!windows.panel.isDestroyed())
+          windows.panel.webContents.send(IPC.spacesChanged, snapshot)
+      },
+    )
+    await spaces.agent.store.load()
+    for (const record of spaces.agent.store.all())
+      agentSessionIds.add(
+        record.provider === 'codex' ? `codex:${record.providerId}` : record.providerId,
+      )
+  } catch (error) {
+    spacesIssue = error instanceof Error ? error.message : 'Shared Spaces could not load.'
+  }
+  registerSpaces(windows.panel, spacesIssue ? null : spaces, spacesIssue)
   ipcMain.handle(IPC.agentGet, () => agent.current)
   ipcMain.handle(IPC.agentLiveStart, (event, id: unknown, sdp: unknown) =>
     event.sender === windows.panel.webContents
@@ -620,7 +668,7 @@ async function start(): Promise<void> {
     event.preventDefault()
     if (retiringForQuit) return
     retiringForQuit = true
-    void Promise.allSettled([agent.close(), messageStore.flush()]).finally(() => {
+    void Promise.allSettled([agent.close(), spaces?.close(), messageStore.flush()]).finally(() => {
       agentRetiredForQuit = true
       app.quit()
     })

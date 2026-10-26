@@ -23,7 +23,11 @@ A small status dot and mini composer for **Claude and Codex desktop chats** on W
   talk) works anywhere, even in a game: say _"message docs site, check the build passed"_
   and Threadlight finds the thread, shows a short countdown you can cancel, and sends. Or
   turn on Hold, and the message waits for you to click Send.
-- **Settings → Open mic** with Toggle mode makes that hotkey a command/agent mic.
+- **Settings → Voice target** chooses **Agent conversation** or **Thread message**.
+  Both support Toggle and Push to talk. Agent Toggle keeps listening between sentences;
+  Push to talk submits when released. Closing the mic keeps the Agent conversation available
+  until End or its inactivity limit. Thread messages use the review/countdown controls.
+  In Agent mode, navigation commands are also available:
   Say **“open”**, then pause for one second, to expand and pin the thread list. That
   microphone session stays in command mode until closed; other speech is ignored.
   Close and reopen to choose again. Start with ordinary speech instead to send it to
@@ -31,19 +35,33 @@ A small status dot and mini composer for **Claude and Codex desktop chats** on W
   for retry. The thread composer's mic always stays dictation for that thread.
 
 Threadlight runs on your PC and transcribes speech locally. It has no telemetry or
-external Threadlight service. Shared memory exposes authenticated tools on loopback;
+external Threadlight service. Shared Spaces exposes authenticated collaboration tools on loopback;
 agent turns still use your provider account.
 
-### Shared memory
+### Shared Spaces
 
-Open **Settings → Shared memory → Open**. Create a space, then named sectors/folders
+Open **Settings → Shared Spaces → Open**. The tabs are **Handoffs**, **Ideas** and
+**Brainstorm**. This is a collaboration and handoff layer between Claude and Codex;
+each provider keeps its own memory. Share the context a collaborator needs, rather
+than maintaining another personal memory archive.
+
+Capture an idea without calling a model, move it to Brainstorm, and discuss it with
+the configured Agent. Each idea keeps its own resumable conversation, separate from
+the general Agent. Edit a mini plan and choose each assignment's provider, exact chat,
+brief and shared output folder. **Prepare assignments for review** saves a pinned plan
+and unsent task drafts. Open each task in Handoffs to review and authorise delivery.
+Prepared plans stay frozen so later discussion cannot change a recipient's brief.
+This first version uses existing chats and their models; automatic task decomposition,
+new-chat creation, dependency scheduling and workflow profiles remain future work.
+
+In **Handoffs**, create a space, then named sectors/folders
 for notes, decisions, scratchpads, images and documents. The map, folder, item and task
 views stay inside the existing 342-pixel panel. Map/List, search, Back and saved drafts
 let you browse without starting agent work.
 
 **Claude and Codex plugins** include shared-memory tools and a common workflow skill.
 Ask an installed plugin to connect this chat to Threadlight. It shows a verification
-code; match it under **Shared memory → choose a space → Agent access**, then choose
+code; match it under **Shared Spaces → Handoffs → choose a space → Agent access**, then choose
 the folder scope and permissions. Read-only is the default. Each chat uses its own
 connection ID; installation does not grant access to all memory. Connections expire
 after eight hours and need renewed approval after an app or bridge restart.

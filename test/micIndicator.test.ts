@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { micIndicatorBounds } from '../src/shared/micIndicator'
 import { IPC } from '../src/shared/ipc'
+import { IDLE_MOTION } from '../src/shared/motion'
 
 const { events, handles } = vi.hoisted(() => ({
   events: new Map<string, (...args: unknown[]) => void>(),
@@ -46,6 +47,13 @@ describe('floating microphone indicator', () => {
     const emit = (name: string, sender: unknown, value?: unknown) =>
       events.get(name)!({ sender }, value)
     emit(IPC.openMicLive, dot, true)
+    const moving = { ...IDLE_MOTION, mode: 'thinking' }
+    emit(IPC.motion, dot, moving)
+    expect(handles.get(IPC.getMotion)!()).toEqual(IDLE_MOTION)
+    emit(IPC.motion, panel, moving)
+    expect(handles.get(IPC.getMotion)!()).toEqual(moving)
+    emit(IPC.motion, panel, { ...moving, input: null })
+    expect(handles.get(IPC.getMotion)!()).toEqual(moving)
     expect(handles.get(IPC.openMicIndicator)!()).toEqual({ live: false, level: 0 })
     emit(IPC.openMicLive, panel, true)
     expect(windows.setOpenMicLive).toHaveBeenLastCalledWith(true)
@@ -60,6 +68,7 @@ describe('floating microphone indicator', () => {
     expect(panel.send).toHaveBeenCalledTimes(1)
     emit(IPC.openMicLive, panel, true)
     reload.get('did-start-loading')!()
+    expect(handles.get(IPC.getMotion)!()).toEqual(IDLE_MOTION)
     expect(handles.get(IPC.openMicIndicator)!()).toEqual({ live: false, level: 0 })
     expect(windows.setOpenMicLive).toHaveBeenLastCalledWith(false)
   })
