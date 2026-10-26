@@ -84,10 +84,19 @@ export function WorkspacePicker({
           <>
             <button
               aria-label="Parent folder"
-              title="Parent folder"
+              title="Back to parent folder"
               onClick={() => setLocation(folder?.parent ?? '')}
             >
-              ↑
+              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path
+                  d="M13 8H3m5-5L3 8l5 5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </button>
             <span title={folder.path}>{folder.path}</span>
           </>

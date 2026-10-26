@@ -63,7 +63,8 @@ arrow. It saves an all-folder Workspace scope, combining threads across every
 known folder from the enabled apps in completion order, with normal nesting and
 the configured activity window. Application filters still apply. Selecting an
 individual workspace returns to exact-folder scope. Inside a folder, the first
-navigation row starts with the parent arrow; the top level has no arrow.
+navigation row starts with a centred, left-pointing back arrow without a visible
+button border; the top level has no arrow.
 
 Workspace defaults to the full display work area with small edge margins and the
 taskbar left clear. Only Workspace lets the existing usage bars resize the panel,
