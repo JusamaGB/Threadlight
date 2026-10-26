@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Added a pale outward shine along the thinking wheel's strands, with a static
+  reduced-motion state.
+
 - Moved the Agent provider, model and reasoning label to a compact bottom-right footer
   alongside Earlier.
 

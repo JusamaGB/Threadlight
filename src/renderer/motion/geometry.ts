@@ -41,6 +41,7 @@ const BLUE: Colour = [0.15, 0.29, 1]
 const VIOLET: Colour = [0.58, 0.25, 1]
 const PINK: Colour = [1, 0.13, 0.6]
 const GOLD: Colour = [1, 0.67, 0.18]
+const SHINE: Colour = [1, 0.96, 0.78]
 const PEARL: Colour = [0.8, 1, 0.98]
 const mix = (a: number, b: number, t: number) => a + (b - a) * t
 const palette = [PINK, VIOLET, BLUE, CYAN, PEARL, GOLD, PINK]
@@ -102,7 +103,20 @@ export class MotionGeometry {
         for (let i = 1; i <= segments; i++) {
           const u = i / segments
           const next = point(u, strand)
-          const colour = colourAt(u, strand)
+          const baseColour = colourAt(u, strand)
+          // A narrow leading edge and a longer tail travel from each spiral's root to its tip.
+          // The quiet interval lets the gold strands settle between sweeps. Reduced motion
+          // keeps the original static wheel, and ribbons retain their audio-driven light.
+          const head = (t % 2.1) / 1.35 - 0.12
+          const distance = u - head
+          const spread = distance > 0 ? 0.055 : 0.16
+          const fade = unit(head / 0.08) * unit((1.32 - head) / 0.28)
+          const shine = reduced ? 0 : Math.exp(-0.5 * (distance / spread) ** 2) * fade * pose.wheel
+          const colour: Colour = [
+            mix(baseColour[0], SHINE[0], shine * 0.92),
+            mix(baseColour[1], SHINE[1], shine * 0.92),
+            mix(baseColour[2], SHINE[2], shine * 0.92),
+          ]
           const taper = mix(Math.pow(Math.sin(Math.PI * u), 0.35), 0.25 + u * 0.75, pose.wheel)
           const alpha = taper * (0.55 + energy * 0.4) * (1 - pose.rest * (compact ? 0.2 : 0.5))
           if (!compact && strand % 2 === 0 && strand + 1 < strands) {
@@ -115,9 +129,15 @@ export class MotionGeometry {
               alpha * 0.13,
             )
           }
-          this.line(previous, next, compact ? 2.2 : 5, colour, alpha * 0.065)
-          this.line(previous, next, compact ? 1.2 : 2.2, colour, alpha * 0.2)
-          this.line(previous, next, compact ? 0.6 : 0.8, colour, Math.min(1, alpha * 1.4))
+          this.line(previous, next, compact ? 2.2 : 5, colour, alpha * (0.065 + shine * 0.14))
+          this.line(previous, next, compact ? 1.2 : 2.2, colour, alpha * (0.2 + shine * 0.35))
+          this.line(
+            previous,
+            next,
+            compact ? 0.6 : 0.8,
+            colour,
+            Math.min(1, alpha * 1.4 + shine * 0.65),
+          )
           previous = next
         }
       }
