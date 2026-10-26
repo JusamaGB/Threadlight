@@ -90,12 +90,13 @@ export function ElectricMotion({
       settled = telemetry === lastTelemetry ? settled + delta : 0
       lastTelemetry = telemetry
       advancePose(pose, value, delta, edgeToEdge)
-      const quiet = value.input.level < 0.008 && value.output.level < 0.008
+      const quiet = pose.input.level < 0.008 && pose.output.level < 0.008
       const staticMode = value.mode === 'idle' || value.mode === 'waiting' || value.mode === 'error'
       // The quiet header keeps a slow colour drift. Waiting/error indicators and
       // reduced motion remain still; other surfaces retain their resting policy.
       const still =
-        motion.matches || (quiet && staticMode && (!edgeToEdge || value.mode !== 'idle'))
+        motion.matches ||
+        (quiet && staticMode && !pose.headerOpening && (!edgeToEdge || value.mode !== 'idle'))
       if (!still) clock += delta / 1000
       const resting = still && settled > 1200
       if (width > 0 && height > 0 && renderer && (!resting || needsPaint)) {
