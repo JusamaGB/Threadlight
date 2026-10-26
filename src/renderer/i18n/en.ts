@@ -256,8 +256,6 @@ export const en = {
     gptLive: 'GPT Live',
     localDestination: 'Send text to',
     localSttHint: 'Transcribe on this PC, then send text to the selected destination.',
-    gptLiveHint:
-      'Press the hotkey and speak. Your audio is buffered while GPT Live connects, then sent to GPT. Press again to disconnect. No connection is kept open in advance.',
     gptLiveNeedsCodex:
       'GPT Live requires a Codex Agent conversation. Choose Codex in Agent settings; end an existing Claude conversation first.',
     agentConversation: 'Agent conversation',
@@ -267,7 +265,6 @@ export const en = {
     modelDownloading: (percent: number) => `Downloading ${percent}%`,
     download: 'Download',
     openOn: 'Open the panel on',
-    openOnHint: 'Click avoids opening it by accident in a game',
     hover: 'Hover',
     click: 'Click',
     dotPosition: 'Dot position',

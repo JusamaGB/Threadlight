@@ -105,9 +105,9 @@ export function SettingsView({
             ))}
           </span>
         </Row>
-        <p className={styles.footer}>
-          {settings.voiceMode === 'gpt-live' ? en.settings.gptLiveHint : en.settings.localSttHint}
-        </p>
+        {settings.voiceMode === 'local-stt' && (
+          <p className={styles.footer}>{en.settings.localSttHint}</p>
+        )}
         {settings.voiceMode === 'gpt-live' &&
           (currentAgentProvider ?? settings.agentProvider) !== 'codex' && (
             <p className={styles.error}>{en.settings.gptLiveNeedsCodex}</p>
@@ -176,7 +176,7 @@ export function SettingsView({
       </Group>
 
       <Group label={en.settings.panel}>
-        <Row label={en.settings.openOn} hint={en.settings.openOnHint}>
+        <Row label={en.settings.openOn}>
           <Segmented
             value={settings.openOn}
             options={[
