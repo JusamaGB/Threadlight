@@ -149,6 +149,11 @@
   color: var(--faint);
 }
 
+/* Keep the visible icon gap equal to the right inset, including each hit area's padding. */
+.header > .gear + .gear {
+  margin-left: -4px;
+}
+
 .gear svg {
   fill: none;
   stroke: currentColor;
