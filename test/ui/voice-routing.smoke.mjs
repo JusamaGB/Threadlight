@@ -4,6 +4,13 @@ import { checkVoiceTarget } from './voice-target.smoke.mjs'
 
 /** Uses the provider smoke test's generated audio stream; never opens a real microphone. */
 export async function checkVoiceRouting(page) {
+  await page.evaluate(() =>
+    window.threadlight.updateSettings({
+      voiceMode: 'local-stt',
+      voiceTarget: 'agent',
+      talkMode: 'toggle',
+    }),
+  )
   await page.evaluate(() => {
     // Calibrate against processed quiet audio, rather than a wall-clock delay that can
     // expire before Chromium delivers its first audio buffers on a busy machine.
@@ -208,184 +215,176 @@ export async function checkVoiceRouting(page) {
 
   await page.evaluate(() => window.threadlight.updateSettings({ agentProvider: 'codex' }))
 
-  // A fresh mic session selects native Live and never uses the text-Agent fallback.
+  // Codex with Local STT must still send text, without opening any native peer.
+  await page.evaluate(() =>
+    window.proof.agent({ provider: 'codex', status: 'ready', ended: false, live: null }),
+  )
+  const peersBefore = await page.evaluate(() => window.proof.livePeers.length)
   await open()
-  await say('Please review the plan.')
-  await page.locator('[data-mic-mode="agent"]').waitFor()
+  await say('Please review the plan locally.')
+  await page.waitForFunction(() =>
+    window.proof.calls.some(
+      (c) => c[0] === 'agentSend' && c[1] === 'Please review the plan locally.',
+    ),
+  )
+  await page.getByText('Local STT · Listening; text goes to the Agent', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.proof.livePeers.length), peersBefore)
+  await close()
+
+  // GPT Live ignores the local destination/hold preference and needs no STT model.
+  await page.evaluate(async () => {
+    await window.threadlight.updateSettings({
+      voiceMode: 'gpt-live',
+      voiceTarget: 'thread',
+      talkMode: 'hold',
+    })
+    window.proof.agent({ provider: 'codex', status: 'ready', ended: false, live: null })
+    window.proof.emit('onStt', { state: 'missing' })
+    delete window.proof.finishTranscript
+    window.proof.holdLive = true
+    delete window.proof.connectLive
+  })
+  const sendsBeforeLive = (await agentSends()).length
+  await open()
+  await page
+    .getByText('Connecting GPT Live · Speak now; your audio is buffered', { exact: true })
+    .waitFor()
+  await page.waitForFunction(() => typeof window.proof.connectLive === 'function')
+  // Speak while setup is blocked, then stop before releasing the connection.
+  await page.evaluate(() => {
+    window.proof.voicedAudioMs = 0
+    window.proof.setAudioLevel(0.18)
+  })
+  await page.waitForFunction(() => window.proof.voicedAudioMs >= 500)
+  await page.evaluate(() => window.proof.setAudioLevel(0))
+  await page.waitForFunction(() => {
+    const analyser = window.proof.livePeers.at(-1).analyser
+    const samples = new Float32Array(analyser.fftSize)
+    analyser.getFloatTimeDomainData(samples)
+    return samples.every((value) => Math.abs(value) < 0.001)
+  })
+  await page.evaluate(() => {
+    window.proof.holdLive = false
+    window.proof.connectLive()
+  })
   await page
     .getByText('Live · Speak naturally; press the hotkey to finish', { exact: true })
     .waitFor()
-  assert.deepEqual(
-    await page.evaluate(() =>
-      window.proof.calls.filter((c) => c[0] === 'liveOpen').map((c) => c[2]),
-    ),
-    ['Please review the plan.'],
-  )
-  assert.equal((await agentSends()).length, before)
-  await page.evaluate(() => {
-    delete window.proof.finishTranscript
-    window.proof.setAudioLevel(0.18)
-  })
   await page.waitForFunction(() => {
     const analyser = window.proof.livePeers.at(-1).analyser
     const samples = new Float32Array(analyser.fftSize)
     analyser.getFloatTimeDomainData(samples)
     return samples.some((value) => Math.abs(value) > 0.01)
   })
-  assert.equal(await page.evaluate(() => typeof window.proof.finishTranscript), 'undefined')
   await page.evaluate(() => window.proof.setAudioLevel(0))
-  await close()
-  assert.equal(await page.evaluate(() => window.proof.livePeers.at(-1).connectionState), 'closed')
-
-  // A long opening beginning with open selects Live, while setup can lag transcription.
-  await page.evaluate(() => {
-    window.proof.holdLive = true
-  })
-  await open()
-  const long = 'Open the project and help me understand why all the tests started failing yesterday'
-  await say(long)
-  await page.getByText('Connecting Live · Keep talking', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => typeof window.proof.finishTranscript), 'undefined')
+  assert.equal((await agentSends()).length, sendsBeforeLive)
   assert.equal(
     await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').length),
-    1,
-  )
-  await say('This sentence belongs to the same opening.')
-  await page.evaluate(() => {
-    window.proof.holdLive = false
-    window.proof.connectLive()
-  })
-  await page
-    .getByText('Live · Speak naturally; press the hotkey to finish', { exact: true })
-    .waitFor()
-  assert.equal(
-    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').at(-1)[2]),
-    `${long} This sentence belongs to the same opening.`,
-  )
-  await close()
-
-  // Native errors retain the opening text, without falling back to a text send.
-  await page.evaluate(() => {
-    window.proof.liveFailure = 'Synthetic Live unavailable'
-  })
-  await open()
-  await say('Keep these words for retry.')
-  const held = page.getByLabel('Live voice error')
-  await held.getByText('Keep these words for retry.', { exact: true }).waitFor()
-  await held.getByText('Synthetic Live unavailable', { exact: true }).waitFor()
-  assert.equal(
-    await page.getByText('Click the thread that should get this:', { exact: true }).count(),
     0,
   )
-  await held.getByRole('button', { name: 'Copy opening message' }).click()
+  // Changing mode releases the active transport, without ending the Agent conversation.
+  await page.evaluate(() => window.threadlight.updateSettings({ voiceMode: 'local-stt' }))
   await page.waitForFunction(() => document.documentElement.dataset.openMic === 'off')
-  await page.evaluate(() => {
-    window.proof.liveFailure = null
-  })
-
-  // Two consistent previews prepare Live before the utterance ends. Only the final text sends.
-  const fullOpening =
-    'Open the project and help me understand why the microphone routing tests fail after changing the model'
-  await page.evaluate((text) => {
-    window.proof.savedTranscribe = window.threadlight.transcribe
-    window.proof.previewCount = 0
-    window.threadlight.transcribe = async () => {
-      window.proof.previewCount++
-      return window.proof.previewCount <= 2
-        ? 'Open the project and help me understand why the microphone routing tests fail'
-        : text
-    }
-  }, fullOpening)
-  await open()
-  const beforePreview = await page.evaluate(
-    () => window.proof.calls.filter((c) => c[0] === 'liveStart').length,
-  )
-  const beforeOpening = await page.evaluate(
-    () => window.proof.calls.filter((c) => c[0] === 'liveOpen').length,
-  )
-  await page.evaluate(() => window.proof.setAudioLevel(0.18))
-  await page.waitForFunction(
-    (n) => window.proof.calls.filter((c) => c[0] === 'liveStart').length > n,
-    beforePreview,
-  )
-  assert.equal(
-    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').length),
-    beforeOpening,
-  )
-  assert.equal(await page.locator('[data-mic-mode="commands"]').count(), 0)
-  const previewPeak = await page.evaluate(() => {
-    const a = window.proof.livePeers.at(-1).analyser,
-      samples = new Float32Array(a.fftSize)
-    a.getFloatTimeDomainData(samples)
-    return Math.max(...samples.map(Math.abs))
-  })
-  assert.ok(previewPeak < 0.001, 'Opening audio must not leak into the preparing Live connection')
-  await page.evaluate(() => window.proof.setAudioLevel(0))
-  await page
-    .getByText('Live · Speak naturally; press the hotkey to finish', { exact: true })
-    .waitFor()
-  assert.equal(
-    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').at(-1)[2]),
-    fullOpening,
-  )
-  await close()
-  await page.evaluate(() => {
-    window.threadlight.transcribe = window.proof.savedTranscribe
-  })
-
-  // Revised final text can cancel provisional Live preparation and latch commands.
-  await page.evaluate(() => {
-    window.proof.previewCount = 0
-    window.threadlight.transcribe = async () => {
-      window.proof.previewCount++
-      return window.proof.previewCount <= 2
-        ? 'Open the project and help me understand why the microphone routing tests fail'
-        : 'Open Synthetic Codex'
-    }
-  })
-  await open()
-  const revisedStarts = await page.evaluate(
-    () => window.proof.calls.filter((c) => c[0] === 'liveStart').length,
-  )
-  const revisedOpens = await page.evaluate(
-    () => window.proof.calls.filter((c) => c[0] === 'liveOpen').length,
-  )
-  await page.evaluate(() => window.proof.setAudioLevel(0.18))
-  await page.waitForFunction(
-    (n) => window.proof.calls.filter((c) => c[0] === 'liveStart').length > n,
-    revisedStarts,
-  )
-  await page.evaluate(() => window.proof.setAudioLevel(0))
-  await page.locator('[data-mic-mode="commands"]').waitFor()
   assert.equal(await page.evaluate(() => window.proof.livePeers.at(-1).connectionState), 'closed')
-  assert.equal(
-    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').length),
-    revisedOpens,
-  )
-  await close()
-  await page.evaluate(() => {
-    window.threadlight.transcribe = window.proof.savedTranscribe
-  })
 
-  // Closing during connection setup cannot submit its retained opening later.
-  await page.evaluate(() => {
+  // No fallback or delayed connection after switching away during setup.
+  await page.evaluate(async () => {
+    await window.threadlight.updateSettings({ voiceMode: 'gpt-live' })
     window.proof.holdLive = true
+    delete window.proof.connectLive
+    window.proof.emit('onTalkToggle')
   })
-  await open()
-  await say('Cancel this opening please.')
-  const openings = await page.evaluate(
-    () => window.proof.calls.filter((c) => c[0] === 'liveOpen').length,
-  )
-  await close()
-  await page.evaluate(() => {
+  await page.waitForFunction(() => typeof window.proof.connectLive === 'function')
+  await page
+    .getByText('Connecting GPT Live · Speak now; your audio is buffered', { exact: true })
+    .waitFor()
+  await page.evaluate(async () => {
+    await window.threadlight.updateSettings({ voiceMode: 'local-stt' })
     window.proof.holdLive = false
     window.proof.connectLive()
   })
-  await page.waitForTimeout(150)
-  assert.equal(
-    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').length),
-    openings,
+  await page.waitForFunction(() => window.proof.livePeers.at(-1).connectionState === 'closed')
+  assert.equal((await agentSends()).length, sendsBeforeLive)
+
+  // Runtime startup must not wait for the operating system to grant the microphone.
+  await page.evaluate(async () => {
+    await window.threadlight.updateSettings({ voiceMode: 'gpt-live' })
+    const acquire = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    window.proof.savedBufferedAcquire = acquire
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: async (options) => {
+        await new Promise((resolve) => {
+          window.proof.allowBufferedMic = resolve
+        })
+        return acquire(options)
+      },
+    })
+    window.proof.holdLive = true
+    delete window.proof.connectLive
+    window.proof.emit('onTalkToggle')
+  })
+  await page.waitForFunction(
+    () =>
+      typeof window.proof.connectLive === 'function' &&
+      typeof window.proof.allowBufferedMic === 'function',
+  )
+  await page.getByText('Opening microphone and connecting GPT Live…', { exact: true }).waitFor()
+  const stoppedBeforeLateMic = await page.evaluate(() => window.proof.stoppedTracks)
+  await page.evaluate(async () => {
+    await window.threadlight.updateSettings({ voiceMode: 'local-stt' })
+    window.proof.holdLive = false
+    window.proof.connectLive()
+    window.proof.allowBufferedMic()
+  })
+  await page.waitForFunction((n) => window.proof.stoppedTracks > n, stoppedBeforeLateMic)
+  assert.equal(await page.evaluate(() => window.proof.livePeers.at(-1).connectionState), 'closed')
+  await page.evaluate(() =>
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      writable: true,
+      value: window.proof.savedBufferedAcquire,
+    }),
   )
 
+  // A native failure stays a native failure and releases the microphone.
+  await page.evaluate(async () => {
+    await window.threadlight.updateSettings({ voiceMode: 'gpt-live' })
+    window.proof.liveFailure = 'Synthetic Live unavailable'
+    window.proof.emit('onTalkToggle')
+  })
+  await page
+    .getByLabel('Live voice error')
+    .getByText('Synthetic Live unavailable', { exact: true })
+    .waitFor()
+  await page.waitForFunction(() => document.documentElement.dataset.openMic === 'off')
+  assert.equal((await agentSends()).length, sendsBeforeLive)
+  await page.evaluate(async () => {
+    window.proof.liveFailure = null
+    window.proof.agent({ provider: 'claude', status: 'ready', ended: false, live: null })
+    await new Promise((resolve) =>
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)),
+    )
+    window.proof.emit('onTalkToggle')
+  })
+  await page
+    .getByText(
+      'GPT Live requires a Codex Agent conversation. Choose Codex in Agent settings; end an existing Claude conversation first.',
+      { exact: true },
+    )
+    .first()
+    .waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.openMic), 'off')
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  await page.evaluate(async () => {
+    await window.threadlight.updateSettings({
+      voiceMode: 'local-stt',
+      voiceTarget: 'agent',
+      talkMode: 'toggle',
+    })
+    window.proof.emit('onStt', { state: 'ready' })
+  })
   // Closing while transcription is pending cannot leak a command or agent request.
   await open()
   await page.evaluate(() => {

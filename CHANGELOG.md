@@ -6,6 +6,23 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Added persistent cross-provider communication tools, project DM history, correlated replies,
+  native request routing and workflow scheduling with dependency, model, workspace and budget gates.
+  Added backup/recovery and uncertain-delivery reconciliation. The tested Codex idle resume is
+  admitted; Claude wakeup remains disabled after its concurrent-writer proof failed. See
+  [validation and supported paths](THREAD-COMMUNICATION-VALIDATION.md).
+
+- Buffered GPT Live speech during hotkey-triggered connection setup, with parallel microphone
+  startup, ordered playback and cancellation cleanup. No standby connection is opened.
+
+- Added an explicit Local STT / GPT Live voice switch. Local speech stays in transcription;
+  GPT Live uses native audio from the first turn, independently of local send targets and push-to-talk preferences.
+
+- Narrowed the panel from 342 to 300 pixels and halved thread-row vertical padding.
+
+- Added named-chat discovery and fresh read-only answers across enabled Claude and
+  Codex chats, with ambiguity handling and inspectable source details in Agent history.
+
 - Preserved the conversation E2E observer and its cleanup check, with portable
   paths and conversation evidence stored outside the repository.
 

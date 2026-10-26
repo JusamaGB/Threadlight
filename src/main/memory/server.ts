@@ -4,12 +4,36 @@ import { type MemoryRead } from '../../shared/memory'
 import { MemoryError, MemoryStore } from './store'
 import { agentActions, toolSchemas, memoryTools, memoryInstructions } from './protocol'
 import { MemoryConnections } from './connections'
+import { randomBytes } from 'node:crypto'
+import {
+  communicationInstructions,
+  communicationSchemas,
+  communicationTools,
+  type CommunicationAction,
+  type CommunicationActor,
+} from '../../shared/communication'
 
 /** Stateless Streamable HTTP MCP, bound to loopback and authenticated on every request. */
 export class MemoryServer {
   private server: Server | null = null
   endpoint: string | null = null
   readonly connections: MemoryConnections
+  private ownedCommunication = new Map<string, () => CommunicationActor>()
+  revokeCommunication() {
+    this.ownedCommunication.clear()
+  }
+  connectCommunication(actor: () => CommunicationActor) {
+    if (!this.endpoint) throw new Error('Communication endpoint is unavailable.')
+    const token = randomBytes(32).toString('hex')
+    this.ownedCommunication.set(token, actor)
+    return {
+      endpoint: this.endpoint.replace('/mcp', '/communication'),
+      token,
+      close: () => {
+        this.ownedCommunication.delete(token)
+      },
+    }
+  }
   constructor(private readonly store: MemoryStore) {
     this.connections = new MemoryConnections(store)
   }
@@ -31,13 +55,21 @@ export class MemoryServer {
         return
       }
       const connection = request.url?.match(/^\/plugin\/mcp\/([a-f0-9-]{36})$/)?.[1]
-      if (request.url !== '/mcp' && !connection) return finish(404)
-      let actor
+      const communicationOnly = request.url === '/communication'
+      if (request.url !== '/mcp' && !connection && !communicationOnly) return finish(404)
+      let actor: import('./store').MemoryActor | undefined
+      let communicationActor: CommunicationActor | undefined
       try {
         if (!request.headers.authorization?.startsWith('Bearer ')) throw new Error('Missing bearer')
-        actor = connection
-          ? this.connections.authenticate(connection, request.headers.authorization.slice(7))
-          : this.store.authenticate(request.headers.authorization.slice(7))
+        if (communicationOnly) {
+          communicationActor = this.ownedCommunication.get(
+            request.headers.authorization.slice(7),
+          )?.()
+          if (!communicationActor) throw new Error('Communication connection expired.')
+        } else
+          actor = connection
+            ? this.connections.authenticate(connection, request.headers.authorization.slice(7))
+            : this.store.authenticate(request.headers.authorization.slice(7))
       } catch {
         return finish(401, { error: 'An enrolled shared-memory capability is required.' })
       }
@@ -58,7 +90,7 @@ export class MemoryServer {
           request.destroy()
         } else chunks.push(chunk)
       })
-      request.on('end', () => {
+      request.on('end', async () => {
         if (response.writableEnded) return
         let id: string | number | null = null
         try {
@@ -78,12 +110,16 @@ export class MemoryServer {
               protocolVersion: '2025-06-18',
               capabilities: { tools: {} },
               serverInfo: { name: 'Threadlight Shared Spaces', version: '1.0.0' },
-              instructions: memoryInstructions,
+              instructions: communicationOnly
+                ? communicationInstructions
+                : `${memoryInstructions}\n${communicationInstructions}`,
             }
           else if (msg.method === 'ping') result = {}
           else if (msg.method === 'tools/list')
             result = {
-              tools: memoryTools,
+              tools: communicationOnly
+                ? communicationTools
+                : [...memoryTools, ...communicationTools],
             }
           else if (msg.method === 'tools/call') {
             const params = z
@@ -93,6 +129,44 @@ export class MemoryServer {
               })
               .parse(msg.params)
             const action = agentActions.find((a) => `memory_${a}` === params.name)
+            const communicationAction = Object.keys(communicationSchemas).find(
+              (a) => `threadlight_${a}` === params.name,
+            ) as CommunicationAction | undefined
+            if (communicationAction) {
+              try {
+                if (!this.store.communicationService)
+                  throw new Error('Thread communication is unavailable.')
+                const value = await this.store.communicationService.execute(
+                  communicationAction,
+                  params.arguments,
+                  communicationActor ?? this.store.communicationActor(actor!),
+                )
+                return finish(200, {
+                  jsonrpc: '2.0',
+                  id,
+                  result: {
+                    content: [{ type: 'text', text: JSON.stringify(value) }],
+                    isError: false,
+                  },
+                })
+              } catch (error) {
+                return finish(200, {
+                  jsonrpc: '2.0',
+                  id,
+                  result: {
+                    content: [
+                      {
+                        type: 'text',
+                        text: error instanceof Error ? error.message : 'Communication failed.',
+                      },
+                    ],
+                    isError: true,
+                  },
+                })
+              }
+            }
+            if (communicationOnly)
+              throw new Error('Only communication tools are available on this connection.')
             if (!action) throw new MemoryError('invalid_input', 'Unknown memory tool.')
             try {
               const value = this.store.execute(
@@ -159,6 +233,7 @@ export class MemoryServer {
     return this.endpoint
   }
   close() {
+    this.ownedCommunication.clear()
     this.connections.close()
     this.server?.closeAllConnections()
     this.server?.close()

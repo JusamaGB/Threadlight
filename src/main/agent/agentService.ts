@@ -25,6 +25,9 @@ import { codexPolicy } from './codexPolicy'
 import { connectedApps } from './agentApps'
 import { briefing, readableFolders } from './briefing'
 import { archiveAgentConversation } from './agentArchive'
+import type { ThreadReadServer } from '../threadRead/server'
+import { ThreadEvidenceStore } from './threadEvidenceStore'
+import { agentEvidencePath } from '../sessions/paths'
 import {
   validVoiceOffer,
   validVoiceSession,
@@ -43,6 +46,11 @@ const responseSchema = z.discriminatedUnion('action', [
   }),
 ])
 interface Options {
+  communication?: (
+    actor: () => import('../../shared/communication').CommunicationActor,
+  ) => import('../threadRead/server').ThreadReadConnection
+  communicationProject?: () => string | undefined
+  threadReads?: ThreadReadServer
   workspace: string
   index: string
   claudeProjects: string
@@ -57,6 +65,9 @@ interface Options {
 
 /** The sole owner of the active Agent, independent of the monitored applications. */
 export class AgentService {
+  private humanInput?: { id: string; text: string; at: number }
+  private liveInput = ''
+  private evidence: ThreadEvidenceStore
   readonly store: AgentStore
   private run: Run | null = null
   private state: AgentState = { ...IDLE_AGENT }
@@ -68,6 +79,7 @@ export class AgentService {
   private voiceSession: string | null = null
   private voiceRetirement: Promise<void> = Promise.resolve()
   constructor(private options: Options) {
+    this.evidence = new ThreadEvidenceStore(agentEvidencePath(options.index))
     this.store = new AgentStore(options.index)
     this.past = transcriptsFolder(options.claudeProjects, options.workspace)
   }
@@ -141,7 +153,7 @@ export class AgentService {
     } else if (id === undefined) await this.voiceRetirement
   }
 
-  async send(value: unknown): Promise<AgentResult> {
+  async send(value: unknown, humanText?: string): Promise<AgentResult> {
     if (typeof value !== 'string' || !value.trim() || value.length > 32_000)
       return { ok: false, reason: 'Enter a message up to 32,000 characters.' }
     if (this.locked || agentBusy(this.state))
@@ -163,6 +175,7 @@ export class AgentService {
         this.run = next
       }
       if (operation !== this.operation) throw new Error('The conversation was ended.')
+      this.humanInput = { id: crypto.randomUUID(), text: humanText ?? value, at: Date.now() }
       return await this.run.send(value)
     } catch (error) {
       if (operation === this.operation)
@@ -298,6 +311,7 @@ export class AgentService {
               kind: 'step',
               text: `Unconfirmed send (not automatically retried):\n${record.pending.text}`,
             })
+          if (!cursor) page.items.push(...(await this.savedEvidence(id)))
           return page
         } finally {
           client.close()
@@ -305,7 +319,10 @@ export class AgentService {
       }
       const raw = id.startsWith('claude:') ? id.slice(7) : ''
       if (!raw) throw new Error('That conversation is not registered with Threadlight.')
-      return { items: await readConversation(this.past, raw), cursor: null }
+      return {
+        items: [...(await readConversation(this.past, raw)), ...(await this.savedEvidence(id))],
+        cursor: null,
+      }
     } catch (error) {
       return { items: [], cursor: null, error: (error as Error).message }
     }
@@ -381,12 +398,66 @@ export class AgentService {
     }
   }
 
+  private async savedEvidence(id: string): Promise<AgentItem[]> {
+    try {
+      return (await this.evidence.read(id)).map((item) => ({ ...item, sourceHistorical: true }))
+    } catch {
+      return [
+        {
+          kind: 'step',
+          text: 'Saved source details are unavailable. Conversation messages remain readable; ask again for current evidence.',
+        },
+      ]
+    }
+  }
+
   private async create(record?: AgentRecord, items?: AgentItem[]): Promise<Run> {
     const settings = structuredClone(this.options.settings())
     const provider = record?.provider ?? settings.agentProvider
     let run: Run
+    const communicationOwner = record?.id ?? `agent:${crypto.randomUUID()}`
+    const communication = this.options.communication
+      ? () =>
+          this.options.communication!(() => ({
+            id: run?.current.conversationId ?? communicationOwner,
+            kind: 'agent',
+            humanInput: this.humanInput,
+            target: run?.current.sessionId
+              ? provider === 'codex'
+                ? `codex:${run.current.sessionId}`
+                : run.current.sessionId
+              : undefined,
+            spaceId: this.options.communicationProject?.(),
+          }))
+      : undefined
+    const threadReads = this.options.threadReads
+      ? () =>
+          this.options.threadReads!.connect((source) => {
+            if (this.run !== run) return
+            run.addThreadReceipt(source)
+            const state = run.current
+            const id =
+              state.conversationId ?? (state.sessionId ? `${provider}:${state.sessionId}` : null)
+            if (id)
+              void this.evidence.save(id, state.items).catch(() =>
+                this.publish({
+                  ...this.state,
+                  error: 'Source details could not be saved. The current evidence remains visible.',
+                }),
+              )
+          })
+      : undefined
     const onChange = (state: AgentState) => {
       if (this.run !== run) return
+      const speech = state.live
+        ? [...state.items]
+            .reverse()
+            .find((item) => item.kind === 'you' && item.id?.startsWith('live:'))
+        : undefined
+      if (speech?.id && speech.text && this.liveInput !== `${speech.id}:${speech.text}`) {
+        this.liveInput = `${speech.id}:${speech.text}`
+        this.humanInput = { id: speech.id, text: speech.text, at: Date.now() }
+      }
       if (provider === 'claude' && state.sessionId) {
         const id = `claude:${state.sessionId}`
         const previous = this.store.get(id)
@@ -421,6 +492,8 @@ export class AgentService {
     await mkdir(this.options.workspace, { recursive: true })
     if (provider === 'codex')
       run = new CodexAgentRun({
+        communication,
+        threadReads,
         client: () => this.connect(),
         workspace: this.options.workspace,
         model: settings.agentCodexModel,
@@ -438,6 +511,8 @@ export class AgentService {
       const cli = await this.options.cli('claude')
       if (!cli) throw new Error('Claude Code was not found on this PC.')
       run = new AgentRun({
+        communication,
+        threadReads,
         cli,
         workspace: this.options.workspace,
         model: 'claude-haiku-5-5',

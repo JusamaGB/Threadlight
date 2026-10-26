@@ -434,7 +434,7 @@ export function attentionFor(
 ): Attention | null {
   const until = (kind: HeldCard['kind']) => (held?.kind === kind ? held.releasesAt : null)
   if (held?.kind === 'offer' && held.detail) {
-    return { kind: 'offer', title: held.detail, answerableUntil: held.releasesAt }
+    return { kind: 'offer', title: held.detail, answerableUntil: held.releasesAt, holdId: held.id }
   }
   if (held?.kind === 'approval') {
     return {
@@ -442,6 +442,7 @@ export function attentionFor(
       action: held.detail ?? summary?.lastAction ?? null,
       tool: held.tool ?? null,
       answerableUntil: held.releasesAt,
+      holdId: held.id,
     }
   }
   if (!summary || summary.interrupted) return null
@@ -450,13 +451,19 @@ export function attentionFor(
       kind: 'question',
       questions: summary.pendingQuestion,
       answerableUntil: until('question'),
+      holdId: held?.kind === 'question' ? held.id : undefined,
     }
   }
   if (state === 'waiting') {
     return { kind: 'approval', action: summary.lastAction, tool: null, answerableUntil: null }
   }
   if (state === 'idle' && summary.nextStep) {
-    return { kind: 'next-step', ...summary.nextStep, answerableUntil: until('next-step') }
+    return {
+      kind: 'next-step',
+      ...summary.nextStep,
+      answerableUntil: until('next-step'),
+      holdId: held?.kind === 'next-step' ? held.id : undefined,
+    }
   }
   return null
 }

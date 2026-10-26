@@ -9,6 +9,27 @@ A small status dot and mini composer for **Claude and Codex desktop chats** on W
 > **Status: early development.** Nothing is released yet. This README describes the
 > plan; features are ticked off in [CHANGELOG.md](CHANGELOG.md) as they land.
 
+## Thread communication and workflows
+
+Shared Spaces now has a **Project communication and workflow** view. Configure existing chats as
+roles, select their exact models, enable project DMs, and choose manual, assisted or automatic
+progression. Project DMs, replies, questions, delivery receipts and saved results remain available
+for human review. Brainstorm can propose structured assignments and revise unsent work; the
+scheduler checks accepted dependencies, input versions, workspace conflicts and the project budget.
+
+Delivery is enabled only for verified native capabilities. The tested Codex CLI supports an idle
+resume with native writer exclusion. The tested Claude CLI allowed concurrent writers, so its
+native wakeup is disabled; enrolled Claude chats can exchange messages through their shared inbox
+inside an existing turn. Open desktop-owned and remote delivery are not claimed. Busy verified
+Codex destinations can queue until their native owner releases them. Unknown outcomes require
+review rather than an automatic retry. See [implementation and evidence](THREAD-COMMUNICATION-VALIDATION.md)
+for the precise supported paths and remaining voice acceptance test.
+
+Native questions can be answered in their current cards. To answer a card through the Agent,
+select **Answer through Agent** on that card first, then give an explicit answer. Expired cards,
+replacement questions and peer requests cannot reuse a human decision. Closing the mic does not
+stop background work or reopen GPT Live.
+
 ## What it does
 
 - **A dot in the corner of your screen.** Green when none of your Claude Code sessions
@@ -23,18 +44,28 @@ A small status dot and mini composer for **Claude and Codex desktop chats** on W
   talk) works anywhere, even in a game: say _"message docs site, check the build passed"_
   and Threadlight finds the thread, shows a short countdown you can cancel, and sends. Or
   turn on Hold, and the message waits for you to click Send.
-- **Settings → Voice target** chooses **Agent conversation** or **Thread message**.
-  Both support Toggle and Push to talk. Agent Toggle keeps listening between sentences;
+- **Settings → Voice target** switches between **Local STT** and **GPT Live**.
+  Local STT transcribes on this PC; **Send text to** chooses **Agent conversation** or
+  **Thread message**. Both destinations support Toggle and Push to talk. Agent Toggle keeps listening between sentences;
   Push to talk submits when released. Closing the mic keeps the Agent conversation available
   until End or its inactivity limit. Thread messages use the review/countdown controls.
-  In Agent mode, navigation commands are also available:
+  GPT Live uses native audio from the first spoken turn through the Codex Agent and your
+  ChatGPT sign-in. It does not require the local speech model. Its hotkey connects/disconnects
+  the conversation. The hotkey starts connection and microphone setup together; speech is
+  buffered in memory until Live is ready, then sent in order. Nothing is preconnected.
+  Cancellation, connection failure or a 30-second startup limit discards the buffer, with
+  an error on failure. A Claude conversation must be ended and
+  Codex selected before using GPT Live. Changing modes closes the mic and discards pending
+  transcription; it never silently switches engines or changes the Agent provider.
+  In Local STT's Agent destination, navigation commands are also available:
   Say **“open”**, then pause for one second, to expand and pin the thread list. That
   microphone session stays in command mode until closed; other speech is ignored.
   Close and reopen to choose again. Start with ordinary speech instead to send it to
   the Agent after a pause, keeping the mic open. Busy or failed sends remain visible
   for retry. The thread composer's mic always stays dictation for that thread.
 
-Threadlight runs on your PC and transcribes speech locally. It has no telemetry or
+Threadlight runs on your PC. Local STT transcribes speech locally; GPT Live sends audio to GPT.
+It has no telemetry or
 external Threadlight service. Shared Spaces exposes authenticated collaboration tools on loopback;
 agent turns still use your provider account.
 
@@ -59,7 +90,7 @@ new-chat creation, dependency scheduling and workflow profiles remain future wor
 
 Setup creates the workspace's collaboration space. In **Handoffs**, add named sectors/folders
 for notes, decisions, scratchpads, images and documents. The map, folder, item and task
-views stay inside the existing 342-pixel panel. Map/List, search, Back and saved drafts
+views stay inside the 300-pixel panel. Map/List, search, Back and saved drafts
 let you browse without starting agent work.
 
 Existing material stays **Unassigned** until you explicitly preview and confirm its

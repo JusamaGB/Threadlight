@@ -4,6 +4,9 @@ import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { readBackup } from './backup'
 import { attachmentMime } from './attachments'
+import { CommunicationStore } from '../communication/store'
+import type { CommunicationService } from '../communication/service'
+import type { CommunicationActor } from '../../shared/communication'
 import { MemoryError } from './errors'
 export { MemoryError } from './errors'
 import {
@@ -48,6 +51,8 @@ const normalName = (s: string) =>
 
 /** One local transactional authority. Provider data is never written by this store. */
 export class MemoryStore {
+  readonly communications: CommunicationStore
+  communicationService?: CommunicationService
   private db: DatabaseSync
   private active = false
   onChange: () => void = () => {}
@@ -66,7 +71,7 @@ export class MemoryStore {
       'PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON;',
     )
     const version = this.db.prepare('PRAGMA user_version').get() as { user_version: number }
-    if (version.user_version > 1) {
+    if (version.user_version > 2) {
       this.db.close()
       throw new Error('Shared memory was created by a newer Threadlight.')
     }
@@ -79,8 +84,9 @@ export class MemoryStore {
       CREATE TABLE IF NOT EXISTS operations (principal TEXT NOT NULL, operation TEXT NOT NULL, digest TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(principal,operation));
       CREATE TABLE IF NOT EXISTS blobs (id TEXT PRIMARY KEY, mime TEXT NOT NULL, data BLOB NOT NULL);
       CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      PRAGMA user_version=1;
     `)
+    this.communications = new CommunicationStore(this.db, this.now)
+    this.db.exec('PRAGMA user_version=2')
     // An interrupted dispatch may have reached its provider; never replay it automatically.
     for (const task of this.all<MemoryTask>('task')) {
       if (task.deliveryState === 'dispatching' || ['dispatching', 'accepted'].includes(task.state))
@@ -119,6 +125,14 @@ export class MemoryStore {
   }
   restoreFrom(file: string) {
     if (
+      this.communications
+        .list('message')
+        .some((m) =>
+          m.deliveries.some((d) => ['submitting', 'accepted', 'unknown'].includes(d.phase)),
+        )
+    )
+      throw new Error('Resolve active or uncertain messages before restoring.')
+    if (
       this.tasks().some(
         (t) =>
           ['dispatching', 'unknown'].includes(t.deliveryState ?? '') ||
@@ -131,6 +145,30 @@ export class MemoryStore {
       this.db.exec(
         'DELETE FROM records; DELETE FROM blobs; DELETE FROM events; DELETE FROM operations; DELETE FROM preferences;',
       )
+      this.db.exec(
+        'DELETE FROM communication_records; DELETE FROM communication_events; DELETE FROM communication_operations;',
+      )
+      for (const event of data.communicationEvents)
+        this.db
+          .prepare(
+            'INSERT INTO communication_events(seq,id,kind,space,action,at) VALUES(?,?,?,?,?,?)',
+          )
+          .run(event.seq, event.id, event.kind, event.space, event.action, event.at)
+      for (const op of data.communicationOperations)
+        this.db
+          .prepare('INSERT INTO communication_operations(actor,id,digest,result) VALUES(?,?,?,?)')
+          .run(op.actor, op.id, op.digest, op.result)
+      for (const row of data.communication) {
+        if (row.kind === 'workflow') Object.assign(row.value, { paused: true, expiresAt: 1 })
+        if (row.kind === 'message' && 'deliveries' in row.value)
+          for (const delivery of row.value.deliveries) {
+            if (['submitting', 'accepted'].includes(delivery.phase)) delivery.phase = 'unknown'
+            else if (delivery.phase === 'queued') delivery.phase = 'held'
+          }
+        if (row.kind === 'question')
+          Object.assign(row.value, { state: 'expired', generation: randomUUID() })
+        this.communications.put(row.kind, row.value, 'Restored; coordination paused')
+      }
       for (const row of data.records) {
         const value = row.value as RecordValue
         if (row.kind === 'space') Object.assign(value, { paused: true, expiresAt: 0 })
@@ -251,6 +289,94 @@ export class MemoryStore {
       return fail('permission_denied', 'Memory access expired or was revoked.')
     if (grant.parentGrantId) this.grant({ grantId: grant.parentGrantId })
     return grant
+  }
+  communicationActor(actor: MemoryActor): CommunicationActor {
+    const grant = this.grant(actor)
+    if (!grant?.assignee || grant.folderId !== null || grant.readOnly)
+      throw new Error(
+        'Direct messaging requires a bound participant with project-wide write access and workflow permission.',
+      )
+    return {
+      id: `participant:${grant.spaceId}:${grant.assignee}`,
+      kind: 'participant',
+      target: grant.assignee,
+      spaceId: grant.spaceId,
+      folderId: grant.folderId,
+      taskId: grant.taskId,
+    }
+  }
+  atomicCommunication<T>(action: () => T): T {
+    return this.transaction(action)
+  }
+  authorizeCommunication(actor: CommunicationActor, spaceId?: string) {
+    if (!spaceId) {
+      if (actor.kind === 'participant') throw new Error('A participant requires a project.')
+      return
+    }
+    this.space(spaceId)
+    if (actor.kind === 'participant') {
+      const grant = this.all<MemoryGrant>('grant').find(
+        (g) =>
+          g.assignee === actor.target &&
+          g.spaceId === spaceId &&
+          !g.revoked &&
+          !g.readOnly &&
+          g.folderId === null &&
+          (!g.expiresAt || g.expiresAt > this.now()),
+      )
+      if (!grant) throw new Error('Participant access expired or was revoked.')
+      this.grant({ grantId: grant.id })
+    }
+  }
+  reserveCommunication(spaceId: string, record: () => void) {
+    return this.transaction(() => {
+      const space = this.space(spaceId)
+      if (space.paused || space.expiresAt <= this.now() || space.dispatches >= space.maxDispatches)
+        throw new Error('Project dispatch authority or budget ended.')
+      this.put('space', { ...space, dispatches: space.dispatches + 1 })
+      record()
+    })
+  }
+  communicationFolder(spaceId: string, folderId: string) {
+    const folder = this.get<MemoryFolder>('folder', folderId)
+    if (folder.spaceId !== spaceId || folder.archived || folder.redirectId)
+      throw new Error('Choose an available output folder in this project.')
+  }
+  communicationInput(actor: CommunicationActor, itemId: string, revision?: number) {
+    const value = this.read({}, itemId, revision)
+    if (actor.spaceId && value.item.spaceId !== actor.spaceId)
+      throw new Error('Item belongs to another project.')
+    return {
+      revision: value.revision.revision,
+      folderId: value.item.folderId,
+      archived: value.item.archived,
+    }
+  }
+  prepareCommunicationDelivery(spaceId: string, assignee: string) {
+    const parent = this.all<MemoryGrant>('grant').find(
+      (g) =>
+        g.assignee === assignee &&
+        g.spaceId === spaceId &&
+        !g.revoked &&
+        !g.readOnly &&
+        g.folderId === null &&
+        !g.parentGrantId,
+    )
+    if (!parent) throw new Error('Enroll the recipient with project-wide access before delivery.')
+    this.grant({ grantId: parent.id })
+    const token = randomBytes(32).toString('hex')
+    this.transaction(() =>
+      this.put('grant', {
+        ...parent,
+        id: randomUUID(),
+        parentGrantId: parent.id,
+        pluginConnectionId: undefined,
+        tokenHash: hash(token),
+        expiresAt: this.now() + 35 * 60_000,
+        label: `Communication: ${parent.label}`.slice(0, 80),
+      }),
+    )
+    return token
   }
   author(actor: MemoryActor) {
     const grant = this.grant(actor)

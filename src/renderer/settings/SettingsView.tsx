@@ -10,6 +10,7 @@ import { windowLabel } from '../lib/format'
 import styles from './Settings.module.css'
 
 interface SettingsViewProps {
+  currentAgentProvider?: 'claude' | 'codex'
   providerLocked?: boolean
   settings: Settings
   stt: SttStatus
@@ -28,9 +29,11 @@ export function SettingsView({
   onPickWorkspace,
   onOpenMemory,
   providerLocked,
+  currentAgentProvider,
 }: SettingsViewProps) {
   const [errors, setErrors] = useState<Partial<Record<keyof Settings, string>>>({})
   const [savingProviders, setSavingProviders] = useState(false)
+  const [savingVoice, setSavingVoice] = useState(false)
 
   const save = async (patch: SettingsPatch) => {
     const key = Object.keys(patch)[0] as keyof Settings
@@ -81,36 +84,69 @@ export function SettingsView({
         </Row>
       </Group>
       <Group label={en.settings.voice}>
-        <Row label={en.settings.voiceTarget} error={errors.voiceTarget}>
-          <select
-            aria-label={en.settings.voiceTarget}
-            value={settings.voiceTarget}
-            onChange={(event) =>
-              save({ voiceTarget: event.target.value as Settings['voiceTarget'] })
-            }
-          >
-            <option value="agent">{en.settings.agentConversation}</option>
-            <option value="thread">{en.settings.threadMessage}</option>
-          </select>
+        <Row label={en.settings.voiceTarget} error={errors.voiceMode}>
+          <span className={styles.segmented} role="group" aria-label={en.settings.voiceTarget}>
+            {(['local-stt', 'gpt-live'] as const).map((mode) => (
+              <button
+                key={mode}
+                aria-pressed={settings.voiceMode === mode}
+                disabled={savingVoice}
+                className={settings.voiceMode === mode ? styles.on : undefined}
+                onClick={async () => {
+                  setSavingVoice(true)
+                  try {
+                    await save({ voiceMode: mode })
+                  } finally {
+                    setSavingVoice(false)
+                  }
+                }}
+              >
+                {mode === 'local-stt' ? en.settings.localStt : en.settings.gptLive}
+              </button>
+            ))}
+          </span>
         </Row>
+        <p className={styles.footer}>
+          {settings.voiceMode === 'gpt-live' ? en.settings.gptLiveHint : en.settings.localSttHint}
+        </p>
+        {settings.voiceMode === 'gpt-live' &&
+          (currentAgentProvider ?? settings.agentProvider) !== 'codex' && (
+            <p className={styles.error}>{en.settings.gptLiveNeedsCodex}</p>
+          )}
+        {settings.voiceMode === 'local-stt' && (
+          <Row label={en.settings.localDestination} error={errors.voiceTarget}>
+            <select
+              aria-label={en.settings.localDestination}
+              value={settings.voiceTarget}
+              onChange={(event) =>
+                save({ voiceTarget: event.target.value as Settings['voiceTarget'] })
+              }
+            >
+              <option value="agent">{en.settings.agentConversation}</option>
+              <option value="thread">{en.settings.threadMessage}</option>
+            </select>
+          </Row>
+        )}
         <Row label={en.settings.talkHotkey} error={errors.talkHotkey}>
           <span className={styles.pair}>
             <HotkeyField
               value={settings.talkHotkey}
               onChange={(talkHotkey) => save({ talkHotkey })}
             />
-            <Segmented
-              value={settings.talkMode}
-              options={[
-                { value: 'toggle', label: en.settings.toggle, title: en.settings.toggleHint },
-                { value: 'hold', label: en.settings.hold, title: en.settings.holdHint },
-              ]}
-              separator="/"
-              onChange={(talkMode) => save({ talkMode })}
-            />
+            {settings.voiceMode === 'local-stt' && (
+              <Segmented
+                value={settings.talkMode}
+                options={[
+                  { value: 'toggle', label: en.settings.toggle, title: en.settings.toggleHint },
+                  { value: 'hold', label: en.settings.hold, title: en.settings.holdHint },
+                ]}
+                separator="/"
+                onChange={(talkMode) => save({ talkMode })}
+              />
+            )}
           </span>
         </Row>
-        {settings.voiceTarget === 'thread' && (
+        {settings.voiceMode === 'local-stt' && settings.voiceTarget === 'thread' && (
           <Row label={en.settings.countdown}>
             <span className={styles.pair}>
               {/* Hold switches the countdown off: the seconds grey out until it is let go. */}
@@ -133,9 +169,11 @@ export function SettingsView({
             </span>
           </Row>
         )}
-        <Row label={en.settings.speechModel}>
-          <ModelStatus stt={stt} />
-        </Row>
+        {settings.voiceMode === 'local-stt' && (
+          <Row label={en.settings.speechModel}>
+            <ModelStatus stt={stt} />
+          </Row>
+        )}
       </Group>
 
       <Group label={en.settings.panel}>

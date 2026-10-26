@@ -1,6 +1,6 @@
 // Run after npm run build. Uses Playwright from THREADLIGHT_PLAYWRIGHT or local resolution.
 // All IPC is synthetic; this never launches Threadlight, hooks or either provider CLI.
-/* global window, document, AudioContext, getComputedStyle */
+/* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 import { readFileSync, statSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -9,15 +9,18 @@ import { createRequire } from 'node:module'
 import { join, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkVoiceRouting } from './voice-routing.smoke.mjs'
+import { setupVoiceInput } from './voice-input.fixture.mjs'
 import { checkMicPill } from './mic-pill.smoke.mjs'
 import { readMotionFrame } from './motion-pixels.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
+import { checkThreadReading } from './thread-reading.smoke.mjs'
 import { checkPanelHeight } from './panel-height.smoke.mjs'
 import { checkTips } from './tips.smoke.mjs'
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar } from './toolbar.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
+import { setupCommunication, checkCommunication } from './communication.smoke.mjs'
 import { checkThreadBadges } from './thread-badges.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
@@ -161,15 +164,24 @@ const server = createServer((request, response) => {
   }
 })
 await new Promise((done) => server.listen(0, '127.0.0.1', done))
-let browser, memoryProof, spacesProof, testPage
+let browser, memoryProof, spacesProof, communicationProof, testPage
 checks: try {
-  browser = await chromium.launch({ headless: true })
+  // Synthetic hotkeys are IPC events, not Chromium user-activation gestures.
+  browser = await chromium.launch({
+    headless: true,
+    args: ['--autoplay-policy=no-user-gesture-required'],
+  })
   const page = await browser.newPage({ viewport: { width: 460, height: 900 } })
   await page.clock.install()
   memoryProof = await setupMemory(
     page,
     require(join(root, 'src/main/memory/store.ts')).MemoryStore,
     require(join(root, 'src/main/memory/connections.ts')).MemoryConnections,
+  )
+  communicationProof = await setupCommunication(
+    page,
+    require(join(root, 'src/main/communication/service.ts')).CommunicationService,
+    memoryProof.store,
   )
   testPage = page
   spacesProof = await setupSpaces(
@@ -245,6 +257,7 @@ checks: try {
       }
       window.threadlight = new Proxy(
         {
+          communicationRequest: (input) => window.mockCommunication(input),
           memoryRequest: (input) => window.mockMemory(input),
           spacesRequest: (input) => window.mockSpaces(input),
           getComposerDraft: async (id) => ({
@@ -410,6 +423,51 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'communication') {
+    await checkCommunication(page, communicationProof, memoryProof.store, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'voice-mode') {
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({
+        enabledProviders: ['codex'],
+        voiceMode: 'local-stt',
+        voiceTarget: 'thread',
+      }),
+    )
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('button', { name: 'GPT Live', exact: true }).click()
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'GPT Live', exact: true })
+        .getAttribute('aria-pressed'),
+      'true',
+    )
+    await page.getByLabel('Send text to', { exact: true }).waitFor({ state: 'detached' })
+    await capture('voice-target-gpt-live')
+    await page.getByRole('button', { name: 'Local STT', exact: true }).click()
+    await page.getByLabel('Send text to', { exact: true }).waitFor()
+    await capture('voice-target-local-stt')
+    await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+    await setupVoiceInput(page)
+    await page.evaluate(() => {
+      window.proof.quietInput = true
+    })
+    await compose('Codex')
+    await checkVoiceRouting(page)
+    assert.deepEqual(errors, [])
+    console.log(
+      'PASS: explicit voice modes, local destinations, native first-turn audio, unavailable STT, cancellation and provider guard.',
+    )
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'thread-reading') {
+    await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+    await checkThreadReading(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   await checkWorkspacePaths(page, capture)
   await checkThreadBadges(page, capture)
   assert.deepEqual(errors, [])
@@ -704,13 +762,23 @@ checks: try {
     'true',
   )
   // The merged open-mic control coexists with both provider switches; saving it never starts it.
-  await page.getByLabel('Voice target', { exact: true }).selectOption('agent')
+  await page.getByRole('button', { name: 'Local STT', exact: true }).click()
+  await page.getByLabel('Send text to', { exact: true }).selectOption('agent')
   await page.getByText('Send countdown', { exact: true }).waitFor({ state: 'detached' })
   assert.equal(await page.getByText('Send countdown', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('switch', { name: 'Open mic', exact: true }).count(), 0)
-  await page.getByLabel('Voice target', { exact: true }).selectOption('thread')
+  await page.getByLabel('Send text to', { exact: true }).selectOption('thread')
   await page.getByText('Send countdown', { exact: true }).waitFor()
-  await page.getByLabel('Voice target', { exact: true }).selectOption('agent')
+  await page.getByRole('button', { name: 'GPT Live', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'GPT Live', exact: true }).getAttribute('aria-pressed'),
+    'true',
+  )
+  await page.getByLabel('Send text to', { exact: true }).waitFor({ state: 'detached' })
+  await capture('voice-target-gpt-live')
+  await page.getByRole('button', { name: 'Local STT', exact: true }).click()
+  await page.getByLabel('Send text to', { exact: true }).selectOption('agent')
+  await capture('voice-target-local-stt')
   await page.getByText('Send countdown', { exact: true }).waitFor({ state: 'detached' })
   await capture('provider-toggles')
   await page.getByRole('radio', { name: 'All', exact: true }).click()
@@ -756,46 +824,7 @@ checks: try {
   await page.getByLabel(/^Codex · Weekly usage unavailable/).waitFor()
   assert.equal(await page.locator('[class*="codexUsage"] [class*="usageFill"]').count(), 0)
   // Use a generated audio stream, never the PC's microphone, to exercise the actual recorder UI.
-  await page.evaluate(async () => {
-    await window.threadlight.updateSettings({ voiceTarget: 'thread' })
-    window.proof.emit('onStt', { state: 'ready' })
-    window.proof.stoppedTracks = 0
-    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
-      configurable: true,
-      value: async () => {
-        const context = new AudioContext()
-        const tone = context.createOscillator()
-        const gain = context.createGain()
-        const destination = context.createMediaStreamDestination()
-        tone.frequency.value = 220
-        tone.connect(gain)
-        gain.connect(destination) // no connection to speakers or a physical input
-        const now = context.currentTime
-        gain.gain.setValueAtTime(0.02, now)
-        for (let i = 0; i < 30; i++) {
-          gain.gain.linearRampToValueAtTime(0.12, now + i * 0.4 + 0.15)
-          gain.gain.linearRampToValueAtTime(0.02, now + i * 0.4 + 0.4)
-        }
-        window.proof.setAudioLevel = (value) => {
-          gain.gain.cancelScheduledValues(context.currentTime)
-          gain.gain.setValueAtTime(value, context.currentTime)
-        }
-        if (window.proof.quietInput) window.proof.setAudioLevel(0)
-        tone.start()
-        await context.resume()
-        for (const track of destination.stream.getTracks()) {
-          const stop = track.stop.bind(track)
-          track.stop = () => {
-            stop()
-            tone.stop()
-            void context.close()
-            window.proof.stoppedTracks++
-          }
-        }
-        return destination.stream
-      },
-    })
-  })
+  await setupVoiceInput(page)
   await compose('Codex')
   await box.fill('')
   assert.equal(
@@ -1032,11 +1061,23 @@ checks: try {
   )
   assert.deepEqual(errors, [])
   await checkAgentSelection(page, capture)
+  await checkThreadReading(page, capture)
   assert.deepEqual(errors, [])
   console.log(
     'PASS: provider lists, drafts, sends, plans, usage, composer waveform and header waveform; Agent model settings, questions, queued approvals, Stop/End and history; no browser errors.',
   )
 } catch (error) {
+  if (process.env.THREADLIGHT_UI_FOCUS === 'voice-mode')
+    console.log(
+      await testPage?.evaluate(() => ({
+        openMic: document.documentElement.dataset.openMic,
+        quietMs: window.proof.quietAudioMs,
+        voicedMs: window.proof.voicedAudioMs,
+        source: window.proof.voiceSourceContext?.state,
+        gain: window.proof.voiceSourceGain?.gain.value,
+        processor: window.proof.audioProcessor?.context.state,
+      })),
+    )
   console.log((await testPage?.locator('body').innerText())?.slice(0, 6000))
   if (process.env.THREADLIGHT_SCREENSHOTS)
     await testPage?.screenshot({
@@ -1046,6 +1087,7 @@ checks: try {
 } finally {
   await browser?.close()
   spacesProof?.close()
+  communicationProof?.close()
   memoryProof?.close()
   if (resolve(workspaceFixture).startsWith(resolve(tmpdir()) + sep + 'threadlight-ui-workspace-'))
     rmSync(workspaceFixture, { recursive: true, force: true })

@@ -155,7 +155,7 @@ describe('panel movement and available height', () => {
       opensDown: false,
       fresh: false,
     })
-    expect(windows.panel.getBounds()).toMatchObject({ x: -620, y: 8, height: 614 })
+    expect(windows.panel.getBounds()).toMatchObject({ x: -578, y: 8, height: 614 })
     windows.endDrag()
     windows.dragDot(0, 98)
     expect(windows.panel.webContents.send).toHaveBeenLastCalledWith(IPC.panelOpened, {

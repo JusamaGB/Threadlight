@@ -31,6 +31,8 @@ import type {
 } from './types'
 
 export const IPC = {
+  communicationRequest: 'communication:request',
+  communicationChanged: 'communication:changed',
   spacesRequest: 'spaces:request',
   spacesChanged: 'spaces:changed',
   spacesRespond: 'spaces:respond',
@@ -128,6 +130,12 @@ export type TalkState = 'idle' | 'listening' | 'transcribing'
 
 /** What the preload script exposes on `window.threadlight`. */
 export interface ThreadlightApi {
+  communicationRequest(input: {
+    action: string
+    arguments?: unknown
+    expectedRevision?: number
+  }): Promise<import('./communication').CommunicationReply>
+  onCommunication(listener: () => void): () => void
   getMotion(): Promise<MotionSnapshot>
   setMotion(snapshot: MotionSnapshot): void
   onMotion(listener: (snapshot: MotionSnapshot) => void): () => void
@@ -184,6 +192,7 @@ export interface ThreadlightApi {
   answerQuestion(
     sessionId: string,
     answers: Record<string, string>,
+    holdId?: string,
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   /**
    * Answers a next step Threadlight is holding: one of its buttons (by label) or words of the
@@ -192,16 +201,19 @@ export interface ThreadlightApi {
   answerNextStep(
     sessionId: string,
     choice: { label: string } | { text: string },
+    holdId?: string,
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   /** Allows or denies a tool Threadlight is holding for approval. Refused once let go. */
   answerApproval(
     sessionId: string,
     choice: { allow: true } | { allow: false; message?: string },
+    holdId?: string,
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   /** Answers a held New session / Do it here offer. Refused once let go. */
   answerOffer(
     sessionId: string,
     choice: 'new-session' | 'here',
+    holdId?: string,
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   /** Lets a held card go, so the Claude app carries on with it as usual. */
   releaseHold(sessionId: string): void

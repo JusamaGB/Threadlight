@@ -244,6 +244,14 @@ export const en = {
     holdSendHint: 'Hold spoken messages until you click Send',
     speechModel: 'Speech model',
     voiceTarget: 'Voice target',
+    localStt: 'Local STT',
+    gptLive: 'GPT Live',
+    localDestination: 'Send text to',
+    localSttHint: 'Transcribe on this PC, then send text to the selected destination.',
+    gptLiveHint:
+      'Press the hotkey and speak. Your audio is buffered while GPT Live connects, then sent to GPT. Press again to disconnect. No connection is kept open in advance.',
+    gptLiveNeedsCodex:
+      'GPT Live requires a Codex Agent conversation. Choose Codex in Agent settings; end an existing Claude conversation first.',
     agentConversation: 'Agent conversation',
     threadMessage: 'Thread message',
     modelReady: 'Ready',

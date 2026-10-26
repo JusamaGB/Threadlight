@@ -1,7 +1,9 @@
+import { COMMUNICATION_SERVER, communicationTools } from '../../shared/communication'
 import type { AgentApp } from '../../shared/agent'
 import { isObject, type JsonObject } from '../sessions/json'
 import type { CodexTransport } from './codexClient'
 import { pages } from './agentModels'
+import { THREAD_READ_SERVER, THREAD_READ_TOOLS } from '../../shared/threadRead'
 
 // config/read includes null defaults, which have no TOML representation in overrides.
 function withoutNulls(value: JsonObject): JsonObject {
@@ -107,6 +109,38 @@ export async function verifyCodexTools(
     threadId,
     detail: 'toolsAndAuthOnly',
   })
+  if (allowed.has(THREAD_READ_SERVER)) {
+    const server = servers.find((s) => s.name === THREAD_READ_SERVER)
+    const names =
+      server && isObject(server.tools)
+        ? Object.keys(server.tools)
+        : Array.isArray(server?.tools)
+          ? server.tools.filter(isObject).map((t) => String(t.name))
+          : []
+    if (
+      !server ||
+      THREAD_READ_TOOLS.some((tool) => !names.some((n) => n === tool || n.endsWith(`__${tool}`))) ||
+      names.length !== 2
+    )
+      throw new Error(
+        'Threadlight read tools are not available in the Agent runtime. No message was sent.',
+      )
+  }
+  if (allowed.has(COMMUNICATION_SERVER)) {
+    const server = servers.find((s) => s.name === COMMUNICATION_SERVER)
+    const names =
+      server && isObject(server.tools)
+        ? Object.keys(server.tools)
+        : Array.isArray(server?.tools)
+          ? server.tools.filter(isObject).map((t) => String(t.name))
+          : []
+    if (
+      !server ||
+      names.length !== communicationTools.length ||
+      communicationTools.some((t) => !names.some((n) => n === t.name || n.endsWith(`__${t.name}`)))
+    )
+      throw new Error('Threadlight communication tools are unavailable. No message was sent.')
+  }
   if (
     servers.some(
       (server) => !allowed.has(String(server.name)) && server.runtimeStatus !== 'disabled',

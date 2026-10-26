@@ -206,7 +206,8 @@
   color: var(--fg);
 }
 
-.segmented button[aria-checked='true'] {
+.segmented button[aria-checked='true'],
+.segmented button[aria-pressed='true'] {
   background: var(--hover);
   color: var(--fg);
 }

@@ -1,3 +1,4 @@
+import { CommunicationView } from '../communication/CommunicationView'
 import {
   useCallback,
   useEffect,
@@ -705,8 +706,9 @@ function IdeaEditor({
   const active = data.activeId === idea.id
   const agent = data.agent
   const items = active ? agent.items : history
-  const frozen = !!idea.prepared
+  const frozen = !!idea.prepared && !idea.workflowSpaceId
   const dirty =
+    localDraft.workflowSpaceId !== idea.workflowSpaceId ||
     localDraft.title !== idea.title ||
     localDraft.text !== idea.text ||
     localDraft.plan !== idea.plan ||
@@ -740,6 +742,7 @@ function IdeaEditor({
       stage: idea.stage,
       plan: draft.plan,
       assignments: draft.assignments,
+      workflowSpaceId: draft.workflowSpaceId,
     })
     if (result.ok) setDraft(result.snapshot.ideas.find((i) => i.id === idea.id)!)
   }
@@ -754,6 +757,25 @@ function IdeaEditor({
   return (
     <div className={styles.editor}>
       <h3>{idea.title}</h3>
+      <label>
+        Project workflow
+        <select
+          value={draft.workflowSpaceId ?? ''}
+          disabled={busy || frozen}
+          onChange={(e) => setDraft({ ...draft, workflowSpaceId: e.target.value || null })}
+        >
+          <option value="">Discussion only</option>
+          {memory?.spaces.map((space) => (
+            <option key={space.id} value={space.id}>
+              {space.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      {idea.workflowSpaceId && (
+        <CommunicationView spaceId={idea.workflowSpaceId} sessions={sessions} />
+      )}
+
       <label>
         Title
         <input

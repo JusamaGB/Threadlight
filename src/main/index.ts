@@ -1,3 +1,7 @@
+import { OwnedRequests } from './communication/ownedRequests'
+import { codexCommunicationAdmitted } from './communication/admission'
+import { codexHeld } from './codex/live'
+import { CommunicationCatalog } from './communication/catalog'
 import { mkdir, realpath } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { join, win32 } from 'node:path'
@@ -8,6 +12,7 @@ import { agentBusy } from '../shared/agent'
 import { IPC } from '../shared/ipc'
 import { registerMicIndicator } from './micIndicator'
 import type { Settings } from '../shared/settings'
+import { voiceHotkeyMode } from '../shared/settings'
 import type { Provider, Session, Snapshot, ThreadNode, RelayStatus } from '../shared/types'
 import { combinedSnapshot, PROVIDERS, providerView, sessionProvider } from '../shared/providers'
 import { isClaudeAppRunning, openThread } from './claudeApp'
@@ -46,6 +51,11 @@ import { spacesPaths } from './sessions/paths'
 import { SpacesStore } from './spaces/store'
 import { SpacesService } from './spaces/service'
 import { registerSpaces } from './spaces/integration'
+import { ThreadReadServer } from './threadRead/server'
+import { ThreadReadService } from './threadRead/service'
+import { ClaudeReadAdapter } from './threadRead/claude'
+import { CodexReadAdapter } from './threadRead/codex'
+import { attentionEvidence } from './threadRead/attention'
 
 const SCAN_INTERVAL_MS = 1000
 const CLAUDE_CHECK_INTERVAL_MS = 2000
@@ -80,6 +90,8 @@ async function start(): Promise<void> {
   // Cards held so they can be answered here (holds.ts); any change is shown at once.
   const holds = new Holds(() => {
     if (enabled('claude')) void claudeSessions.refresh()
+    if (windows.panel && !windows.panel.isDestroyed())
+      windows.panel.webContents.send(IPC.communicationChanged)
   })
   // Each folder's git state, counted in the background; a new count is shown at once.
   const gitStates = new GitStates(() => void sessions.refresh())
@@ -109,6 +121,8 @@ async function start(): Promise<void> {
     `${createHash('sha256').update(draftHomes[sessionProvider(id)]).digest('hex')}:${id}`
   const codexHolds = new CodexHolds(() => {
     if (enabled('codex')) void codexSessions.refresh()
+    if (windows.panel && !windows.panel.isDestroyed())
+      windows.panel.webContents.send(IPC.communicationChanged)
   })
   const codexTracker = new CodexTracker(
     codex,
@@ -291,25 +305,51 @@ async function start(): Promise<void> {
     if (session) holds.release(session.id)
     if (openThread(appId)) windows.closePanel()
   })
-  ipcMain.handle(IPC.answerQuestion, (_event, sessionId: unknown, answers: unknown) =>
-    typeof sessionId === 'string'
-      ? holds.answerQuestion(sessionId, answers)
-      : { ok: false, reason: 'Invalid answer.' },
+  ipcMain.handle(
+    IPC.answerQuestion,
+    (event, sessionId: unknown, answers: unknown, holdId: unknown) =>
+      event.sender === windows.panel.webContents &&
+      event.senderFrame === event.sender.mainFrame &&
+      typeof sessionId === 'string' &&
+      typeof holdId === 'string' &&
+      holds.held(sessionId)?.id === holdId
+        ? holds.answerQuestion(sessionId, answers)
+        : { ok: false, reason: 'Invalid answer.' },
   )
-  ipcMain.handle(IPC.answerNextStep, (_event, sessionId: unknown, choice: unknown) =>
-    typeof sessionId === 'string'
-      ? holds.answerNextStep(sessionId, choice)
-      : { ok: false, reason: 'Invalid answer.' },
+  ipcMain.handle(
+    IPC.answerNextStep,
+    (event, sessionId: unknown, choice: unknown, holdId: unknown) =>
+      event.sender === windows.panel.webContents &&
+      event.senderFrame === event.sender.mainFrame &&
+      typeof sessionId === 'string' &&
+      typeof holdId === 'string' &&
+      holds.held(sessionId)?.id === holdId
+        ? holds.answerNextStep(sessionId, choice)
+        : { ok: false, reason: 'Invalid answer.' },
   )
-  ipcMain.handle(IPC.answerApproval, (_event, sessionId: unknown, choice: unknown) => {
-    if (typeof sessionId !== 'string') return { ok: false, reason: 'Invalid answer.' }
-    const result = holds.answerApproval(sessionId, choice)
-    // Answered: the session works on, whatever Claude's permission notice said before.
-    if (result.ok) hooks.apply({ session_id: sessionId, hook_event_name: 'PreToolUse' })
-    return result
-  })
-  ipcMain.handle(IPC.answerOffer, (_event, sessionId: unknown, choice: unknown) =>
-    typeof sessionId === 'string'
+  ipcMain.handle(
+    IPC.answerApproval,
+    (event, sessionId: unknown, choice: unknown, holdId: unknown) => {
+      if (
+        event.sender !== windows.panel.webContents ||
+        event.senderFrame !== event.sender.mainFrame ||
+        typeof sessionId !== 'string' ||
+        typeof holdId !== 'string' ||
+        holds.held(sessionId)?.id !== holdId
+      )
+        return { ok: false, reason: 'Invalid answer.' }
+      const result = holds.answerApproval(sessionId, choice)
+      // Answered: the session works on, whatever Claude's permission notice said before.
+      if (result.ok) hooks.apply({ session_id: sessionId, hook_event_name: 'PreToolUse' })
+      return result
+    },
+  )
+  ipcMain.handle(IPC.answerOffer, (event, sessionId: unknown, choice: unknown, holdId: unknown) =>
+    event.sender === windows.panel.webContents &&
+    event.senderFrame === event.sender.mainFrame &&
+    typeof sessionId === 'string' &&
+    typeof holdId === 'string' &&
+    holds.held(sessionId)?.id === holdId
       ? holds.answerOffer(sessionId, choice)
       : { ok: false, reason: 'Invalid answer.' },
   )
@@ -355,7 +395,7 @@ async function start(): Promise<void> {
       else holds.release(sessionId)
     }
   })
-  ipcMain.handle(IPC.answerCodex, (_event, id: unknown, holdId: unknown, answer: unknown) =>
+  ipcMain.handle(IPC.answerCodex, (event, id: unknown, holdId: unknown, answer: unknown) =>
     typeof id === 'string' && codexSessions.find(id)
       ? codexHolds.answer(id, holdId, answer)
       : { ok: false, reason: 'That Codex card is no longer listed.' },
@@ -375,7 +415,7 @@ async function start(): Promise<void> {
   )
   const codexRelays = new CodexRelayService(
     codex,
-    (id) => codexSessions.find(id),
+    (id) => codexSessions.find(id) ?? communicationCatalog.cached(id),
     () => publishRelays(),
   )
   function publishRelays() {
@@ -383,18 +423,39 @@ async function start(): Promise<void> {
     for (const status of statuses) if (status.attemptId) memoryReceipt?.(status)
     windows.send(IPC.relaysChanged, statuses)
   }
-  ipcMain.handle(IPC.sendMessage, (_event, sessionId: unknown, text: unknown) =>
-    typeof sessionId === 'string' && typeof text === 'string'
-      ? !enabled(sessionProvider(sessionId))
-        ? { ok: false, reason: 'Enable this application in Settings before sending.' }
-        : sessionId.startsWith('codex:')
-          ? codexRelays.send(sessionId, text)
-          : relays.send(sessionId, text)
-      : { ok: false, reason: 'Invalid message.' },
+  ipcMain.handle(IPC.sendMessage, (event, sessionId: unknown, text: unknown) =>
+    event.sender === windows.panel.webContents &&
+    event.senderFrame === event.sender.mainFrame &&
+    typeof sessionId === 'string' &&
+    typeof text === 'string'
+      ? stopMemory.send(sessionId, text)
+      : { ok: false, reason: 'Invalid message caller.' },
   )
   ipcMain.handle(IPC.getRelays, () => [...relays.list(), ...codexRelays.list()])
 
+  const communicationCatalog = new CommunicationCatalog(
+    [new ClaudeReadAdapter(paths), new CodexReadAdapter(codex)],
+    () => settings.settings.enabledProviders,
+    (id) => sessions.find(id),
+    async (id) =>
+      id.startsWith('codex:') && (await codexCommunicationAdmitted(await findCodexCli(codex))),
+    async (id) => !id.startsWith('codex:') || (await codexHeld(codex.locks, id.slice(6))),
+  )
+  const communicationOwners: AgentService[] = []
+  const ownedCommunicationRequests = new OwnedRequests(() => communicationOwners)
   const stopMemory = await startMemory(app.getPath('userData'), windows.panel, {
+    destinations: (target, query) => communicationCatalog.find(target, query),
+    nativeRequests: () => [
+      ...holds.communicationRequests(),
+      ...codexHolds.communicationRequests(),
+      ...ownedCommunicationRequests.list(),
+    ],
+    respondNative: (id, generation, response) =>
+      holds.communicationRequests().some((r) => r.id === id)
+        ? holds.respondCommunication(id, generation, response)
+        : codexHolds.communicationRequests().some((r) => r.id === id)
+          ? codexHolds.respondCommunication(id, generation, response)
+          : ownedCommunicationRequests.respond(id, generation, response),
     find: (id) => sessions.find(id),
     statuses: () => [...relays.list(), ...codexRelays.list()],
     watch: (listener) => {
@@ -403,13 +464,18 @@ async function start(): Promise<void> {
         if (memoryReceipt === listener) memoryReceipt = undefined
       }
     },
-    send: (id, text, context) =>
+    send: (id, text, context, receiptId) =>
       !enabled(sessionProvider(id))
         ? { ok: false, reason: 'Enable the destination provider in Settings.' }
         : id.startsWith('codex:')
-          ? codexRelays.send(id, text, context)
-          : relays.send(id, text, context),
+          ? codexRelays.send(id, text, context, receiptId)
+          : relays.send(id, text, context, receiptId),
   })
+  try {
+    stopMemory.communication()?.importLegacy(messageStore.list())
+  } catch {
+    stopMemory.communication()?.blockRecovery()
+  }
   app.once('will-quit', stopMemory)
   const draftCaller = (event: Electron.IpcMainInvokeEvent, id: unknown): id is string =>
     event.sender === windows.panel.webContents &&
@@ -450,7 +516,53 @@ async function start(): Promise<void> {
     },
   )
 
+  const threadReads = new ThreadReadServer(
+    new ThreadReadService(
+      [
+        new ClaudeReadAdapter(paths, (id) => {
+          const record = hooks.get(id)
+          const held = holds.held(id)
+          if (held && held.releasesAt > Date.now())
+            return {
+              status: { state: 'waiting', basis: 'hook', at: held.startedAt, turnId: null },
+              attention: attentionEvidence(
+                {
+                  kind: 'approval',
+                  tool: held.tool,
+                  action: held.detail ?? `${held.kind} awaits input in Claude`,
+                  answerableUntil: held.releasesAt,
+                },
+                held.startedAt,
+                'claude_hook',
+              ),
+            }
+          return record
+            ? { status: { state: record.state, basis: 'hook', at: record.updatedAt, turnId: null } }
+            : null
+        }),
+        new CodexReadAdapter(codex, (id) => {
+          const record = codexHolds.records.get(`codex:${id}`)
+          return record
+            ? {
+                status: { state: record.state, basis: 'hook', at: record.at, turnId: null },
+                attention: attentionEvidence(record.attention, record.at, 'codex_hook'),
+              }
+            : null
+        }),
+      ],
+      () => settings.settings.enabledProviders,
+      (provider, id) => agentSessionIds.has(provider === 'codex' ? `codex:${id}` : id),
+    ),
+  )
+  await threadReads.start()
+  app.once('will-quit', () => threadReads.close())
   const agent = new AgentService({
+    communication: (actor) => {
+      const server = stopMemory.server()
+      if (!server) throw new Error('Communication unavailable.')
+      return server.connectCommunication(actor)
+    },
+    threadReads,
     workspace: agentWorkspace,
     index: agentFiles.index,
     claudeProjects: paths.projectsDir,
@@ -464,10 +576,12 @@ async function start(): Promise<void> {
           state.provider === 'codex' ? `codex:${state.sessionId}` : state.sessionId,
         )
       windows.panel.webContents.send(IPC.agentChanged, state)
+      windows.panel.webContents.send(IPC.communicationChanged)
     },
     onRateLimit: (info) => usage.note(info),
     onLive: (event) => windows.panel.webContents.send(IPC.agentLiveEvent, event),
   })
+  communicationOwners.push(agent)
   await agent.store
     .load()
     .catch(() =>
@@ -488,6 +602,12 @@ async function start(): Promise<void> {
       stopMemory.store,
       () => sessions.snapshot.lookupSessions ?? sessions.snapshot.sessions,
       {
+        threadReads,
+        communication: (actor) => {
+          const server = stopMemory.server()
+          if (!server) throw new Error('Communication unavailable.')
+          return server.connectCommunication(actor)
+        },
         workspace: files.workspace,
         index: files.index,
         claudeProjects: paths.projectsDir,
@@ -502,6 +622,7 @@ async function start(): Promise<void> {
         cli: async (provider) =>
           provider === 'codex' ? findCodexCli(codex) : (cli ??= await findClaudeCli(paths)),
         onChange: (state) => {
+          windows.panel.webContents.send(IPC.communicationChanged)
           if (state.sessionId)
             agentSessionIds.add(
               state.provider === 'codex' ? `codex:${state.sessionId}` : state.sessionId,
@@ -515,6 +636,7 @@ async function start(): Promise<void> {
       },
       () => sessions.snapshot.allWorkspaces.map((w) => w.id.replace(/^(claude|codex):/, '')),
     )
+    communicationOwners.push(spaces.agent)
     await spaces.agent.store.load()
     for (const record of spaces.agent.store.all())
       agentSessionIds.add(
@@ -524,33 +646,40 @@ async function start(): Promise<void> {
     spacesIssue = error instanceof Error ? error.message : 'Shared Spaces could not load.'
   }
   registerSpaces(windows.panel, spacesIssue ? null : spaces, spacesIssue)
+  const trustedAgentInput = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) =>
+    event.sender === windows.panel.webContents && event.senderFrame === event.sender.mainFrame
   ipcMain.handle(IPC.agentGet, () => agent.current)
   ipcMain.handle(IPC.agentLiveStart, (event, id: unknown, sdp: unknown) =>
-    event.sender === windows.panel.webContents
+    trustedAgentInput(event) && settings.settings.voiceMode === 'gpt-live'
       ? agent.startLive(id, sdp)
-      : { ok: false, reason: 'Live is only available in the panel.' },
+      : { ok: false, reason: 'Select GPT Live in the panel to start live audio.' },
   )
   ipcMain.handle(IPC.agentLiveOpen, (event, id: unknown, text: unknown) =>
-    event.sender === windows.panel.webContents
+    trustedAgentInput(event)
       ? agent.openLive(id, text)
       : { ok: false, reason: 'Live is only available in the panel.' },
   )
   ipcMain.on(IPC.agentLiveStop, (event, id: unknown) => {
-    if (event.sender === windows.panel.webContents && typeof id === 'string')
-      void agent.stopLive(id)
+    if (trustedAgentInput(event) && typeof id === 'string') void agent.stopLive(id)
   })
   windows.panel.webContents.on('render-process-gone', () => void agent.stopLive())
   windows.panel.webContents.on('did-start-loading', () => void agent.stopLive())
-  ipcMain.handle(IPC.agentSend, (_event, text: unknown) => agent.send(text))
-  ipcMain.handle(IPC.agentRespond, (_event, id: unknown, response: unknown) =>
-    agent.respond(id, response),
+  ipcMain.handle(IPC.agentSend, (event, text: unknown) =>
+    trustedAgentInput(event)
+      ? agent.send(text)
+      : { ok: false, reason: 'Invalid Agent input source.' },
+  )
+  ipcMain.handle(IPC.agentRespond, (event, id: unknown, response: unknown) =>
+    trustedAgentInput(event)
+      ? agent.respond(id, response)
+      : { ok: false, reason: 'Invalid response source.' },
   )
   ipcMain.handle(IPC.agentInterrupt, () => agent.interrupt())
   ipcMain.handle(IPC.agentModels, () =>
     agent.models().catch((error: Error) => ({ models: [], error: error.message })),
   )
-  ipcMain.on(IPC.agentDecide, (_event, id: unknown, allow: unknown) => {
-    if (typeof id === 'string') agent.decide(id, allow === true)
+  ipcMain.on(IPC.agentDecide, (event, id: unknown, allow: unknown) => {
+    if (trustedAgentInput(event) && typeof id === 'string') agent.decide(id, allow === true)
   })
   ipcMain.on(IPC.agentClose, () => agent.close())
   ipcMain.handle(IPC.agentHistory, () => agent.history())
@@ -598,7 +727,7 @@ async function start(): Promise<void> {
     toggle: () => windows.panel.webContents.send(IPC.talkToggle),
     hold: (phase) => windows.panel.webContents.send(IPC.talkHold, phase),
   })
-  let hotkeyProblem = hotkey.set(initial.talkHotkey) ?? hotkey.setMode(initial.talkMode)
+  let hotkeyProblem = hotkey.set(initial.talkHotkey) ?? hotkey.setMode(voiceHotkeyMode(initial))
   const reportHotkey = () => windows.panel.webContents.send(IPC.hotkeyProblem, hotkeyProblem)
   windows.panel.webContents.on('did-finish-load', reportHotkey)
   // While a new hotkey is typed into Settings, the current one must not swallow the keys.
@@ -628,16 +757,18 @@ async function start(): Promise<void> {
   ipcMain.handle(IPC.getSettings, () => settings.settings)
   ipcMain.handle(IPC.updateSettings, async (_event, patch: unknown) => {
     const previousProviders = settings.settings.enabledProviders
+    const previousVoiceMode = settings.settings.voiceMode
     const result = await settings.update(patch, (next, previous) =>
       next.talkHotkey === previous.talkHotkey ? null : hotkey.set(next.talkHotkey),
     )
     if (result.ok) {
+      if (previousVoiceMode !== result.settings.voiceMode) await agent.stopLive()
       if (result.settings.enabledProviders.join() !== previousProviders.join()) {
         if (!enabled('claude')) holds.releaseAll()
         if (!enabled('codex')) codexHolds.releaseAll()
         syncPolling(SCAN_INTERVAL_MS)
       }
-      hotkeyProblem = hotkey.setMode(result.settings.talkMode)
+      hotkeyProblem = hotkey.setMode(voiceHotkeyMode(result.settings))
       reportHotkey()
       agent.refreshDefaults()
       applyLive(result.settings)

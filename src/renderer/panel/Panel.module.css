@@ -2,7 +2,7 @@
 .card {
   position: relative;
   box-sizing: border-box;
-  width: 342px;
+  width: 300px;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -391,7 +391,7 @@
 .rowButton {
   display: block;
   width: 100%;
-  padding: 6px 10px;
+  padding: 3px 10px;
 }
 
 /* Overlay the whole row so raised details and cards don't interrupt the narrow edge tint. */
@@ -729,7 +729,7 @@
 /* Open ↗ on an expanded row's top line; the space keeps the title clear. */
 .rowOpen {
   position: absolute;
-  top: 6px;
+  top: 3px;
   right: 10px;
   color: var(--muted);
   font-size: 11px;

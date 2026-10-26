@@ -3,6 +3,7 @@ import { statSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { dirname, basename, join, relative, sep, isAbsolute } from 'node:path'
 import { z } from 'zod'
+import { communicationRecordSchemas } from '../../shared/communication'
 
 export async function exportDestination(file: string, privateDirectory: string) {
   const root = await realpath(privateDirectory)
@@ -82,6 +83,9 @@ const schemas = {
     expiresAt: number.optional(),
   }),
   task: base.extend({
+    workspaceId: id.optional(),
+    workspaceRoot: z.string().max(2000).optional(),
+    documentsRoot: z.string().max(2000).optional(),
     deliveryState: z.enum(['none', 'dispatching', 'completed', 'unknown']).optional(),
     nativeReply: text.optional(),
     title,
@@ -128,7 +132,7 @@ export function readBackup(file: string) {
   const source = new DatabaseSync(file, { readOnly: true })
   try {
     if (
-      source.prepare('PRAGMA user_version').get()?.user_version !== 1 ||
+      ![1, 2].includes(Number(source.prepare('PRAGMA user_version').get()?.user_version)) ||
       source.prepare('PRAGMA quick_check').get()?.quick_check !== 'ok'
     )
       throw new Error('This is not a valid Threadlight memory backup.')
@@ -167,7 +171,64 @@ export function readBackup(file: string) {
           })
           .parse(row),
       )
-    return { records, blobs, events }
+    const communication = source
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='communication_records'")
+      .get()
+      ? source
+          .prepare('SELECT id,kind,data FROM communication_records LIMIT 200001')
+          .all()
+          .map((row) => {
+            const kind = z.enum(['message', 'workflow', 'assignment', 'question']).parse(row.kind)
+            const value = communicationRecordSchemas[kind].parse(JSON.parse(String(row.data)))
+            if (value.id !== row.id) throw new Error('Invalid communication identity.')
+            return { kind, value }
+          })
+      : []
+    if (communication.length > 200000)
+      throw new Error('Communication backup exceeds the record limit.')
+    const hasCommunication = source
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='communication_operations'",
+      )
+      .get()
+    const communicationOperations = hasCommunication
+      ? source
+          .prepare('SELECT actor,id,digest,result FROM communication_operations LIMIT 200001')
+          .all()
+          .map((row) =>
+            z
+              .object({
+                actor: z.string().max(512),
+                id,
+                digest: z.string().regex(/^[a-f0-9]{64}$/),
+                result: z.string().max(1000000),
+              })
+              .parse(row),
+          )
+      : []
+    const communicationEvents = hasCommunication
+      ? source
+          .prepare(
+            'SELECT seq,id,kind,space,action,at FROM communication_events ORDER BY seq LIMIT 1000001',
+          )
+          .all()
+          .map((row) =>
+            z
+              .object({
+                seq: number,
+                id,
+                kind: z.enum(['message', 'question', 'assignment', 'workflow']),
+                space: id.nullable(),
+                action: z.string().max(500),
+                at: number,
+              })
+              .parse(row),
+          )
+      : []
+    if (communicationOperations.length > 200000 || communicationEvents.length > 1000000)
+      throw new Error('Communication history exceeds the backup limit.')
+    for (const op of communicationOperations) JSON.parse(op.result)
+    return { records, blobs, events, communication, communicationOperations, communicationEvents }
   } finally {
     source.close()
   }

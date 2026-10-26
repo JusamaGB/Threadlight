@@ -68,6 +68,7 @@ export class SpacesService {
     }
     this.agent = new AgentService({
       ...options,
+      communicationProject: () => (this.activeId ? this.projectFor(this.activeId) : undefined),
       onChange: (state) => {
         if (this.activeId && state.conversationId) {
           try {
@@ -81,6 +82,17 @@ export class SpacesService {
         this.publish()
       },
     })
+  }
+  private projectFor(id: string) {
+    const idea = this.store.get(id)
+    return (
+      idea.workflowSpaceId ??
+      (idea.prepared
+        ? this.memory()
+            ?.snapshot()
+            .folders.find((f) => f.id === idea.prepared!.folderId)?.spaceId
+        : undefined)
+    )
   }
   snapshot(): SpacesSnapshot {
     const agent = this.agent.current
@@ -272,7 +284,25 @@ export class SpacesService {
         this.store.assign(input.workspaceId, input.ideaIds, input.spaceIds)
       } else if (input.action === 'create' || input.action === 'save') {
         if (input.action === 'create' && input.workspaceId) this.requireWorkspace(input.workspaceId)
+        if (input.action === 'save' && input.workflowSpaceId) {
+          const idea = this.store.get(input.id)
+          if (this.store.owners()[input.workflowSpaceId] !== idea.workspaceId)
+            throw new Error('Choose a workflow in this idea’s workspace.')
+          if (!this.memory()?.communicationService?.workflow(input.workflowSpaceId))
+            throw new Error('Configure this project workflow first.')
+        }
         this.store.edit(input)
+        if (input.action === 'save') {
+          const updated = this.store.get(input.id)
+          const project = this.projectFor(updated.id)
+          if (project)
+            this.memory()?.communicationService?.ideaChanged(
+              project,
+              updated.id,
+              updated.revision,
+              `${updated.text}\n${updated.plan}`,
+            )
+        }
       } else if (input.action === 'prepare') {
         const idea = this.store.get(input.id),
           memory = this.memory()
@@ -359,12 +389,23 @@ export class SpacesService {
           const currentDocuments = ideaDocuments(idea)
             .map((doc) => this.documents.target(workspace, doc))
             .join('\n')
-          const prompt = `Workspace ID: ${workspace.id}\nWorkspace root: ${workspace.root}\nShared documents: ${workspace.root}/shared-spaces/\nFixed folders: ideas/, plans/, handoffs/, results/. Keep this discussion and its proposed work within this workspace; never use the currently viewed workspace as a substitute.\nCurrent idea and plan snapshots (earlier snapshots are historical; do not edit snapshot files):\n${currentDocuments}\n\n${brainstormPrompt(idea, input.text)}`
+          const project = this.projectFor(idea.id)
+          const workflow = project
+            ? this.memory()?.communicationService?.workflow(project)
+            : undefined
+          const prompt = `${workflow ? `Active project workflow: ${JSON.stringify(workflow)}. Use Threadlight communication tools to read current state, propose assignments and contact configured roles within its authority. New ideas amend the existing project; do not duplicate delivered work.\n` : ''}Workspace ID: ${workspace.id}\nWorkspace root: ${workspace.root}\nShared documents: ${workspace.root}/shared-spaces/\nFixed folders: ideas/, plans/, handoffs/, results/. Keep this discussion and its proposed work within this workspace; never use the currently viewed workspace as a substitute.\nCurrent idea and plan snapshots (earlier snapshots are historical; do not edit snapshot files):\n${currentDocuments}\n\n${brainstormPrompt(idea, input.text, !!workflow)}`
           if (prompt.length > 32000)
             throw new Error(
               'This brainstorm context is too long. Shorten the plan or assignment briefs before sending.',
             )
-          const sent = await this.agent.send(prompt)
+          if (project && workflow)
+            this.memory()?.communicationService?.ideaChanged(
+              project,
+              idea.id,
+              idea.revision + 1,
+              input.text,
+            )
+          const sent = await this.agent.send(prompt, input.text)
           if (!sent.ok) throw new Error(sent.reason)
         } finally {
           this.switching = false

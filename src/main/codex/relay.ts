@@ -102,7 +102,7 @@ export function interpretCodexOutput(
 }
 
 export async function sendCodex(
-  session: Session,
+  session: Pick<Session, 'id' | 'cwd' | 'model' | 'live'>,
   text: string,
   cli: CliCommand | null,
   isHeld: () => Promise<boolean>,
@@ -140,6 +140,7 @@ export async function sendCodex(
       stderr = '',
       settled = false,
       accepted = false,
+      observedThread: string | undefined,
       pending = ''
     const finish = (result: RelayResult) => {
       if (settled) return
@@ -164,7 +165,13 @@ export async function sendCodex(
       pending = lines.pop() || ''
       for (const line of lines) {
         try {
-          if (!accepted && JSON.parse(line).type === 'turn.started') {
+          const event = JSON.parse(line)
+          if (event.type === 'thread.started') observedThread = event.thread_id
+          if (
+            !accepted &&
+            event.type === 'turn.started' &&
+            observedThread === codexId(session.id)
+          ) {
             accepted = true
             onSent()
           }
@@ -179,7 +186,18 @@ export async function sendCodex(
     child.once('error', (error) =>
       finish({ ok: false, reason: `Could not start Codex: ${error.message}` }),
     )
-    child.once('close', (code) => finish(interpretCodexOutput(stdout, stderr, code)))
+    child.once('close', (code) => {
+      const result = interpretCodexOutput(stdout, stderr, code)
+      finish(
+        result.ok && observedThread !== codexId(session.id)
+          ? {
+              ok: false,
+              reason:
+                'Codex did not confirm the requested chat identity. Check the native chat; do not resend blindly.',
+            }
+          : result,
+      )
+    })
   })
 }
 
@@ -187,7 +205,9 @@ export class CodexRelayService {
   private statuses = new Map<string, RelayStatus>()
   constructor(
     private readonly paths: CodexPaths,
-    private readonly lookup: (id: string) => Session | undefined,
+    private readonly lookup: (
+      id: string,
+    ) => Pick<Session, 'id' | 'cwd' | 'model' | 'live'> | undefined,
     private readonly changed: () => void,
   ) {}
   list(): RelayStatus[] {
@@ -197,6 +217,7 @@ export class CodexRelayService {
     id: string,
     text: string,
     memory?: MemoryDeliveryContext,
+    receiptId?: string,
   ): { ok: true } | { ok: false; reason: string } {
     const target = this.lookup(id)
     if (!target) return { ok: false, reason: 'That Codex chat is no longer listed.' }
@@ -205,7 +226,7 @@ export class CodexRelayService {
       return { ok: false, reason: 'Still waiting for the last reply.' }
     if (!text.trim() || text.length > MAX_MESSAGE_LENGTH)
       return { ok: false, reason: `Enter a message up to ${MAX_MESSAGE_LENGTH} characters.` }
-    this.update(id, 'sending', '', memory?.attemptId)
+    this.update(id, 'sending', '', memory?.attemptId ?? receiptId)
     void findCodexCli(this.paths)
       .then((cli) =>
         sendCodex(
@@ -213,7 +234,7 @@ export class CodexRelayService {
           text,
           cli,
           () => codexHeld(this.paths.locks, codexId(id)!),
-          () => this.update(id, 'sent', '', memory?.attemptId),
+          () => this.update(id, 'sent', '', memory?.attemptId ?? receiptId),
           memory,
         ),
       )
@@ -222,10 +243,10 @@ export class CodexRelayService {
           id,
           result.ok ? 'replied' : 'failed',
           result.ok ? result.reply : result.reason,
-          memory?.attemptId,
+          memory?.attemptId ?? receiptId,
         ),
       )
-      .catch((error) => this.update(id, 'failed', String(error), memory?.attemptId))
+      .catch((error) => this.update(id, 'failed', String(error), memory?.attemptId ?? receiptId))
     return { ok: true }
   }
   private update(

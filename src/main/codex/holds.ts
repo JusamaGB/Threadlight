@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto'
 import type { Attention, SessionState } from '../../shared/types'
 import { isObject, str } from '../sessions/json'
 import { CODEX_UUID, codexKey } from './identity'
+import type {
+  NativeCommunicationRequest,
+  NativeCommunicationResponse,
+} from '../../shared/communication'
 
 /** Codex's waiting hooks give up after about a minute (codex-plugin/hooks), so holds do too. */
 const HOLD_MS = 60_000
@@ -137,6 +141,32 @@ export class CodexHolds {
     }
     this.finish(key, JSON.stringify(output))
     return { ok: true }
+  }
+  communicationRequests(): NativeCommunicationRequest[] {
+    return [...this.holds.entries()]
+      .filter(([, h]) => h.at + HOLD_MS > this.now())
+      .map(([target, h]) => {
+        const attention = this.records.get(target)?.attention
+        return {
+          id: h.id,
+          generation: h.id,
+          target,
+          kind: h.event === 'PermissionRequest' ? 'approval' : 'next-step',
+          title:
+            attention?.kind === 'approval'
+              ? (attention.action ?? 'Codex permission request')
+              : attention?.kind === 'next-step'
+                ? attention.ask
+                : 'Codex needs input',
+          startedAt: h.at,
+          expiresAt: h.at + HOLD_MS,
+        }
+      })
+  }
+  respondCommunication(id: string, generation: string, response: NativeCommunicationResponse) {
+    const entry = [...this.holds.entries()].find(([, h]) => h.id === id && h.id === generation)
+    if (!entry) return { ok: false as const, reason: 'That card is no longer pending.' }
+    return this.answer(entry[0], id, response.action === 'answer' ? response.text : response.action)
   }
 
   release(key: string): void {

@@ -69,6 +69,7 @@ export interface NextStepAction {
 export type Attention =
   | {
       kind: 'question'
+      holdId?: string
       questions: CardQuestion[]
       /**
        * Set while Threadlight holds the card so it can be answered here: when the hold ends and
@@ -89,6 +90,7 @@ export type Attention =
   | {
       /** A New session / Do it here offer, only ever seen while Threadlight holds it. */
       kind: 'offer'
+      holdId?: string
       title: string
       answerableUntil: number
     }

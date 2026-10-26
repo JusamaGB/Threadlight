@@ -19,15 +19,15 @@ function service(lookup: (id: string) => RelayTarget | undefined = () => target)
 }
 
 const until = async (check: () => boolean) => {
-  for (let i = 0; i < 200 && !check(); i++) await new Promise((r) => setTimeout(r, 10))
+  await expect.poll(check, { timeout: 10000, interval: 50 }).toBe(true)
 }
 
 describe('RelayService', () => {
-  it('moves a message through sending, sent and replied', async () => {
+  it('does not claim provider acceptance from Claude process creation', async () => {
     const { relays, seen } = service()
     expect(relays.send(SESSION, 'hello')).toEqual({ ok: true })
     await until(() => seen.includes('replied'))
-    expect(seen).toEqual(['sending', 'sent', 'replied'])
+    expect(seen).toEqual(['sending', 'sending', 'replied'])
     expect(relays.list()[0]).toMatchObject({ state: 'replied', detail: 'Got it: hello' })
   })
 

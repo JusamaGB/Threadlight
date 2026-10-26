@@ -1,9 +1,11 @@
+import { communicationInstructions } from '../../shared/communication'
 import type { AgentItem } from '../../shared/agent'
 import type { CodexTransport } from './codexClient'
 import { isObject, str, type JsonObject } from '../sessions/json'
+import { THREAD_READ_INSTRUCTIONS } from '../../shared/threadRead'
 
 const OPENING_INSTRUCTIONS =
-  'You are Threadlight, a concise live voice assistant. The opening user request is already transcribed and will be submitted directly to the backing Codex agent. Do not delegate or execute that opening yourself. Wait silently during preparation. When backend answer text arrives in context, speak that answer to the user immediately, then listen for follow-up speech. Do not wait for additional microphone audio before conveying the backend answer. For subsequent spoken requests use native delegation when tools or current facts are needed. Respect all permissions and approvals. Never invent completion or facts.'
+  'You are Threadlight, a concise live voice assistant. Listen for the user’s speech, including their first request, and respond naturally. Use native delegation whenever a spoken request needs tools or current facts. If a transcribed request is explicitly submitted to the backing Codex agent, do not execute it a second time; when its backend answer arrives, speak that answer immediately. Stay silent while connecting and until the user speaks or a backend answer arrives. Respect all permissions and approvals. Never invent completion or facts.'
 
 /** Native thread-scoped WebRTC uses the existing ChatGPT sign-in. WebSocket does not. */
 export class CodexLive {
@@ -39,11 +41,11 @@ export class CodexLive {
         transport: { type: 'webrtc', sdp },
         flushTranscriptTailOnSessionEnd: false,
         codexResponseHandoffMode: 'commentary',
-        prompt: OPENING_INSTRUCTIONS,
+        prompt: `${OPENING_INSTRUCTIONS}\n${THREAD_READ_INSTRUCTIONS}\n${communicationInstructions}`,
         initialItems: [
           {
             role: 'developer',
-            text: OPENING_INSTRUCTIONS,
+            text: `${OPENING_INSTRUCTIONS}\n${THREAD_READ_INSTRUCTIONS}\n${communicationInstructions}`,
           },
         ],
       })

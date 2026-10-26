@@ -26,6 +26,8 @@ export const settingsSchema = z.object({
   voiceHold: z.boolean().default(false),
   /** Where hotkey speech goes, independently of Toggle / Push to talk. */
   voiceTarget: z.enum(['agent', 'thread']).default('thread'),
+  /** Explicit speech engine; independent of the local transcript's destination. */
+  voiceMode: z.enum(['local-stt', 'gpt-live']).default('local-stt'),
   /** Hover opens the panel straight away; click avoids opening it by accident in a game. */
   openOn: z.enum(['hover', 'click']).default('hover'),
   /** Start Threadlight when you sign in to Windows. Off until you turn it on. */
@@ -73,6 +75,14 @@ export function parseSettings(raw: unknown): Settings {
   const migrated: Record<string, unknown> = {
     ...stored,
     voiceTarget: stored['voiceTarget'] ?? (stored['openMic'] === true ? 'agent' : 'thread'),
+    voiceMode:
+      stored['voiceMode'] ??
+      ((stored['voiceTarget'] === 'agent' ||
+        (stored['voiceTarget'] === undefined && stored['openMic'] === true)) &&
+      stored['agentProvider'] === 'codex' &&
+      stored['talkMode'] !== 'hold'
+        ? 'gpt-live'
+        : 'local-stt'),
     enabledProviders:
       stored['enabledProviders'] ?? (stored['provider'] === 'codex' ? ['codex'] : ['claude']),
   }
@@ -82,6 +92,10 @@ export function parseSettings(raw: unknown): Settings {
   }
   return result as Settings
 }
+
+/** Live is an open conversation; retain the separate local push-to-talk preference. */
+export const voiceHotkeyMode = (settings: Pick<Settings, 'voiceMode' | 'talkMode'>) =>
+  settings.voiceMode === 'gpt-live' ? 'toggle' : settings.talkMode
 
 /** Validates a change strictly: unknown keys or bad values are refused with a reason. */
 export function validatePatch(

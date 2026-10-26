@@ -22,15 +22,20 @@ export class RelayService {
   }
 
   /** Starts a send and returns at once; progress arrives through onChange. */
-  send(sessionId: string, text: string, memory?: MemoryDeliveryContext): SendResult {
+  send(
+    sessionId: string,
+    text: string,
+    memory?: MemoryDeliveryContext,
+    receiptId?: string,
+  ): SendResult {
     const target = this.lookup(sessionId)
     if (!target) return { ok: false, reason: 'That session is no longer listed.' }
     const current = this.statuses.get(sessionId)?.state
     if (current === 'sending' || current === 'sent') {
       return { ok: false, reason: 'Still waiting for the last reply.' }
     }
-    this.update(sessionId, 'sending', '', memory?.attemptId)
-    void this.run(target, text, memory)
+    this.update(sessionId, 'sending', '', memory?.attemptId ?? receiptId)
+    void this.run(target, text, memory, receiptId)
     return { ok: true }
   }
 
@@ -38,23 +43,30 @@ export class RelayService {
     target: RelayTarget,
     text: string,
     memory?: MemoryDeliveryContext,
+    receiptId?: string,
   ): Promise<void> {
     try {
       const result = await relayMessage(
         target,
         text,
         await this.deps(),
-        () => this.update(target.id, 'sent', '', memory?.attemptId),
+        () =>
+          this.update(
+            target.id,
+            'sending',
+            'Process started; waiting for provider confirmation.',
+            memory?.attemptId ?? receiptId,
+          ),
         memory,
       )
-      if (result.ok) this.update(target.id, 'replied', result.reply, memory?.attemptId)
-      else this.update(target.id, 'failed', result.reason, memory?.attemptId)
+      if (result.ok) this.update(target.id, 'replied', result.reply, memory?.attemptId ?? receiptId)
+      else this.update(target.id, 'failed', result.reason, memory?.attemptId ?? receiptId)
     } catch (error) {
       this.update(
         target.id,
         'failed',
         error instanceof Error ? error.message : String(error),
-        memory?.attemptId,
+        memory?.attemptId ?? receiptId,
       )
     }
   }

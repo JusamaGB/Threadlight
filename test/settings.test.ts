@@ -4,7 +4,12 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { SettingsStore } from '../src/main/settings'
-import { DEFAULT_SETTINGS, parseSettings, validatePatch } from '../src/shared/settings'
+import {
+  DEFAULT_SETTINGS,
+  parseSettings,
+  validatePatch,
+  voiceHotkeyMode,
+} from '../src/shared/settings'
 import { sandbox, type Sandbox } from './helpers'
 
 let box: Sandbox
@@ -12,6 +17,32 @@ beforeEach(async () => (box = await sandbox()))
 afterEach(() => box.cleanup())
 
 describe('parseSettings', () => {
+  it('migrates the previous effective engine and preserves explicit choices independently', () => {
+    expect(
+      parseSettings({ voiceTarget: 'agent', agentProvider: 'codex', talkMode: 'toggle' }).voiceMode,
+    ).toBe('gpt-live')
+    expect(
+      parseSettings({ voiceTarget: 'agent', agentProvider: 'codex', talkMode: 'hold' }).voiceMode,
+    ).toBe('local-stt')
+    expect(parseSettings({ voiceTarget: 'agent', agentProvider: 'claude' }).voiceMode).toBe(
+      'local-stt',
+    )
+    expect(
+      parseSettings({ voiceMode: 'local-stt', voiceTarget: 'agent', agentProvider: 'codex' })
+        .voiceMode,
+    ).toBe('local-stt')
+    expect(validatePatch({ voiceMode: 'gpt-live' })).toEqual({
+      ok: true,
+      patch: { voiceMode: 'gpt-live' },
+    })
+    expect(validatePatch({ voiceMode: 'automatic' }).ok).toBe(false)
+    expect(voiceHotkeyMode({ ...DEFAULT_SETTINGS, voiceMode: 'gpt-live', talkMode: 'hold' })).toBe(
+      'toggle',
+    )
+    expect(voiceHotkeyMode({ ...DEFAULT_SETTINGS, voiceMode: 'local-stt', talkMode: 'hold' })).toBe(
+      'hold',
+    )
+  })
   it('fills in defaults and keeps every valid value', () => {
     expect(parseSettings({})).toEqual(DEFAULT_SETTINGS)
     expect(parseSettings({ openOn: 'click', maxSessions: 15 })).toMatchObject({

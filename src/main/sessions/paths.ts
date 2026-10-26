@@ -42,6 +42,7 @@ export interface CodexPaths {
   state: string
   history: string
   sessions: string
+  archivedSessions?: string
   locks: string
   desktopState: string
   cliRoot: string
@@ -51,6 +52,9 @@ export const agentPaths = (userData: string) => ({
   workspace: join(userData, 'agent'),
   index: join(userData, 'agent-conversations.json'),
 })
+
+export const agentEvidencePath = (index: string) => `${index}.sources.json`
+export const sqliteSourceFiles = (database: string) => [database, `${database}-wal`]
 
 export const messagingPaths = (userData: string) => ({
   store: join(userData, 'message-recovery.json'),
@@ -69,6 +73,7 @@ export function codexPaths(env: NodeJS.ProcessEnv = process.env, home = homedir(
     state: join(root, 'state_5.sqlite'),
     history: join(root, 'thread_history_1.sqlite'),
     sessions: join(root, 'sessions'),
+    archivedSessions: join(root, 'archived_sessions'),
     locks: join(root, 'thread-writer-locks'),
     desktopState: join(root, '.codex-global-state.json'),
     cliRoot: join(env['LOCALAPPDATA'] || join(home, 'AppData', 'Local'), 'OpenAI', 'Codex', 'bin'),

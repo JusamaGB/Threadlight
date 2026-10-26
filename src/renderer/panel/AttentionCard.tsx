@@ -56,10 +56,12 @@ export function AttentionCard({
       />
     )
   const open = () => session.appId && window.threadlight.openInClaude(session.appId)
+  const requestKey = `${session.id}:${attention.holdId ?? JSON.stringify(attention)}`
   switch (attention.kind) {
     case 'next-step':
       return (
         <NextStepCard
+          key={requestKey}
           session={session}
           attention={attention}
           relay={relay}
@@ -70,6 +72,7 @@ export function AttentionCard({
     case 'question':
       return (
         <QuestionCard
+          key={requestKey}
           session={session}
           questions={attention.questions}
           answerableUntil={attention.answerableUntil}
@@ -77,9 +80,9 @@ export function AttentionCard({
         />
       )
     case 'approval':
-      return <ApprovalCard session={session} attention={attention} onOpen={open} />
+      return <ApprovalCard key={requestKey} session={session} attention={attention} onOpen={open} />
     case 'offer':
-      return <OfferCard session={session} title={attention.title} />
+      return <OfferCard key={requestKey} session={session} title={attention.title} />
   }
 }
 
@@ -126,8 +129,11 @@ function NextStepCard({
   onCompose: () => void
 }) {
   const OTHER = -1
-  const [picked, setPicked] = useDraft(`${session.id}:${attention.ask}:picked`, 0) // the first answer is the recommended one
-  const [other, setOther] = useDraft(`${session.id}:${attention.ask}:other`, '')
+  const [picked, setPicked] = useDraft(
+    `${session.id}:${attention.holdId ?? attention.ask}:picked`,
+    0,
+  ) // the first answer is the recommended one
+  const [other, setOther] = useDraft(`${session.id}:${attention.holdId ?? attention.ask}:other`, '')
   const [sending, setSending] = useState(false)
   /** Handed back to the held turn, or copied: done from here. */
   const [done, setDone] = useState<'answered' | 'copied' | null>(null)
@@ -157,6 +163,7 @@ function NextStepCard({
       ? await window.threadlight.answerNextStep(
           session.id,
           own ? { text: other } : { label: action.label },
+          attention.holdId,
         )
       : await window.threadlight.sendMessage(session.id, action!.message!)
     setSending(false)
@@ -247,7 +254,7 @@ function QuestionCard({
   answerableUntil: number | null
   onOpen: () => void
 }) {
-  const cardKey = `${session.id}:${JSON.stringify(questions)}`
+  const cardKey = `${session.id}:${session.attention?.holdId ?? JSON.stringify(questions)}`
   const [index, setIndex] = useDraft(`${cardKey}:index`, 0)
   const [picks, setPicks] = useDraft<Record<number, string[]>>(`${cardKey}:picks`, {})
   const [others, setOthers] = useDraft<Record<number, string>>(`${cardKey}:others`, {})
@@ -288,7 +295,11 @@ function QuestionCard({
     const answers = collect(skipping)
     if (!answers || sending) return
     setSending(true)
-    const result = await window.threadlight.answerQuestion(session.id, answers)
+    const result = await window.threadlight.answerQuestion(
+      session.id,
+      answers,
+      session.attention?.holdId,
+    )
     setSending(false)
     // On success the session carries on, and this card clears with the next scan.
     setSubmitted(result.ok)
@@ -421,6 +432,7 @@ function ApprovalCard({
     const result = await window.threadlight.answerApproval(
       session.id,
       allow ? { allow: true } : { allow: false, message: why },
+      attention.holdId,
     )
     setSending(false)
     if (result.ok) setDone(allow ? 'allowed' : 'denied')
@@ -501,7 +513,11 @@ function OfferCard({ session, title }: { session: Session; title: string }) {
   const answer = async (choice: 'new-session' | 'here') => {
     if (sending || done) return
     setSending(true)
-    const result = await window.threadlight.answerOffer(session.id, choice)
+    const result = await window.threadlight.answerOffer(
+      session.id,
+      choice,
+      session.attention?.holdId,
+    )
     setSending(false)
     setDone(result.ok)
     setError(result.ok ? null : result.reason)

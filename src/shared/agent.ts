@@ -1,4 +1,5 @@
 // What the panel shows of the agent: one conversation Threadlight hosts itself.
+import type { ThreadToolReceipt } from './threadRead'
 
 /** idle: no run. working: a turn is under way. waiting: it needs your approval. ready: done,
  * and listening for a follow-up. error: the run stopped unexpectedly. */
@@ -37,6 +38,8 @@ export interface AgentHistoryPage {
 
 /** One line of the conversation: what you said, what it said, or a step it took. */
 export interface AgentItem {
+  source?: ThreadToolReceipt
+  sourceHistorical?: boolean
   id?: string
   kind: 'you' | 'agent' | 'step'
   text: string

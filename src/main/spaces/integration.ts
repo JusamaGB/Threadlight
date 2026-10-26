@@ -6,12 +6,15 @@ import { SpacesService } from './service'
 export function registerSpaces(panel: BrowserWindow, service: SpacesService | null, issue: string) {
   const unavailable = () => ({ ok: false, reason: issue || 'Shared Spaces is unavailable.' })
   ipcMain.handle(IPC.spacesRequest, (event, input: unknown) =>
-    event.sender === panel.webContents && service ? service.request(input) : unavailable(),
+    event.sender === panel.webContents && event.senderFrame === event.sender.mainFrame && service
+      ? service.request(input)
+      : unavailable(),
   )
   ipcMain.handle(
     IPC.spacesRespond,
     (event, ideaId: unknown, requestId: unknown, response: AgentResponse) =>
       event.sender === panel.webContents &&
+      event.senderFrame === event.sender.mainFrame &&
       service &&
       typeof ideaId === 'string' &&
       typeof requestId === 'string'

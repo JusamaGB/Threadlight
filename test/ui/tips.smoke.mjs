@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 
 export async function checkTips(page, row) {
-  await page.setViewportSize({ width: 342, height: 900 })
+  await page.setViewportSize({ width: 300, height: 900 })
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
   const tip = page.getByRole('tooltip')
   const move = async (target, offset = 70) => {
@@ -23,7 +23,7 @@ export async function checkTips(page, row) {
     if (side === 'right') assert.ok(box.x >= point.x + 18)
     else assert.ok(box.x + box.width <= point.x - 18)
     assert.ok(box.y <= point.y && box.y + box.height >= point.y, 'same line as the pointer')
-    assert.ok(box.x >= 4 && box.x + box.width <= 338, 'inside the window')
+    assert.ok(box.x >= 4 && box.x + box.width <= 296, 'inside the window')
     assert.equal(await tip.count(), 1, 'only the hovered target owns a bubble')
   }
   try {

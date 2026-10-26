@@ -138,7 +138,7 @@ export function interpretOutput(stdout: string, stderr: string): RelayResult {
     return { ok: false, reason: oneLine(stderr || stdout).slice(0, 200) || 'No reply.' }
   }
   if (!isObject(result)) return { ok: false, reason: 'No reply.' }
-  const reply = oneLine(str(result['result']))
+  const reply = (str(result['result']) ?? '').trim()
   if (reply.toLowerCase().includes('not logged in')) {
     return { ok: false, reason: "Claude Code isn't signed in. Run 'claude auth login' once." }
   }

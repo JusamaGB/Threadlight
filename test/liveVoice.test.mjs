@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { LiveVoiceConnection } from '../src/renderer/lib/liveVoice'
+import { LiveAudioBuffer } from '../src/renderer/lib/liveAudioBuffer'
 class Peer {
   static current
   static earlyStart = false
@@ -75,6 +76,95 @@ async function ready() {
   await starting
   return peer
 }
+it('native listening sends audio from the first turn without a text opening', async () => {
+  connection.listen()
+  expect(connection.active).toBe(false)
+  await ready()
+  connection.listen()
+  const output = new Float32Array(2)
+  connection.process(new Float32Array([0.2, 0.3]), output)
+  expect([...output]).toEqual([...new Float32Array([0.2, 0.3])])
+  expect(api.agentLiveOpen).not.toHaveBeenCalled()
+  expect(state).toHaveBeenLastCalledWith('live')
+  connection.listen()
+  expect(api.agentLiveOpen).not.toHaveBeenCalled()
+})
+it('holds startup speech until service readiness, then delivers old and new audio once in order', async () => {
+  const starting = connection.start({ bufferAudio: true })
+  await vi.advanceTimersByTimeAsync(0)
+  const output = new Float32Array(2)
+  connection.process(new Float32Array([1, 2]), output)
+  expect([...output]).toEqual([0, 0])
+  connection.process(new Float32Array([3, 4]), output)
+  expect([...output]).toEqual([0, 0])
+  Peer.current.event('session.started')
+  await starting
+  connection.process(new Float32Array([5, 6]), output)
+  expect([...output]).toEqual([1, 2])
+  connection.process(new Float32Array([7, 8]), output)
+  expect([...output]).toEqual([3, 4])
+  connection.process(new Float32Array([0, 0]), output)
+  expect([...output]).toEqual([5, 6])
+  connection.process(new Float32Array([0, 0]), output)
+  expect([...output]).toEqual([7, 8])
+  expect(api.agentLiveOpen).not.toHaveBeenCalled()
+})
+it('discards startup audio on cancellation and ignores a late connection', async () => {
+  const starting = connection.start({ bufferAudio: true })
+  await vi.advanceTimersByTimeAsync(0)
+  const output = new Float32Array(2)
+  connection.process(new Float32Array([1, 2]), output)
+  expect(connection.bufferedSeconds).toBeGreaterThan(0)
+  connection.stop()
+  Peer.current.event('session.started')
+  await starting
+  connection.process(new Float32Array([3, 4]), output)
+  expect([...output]).toEqual([0, 0])
+  expect(connection.bufferedSeconds).toBe(0)
+})
+it('bounds startup audio without sending a truncated opening', async () => {
+  const starting = connection.start({ bufferAudio: true })
+  await vi.advanceTimersByTimeAsync(0)
+  const output = new Float32Array(512)
+  connection.process(new Float32Array(16000 * 30 + 1).fill(0.1), output)
+  expect(output.every((value) => value === 0)).toBe(true)
+  expect(connection.bufferedSeconds).toBe(0)
+  expect(state).toHaveBeenLastCalledWith('error', expect.stringContaining('discarded'))
+  await starting
+})
+it('applies the startup deadline while waiting for the provider, not only after SDP', async () => {
+  let resolve
+  api.agentLiveStart.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done
+      }),
+  )
+  const starting = connection.start({ bufferAudio: true })
+  await vi.advanceTimersByTimeAsync(0)
+  connection.process(new Float32Array([1]), new Float32Array(1))
+  await vi.advanceTimersByTimeAsync(30000)
+  expect(state).toHaveBeenLastCalledWith('error', expect.stringContaining('discarded'))
+  expect(connection.bufferedSeconds).toBe(0)
+  resolve({ ok: true, sdp: 'v=0' })
+  await starting
+  expect(connection.active).toBe(false)
+})
+it('compacts only extended digital silence and catches up without altering quiet speech', () => {
+  const buffer = new LiveAudioBuffer(8)
+  expect(buffer.append(new Float32Array([0.000001, 0.2]), true)).toBe(true)
+  buffer.append(new Float32Array(12), true)
+  buffer.append(new Float32Array([0.3]), true)
+  const output = new Float32Array(7)
+  buffer.read(output)
+  expect([...output]).toEqual([...new Float32Array([0.000001, 0.2, 0, 0, 0, 0, 0.3])])
+  expect(buffer.length).toBe(0)
+  buffer.append(new Float32Array([0.4, 0.5, 0.6]), false)
+  buffer.read(new Float32Array(1))
+  const tail = new Float32Array(2)
+  buffer.read(tail)
+  expect([...tail]).toEqual([...new Float32Array([0.5, 0.6])])
+})
 it('waits for service readiness even after WebRTC and the data channel connect', async () => {
   const { starting, peer } = await transport()
   expect(peer.connectionState).toBe('connected')
@@ -109,7 +199,10 @@ it('times out a connected transport whose service never starts', async () => {
   const { starting } = await transport()
   await vi.advanceTimersByTimeAsync(30_000)
   await starting
-  expect(state).toHaveBeenLastCalledWith('error', 'Live audio did not connect in time.')
+  expect(state).toHaveBeenLastCalledWith(
+    'error',
+    expect.stringContaining('did not connect in time'),
+  )
   expect(api.agentLiveOpen).not.toHaveBeenCalled()
 })
 it('reports an acknowledged opening with no reply, without resending', async () => {

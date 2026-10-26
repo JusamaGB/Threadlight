@@ -143,7 +143,9 @@ export function Panel() {
 
   /** Agent Toggle listens until the next press; selecting a target never opens the mic. */
   const [micLive, setMicLive] = useState(false)
-  const openMicMode = settings?.voiceTarget === 'agent' && settings.talkMode === 'toggle'
+  const gptLive = settings?.voiceMode === 'gpt-live'
+  const openMicMode =
+    gptLive || (settings?.voiceTarget === 'agent' && settings.talkMode === 'toggle')
   const openMicModeRef = useRef(openMicMode)
   useEffect(() => {
     openMicModeRef.current = openMicMode
@@ -172,7 +174,7 @@ export function Panel() {
     close: closeAgentSpeech,
     error: recordedAgentError,
     draft: recordedAgentDraft,
-  } = useRecordedAgentVoice(settings?.voiceTarget === 'agent')
+  } = useRecordedAgentVoice(!gptLive && settings?.voiceTarget === 'agent')
   const cancelVoice = voice.cancel
   const recordingTarget = useRef<'agent' | 'thread'>('thread')
   const recordingAgent = useRef<'claude' | 'codex'>('claude')
@@ -188,9 +190,14 @@ export function Panel() {
       window.threadlight.onSettings((next) => {
         if (
           next.voiceTarget !== settingsRef.current?.voiceTarget ||
+          next.voiceMode !== settingsRef.current?.voiceMode ||
           next.talkMode !== settingsRef.current?.talkMode ||
           next.agentProvider !== settingsRef.current?.agentProvider
         ) {
+          settingsRef.current = next
+          openMicModeRef.current =
+            next.voiceMode === 'gpt-live' ||
+            (next.voiceTarget === 'agent' && next.talkMode === 'toggle')
           recordingGeneration.current++
           startedBy.current = null
           cancelVoice()
@@ -408,6 +415,7 @@ export function Panel() {
     }
     if (voice.state !== 'idle') return
     if (
+      settingsRef.current?.voiceMode !== 'gpt-live' &&
       settingsRef.current?.voiceTarget !== 'agent' &&
       settingsRef.current?.enabledProviders.length === 0
     ) {
@@ -416,13 +424,21 @@ export function Panel() {
       window.threadlight.openPanelQuietly()
       return
     }
-    if (stt.state !== 'ready') {
+    const nativeLive = settingsRef.current?.voiceMode === 'gpt-live'
+    if (nativeLive && (agent.provider ?? settingsRef.current?.agentProvider) !== 'codex') {
+      setNotice(en.settings.gptLiveNeedsCodex)
+      setShowAgent(false)
+      setShowSettings(true)
+      window.threadlight.openPanelQuietly()
+      return
+    }
+    if (!nativeLive && stt.state !== 'ready') {
       setNotice(en.voice.hotkeyNeedsModel)
       window.threadlight.openPanelQuietly()
       return
     }
     // With the open mic on, the toggle opens and closes a live mic instead of one recording.
-    if (openMicModeRef.current) {
+    if (nativeLive || openMicModeRef.current) {
       const mine = recordingGeneration.current
       await closeAgentSpeech()
       if (mine !== recordingGeneration.current || !openMicModeRef.current) return
@@ -599,8 +615,8 @@ export function Panel() {
     liveError: continuousError,
     openingDraft: continuousDraft,
   } = useOpenMic({
-    enabled: micLive && stt.state === 'ready',
-    nativeLive: (agent.provider ?? settings?.agentProvider) === 'codex',
+    enabled: micLive && (gptLive || stt.state === 'ready'),
+    nativeLive: gptLive,
     paused: voice.state !== 'idle',
     threads: [...voiceThreads.values()],
     onStop: () => setMicLive(false),
@@ -613,8 +629,11 @@ export function Panel() {
     },
     onSentence: handleSentence,
   })
-  const liveError =
-    settings?.voiceTarget === 'agent' ? (recordedAgentError ?? continuousError) : null
+  const liveError = gptLive
+    ? continuousError
+    : settings?.voiceTarget === 'agent'
+      ? (recordedAgentError ?? continuousError)
+      : null
   const openingDraft = recordedAgentError ? recordedAgentDraft : continuousDraft
   const openMicListening = openMic === 'listening' || openMic === 'hearing'
   const visualMode = motionMode({
@@ -1093,17 +1112,21 @@ export function Panel() {
         )}
         {micLive && openMic !== 'blocked' && (
           <p className={styles.notice} role="status" data-mic-mode={micMode}>
-            {micMode === 'agent'
-              ? livePhase === 'live'
-                ? 'Live · Speak naturally; press the hotkey to finish'
-                : livePhase === 'waiting'
-                  ? 'Live · Waiting for a reply; you can keep talking'
-                  : livePhase === 'error'
-                    ? 'Live could not connect · Your opening message is kept below'
-                    : livePhase === 'ready'
-                      ? 'Live ready · Finish your opening sentence'
-                      : 'Connecting Live · Keep talking'
-              : en.openMic.mode(micMode)}
+            {gptLive
+              ? openMic === 'off'
+                ? 'Opening microphone and connecting GPT Live…'
+                : livePhase === 'live'
+                  ? 'Live · Speak naturally; press the hotkey to finish'
+                  : livePhase === 'waiting'
+                    ? 'Live · Waiting for a reply; you can keep talking'
+                    : livePhase === 'error'
+                      ? 'GPT Live could not connect'
+                      : livePhase === 'ready'
+                        ? 'GPT Live ready · Speak naturally'
+                        : 'Connecting GPT Live · Speak now; your audio is buffered'
+              : micMode === 'agent'
+                ? 'Local STT · Listening; text goes to the Agent'
+                : en.openMic.mode(micMode)}
           </p>
         )}
         {showAgent && !pickingWorkspace && !changesFor && (
@@ -1144,6 +1167,7 @@ export function Panel() {
         />
         {showSettings && settings && !pickingWorkspace && !showAgent && !showMemory && (
           <SettingsView
+            currentAgentProvider={agent.provider ?? undefined}
             providerLocked={voice.state !== 'idle'}
             settings={settings}
             stt={stt}

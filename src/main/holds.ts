@@ -19,6 +19,11 @@
 // Claude, or HOLD_MS passes.
 
 import type { NextStepAction } from '../shared/types'
+import { randomUUID } from 'node:crypto'
+import type {
+  NativeCommunicationRequest,
+  NativeCommunicationResponse,
+} from '../shared/communication'
 
 /** The longest Claude's own card is held back; the hooks wait as long (hooks.json). */
 export const HOLD_MS = 12 * 60 * 60 * 1000
@@ -33,6 +38,7 @@ export type HoldKind = 'question' | 'next-step' | 'approval' | 'offer'
 
 /** What a held card shows beyond its kind: an approval's tool and gist, or an offer's title. */
 export interface HeldCard {
+  id: string
   kind: HoldKind
   startedAt: number
   releasesAt: number
@@ -58,6 +64,7 @@ const APP_ACTIONS: Record<string, string> = {
 type Result = { ok: true } | { ok: false; reason: string }
 
 interface Hold {
+  id: string
   kind: HoldKind
   sessionId: string
   /** A question card's own input, handed back with the answers added. */
@@ -163,8 +170,42 @@ export class Holds {
   held(sessionId: string): HeldCard | null {
     const hold = this.holds.get(sessionId)
     if (!hold) return null
-    const { kind, startedAt, releasesAt, tool, detail } = hold
-    return { kind, startedAt, releasesAt, tool, detail }
+    const { id, kind, startedAt, releasesAt, tool, detail } = hold
+    return { id, kind, startedAt, releasesAt, tool, detail }
+  }
+  communicationRequests(): NativeCommunicationRequest[] {
+    return [...this.holds.values()]
+      .filter((h) => h.kind !== 'offer' && h.releasesAt > this.now())
+      .map((h) => ({
+        id: h.id,
+        generation: h.id,
+        target: h.sessionId,
+        kind: h.kind as NativeCommunicationRequest['kind'],
+        title:
+          h.nextStep?.ask ??
+          h.detail ??
+          (h.kind === 'question' ? 'Claude needs your input' : 'Claude permission request'),
+        startedAt: h.startedAt,
+        expiresAt: h.releasesAt,
+        questions: h.kind === 'question' ? h.questions : undefined,
+      }))
+  }
+  respondCommunication(
+    id: string,
+    generation: string,
+    response: NativeCommunicationResponse,
+  ): Result {
+    const h = [...this.holds.values()].find(
+      (h) => h.id === id && h.id === generation && h.releasesAt > this.now(),
+    )
+    if (!h) return gone()
+    if (h.kind === 'approval' && response.action !== 'answer')
+      return this.answerApproval(h.sessionId, { allow: response.action === 'allow' })
+    if (h.kind === 'question' && response.action === 'answer')
+      return this.answerQuestion(h.sessionId, response.answers)
+    if (h.kind === 'next-step' && response.action === 'answer' && response.text)
+      return this.answerNextStep(h.sessionId, { text: response.text })
+    return { ok: false, reason: 'Response does not match this live card.' }
   }
 
   sessionIds(): string[] {
@@ -174,12 +215,12 @@ export class Holds {
   /** Hands a question card's answers to its hook. Every answer must be for one of its questions. */
   answerQuestion(sessionId: string, answers: unknown): Result {
     const hold = this.holds.get(sessionId)
-    if (hold?.kind !== 'question') return gone()
+    if (hold?.kind !== 'question' || this.now() >= hold.releasesAt) return gone()
     const asked = new Set(hold.questions.map((q) => q.question))
     const given =
       typeof answers === 'object' && answers !== null ? Object.entries(answers as object) : []
     if (
-      given.length === 0 ||
+      given.length !== asked.size ||
       !given.every(
         ([question, value]) =>
           asked.has(question) && typeof value === 'string' && value.length <= MAX_ANSWER,
@@ -205,7 +246,7 @@ export class Holds {
   answerNextStep(sessionId: string, choice: unknown): Result {
     const hold = this.holds.get(sessionId)
     const step = hold?.kind === 'next-step' ? hold.nextStep : null
-    if (!hold || !step) return gone()
+    if (!hold || !step || this.now() >= hold.releasesAt) return gone()
     const picked = typeof choice === 'object' && choice !== null ? (choice as NextStepChoice) : null
     let reason: string
     if (picked && 'label' in picked) {
@@ -232,7 +273,7 @@ export class Holds {
   /** Allows or denies a held approval, in the PermissionRequest hook's documented shape. */
   answerApproval(sessionId: string, choice: unknown): Result {
     const hold = this.holds.get(sessionId)
-    if (hold?.kind !== 'approval') return gone()
+    if (hold?.kind !== 'approval' || this.now() >= hold.releasesAt) return gone()
     const picked = asObject(choice)
     if (picked['allow'] === true) {
       this.finish(hold, {
@@ -261,7 +302,7 @@ export class Holds {
    */
   answerOffer(sessionId: string, choice: unknown): Result {
     const hold = this.holds.get(sessionId)
-    if (hold?.kind !== 'offer') return gone()
+    if (hold?.kind !== 'offer' || this.now() >= hold.releasesAt) return gone()
     if (choice !== 'new-session' && choice !== 'here') {
       return { ok: false, reason: 'Pick New session or Do it here.' }
     }
@@ -308,6 +349,7 @@ export class Holds {
     this.release(sessionId) // a newer card replaces an older one from the same session
     const startedAt = this.now()
     this.holds.set(sessionId, {
+      id: randomUUID(),
       kind,
       sessionId,
       questions: card.questions ?? [],

@@ -1,3 +1,4 @@
+import { CommunicationView } from '../communication/CommunicationView'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { agentBusy, type AgentConversation, type AgentItem } from '../../shared/agent'
@@ -18,14 +19,91 @@ interface Reading {
 }
 
 /** The lines of a conversation: what you asked, what it said, and its steps. */
-function Lines({ items }: { items: AgentItem[] }) {
+function Lines({
+  items,
+  select,
+  historical = false,
+}: {
+  items: AgentItem[]
+  select?: (ref: string) => void
+  historical?: boolean
+}) {
   return (
     <>
-      {items.map((item, index) => (
-        <p key={index} className={styles.agentItem} data-kind={item.kind}>
-          {item.text}
-        </p>
-      ))}
+      {items.map((item, index) =>
+        item.source ? (
+          <details key={item.id ?? index} className={styles.agentItem}>
+            <summary>
+              Source ·{' '}
+              {'thread' in item.source.result ? item.source.result.thread.title : 'Chat search'}
+              {historical || item.sourceHistorical ? ' · historical' : ''}
+            </summary>
+            <p>
+              {'thread' in item.source.result
+                ? item.source.result.checkedAt
+                  ? `Checked ${new Date(item.source.result.checkedAt).toLocaleString()}`
+                  : 'Refresh unavailable'
+                : `Search at ${new Date(item.source.at).toLocaleString()}`}{' '}
+              · {item.source.result.outcome}
+            </p>
+            {'candidates' in item.source.result &&
+              item.source.result.candidates.map((candidate) => (
+                <button
+                  key={candidate.threadRef}
+                  disabled={!select || historical || item.sourceHistorical}
+                  className={styles.agentEnd}
+                  onClick={() => select?.(candidate.threadRef)}
+                >
+                  {candidate.title} · {candidate.provider} · {candidate.workspace ?? 'No workspace'}
+                </button>
+              ))}
+            {'thread' in item.source.result && (
+              <>
+                <p>
+                  {item.source.result.thread.provider} ·{' '}
+                  {item.source.result.thread.workspace ?? 'No workspace'}
+                  {item.source.result.thread.archived === true ? ' · archived' : ''}
+                </p>
+                <p>
+                  {item.source.result.status.state} · {item.source.result.status.basis}
+                </p>
+                {[
+                  item.source.result.currentRequest,
+                  item.source.result.latestProgress,
+                  item.source.result.latestCompletedReply,
+                  item.source.result.plan,
+                  item.source.result.attention,
+                  ...(item.source.result.backgroundTasks ?? []),
+                ]
+                  .filter(Boolean)
+                  .map((entry, i) => (
+                    <p key={i}>
+                      {entry!.role}: {entry!.text}
+                      {entry!.truncated ? '…' : ''}
+                    </p>
+                  ))}
+              </>
+            )}
+            {item.source.result.coverage.map((note, i) => (
+              <p key={i}>{note}</p>
+            ))}
+            {item.source.result.sources.map((source, i) => (
+              <p key={i}>
+                {source.source}: {source.health}
+                {source.checkedAt ? ` · ${new Date(source.checkedAt).toLocaleString()}` : ''}
+                {source.sourceUpdatedAt
+                  ? ` · source updated ${new Date(source.sourceUpdatedAt).toLocaleString()}`
+                  : ''}
+                {source.reason ? ` · ${source.reason}` : ''}
+              </p>
+            ))}
+          </details>
+        ) : (
+          <p key={index} className={styles.agentItem} data-kind={item.kind}>
+            {item.text}
+          </p>
+        ),
+      )}
     </>
   )
 }
@@ -157,8 +235,9 @@ export function AgentView() {
   if (reading) {
     return (
       <div className={styles.agent}>
+        <CommunicationView compact owner={agent.conversationId} />
         <div className={styles.agentLog} ref={log}>
-          <Lines items={reading.items} />
+          <Lines items={reading.items} historical />
           {reading.cursor && (
             <button
               className={styles.agentEnd}
@@ -218,6 +297,7 @@ export function AgentView() {
 
   return (
     <div className={styles.agent}>
+      <CommunicationView compact owner={agent.conversationId} />
       {selectionChanged && (
         <div className={styles.agentSelection} role="status">
           <p>
@@ -241,7 +321,18 @@ export function AgentView() {
         </div>
       )}
       <div className={styles.agentLog} ref={log}>
-        <Lines items={agent.items} />
+        <Lines
+          items={agent.items}
+          select={
+            busy || sending
+              ? undefined
+              : (ref) => {
+                  void window.threadlight
+                    .agentSend(`Read the selected chat using threadRef ${ref}.`)
+                    .then((result) => setError(result.ok ? null : result.reason))
+                }
+          }
+        />
         {agentBusy(agent) && (
           <p className={styles.agentProgress}>
             <span className={styles.spinner} />

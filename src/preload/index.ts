@@ -19,6 +19,8 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: ThreadlightApi = {
+  communicationRequest: (input) => ipcRenderer.invoke(IPC.communicationRequest, input),
+  onCommunication: (listener) => subscribe(IPC.communicationChanged, listener),
   getMotion: () => ipcRenderer.invoke(IPC.getMotion),
   setMotion: (snapshot) => ipcRenderer.send(IPC.motion, snapshot),
   onMotion: (listener) => subscribe(IPC.motion, listener),
@@ -57,11 +59,14 @@ const api: ThreadlightApi = {
 
   sendMessage: (sessionId, text) => ipcRenderer.invoke(IPC.sendMessage, sessionId, text),
   getRelays: () => ipcRenderer.invoke(IPC.getRelays),
-  answerQuestion: (sessionId, answers) =>
-    ipcRenderer.invoke(IPC.answerQuestion, sessionId, answers),
-  answerNextStep: (sessionId, choice) => ipcRenderer.invoke(IPC.answerNextStep, sessionId, choice),
-  answerApproval: (sessionId, choice) => ipcRenderer.invoke(IPC.answerApproval, sessionId, choice),
-  answerOffer: (sessionId, choice) => ipcRenderer.invoke(IPC.answerOffer, sessionId, choice),
+  answerQuestion: (sessionId, answers, holdId) =>
+    ipcRenderer.invoke(IPC.answerQuestion, sessionId, answers, holdId),
+  answerNextStep: (sessionId, choice, holdId) =>
+    ipcRenderer.invoke(IPC.answerNextStep, sessionId, choice, holdId),
+  answerApproval: (sessionId, choice, holdId) =>
+    ipcRenderer.invoke(IPC.answerApproval, sessionId, choice, holdId),
+  answerOffer: (sessionId, choice, holdId) =>
+    ipcRenderer.invoke(IPC.answerOffer, sessionId, choice, holdId),
   releaseHold: (sessionId) => ipcRenderer.send(IPC.releaseHold, sessionId),
   copyText: (text) => ipcRenderer.send(IPC.copyText, text),
   getChanges: (sessionId) => ipcRenderer.invoke(IPC.getChanges, sessionId),

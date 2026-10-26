@@ -3,6 +3,17 @@ import type { MemoryDeliveryContext } from '../../shared/memory'
 import { MemoryStore } from './store'
 
 export interface MemoryDelivery {
+  nativeRequests?: () => import('../../shared/communication').NativeCommunicationRequest[]
+  respondNative?: (
+    id: string,
+    generation: string,
+    response: import('../../shared/communication').NativeCommunicationResponse,
+  ) => { ok: true } | { ok: false; reason: string }
+
+  destinations?: (
+    target?: string,
+    query?: string,
+  ) => Promise<import('../../shared/communication').Destination[]>
   find(id: string): Session | undefined
   statuses(): RelayStatus[]
   watch?(listener: (status: RelayStatus) => void): () => void
@@ -10,6 +21,7 @@ export interface MemoryDelivery {
     id: string,
     text: string,
     context?: MemoryDeliveryContext,
+    receiptId?: string,
   ): { ok: true } | { ok: false; reason: string }
 }
 
@@ -56,7 +68,7 @@ export class MemoryDispatcher {
     else if (status.state === 'failed')
       this.store.updateDelivery(task.id, { state: 'unknown', reason: status.detail })
   }
-  tick() {
+  async tick() {
     if (this.ticking) return
     this.ticking = true
     try {
@@ -74,6 +86,17 @@ export class MemoryDispatcher {
           continue
         }
         if (task.state !== 'queued') continue
+        if (this.delivery.destinations) {
+          const candidates = await this.delivery.destinations(task.assignee)
+          if (candidates.length !== 1 || !candidates[0]?.send) {
+            if (!candidates[0]?.queue)
+              this.store.updateDelivery(task.id, {
+                state: 'blocked',
+                reason: candidates[0]?.reason ?? 'Destination unavailable.',
+              })
+            continue
+          }
+        }
         const url = this.endpoint()
         if (!url) continue
         const target = this.delivery.find(task.assignee)

@@ -153,7 +153,7 @@ export class SpacesStore {
         const old = this.get(input.id)
         if (old.revision !== input.revision)
           throw new Error('This idea changed. Reopen it before saving; your text is still here.')
-        if (old.prepared)
+        if (old.prepared && !old.workflowSpaceId)
           throw new Error(
             'This plan has prepared assignments. Follow them in Handoffs; capture a new idea for a revised plan.',
           )

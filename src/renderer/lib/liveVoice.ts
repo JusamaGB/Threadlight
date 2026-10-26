@@ -1,8 +1,9 @@
 import type { LiveVoicePhase } from '../../shared/liveVoice'
 import { SILENT_AUDIO, type AudioEnergy } from '../../shared/motion'
 import { AudioEnergyMeter } from './audioEnergy'
+import { LiveAudioBuffer } from './liveAudioBuffer'
 
-/** Uses the open mic's processed audio track: silence until the initial text is committed. */
+/** One hotkey-owned transport. Startup speech is held locally until the service is ready. */
 export class LiveVoiceConnection {
   readonly id = crypto.randomUUID()
   private peer = new RTCPeerConnection()
@@ -12,8 +13,9 @@ export class LiveVoiceConnection {
   private cancelled = false
   private handedOver = false
   private opening = false
-  private backlog: Float32Array[] = []
-  private buffered = 0
+  private backlog: LiveAudioBuffer
+  private bufferAudio = false
+  private paused = false
   private ready = false
   private sessionStarted = false
   private replyStarted = false
@@ -29,6 +31,7 @@ export class LiveVoiceConnection {
     private onState: (phase: LiveVoicePhase, error?: string) => void,
     private audioContext?: AudioContext,
   ) {
+    this.backlog = new LiveAudioBuffer(sampleRate)
     this.peer.addTrack(stream.getAudioTracks()[0]!, stream)
     this.channel = this.peer.createDataChannel('oai-events')
     // An open transport is not yet a ready model. Register before negotiating so an
@@ -101,6 +104,9 @@ export class LiveVoiceConnection {
   get active(): boolean {
     return this.handedOver && !this.cancelled
   }
+  get bufferedSeconds(): number {
+    return this.backlog.length / this.sampleRate
+  }
   get outputEnergy(): AudioEnergy {
     if (
       this.cancelled ||
@@ -112,11 +118,21 @@ export class LiveVoiceConnection {
     return this.meter?.read() ?? SILENT_AUDIO
   }
   setPaused(paused: boolean): void {
+    this.paused = paused
     this.audio.muted = paused || !this.handedOver || this.opening
   }
 
-  async start(): Promise<void> {
+  async start({ bufferAudio = false }: { bufferAudio?: boolean } = {}): Promise<void> {
+    if (this.cancelled) return
+    this.bufferAudio = bufferAudio
     this.onState('connecting')
+    this.timer = setTimeout(
+      () =>
+        this.fail(
+          'Live did not connect in time. Buffered speech was discarded; reopen the mic and repeat your request.',
+        ),
+      30_000,
+    )
     try {
       await this.peer.setLocalDescription(await this.peer.createOffer())
       if (this.cancelled) return
@@ -150,12 +166,12 @@ export class LiveVoiceConnection {
         this.peer.onconnectionstatechange = check
         this.channel.onopen = check
         this.channel.onclose = () => this.fail('Live audio disconnected.')
-        this.timer = setTimeout(() => this.fail('Live audio did not connect in time.'), 30_000)
         check()
       })
       if (!this.cancelled) {
         this.ready = true
         this.onState('ready')
+        if (this.bufferAudio) this.listen()
       }
     } catch (error) {
       if (!this.cancelled) this.fail((error as Error).message)
@@ -180,6 +196,14 @@ export class LiveVoiceConnection {
     }
   }
 
+  /** Native audio from the first spoken turn; no locally transcribed opening is submitted. */
+  listen(): void {
+    if (!this.connected || this.handedOver) return
+    this.handedOver = true
+    this.audio.muted = this.paused
+    this.onState('live')
+  }
+
   private waitForReply(): void {
     this.replyTimer = setTimeout(async () => {
       const state = await window.threadlight.getAgent().catch(() => null)
@@ -198,17 +222,17 @@ export class LiveVoiceConnection {
   /** Called on the existing audio clock. Bounded buffering preserves the handoff boundary. */
   process(input: Float32Array, output: Float32Array): void {
     output.fill(0)
-    if (!this.active) return
-    this.backlog.push(new Float32Array(input))
-    this.buffered += input.length
-    if (this.buffered > this.sampleRate * 5) {
-      this.fail('Live is too slow to accept audio. Reopen the mic to try again.')
+    if (this.cancelled || this.paused || (!this.active && !this.bufferAudio)) return
+    if (
+      !this.backlog.append(input, this.bufferAudio && (!this.active || this.backlog.length > 0))
+    ) {
+      this.fail(
+        'Live could not keep up. Buffered speech was discarded; reopen the mic and repeat your request.',
+      )
       return
     }
-    if (this.opening) return
-    const frame = this.backlog.shift()!
-    this.buffered -= frame.length
-    output.set(frame)
+    if (!this.active || this.opening) return
+    this.backlog.read(output)
   }
 
   stop(): void {
@@ -225,7 +249,7 @@ export class LiveVoiceConnection {
     this.meter?.dispose()
     this.meter = undefined
     this.peer.close()
-    this.backlog = []
+    this.backlog.clear()
     window.threadlight.agentLiveStop(this.id)
   }
 

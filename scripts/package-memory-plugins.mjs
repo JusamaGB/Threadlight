@@ -17,18 +17,27 @@ require.extensions['.ts'] = (module, filename) =>
     filename,
   )
 const { memoryTools, memoryInstructions } = require('../src/main/memory/protocol.ts')
+const { communicationTools, communicationInstructions } = require('../src/shared/communication.ts')
 const generated = new Map([
   [
     'scripts/memory-protocol.json',
     await format(
-      JSON.stringify({ version: 1, instructions: memoryInstructions, tools: memoryTools }),
+      JSON.stringify({
+        version: 1,
+        instructions: `${memoryInstructions}\n${communicationInstructions}`,
+        tools: [...memoryTools, ...communicationTools],
+      }),
       { ...formatting, parser: 'json' },
     ),
   ],
   [
     'codex-plugin/scripts/memory-protocol.json',
     await format(
-      JSON.stringify({ version: 1, instructions: memoryInstructions, tools: memoryTools }),
+      JSON.stringify({
+        version: 1,
+        instructions: `${memoryInstructions}\n${communicationInstructions}`,
+        tools: [...memoryTools, ...communicationTools],
+      }),
       { ...formatting, parser: 'json' },
     ),
   ],

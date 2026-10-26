@@ -40,7 +40,7 @@ export async function checkVoiceTarget(page) {
   const transcribe = (text) => page.evaluate((value) => window.proof.finishTranscript(value), text)
 
   // Agent push-to-talk sends through the normal conversation only after releasing the mic.
-  await settings({ voiceTarget: 'agent', talkMode: 'hold' })
+  await settings({ voiceMode: 'local-stt', voiceTarget: 'agent', talkMode: 'hold' })
   await agent('codex')
   const before = (await calls()).length
   await record('hold')
@@ -59,7 +59,7 @@ export async function checkVoiceTarget(page) {
   // Switching target while transcription is pending discards that recording.
   await record('hold')
   const pending = (await calls()).length
-  await settings({ voiceTarget: 'thread' })
+  await settings({ voiceMode: 'gpt-live' })
   await transcribe('Do not redirect this old recording.')
   await page.waitForTimeout(100)
   assert.equal((await calls()).length, pending)
@@ -71,7 +71,7 @@ export async function checkVoiceTarget(page) {
   // Both activation modes prepare a thread message, with no Agent send.
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   for (const talkMode of ['toggle', 'hold']) {
-    await settings({ talkMode, voiceTarget: 'thread', voiceHold: true })
+    await settings({ voiceMode: 'local-stt', talkMode, voiceTarget: 'thread', voiceHold: true })
     const count = (await calls()).length
     await record(talkMode)
     await transcribe(`message Synthetic Codex, review ${talkMode}`)

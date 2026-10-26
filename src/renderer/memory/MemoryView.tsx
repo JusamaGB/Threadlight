@@ -1,3 +1,4 @@
+import { CommunicationView } from '../communication/CommunicationView'
 import {
   useCallback,
   useEffect,
@@ -270,6 +271,7 @@ export function MemoryView({
         </p>
       )}
       <div ref={body} className={styles.body}>
+        {spaceId && !confirm && <CommunicationView spaceId={spaceId} sessions={sessions} />}
         {confirm ? (
           <div className={styles.details}>
             <h3>Confirm {confirm.action.replaceAll('_', ' ')}</h3>

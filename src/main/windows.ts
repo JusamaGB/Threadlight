@@ -9,7 +9,7 @@ import { loadDotPosition, saveDotPosition, type Point } from './windowState'
 import { DOT_SIZE, micIndicatorBounds } from '../shared/micIndicator'
 
 export { DOT_SIZE }
-export const PANEL_WIDTH = 342 // 340 of content plus a 1 px border each side
+export const PANEL_WIDTH = 300 // 298 of content plus a 1 px border each side
 const MARGIN = 8
 
 export const CORNERS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'] as const
