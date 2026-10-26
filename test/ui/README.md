@@ -6,6 +6,11 @@ resolution, or `THREADLIGHT_PLAYWRIGHT` can name an existing Playwright module's
 absolute directory. It is separate from the default Vitest suite so normal installs
 do not download a browser.
 
+Set `THREADLIGHT_UI_FOCUS=workspace` to run the toolbar checks and mixed Windows path regression:
+Both + Workspace loads both providers from initially empty trees, combines ordinary
+and extended drive/UNC paths in the picker, and preserves original IDs when loading
+threads, saving a selection and switching providers.
+
 The test serves the built renderer on a temporary loopback port with synthetic IPC.
 It never launches Electron, either chat CLI, or a hook server, and needs no accounts.
 It exercises the actual settings controls, combined lists and workspaces, draft and

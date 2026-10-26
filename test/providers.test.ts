@@ -3,6 +3,7 @@ import {
   combinedSnapshot,
   providerView,
   sessionProvider,
+  workspaceFolder,
   workspaceKey,
 } from '../src/shared/providers'
 import { parseSettings, validatePatch } from '../src/shared/settings'
@@ -11,6 +12,26 @@ import { matchThread } from '../src/shared/match'
 import type { Provider, Session, Snapshot } from '../src/shared/types'
 
 const folder = 'C:/synthetic/shared'
+
+describe('workspace folder comparisons', () => {
+  it.each([
+    ['claude:C:\\synthetic\\shared', 'codex:\\\\?\\C:\\synthetic\\shared'],
+    ['claude:c:/SYNTHETIC/shared/', 'codex://?/C:/synthetic/shared'],
+    ['claude:\\\\server\\share\\project', 'codex:\\\\?\\UNC\\server\\share\\project'],
+    ['claude://SERVER/share/project/', 'codex://?/unc/server/share/project'],
+  ])('matches equivalent folders: %s and %s', (claude, codex) => {
+    expect(workspaceFolder(claude)).toBe(workspaceFolder(codex))
+  })
+
+  it.each([
+    ['claude:C:/synthetic/shared', 'codex:\\\\?\\D:\\synthetic\\shared'],
+    ['claude:C:/synthetic/shared', 'codex:\\\\?\\C:\\synthetic\\shared-other'],
+    ['claude://server/share/project', 'codex://?/UNC/server/other/project'],
+  ])('keeps different folders distinct: %s and %s', (claude, codex) => {
+    expect(workspaceFolder(claude)).not.toBe(workspaceFolder(codex))
+  })
+})
+
 function snapshot(
   provider: Provider,
   states: { id: string; state: Session['state']; at: number }[],

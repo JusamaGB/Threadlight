@@ -7,6 +7,16 @@ export const sessionProvider = (id: string): Provider =>
   id.startsWith('codex:') ? 'codex' : 'claude'
 export const workspaceKey = (provider: Provider, id: string) => `${provider}:${id}`
 
+/** Compare folders across apps without changing their provider-owned workspace IDs. */
+export const workspaceFolder = (id: string) =>
+  id
+    .replace(/^(claude|codex):/, '')
+    .replace(/\\/g, '/')
+    .replace(/^\/\/\?\/UNC\//i, '//')
+    .replace(/^\/\/\?\/(?=[a-z]:\/)/i, '')
+    .replace(/\/+$/, '')
+    .toLowerCase()
+
 /** Workspace folders can be identical across apps; their tree state must stay separate. */
 export function providerView(enabled: Provider[], provider: Provider, view: TreeView): TreeView {
   if (enabled.length < 2) return view

@@ -16,6 +16,7 @@ import { checkPanelHeight } from './panel-height.smoke.mjs'
 import { checkTips } from './tips.smoke.mjs'
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar } from './toolbar.smoke.mjs'
+import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
@@ -109,21 +110,26 @@ let codexQuota = {
   fiveHour: null,
   week: { used: 0.27, resetsAt: Date.now() + 86400_000 },
 }
+let workspacePaths = null
+let workspaceViews = {}
 const source = (provider) => ({
   provider,
   codexUsage: provider === 'codex' ? codexQuota : undefined,
   sessions: [chats[provider]],
-  currentWorkspace: folder,
+  currentWorkspace: workspacePaths?.[provider] ?? folder,
   currentThreadId: chats[provider].id,
-  allWorkspaces: [{ id: folder, name: 'shared' }],
+  allWorkspaces: [{ id: workspacePaths?.[provider] ?? folder, name: 'shared' }],
   workspaces: [
     {
-      id: folder,
+      id: workspacePaths?.[provider] ?? folder,
       name: 'shared',
       threadCount: 1,
       activeCount: 1,
       anyWorking: false,
-      threads: [{ session: chats[provider], children: [] }],
+      threads:
+        !workspacePaths || workspaceViews[provider]?.expanded?.includes(workspacePaths[provider])
+          ? [{ session: chats[provider], children: [] }]
+          : [],
       hiddenCount: 0,
       worktrees: 0,
     },
@@ -201,12 +207,19 @@ checks: try {
     codexQuota = value
     return state().snapshot
   })
-  await page.exposeFunction('mockView', (view) =>
-    settings.enabledProviders.map((provider) => ({
+  await page.exposeFunction('mockWorkspacePaths', (paths) => {
+    workspacePaths = paths
+    workspaceViews = {}
+    return state().snapshot
+  })
+  await page.exposeFunction('mockView', (view) => {
+    const views = settings.enabledProviders.map((provider) => ({
       provider,
       view: providerView(settings.enabledProviders, provider, view),
-    })),
-  )
+    }))
+    for (const { provider, view } of views) workspaceViews[provider] = view
+    return { views, snapshot: workspacePaths ? state().snapshot : null }
+  })
   await page.addInitScript(
     ({ agent }) => {
       const listeners = new Map()
@@ -254,7 +267,10 @@ checks: try {
             return result
           },
           setTreeView: (view) => {
-            void window.mockView(view).then((views) => window.proof.calls.push(['views', views]))
+            void window.mockView(view).then(({ views, snapshot }) => {
+              window.proof.calls.push(['views', views])
+              if (snapshot) emit('onSnapshot', snapshot)
+            })
           },
           getRelays: async () => [],
           getStt: async () => ({ state: 'missing' }),
@@ -393,6 +409,13 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  await checkWorkspacePaths(page)
+  assert.deepEqual(errors, [])
+  if (process.env.THREADLIGHT_UI_FOCUS === 'workspace') {
+    await checkToolbar(page)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   await checkChecklistDiff(page, row, capture)
   await checkPanelHeight(page)
   await checkToolbar(page)

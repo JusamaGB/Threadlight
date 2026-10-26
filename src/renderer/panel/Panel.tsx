@@ -9,7 +9,7 @@ import {
 } from 'react'
 
 import { matchThread, parseVoiceCommand } from '../../shared/match'
-import { DEFAULT_ENABLED_PROVIDERS, sessionProvider } from '../../shared/providers'
+import { DEFAULT_ENABLED_PROVIDERS, sessionProvider, workspaceFolder } from '../../shared/providers'
 import type { Session, ThreadNode } from '../../shared/types'
 import { Composer } from '../composer/Composer'
 import { useDotDrag } from '../hooks/useDotDrag'
@@ -51,12 +51,6 @@ const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
 /** A thread that has just gone idle stays in the Active list this long, so its reply can be read. */
 const LINGER_MS = 30_000
-const workspaceFolder = (id: string) =>
-  id
-    .replace(/^(claude|codex):/, '')
-    .replace(/\\/g, '/')
-    .replace(/\/+$/, '')
-    .toLowerCase()
 
 /** Pinning is independent of the view/count control beside this icon. */
 function PinIcon() {
