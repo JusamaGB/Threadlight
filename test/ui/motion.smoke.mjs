@@ -208,6 +208,11 @@ try {
     page.getByRole('region', { name: 'Voice waveform', exact: true }),
   )
   assert.ok(idlePixels.span > 0.99, 'quiet header waveform reaches both panel edges')
+  const activity = page.getByRole('region', { name: 'Voice activity' })
+  assert.equal(await activity.locator('p').count(), 0, 'empty speech has no reserved caption')
+  assert.ok((await activity.boundingBox()).height < 32, 'idle activity stays compact')
+  await page.locator('header').getByText('Microphone off', { exact: true }).waitFor()
+  assert.equal(await page.getByText(/^Ask it to do something\. Available tools/).count(), 0)
   await capture('agent-idle-header', page.locator('[data-card]'))
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.locator('[class*="usageTrack"]').waitFor()
@@ -262,7 +267,12 @@ try {
   )
   await stage.getByRole('status').filter({ hasText: 'Thinking' }).waitFor()
   await page.waitForTimeout(500)
-  assert.equal((await stage.boundingBox()).height, before.height)
+  assert.ok((await stage.boundingBox()).height > before.height, 'speech grows the caption area')
+  assert.equal(
+    await stage.locator('p').innerText(),
+    'Show me how the voice ribbon becomes a Catherine wheel.',
+  )
+  assert.ok((await stage.locator('p').boundingBox()).height <= 52, 'long captions stay bounded')
   assert.equal(await page.evaluate(() => window.motionProof.stopped), 1)
   await capture('thinking', page.locator('[data-card]'))
   const spin = await ribbon.locator('canvas').screenshot()
@@ -417,7 +427,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    'PASS: real microphone analysis, speech/silence, stable captions, thinking morph, reduced motion, context loss, native WebRTC playback/mute/stop, compact pill and unavailable-WebGL fallback.',
+    'PASS: real microphone analysis, speech/silence, content-sized captions, thinking morph, reduced motion, context loss, native WebRTC playback/mute/stop, compact pill and unavailable-WebGL fallback.',
   )
 } catch (error) {
   console.error('Browser errors:', errors)

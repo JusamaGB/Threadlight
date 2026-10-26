@@ -24,6 +24,11 @@ and automatic dependent handoffs remain in the coordination roadmap.
 ## Workspace setup and document mapping
 
 Before the tabs open, select a workspace and choose **Create Shared Spaces**. In
+the setup screen, the page sizes to its content. The drive selector next to
+**Workspace** filters project folders already known to Threadlight; **All drives**
+shows them together. It does not scan arbitrary folders or create anything until
+**Create Shared Spaces** is selected. The copy explains the project context and
+document destination before setup. In
 Workspace view the selection follows the thread view, with no second workspace picker.
 Other views require an explicit workspace selection. The document location is always
 `<workspace>/shared-spaces/`, containing `ideas/`, `plans/`, `handoffs/` and `results/`.

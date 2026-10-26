@@ -25,7 +25,7 @@
 
 .presence {
   flex: none;
-  padding: 10px 16px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -43,13 +43,9 @@
   font-size: 11px;
 }
 
-.status span:last-child {
-  color: var(--faint);
-}
-
 .caption {
   margin: 2px 0 0;
-  height: 52px;
+  max-height: 52px;
   overflow: auto;
   scrollbar-width: thin;
   font-size: 12px;

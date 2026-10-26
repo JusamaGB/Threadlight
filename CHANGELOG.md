@@ -6,6 +6,13 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Compacted the Agent's empty voice/chat area and removed its usage instructions.
+  Microphone status now sits on the header's left; back arrows sit on the right
+  across all panel pages, with titles still centered.
+
+- Shared Spaces setup fits its content, explains the project and document location,
+  and offers a drive filter beside the Workspace label.
+
 - Preserved the outward-shine and provider-coloured liquid/drip/splash design
   previews with portable launch scripts and physics/browser verification.
 

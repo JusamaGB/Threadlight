@@ -149,10 +149,11 @@
   color: var(--fg);
 }
 
-/* All subpages share a left-hand back chevron and a centered title. */
+/* All subpages share a right-hand back chevron and a centered title. */
 .back {
   width: 14px;
-  margin-left: 0;
+  order: 1;
+  margin-left: auto;
   font-size: 16px;
   line-height: 1;
   color: var(--muted);
@@ -166,6 +167,17 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.microphoneStatus {
+  flex: none;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.header[data-voice] .pageHeading {
+  left: 100px;
+  right: 100px;
 }
 
 /* The agent is working while another page shows: purple, with a blue shimmer about once a second. */
@@ -1332,6 +1344,10 @@ span.planStep {
   overflow-y: auto;
   scrollbar-width: thin;
   font-size: 11px;
+}
+
+.agentLog:empty {
+  display: none;
 }
 
 .agentEmpty {

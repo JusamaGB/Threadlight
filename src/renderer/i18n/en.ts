@@ -156,8 +156,6 @@ export const en = {
   agent: {
     title: 'Agent',
     open: 'Agent: ask it to do something',
-    empty:
-      'Ask it to do something. Available tools depend on the selected provider. Actions that need permission wait for your answer here.',
     placeholder: 'Ask your agent…',
     followUp: 'Follow up…',
     working: 'Working…',
