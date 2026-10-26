@@ -21,14 +21,54 @@ ordering is manual in this first version. Prepared plans are frozen. Capture a n
 idea for a revised plan. Automatic decomposition, workflow profiles, new worker creation
 and automatic dependent handoffs remain in the coordination roadmap.
 
-Ideas and plan choices live in `shared-spaces/ideas.sqlite`; brainstorm conversation
-metadata lives in `shared-spaces/conversations.json`. Handoffs retain the existing
-`shared-memory/memory.sqlite` store. Export/restore in Handoffs covers shared material
-and assignments, not the Ideas board or provider conversation histories.
+## Workspace setup and document mapping
+
+Before the tabs open, select a workspace and choose **Create Shared Spaces**. In
+Workspace view the selection follows the thread view, with no second workspace picker.
+Other views require an explicit workspace selection. The document location is always
+`<workspace>/shared-spaces/`, containing `ideas/`, `plans/`, `handoffs/` and `results/`.
+There is no folder override. Setup is repeatable and preserves existing files.
+
+Each registered workspace has a stable UUID and a canonical filesystem root. Ideas,
+discussion links, shared spaces and tasks retain that ownership across view changes
+and restarts. Only chats in the same workspace can receive assignments. Setup, mapping
+and document checks run before brainstorming, preparation, authorization and dispatch,
+including direct tool calls. Missing or redirected directories block work; restore the
+original directories or retry setup. No substitute directory is chosen automatically.
+
+Documents are readable, immutable Markdown snapshots named with a stable document ID
+and a content hash. Renaming an idea does not change its ID; editing it creates another
+snapshot. The registry tracks the latest file and brainstorm prompts name the current
+idea/plan files. Earlier snapshots remain historical. Handoffs include shared notes,
+task briefs and discussions; results include provider replies and saved task outputs.
+Attachments remain managed by Threadlight, with a reference in the Markdown snapshot.
+
+Existing user files are never overwritten. If a tracked snapshot is edited externally,
+the save is rejected and the file path is shown. Preserve that edit separately, restore
+the tracked snapshot, then copy the changes into the app to publish a new version.
+External Markdown edits are not automatically imported. A failed multi-file write can
+leave harmless snapshots on disk; retry reuses identical content without overwriting it.
+
+Older ideas and shared material remain **Unassigned**. Use **Assign existing material**
+to select a configured workspace and the records to move. **Preview migration** shows
+destination files and conflicts; **Confirm migration** checks that preview again before
+writing. Existing IDs, revisions, permissions and conversation links are retained.
+Prepared ideas must include their associated shared material. Running brainstorms,
+queued tasks and uncertain deliveries must be stopped or resolved first. Existing
+workspace-owned material cannot silently be reassigned.
+
+Private application data remains separate: ideas, workspace bindings and document heads
+live in the app-data `shared-spaces/ideas.sqlite`; brainstorm metadata lives in app-data
+`shared-spaces/conversations.json`. Handoffs retain app-data `shared-memory/memory.sqlite`.
+The previous Ideas database is backed up before its workspace schema upgrade.
+Export/restore in Handoffs covers shared material and assignments across **all** workspaces,
+not workspace bindings, the Ideas board, provider histories or the workspace document
+directories. Back up those separately. Restored material without a known ownership
+mapping remains Unassigned until explicitly migrated.
 
 ## Human workflow
 
-1. Settings → Shared Spaces → Open → Handoffs → Create shared space.
+1. Settings → Shared Spaces → Open → choose workspace → Create Shared Spaces → Handoffs.
 2. Create folders with descriptions. Choose Map or List; open a folder to publish a
    note, decision draft, scratchpad, reference or managed attachment.
 3. Open an item to inspect versions, author/source, discuss it, accept a version or

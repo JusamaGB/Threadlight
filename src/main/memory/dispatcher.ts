@@ -97,7 +97,9 @@ export class MemoryDispatcher {
           )
         )
           continue
+        let workspace: ReturnType<MemoryStore['executionContext']>
         try {
+          workspace = this.store.executionContext(task.spaceId, task.assignee)
           if (!this.store.reserveDispatch(task.id)) continue
         } catch (error) {
           this.store.updateDelivery(task.id, {
@@ -118,6 +120,11 @@ export class MemoryDispatcher {
         }
         const prompt = [
           `Threadlight assignment ${task.id}: ${task.title}`,
+          ...(workspace
+            ? [
+                `Workspace ID: ${workspace.workspaceId}. Workspace root: ${workspace.root}. Shared documents: ${workspace.documentsRoot}. Keep work and outputs within this workspace.`,
+              ]
+            : []),
           task.body,
           `Shared-memory space: ${task.spaceId}. Output folder: ${task.folderId}.`,
           `Pinned inputs: ${JSON.stringify(task.inputs)}.`,

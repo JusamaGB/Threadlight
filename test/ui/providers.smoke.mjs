@@ -2,7 +2,8 @@
 // All IPC is synthetic; this never launches Threadlight, hooks or either provider CLI.
 /* global window, document, AudioContext, getComputedStyle */
 import assert from 'node:assert/strict'
-import { readFileSync, statSync, mkdirSync } from 'node:fs'
+import { readFileSync, statSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { join, resolve, extname, sep } from 'node:path'
@@ -55,7 +56,9 @@ const readableSummary = summarizeCodex([
 ])
 const { chromium } = require(process.env['THREADLIGHT_PLAYWRIGHT'] || 'playwright')
 let settings = structuredClone(DEFAULT_SETTINGS)
-const folder = 'C:/synthetic/shared'
+const workspaceFixture = mkdtempSync(join(tmpdir(), 'threadlight-ui-workspace-'))
+const folder = join(workspaceFixture, 'shared').replaceAll('\\', '/')
+mkdirSync(folder)
 const session = (provider) => ({
   provider,
   id: provider === 'codex' ? 'codex:11111111-1111-4111-8111-111111111111' : 'synthetic-claude',
@@ -1017,5 +1020,7 @@ checks: try {
   await browser?.close()
   spacesProof?.close()
   memoryProof?.close()
+  if (resolve(workspaceFixture).startsWith(resolve(tmpdir()) + sep + 'threadlight-ui-workspace-'))
+    rmSync(workspaceFixture, { recursive: true, force: true })
   await new Promise((done) => server.close(done))
 }

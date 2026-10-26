@@ -151,6 +151,9 @@ export type MemoryTaskState =
   | 'cancelled'
   | 'paused'
 export interface MemoryTask extends MemoryBase {
+  workspaceId?: string
+  workspaceRoot?: string
+  documentsRoot?: string
   deliveryState?: 'none' | 'dispatching' | 'completed' | 'unknown'
   nativeReply?: string
   outputs: { itemId: string; revision: number }[]
@@ -203,6 +206,22 @@ export interface MemorySnapshot {
   seen: number
   drafts: Record<string, string>
   endpoint: string | null
+}
+
+export function scopeMemory(data: MemorySnapshot, spaceIds: string[]): MemorySnapshot {
+  const allowed = new Set(spaceIds)
+  return {
+    ...data,
+    spaces: data.spaces.filter((s) => allowed.has(s.id)),
+    folders: data.folders.filter((s) => allowed.has(s.spaceId)),
+    items: data.items.filter((s) => allowed.has(s.spaceId)),
+    tasks: data.tasks.filter((s) => allowed.has(s.spaceId)),
+    messages: data.messages.filter((s) => allowed.has(s.spaceId)),
+    grants: data.grants.filter((s) => allowed.has(s.spaceId)),
+    subscriptions: data.subscriptions.filter((s) => allowed.has(s.spaceId)),
+    events: data.events.filter((s) => allowed.has(s.spaceId)),
+    participants: data.participants.filter((s) => allowed.has(s.spaceId)),
+  }
 }
 export type MemoryReply =
   | { ok: true; snapshot?: MemorySnapshot; value?: unknown }

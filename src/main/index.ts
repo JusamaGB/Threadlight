@@ -513,6 +513,7 @@ async function start(): Promise<void> {
         if (!windows.panel.isDestroyed())
           windows.panel.webContents.send(IPC.spacesChanged, snapshot)
       },
+      () => sessions.snapshot.allWorkspaces.map((w) => w.id.replace(/^(claude|codex):/, '')),
     )
     await spaces.agent.store.load()
     for (const record of spaces.agent.store.all())

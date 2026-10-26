@@ -10,6 +10,44 @@
 .view [hidden] {
   display: none;
 }
+.workspace {
+  padding: 8px 12px;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+}
+.workspace label {
+  color: var(--muted);
+  font-size: 11px;
+}
+.workspace select {
+  width: 100%;
+  padding: 5px;
+  margin-top: 4px;
+  color: var(--fg);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.workspace button {
+  color: var(--muted);
+  padding: 4px 0;
+  margin-right: 12px;
+  font-size: 11px;
+}
+.path {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.body .check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.body .check input {
+  width: auto;
+}
 .tabs {
   display: flex;
   gap: 4px;

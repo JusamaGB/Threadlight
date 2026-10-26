@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Preserved the outward-shine and provider-coloured liquid/drip/splash design
+  previews with portable launch scripts and physics/browser verification.
+
 - Agent footer provider, model and effort labels now open their setting menus, using
   the same model catalog and model-specific effort defaults as Settings.
 
@@ -19,6 +22,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Grouped the application and workspace controls beside the view/count label on the
   left of the toolbar, separated by a subtle divider.
 
+- Added a pale outward shine along the thinking wheel's strands, with a static
+  reduced-motion state.
+
 - Moved the Agent provider, model and reasoning label to a compact bottom-right footer
   alongside Earlier.
 
@@ -30,6 +36,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   32px to 18px tall, with a smaller stop control.
 
 ### Added
+
+- Shared Spaces now requires workspace setup with fixed `ideas`, `plans`, `handoffs`
+  and `results` folders under the workspace's `shared-spaces` directory. Workspace
+  view follows the selected workspace. Stable ownership, readable versioned snapshots,
+  explicit migration previews and main-process execution checks keep work isolated
+  and preserve existing documents and older unassigned material.
 
 - Shared Spaces now has Handoffs, Ideas and Brainstorm tabs beneath one header and
   one Back button. Ideas persist locally; per-idea Agent discussions lead to editable

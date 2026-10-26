@@ -51,6 +51,11 @@ export class MemoryStore {
   private db: DatabaseSync
   private active = false
   onChange: () => void = () => {}
+  beforeCommit: () => void = () => {}
+  executionContext: (
+    spaceId: string,
+    assignee?: string,
+  ) => { workspaceId: string; root: string; documentsRoot: string } | undefined = () => undefined
   constructor(
     readonly file: string,
     readonly now = Date.now,
@@ -222,6 +227,8 @@ export class MemoryStore {
     let result: T
     try {
       result = fn()
+      if (this.db.prepare('SELECT total_changes() AS n').get()!.n !== changedBefore)
+        this.beforeCommit()
       this.db.exec('COMMIT')
     } catch (error) {
       this.db.exec('ROLLBACK')
@@ -1055,6 +1062,7 @@ export class MemoryStore {
         'Assignment instructions are limited to 12,000 characters; attach large context as pinned items.',
       )
     const folder = this.folder(actor, required(i.folderId, 'output folder'), true)
+    const workspace = this.executionContext(folder.spaceId, i.assignee)
     const inputs = i.inputs ?? []
     for (const ref of inputs)
       if (this.read(actor, ref.itemId, ref.revision).item.spaceId !== folder.spaceId)
@@ -1102,6 +1110,13 @@ export class MemoryStore {
     )
       fail('duplicate_task', 'An equivalent assignment already exists for this recipient.')
     const task: MemoryTask = {
+      ...(workspace
+        ? {
+            workspaceId: workspace.workspaceId,
+            workspaceRoot: workspace.root,
+            documentsRoot: workspace.documentsRoot,
+          }
+        : {}),
       ...this.base(folder.spaceId, actor),
       title: required(i.title, 'task title'),
       body: required(i.body, 'objective and acceptance criteria'),
@@ -1167,6 +1182,16 @@ export class MemoryStore {
       next.deliveryState = 'completed'
       next.reason = `Human checked native chat: ${i.reason}`
     } else if (i.action === 'authorize_task') {
+      const context = this.executionContext(task.spaceId, task.assignee)
+      if (context) {
+        if (task.workspaceId && task.workspaceId !== context.workspaceId)
+          fail('workspace_conflict', 'This assignment has a different workspace binding.')
+        Object.assign(next, {
+          workspaceId: context.workspaceId,
+          workspaceRoot: context.root,
+          documentsRoot: context.documentsRoot,
+        })
+      }
       if (!['draft', 'paused', 'blocked'].includes(task.state))
         fail('invalid_input', 'Only an unsent task can be authorised.')
       this.folder(actor, task.folderId, true)
@@ -1345,6 +1370,9 @@ export class MemoryStore {
     return this.transaction(() => {
       const task = this.get<MemoryTask>('task', id),
         space = this.space(task.spaceId)
+      const context = this.executionContext(task.spaceId, task.assignee)
+      if (context && task.workspaceId && task.workspaceId !== context.workspaceId)
+        fail('workspace_conflict', 'This assignment has a different workspace binding.')
       if (task.state !== 'queued' || space.paused) return false
       if (space.dispatches >= space.maxDispatches || this.now() > space.expiresAt) {
         this.updateDelivery(id, {
