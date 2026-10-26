@@ -79,6 +79,7 @@ export const IPC = {
   dotDragEnd: 'dot:drag-end',
   dotHover: 'dot:hover',
   panelOpened: 'panel:opened',
+  workspacePanel: 'panel:workspace-layout',
   panelResize: 'panel:resize',
   panelClose: 'panel:close',
   panelLeave: 'panel:leave',
@@ -165,6 +166,8 @@ export interface ThreadlightApi {
   /** Which workspaces are open; their threads are read and sent in the next snapshot. */
   setTreeView(view: TreeView): void
   onPanelOpened(listener: (info: PanelOpened) => void): () => void
+  /** Workspace can use the whole display work area; returns current available height. */
+  setWorkspacePanel(on: boolean): Promise<PanelOpened | null>
 
   dotClick(): void
   dotHover(): void

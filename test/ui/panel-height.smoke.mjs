@@ -1,6 +1,102 @@
 /* global window, document, getComputedStyle, MouseEvent */
 import assert from 'node:assert/strict'
 
+export async function checkWorkspaceHeight(page, capture) {
+  const initial = await page.evaluate(() => window.threadlight.getSettings())
+  const card = page.locator('[data-card]')
+  const grip = page.getByRole('separator', { name: 'Resize Workspace height' })
+  const choose = async (name) => {
+    await page.locator('header [data-thread-view]').click({ button: 'right' })
+    await page.getByRole('menuitem', { name, exact: true }).click()
+  }
+  const heightIs = (height) =>
+    page.waitForFunction(
+      (height) => document.querySelector('[data-card]').getBoundingClientRect().height === height,
+      height,
+    )
+  try {
+    await page.setViewportSize({ width: 460, height: 1200 })
+    await page.evaluate(async () => {
+      window.threadlight.setWorkspacePanel = async () => ({
+        maxHeight: 900,
+        opensDown: true,
+        fresh: false,
+      })
+      await window.threadlight.updateSettings({
+        enabledProviders: ['claude', 'codex'],
+        listMode: 'workspace',
+        workspacePanelHeight: null,
+      })
+    })
+    await choose('Workspace')
+    await heightIs(900)
+    assert.equal(await grip.evaluate((el) => getComputedStyle(el).opacity), '0')
+    await page.getByLabel(/^Claude · 5-hour limit/).hover()
+    await page.getByRole('tooltip').filter({ hasText: 'Claude · 5-hour limit' }).waitFor()
+    assert.equal(await grip.evaluate((el) => getComputedStyle(el).opacity), '1')
+    const box = await grip.boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await capture('workspace-full-height-grip')
+    const before = await page.evaluate(
+      () => window.proof.calls.filter((c) => c[0] === 'leavePanel').length,
+    )
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 200)
+    await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
+    assert.equal(
+      await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'leavePanel').length),
+      before,
+    )
+    await page.mouse.up()
+    await heightIs(700)
+    await page.waitForFunction(
+      async () => (await window.threadlight.getSettings()).workspacePanelHeight === 700,
+    )
+    await capture('workspace-picked-height')
+    for (const name of ['Recent', 'Active', 'All']) {
+      await choose(name)
+      assert.equal(await grip.count(), 0)
+      assert.equal(await card.getAttribute('data-workspace-height'), null)
+    }
+    await choose('Workspace')
+    await heightIs(700)
+    await page.reload()
+    await choose('Workspace')
+    await heightIs(700)
+    await page.evaluate(() =>
+      window.proof.emit('onPanelOpened', { maxHeight: 550, opensDown: true, fresh: false }),
+    )
+    await heightIs(550)
+    assert.equal(
+      await page.evaluate(
+        async () => (await window.threadlight.getSettings()).workspacePanelHeight,
+      ),
+      700,
+    )
+    await page.evaluate(() =>
+      window.proof.emit('onPanelOpened', { maxHeight: 900, opensDown: true, fresh: false }),
+    )
+    await heightIs(700)
+    await grip.press('Home')
+    await heightIs(120)
+    await page.waitForFunction(
+      async () => (await window.threadlight.getSettings()).workspacePanelHeight === 120,
+    )
+    await grip.press('End')
+    await heightIs(900)
+    await page.waitForFunction(
+      async () => (await window.threadlight.getSettings()).workspacePanelHeight === 900,
+    )
+    console.log(
+      'PASS: full-height Workspace, quota-bar hover grip, saved drag/keyboard height, reload, smaller-screen clamp and normal sizing in other views.',
+    )
+  } finally {
+    await page.evaluate((settings) => window.threadlight.updateSettings(settings), initial)
+    await page.setViewportSize({ width: 460, height: 900 })
+    await page.reload()
+  }
+}
+
 export async function checkPanelHeight(page) {
   await page.setViewportSize({ width: 460, height: 1200 })
   await page.evaluate(async () => {
@@ -41,7 +137,7 @@ export async function checkPanelHeight(page) {
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
   const leaves = () =>
     page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'leavePanel').length)
-  await page.mouse.move(5, 5)
+  await page.mouse.move(25, 5)
   const before = await leaves()
   await page.mouse.move(450, 1100)
   assert.equal(await leaves(), before + 1)

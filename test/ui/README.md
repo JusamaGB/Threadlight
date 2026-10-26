@@ -19,6 +19,10 @@ the one-second stationary last-active hover, movement/leave/scroll cancellation,
 time/date switching, and immediate context/diff/usage tips. These checks use the
 browser clock and synthetic timestamps.
 
+`THREADLIGHT_UI_FOCUS=workspace-height` checks full-height Workspace, quota hover
+tips and the height grip, persistent drag/keyboard picks, reload and smaller-screen
+clamping, plus the existing content-sized layout in other views.
+
 The test serves the built renderer on a temporary loopback port with synthetic IPC.
 It never launches Electron, either chat CLI, or a hook server, and needs no accounts.
 It exercises the actual settings controls, combined lists and workspaces, draft and

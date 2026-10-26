@@ -44,6 +44,7 @@ import { VoicePresence } from '../motion/VoicePresence'
 import { ElectricMotion } from '../motion/ElectricMotion'
 import { WorkspaceLinks } from './WorkspaceLinks'
 import { ThreadScrollbar } from './ThreadScrollbar'
+import { WorkspaceResize, WORKSPACE_MIN_HEIGHT } from './WorkspaceResize'
 
 type View = 'active' | 'all'
 
@@ -129,6 +130,8 @@ export function Panel() {
   /** Workspaces showing every thread, not just the most recent few. */
   const [moreWorkspaces, setMoreWorkspaces] = useState<string[]>([])
   const [savingSessionLimit, setSavingSessionLimit] = useState(false)
+  const [workspaceDragHeight, setWorkspaceDragHeight] = useState<number | null>(null)
+  const [savingWorkspaceHeight, setSavingWorkspaceHeight] = useState(false)
   const [version, setVersion] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [voiceSelection, setVoiceSelection] = useState<string | null>(null)
@@ -523,7 +526,7 @@ export function Panel() {
   const leave = useCallback(() => {
     if (
       drag.isDragging() ||
-      document.querySelector('[data-thread-scroll-dragging]') ||
+      document.querySelector('[data-thread-scroll-dragging], [data-workspace-resizing]') ||
       hold !== 'normal' ||
       showMemory
     )
@@ -924,6 +927,42 @@ export function Panel() {
   const inactiveMicrophone = !openMicListening && voice.state !== 'listening'
   const listHidden =
     showMemory || showSettings || pickingWorkspace || showAgent || changesFor !== null
+  const workspaceView = headerView === 'workspace' && !listHidden
+  const workspaceHeight = Math.min(
+    maxHeight,
+    Math.max(
+      WORKSPACE_MIN_HEIGHT,
+      workspaceDragHeight ?? settings?.workspacePanelHeight ?? maxHeight,
+    ),
+  )
+
+  useEffect(() => {
+    let live = true
+    void Promise.resolve(window.threadlight.setWorkspacePanel(workspaceView))
+      .then((info) => {
+        if (!live || !info) return
+        setMaxHeight(info.maxHeight)
+        setOpensDown(info.opensDown)
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [workspaceView])
+
+  const saveWorkspaceHeight = async (height: number) => {
+    setWorkspaceDragHeight(height)
+    setSavingWorkspaceHeight(true)
+    try {
+      const result = await window.threadlight.updateSettings({ workspacePanelHeight: height })
+      if (!result.ok) setNotice(result.reason)
+    } catch {
+      setNotice('Could not save the Workspace height.')
+    } finally {
+      setWorkspaceDragHeight(null)
+      setSavingWorkspaceHeight(false)
+    }
+  }
 
   return (
     <PanelRoomContext.Provider value={panelRoom}>
@@ -946,8 +985,13 @@ export function Panel() {
           ref={card}
           data-card=""
           className={styles.card}
+          data-workspace-height={workspaceView || undefined}
           // Room above the card, when opening upwards, keeps the card in place on screen.
-          style={{ maxHeight, marginTop: opensDown ? 0 : room }}
+          style={{
+            maxHeight,
+            height: workspaceView ? workspaceHeight : undefined,
+            marginTop: opensDown ? 0 : room,
+          }}
           onMouseLeave={leave}
         >
           <header
@@ -1321,6 +1365,15 @@ export function Panel() {
               />
             )}
             {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
+            {workspaceView && (
+              <WorkspaceResize
+                height={workspaceHeight}
+                maxHeight={maxHeight}
+                saving={savingWorkspaceHeight}
+                onPreview={setWorkspaceDragHeight}
+                onCommit={(height) => void saveWorkspaceHeight(height)}
+              />
+            )}
           </div>
 
           {menu && (

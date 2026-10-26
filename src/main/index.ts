@@ -288,6 +288,11 @@ async function start(): Promise<void> {
   ipcMain.on(IPC.workspaceWireControl, (event, bounds: unknown) => {
     if (event.sender === windows.panel.webContents) windows.setWorkspaceWireControl(bounds)
   })
+  ipcMain.handle(IPC.workspacePanel, (event, on: unknown) =>
+    event.sender === windows.panel.webContents && typeof on === 'boolean'
+      ? windows.setWorkspacePanel(on)
+      : null,
+  )
   ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
     if (typeof appId !== 'string') return
     if (appId.startsWith('codex:')) {

@@ -78,6 +78,15 @@ describe('validatePatch', () => {
 })
 
 describe('SettingsStore', () => {
+  it('defaults Workspace to full height and remembers a picked height across restarts', async () => {
+    const store = new SettingsStore(box.root)
+    expect((await store.load()).workspacePanelHeight).toBeNull()
+    await store.update({ workspacePanelHeight: 540 })
+    expect((await new SettingsStore(box.root).load()).workspacePanelHeight).toBe(540)
+    expect(validatePatch({ workspacePanelHeight: 0 }).ok).toBe(false)
+    expect(validatePatch({ workspacePanelHeight: 20000 }).ok).toBe(false)
+  })
+
   it('defaults workspace wires off and remembers the header clip across restarts', async () => {
     const store = new SettingsStore(box.root)
     expect((await store.load()).workspaceWires).toBe(false)

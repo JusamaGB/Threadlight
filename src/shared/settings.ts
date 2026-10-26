@@ -44,6 +44,8 @@ export const settingsSchema = z.object({
   listWindowHours: z.number().int().min(1).max(168).default(24),
   /** At most this many sessions are listed. */
   maxSessions: z.number().int().min(3).max(25).default(10),
+  /** Workspace's picked height in logical pixels; null fills the available work area. */
+  workspacePanelHeight: z.number().int().min(120).max(16384).nullable().default(null),
   /**
    * How long an agent conversation stays open after its last reply, in minutes; then the next
    * message starts a fresh one (the old one stays on disk). 0: until it is ended by hand.

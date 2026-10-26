@@ -6,6 +6,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Workspace fills the display's usable height by default. Hovering the usage bars
+  reveals a height grip; picked heights persist for Workspace across restarts and
+  clamp to smaller displays. Other views keep their content-sized layout.
+
 - Muted the hollow thread scrollbar's outline and hover/focus colours to match the panel.
 
 - Context circles now spin throughout active work, including tools and replies,

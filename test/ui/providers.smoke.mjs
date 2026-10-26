@@ -12,7 +12,7 @@ import { checkVoiceRouting } from './voice-routing.smoke.mjs'
 import { checkMicPill } from './mic-pill.smoke.mjs'
 import { readMotionFrame } from './motion-pixels.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
-import { checkPanelHeight } from './panel-height.smoke.mjs'
+import { checkPanelHeight, checkWorkspaceHeight } from './panel-height.smoke.mjs'
 import { checkTips, checkLastActive } from './tips.smoke.mjs'
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar, checkRecentLimit } from './toolbar.smoke.mjs'
@@ -414,6 +414,12 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'workspace-height') {
+    await checkWorkspaceHeight(page, capture)
+    await checkPanelHeight(page)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'activity-rings') {
     await checkActivityRings(page, capture)
     assert.deepEqual(errors, [])

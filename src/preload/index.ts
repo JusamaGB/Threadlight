@@ -44,6 +44,7 @@ const api: ThreadlightApi = {
   onSnapshot: (listener) => subscribe<Snapshot>(IPC.snapshotChanged, listener),
   setTreeView: (view) => ipcRenderer.send(IPC.setTreeView, view),
   onPanelOpened: (listener) => subscribe<PanelOpened>(IPC.panelOpened, listener),
+  setWorkspacePanel: (on) => ipcRenderer.invoke(IPC.workspacePanel, on),
 
   dotClick: () => ipcRenderer.send(IPC.dotClick),
   dotHover: () => ipcRenderer.send(IPC.dotHover),

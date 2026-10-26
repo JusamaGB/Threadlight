@@ -60,6 +60,42 @@ vi.mock('electron', () => {
 import { WindowManager } from '../src/main/windows'
 
 describe('panel movement and available height', () => {
+  it('uses the full work area for Workspace, keeps its top fixed on resize, and restores normal layout', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    expect(windows.setWorkspacePanel(true)).toEqual({
+      maxHeight: 1024,
+      opensDown: true,
+      fresh: false,
+    })
+    windows.resizePanel(1024)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 1024 })
+    windows.resizePanel(540)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 540 })
+    windows.dragDot(0, 50)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 58, height: 540 })
+    windows.endDrag()
+    expect(windows.setWorkspacePanel(false)).toEqual({
+      maxHeight: 782,
+      opensDown: true,
+      fresh: false,
+    })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 250, height: 540 })
+  })
+
+  it('keeps Workspace inside a smaller display and resets the layout on a fresh Active open', () => {
+    state.saved = { x: -300, y: 600 }
+    const windows = new WindowManager()
+    windows.openPanel()
+    expect(windows.setWorkspacePanel(true).maxHeight).toBe(704)
+    windows.resizePanel(2000)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 704 })
+    windows.resizePanel(400)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 400 })
+    windows.openPanel({ fresh: true })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 222, height: 400 })
+  })
+
   beforeEach(() => {
     vi.useFakeTimers()
     state.saved = { x: 1200, y: 200 }

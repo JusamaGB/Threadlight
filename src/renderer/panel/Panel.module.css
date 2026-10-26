@@ -17,6 +17,12 @@
   overflow: hidden;
 }
 
+.card[data-workspace-height] .sessions,
+.card[data-workspace-height] .sessions > .list {
+  flex: 1;
+  min-height: 0;
+}
+
 /* ---------- header ---------- */
 
 .header {
@@ -1584,11 +1590,43 @@ span.planStep {
 
 /* The plan's usage along the card's foot (UsageBar.tsx): a 2px line in a taller hover strip. */
 .usageBars {
+  position: relative;
   /* Reserve room so the final row remains above the usage lines. */
   flex: none;
   display: flex;
   flex-direction: column;
   z-index: 2;
+}
+
+.workspaceResize {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 10px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--faint);
+  opacity: 0;
+  pointer-events: none;
+  cursor: ns-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.usageBars:hover .workspaceResize,
+.workspaceResize:focus-visible,
+.workspaceResize[data-workspace-resizing] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.workspaceResize:focus-visible {
+  outline: 1px solid var(--faint);
 }
 
 .usage {

@@ -98,6 +98,9 @@ export class WindowManager {
   private talking = false
   private gutterIgnored = false
   private wireControl: { top: number; height: number } | null = null
+  private workspacePanel = false
+  private workspaceTop: number | null = null
+  private workspaceDragTop: number | null = null
 
   constructor() {
     // The dot never takes focus, so clicking it does not pull focus from a game.
@@ -171,14 +174,18 @@ export class WindowManager {
    * state, because the panel has just filled in the composer itself.
    */
   openPanel({ focus = true, fresh = focus }: { focus?: boolean; fresh?: boolean } = {}): void {
-    if (fresh) this.stayOpen = false
+    if (fresh) {
+      this.stayOpen = false
+      this.workspacePanel = false
+      this.workspaceTop = null
+    }
     const info: PanelOpened = {
       maxHeight: this.maxPanelHeight(),
       opensDown: this.opensDown(),
       fresh,
     }
     this.panel.webContents.send(IPC.panelOpened, info)
-    this.placePanel(this.panel.getBounds().height)
+    this.placePanel(Math.min(this.panel.getBounds().height, info.maxHeight))
     this.dot.hide() // the panel takes the dot's place
     this.attentionWindow?.hide()
     this.broadcastAttention({ ...this.attentionState, active: false })
@@ -285,6 +292,17 @@ export class WindowManager {
     this.placePanel(Math.max(40, Math.min(Math.ceil(height), this.maxPanelHeight())))
   }
 
+  /** Workspace grows from a stable top edge, so its bottom usage grip follows the pointer. */
+  setWorkspacePanel(on: boolean): PanelOpened {
+    if (on !== this.workspacePanel) {
+      this.workspaceTop = on ? this.panel.getBounds().y : null
+      this.workspacePanel = on
+    }
+    const info = { maxHeight: this.maxPanelHeight(), opensDown: this.opensDown(), fresh: false }
+    this.placePanel(Math.min(this.panel.getBounds().height, info.maxHeight))
+    return info
+  }
+
   setOpenMicLive(live: boolean): void {
     if (this.openMicLive === live) return
     this.openMicLive = live
@@ -365,6 +383,7 @@ export class WindowManager {
   private maxPanelHeight(): number {
     const dot = this.dotBounds()
     const area = this.workArea()
+    if (this.workspacePanel) return Math.max(40, area.height - MARGIN * 2)
     if (this.opensDown()) {
       const gap = clamp(dot.y - area.y, 0, MARGIN)
       return area.y + area.height - gap - dot.y
@@ -375,6 +394,7 @@ export class WindowManager {
 
   /** Downward from a dot in the top half of the screen, upward from one in the bottom half. */
   private opensDown(): boolean {
+    if (this.workspacePanel) return true
     const dot = this.dotBounds()
     const area = this.workArea()
     return dot.y + DOT_SIZE / 2 <= area.y + area.height / 2
@@ -395,7 +415,10 @@ export class WindowManager {
   dragDot(dx: number, dy: number): void {
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
     const { x, y } = this.dotPosition
+    if (!this.dragStart && this.workspacePanel) this.workspaceDragTop = this.panel.getBounds().y
     this.dragStart ??= { x, y }
+    if (this.workspacePanel && this.workspaceDragTop !== null)
+      this.workspaceTop = this.workspaceDragTop + dy
     // Kept inside the screen's work area, just as the panel is.
     const target = { x: Math.round(this.dragStart.x + dx), y: Math.round(this.dragStart.y + dy) }
     const area = screen.getDisplayNearestPoint(target).workArea
@@ -412,6 +435,7 @@ export class WindowManager {
   endDrag(): void {
     if (!this.dragStart) return
     this.dragStart = null
+    this.workspaceDragTop = null
     saveDotPosition(this.dotPosition)
   }
 
@@ -419,6 +443,7 @@ export class WindowManager {
   resetDotPosition(): void {
     const { x, y } = cornerPosition('top-right', screen.getPrimaryDisplay().workArea)
     this.dotPosition = { x, y }
+    if (this.workspacePanel) this.workspaceTop = y
     this.placeDot()
     saveDotPosition({ x, y })
     this.updatePanelLayout()
@@ -434,11 +459,14 @@ export class WindowManager {
     const area = this.workArea()
     const width = PANEL_WIDTH + WORKSPACE_GUTTER
     const x = clamp(dot.x + DOT_SIZE - width, area.x, area.x + area.width - width)
-    const y = clamp(
-      this.opensDown() ? dot.y : dot.y + DOT_SIZE - height,
-      area.y,
-      area.y + area.height - height,
-    )
+    const y = this.workspacePanel
+      ? clamp(this.workspaceTop ?? dot.y, area.y + MARGIN, area.y + area.height - MARGIN - height)
+      : clamp(
+          this.opensDown() ? dot.y : dot.y + DOT_SIZE - height,
+          area.y,
+          area.y + area.height - height,
+        )
+    if (this.workspacePanel) this.workspaceTop = y
     this.panel.setBounds({ x, y, width, height })
   }
 
