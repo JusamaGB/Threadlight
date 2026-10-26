@@ -52,7 +52,20 @@ The response-authority rerun passed 40 communication, recovery and hold tests. T
 
 The final synthetic voice-routing screen check passed after Chromium was explicitly configured to allow generated audio without a physical activation gesture. The harness reports suspended audio contexts on failure; no microphone behavior was changed for this fix.
 
+Integration review added eight native-question authority cases. Questions about an
+option, negated choices, ambiguous alternatives and tentative questions are rejected;
+direct answers and explicit label/ordinal selections remain supported. The Codex
+card IPC handler was also checked with panel, dot and subframe callers: only the
+panel's main frame can forward an answer. These changes do not admit Claude wakeup.
+
 Type checks, focused lint, plugin asset consistency, formatting, diff checks and the production build passed.
+
+The combined integration review with the latest UI changes passed 484 unit tests
+with 4 opt-in cases skipped, the reader performance fixture, observer checks and
+browser checks for communication, thread reading, explicit voice modes, workspace
+controls, diffs, activity rings, hover information and motion. This local merge
+does not close the remaining native Claude wakeup or human microphone/card
+acceptance items above.
 
 No changes were pushed, no PR was opened, and the running user application was not restarted by this build.
 

@@ -8,7 +8,7 @@
 A small, unofficial desktop companion for the **Claude desktop app** on Windows.
 
 - A status dot in a screen corner: green when no Claude Code session is working, pulsing red when one is.
-- Click it: it becomes a panel in the same spot listing sessions (active first, then recent), each expandable to its task plan, current step and last result.
+- Click it: it becomes a panel in the same spot listing active or recent sessions, each expandable to its task plan, current step and last result.
 - Right-click a session → **Compose**: type or talk a message to that thread. It is delivered in the background without opening the Claude window. ✓ = delivered, ✓✓ = read and replied.
 - **Talk hotkey** anywhere (including in games): press `Ctrl+Alt+Q`, say _"message docs site, check the build passed"_, press it again. The panel opens with the matched thread and text, counts down, sends.
 - Visible only while the Claude desktop app is running.
@@ -18,16 +18,71 @@ Not affiliated with or endorsed by Anthropic. It reads files the Claude app and 
 ### Panel pinning and view controls (26 October 2026)
 
 With Both selected, Workspace shows one combined list for the chosen folder.
-Top-level threads from Claude and Codex are ordered by their last activity, newest
-first, with stable thread-ID ordering for equal timestamps. Side threads remain
+Top-level threads from Claude and Codex use completion order, newest first, with
+stable thread-ID ordering for equal timestamps. Running threads hold their position
+through messages, tool progress, permission pauses and resumes. A finished task
+advances its position when the thread becomes idle. Side threads remain
 nested beneath their parent. All continues to show separate collapsible provider
 workspace groups.
+
+Live activity still drives time-window membership, the last-active hover, status
+and timers. Ordering has a separate timestamp: native completed turns in Codex,
+Stop/SessionEnd hooks in Claude, or an observed transition to idle/new finished
+reply for older histories. Before completion evidence is available, a newly seen
+thread starts at its observed activity time. Active threads retain places in the
+configured recent-list limit; state changes alone do not reshuffle the chosen rows.
 
 Pinning and the chosen list are independent. Double-clicking the header's bare
 background immediately toggles pinned/unpinned without changing Active, Recent,
 Workspace or All, the selected workspace, or expanded rows. A third click has no
 additional action; there is no triple-click gesture or delay waiting for one.
 Clicking the pin icon also unpins without resetting the view.
+
+Recent shows a compact `−count+` control in place of its bullet/count, using the
+Sessions listed setting (3–25). Changes save immediately and update Settings;
+settings changes update the header in turn. Minus/plus never change or pin the
+view. Active, Workspace and All keep their current count display.
+
+The workspace picker browses known thread folders, grouped by drive or UNC share;
+it does not scan unrelated files on disk. Its Claude/Codex/Both selector uses the
+same application setting as the main header. Both combines equivalent folder paths
+while retaining each provider's original selection ID. The picker opens at All
+drives and offers parent/child navigation. A narrow application selector sits beside
+search; search always matches workspace names and full paths across all drives,
+including when browsing inside a folder. There is no drive dropdown, introductory
+text or Follow activity option. Search results show paths to distinguish repeated
+names. A workspace row selects
+that exact folder; a separate arrow browses its nested workspaces. Parent-only
+folders browse without selecting. Controls stay visible while long folder lists
+scroll; short results use only the space they need.
+Drive/share rows always show their workspace totals and open their folders, even
+when threads have run at the drive/share root. That root workspace is selectable
+through the explicit "Use …" row inside.
+At the top level, a "Use All Drives" text action replaces the disabled parent
+arrow. It saves an all-folder Workspace scope, combining threads across every
+known folder from the enabled apps in completion order, with normal nesting and
+the configured activity window. Application filters still apply. Selecting an
+individual workspace returns to exact-folder scope. Inside a folder, the first
+navigation row starts with a centred, left-pointing back arrow without a visible
+button border; the top level has no arrow.
+
+Workspace grows with its content up to a saved maximum, defaulting to the full
+display work area with small edge margins and the taskbar left clear. Empty and
+short workspaces shrink to their contents; longer lists scroll at the limit. Only
+Workspace lets the existing usage bars resize the panel,
+with no extra strip, button or icon. The whole bottom usage strip shows the resize cursor
+and accepts dragging, including its left and right edges. Dragging previews height
+and saves the maximum on release. A drag starts at the visible panel height, even
+when the saved maximum is larger. Arrow keys adjust the maximum by 10px, Home
+selects the minimum and End the available height. The last pick becomes Workspace's
+maximum across restarts. Changing content never overwrites it. Smaller displays clamp the
+shown height without overwriting the saved preference. Other views and pages keep
+content-sized layout. Drag capture protects an unpinned panel and quota tooltips
+remain available on the bars.
+The "Nothing within your chosen time frame" empty message is centred. Its time
+value opens a dropdown sharing Settings' 6h, 12h, 24h, 3d and 7d options. Choosing
+one saves the same activity-window preference and refreshes the list; changes in
+Settings update the empty-state value in turn.
 
 Clicking the view/count label cycles Active → Recent → Workspace → Active. Its
 existing right-click menu also offers All. Switching views while pinned keeps the
@@ -66,6 +121,86 @@ it and scrolls beyond 52px. Conversation messages, approvals and Earlier remain
 available through their existing controls. `Panel` owns the shared header,
 `VoicePresence` owns the content-sized caption and `AgentView` owns the chat input
 and history.
+
+### Connected Agent header motion
+
+The orange working wheel and the edge-to-edge voice ribbon are two poses of one
+mesh and one canvas. The wheel sits against the left wall, centred on the grey
+header divider. As speech opens the ribbon, its existing strands stretch rightward;
+interruptions reverse that same continuous morph without replacing the surface.
+
+The header canvas has a 9px upper band and 27px below the divider. Its small wheel
+stays flush with the left edge throughout the morph. Ribbon crests have more vertical range below the bar,
+with soft compression above it to keep the title and controls legible. A fixed
+12px top inset in the activity row keeps status/caption text clear of both poses.
+
+Ribbon colours evolve through smooth spatial and temporal noise, with no wrapped
+colour-sweep clock. Quiet header colours continue drifting at a capped frame
+rate. Reduced motion, waiting/error stillness, offscreen suspension, Canvas
+fallback and the existing microphone/playback telemetry remain in place. Dot,
+microphone-pill and composer surfaces keep their existing layout and motion.
+
+### Thread-specific diffs
+
+Row diff badges and their opened viewer use the chat's provider-recorded changes,
+independent of the checkout's HEAD or other writers. Successful recorded edits
+combine where possible; incomplete/missing history is explicit. Worktree-wide
+diff is available from the thread's right-click menu as Worktree diff, reusing the
+same file list and patch viewer. It includes every writer's uncommitted changes
+against HEAD in that thread's detected Git worktree, independently of recorded
+thread history. The action is disabled without a known Git root. See
+[Thread-specific changes](THREAD-DIFF-SPEC.md) for ownership, coverage and validation.
+
+### Workspace links and provider-coloured attention
+
+The panel uses a 300px card and adds a 16px transparent gutter on the left
+inside the native window. Wires link listed rows with the same normalized Git
+worktree root (or known working folder when no Git root is available), across
+Claude and Codex. Separate worktrees and unknown folders stay unlinked. Within each
+overlapping group, the longest measured top-to-bottom route stays closest to the
+card and shorter overlapping routes step outward. Disjoint groups reuse the closest
+lane. Crowded groups compress lane spacing within the gutter without wrapping a
+shorter route back inward. Hovering, keyboard focus or clicking a
+row highlights its route, with Escape clearing the trace. Row expansion, scrolling,
+filtering and live reordering update measured paths. The first lane sits four pixels
+outside the card; overlapping lanes step outward. Wires default off. A small U-clip
+beside the header reconnects or cuts them and saves the choice. Cut ends spark gently
+(static with reduced motion). Native gutter clicks pass through except for this
+clip; the card and its menus remain interactive.
+
+Thread rows have 3px top and bottom padding, leaving 6px between adjacent contents.
+Git ahead/behind counts sit on the second row, before any running task timer,
+leaving the top row for the title and this thread's diff totals.
+Last active has no inline marker. Resting the pointer on a thread for one second
+shows its local time, or its date when at least 24 hours old. Movement, leave,
+scroll and blur cancel the delayed tip; specific diff/context/task tips take priority.
+Hover chips sit above or below the pointer, choosing a side with room. Their width
+follows the content, capped by the application card's available width rather than
+the space beside the pointer. Short chips stay narrow; longer text may use the full
+width and wrap. Task details use the same placement. When a compact panel needs
+more vertical room, it borrows popup space and releases it when the chip closes.
+The thread scrollbar overlays the rows with a transparent track and hollow 6px
+thumb, preserving provider gradients to the panel edge. Drag, wheel, track clicks
+and keyboard scrolling remain available; dragging keeps an unpinned panel open.
+
+Context circles spin for the full `working` state, including thinking, tools and
+reply generation, replacing the flashing red row dot. Idle/waiting circles are
+still; amber attention markers remain. Context percentages, arc fill and threshold
+colours are unchanged. A working thread without a context reading shows a neutral
+dashed activity track with no percentage arc. Reduced motion keeps the ring still.
+
+Active spinning indicators use vibrant Claude-orange strands and a glossy
+Codex-blue outward sweep. The voice ribbon retains its own evolving palette.
+While minimised, pending input in the listed Active/Recent threads instead shows
+the approved pool/hold/drop/splash in that thread's provider colour. The pending
+thread remains selected until answered, so unrelated activity does not switch its
+colour. A narrow transparent, non-focusable, click-through native window follows
+the dot's display down to the bottom work-area/taskbar edge. Opening Threadlight,
+starting voice capture, disabling the provider or clearing pending input hides it.
+The dot keeps its existing hover/click target under the decorative overlay.
+Reduced motion holds the provider-coloured wheel and bead steady; hidden overlays
+schedule no animation. A dot too close to the bottom edge also uses the steady pose.
+The production renderer shares the preview's provider palettes and drop physics.
 
 ### Agent footer settings
 

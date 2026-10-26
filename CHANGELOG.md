@@ -6,6 +6,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Required explicit human answers for native question cards; option mentions,
+  negated choices and ambiguous alternatives no longer count as selections.
+  Codex card answers also require the panel's main frame as their IPC caller.
+
 - Added persistent cross-provider communication tools, project DM history, correlated replies,
   native request routing and workflow scheduling with dependency, model, workspace and budget gates.
   Added backup/recovery and uncertain-delivery reconciliation. The tested Codex idle resume is
@@ -22,6 +26,57 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Added named-chat discovery and fresh read-only answers across enabled Claude and
   Codex chats, with ambiguity handling and inspectable source details in Agent history.
+
+- Removed worktree-count and behind-main text from expanded thread details,
+  retaining the branch, folder path and existing links.
+
+- Workspace fills the display's usable height by default. Hovering the usage bars
+  reveals a height grip; picked heights persist for Workspace across restarts and
+  clamp to smaller displays. Other views keep their content-sized layout.
+
+- Muted the hollow thread scrollbar's outline and hover/focus colours to match the panel.
+
+- Context circles now spin throughout active work, including tools and replies,
+  then stop on idle. Removed the flashing red row dot; measured context fill and
+  colour remain unchanged, with a neutral ring when context is unavailable.
+
+- Added compact −count+ controls beside Recent, linked to the Sessions listed
+  setting. Other views retain their existing thread totals.
+
+- Layered worktree wires by measured vertical span: longest closest to the panel,
+  shorter overlapping wires farther out, and separate groups back at the closest lane.
+
+- Stabilised thread order during messages, tool progress and permission pauses.
+  Threads now reorder when their task finishes and goes idle, across both providers
+  and Recent/Active/Workspace lists, while live activity details keep updating.
+
+- Made the thread scrollbar track transparent and its thumb outline-only, overlaid
+  on the rows so provider gradients continue underneath it.
+
+- Corrected the thread context menu to open Worktree diff, including all current
+  changes in its checkout. Row badges and checklist links keep their thread-specific diffs.
+
+- Restored the compact 300px panel and 6px between adjacent thread contents.
+  Moved Git ahead/behind counts to the second row. Last active now appears after
+  a one-second stationary hover, with a date for activity at least 24 hours old.
+
+- Connected same-folder/worktree threads with traceable wires in a 16px transparent
+  gutter outside the panel. Hover, focus or click highlights a workspace's route.
+  The first wire stays four pixels from the card. Wires default off; a sparking
+  U-clip beside the header toggles them and remembers the choice.
+- Added the provider-coloured pool, drop and taskbar splash while minimised when
+  a listed thread needs input. Opening the panel or capturing voice stops it;
+  reduced motion holds a steady wheel and bead.
+
+- Applied the vibrant Claude-orange active wheel and glossy Codex-blue outward
+  shine to the application dot and connected header.
+
+- Thread badges and diff viewers now use each Claude/Codex chat's own recorded
+  changes. Repeated edits combine where supported; incomplete histories are
+  labelled explicitly. Workspace Git totals no longer substitute for thread diffs.
+
+- Connected the Agent's orange wheel at the left end of the divider to a richer
+  voice ribbon that stretches rightward, with smoothly evolving colours.
 
 - Preserved the conversation E2E observer and its cleanup check, with portable
   paths and conversation evidence stored outside the repository.

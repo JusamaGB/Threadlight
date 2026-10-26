@@ -51,6 +51,32 @@ describe('motion state and telemetry', () => {
 })
 
 describe('ribbon and wheel geometry', () => {
+  it('uses orange strands and a blue outward shine for active wheels on dot and header surfaces', () => {
+    const mesh = new MotionGeometry()
+    const pose = { ...restingPose(), wheel: 1, warmth: 1, rest: 0 }
+    for (const [width, height, header] of [
+      [22, 22, false],
+      [342, 36, true],
+    ]) {
+      const vertices = mesh.build(width, height, 0.8, pose, false, header, true)
+      let orange = 0,
+        blue = 0
+      for (let i = 0; i < vertices.length; i += 6) {
+        if (vertices[i + 2] > vertices[i + 4] * 1.5) orange++
+        if (vertices[i + 4] > vertices[i + 2] * 1.3) blue++
+      }
+      expect(orange).toBeGreaterThan(0)
+      expect(blue).toBeGreaterThan(0)
+      const still = [...mesh.build(width, height, 0, pose, true, header, true)]
+      expect([...mesh.build(width, height, 100, pose, true, header, true)]).toEqual(still)
+      for (let i = 0; i < still.length; i += 6)
+        expect(still[i + 2]).toBeGreaterThan(still[i + 4] * 1.5)
+    }
+    // Selecting the active palette has no effect once the wheel has opened into voice ribbons.
+    const speaking = { ...pose, wheel: 0, input: full }
+    const ribbon = [...mesh.build(342, 36, 0.8, speaking, false, true, false)]
+    expect([...mesh.build(342, 36, 0.8, speaking, false, true, true)]).toEqual(ribbon)
+  })
   it.each([
     [22, 22],
     [50, 24],
@@ -90,5 +116,87 @@ describe('ribbon and wheel geometry', () => {
     const pose = { ...restingPose(), input: full, wheel: 0.4, rest: 0 }
     const first = [...mesh.build(300, 88, 0, pose, true)]
     expect([...mesh.build(300, 88, 500, pose, true)]).toEqual(first)
+  })
+})
+
+describe('connected header motion', () => {
+  const width = 342,
+    height = 36,
+    divider = 9
+  const bounds = (vertices) => {
+    const xs = [],
+      ys = []
+    for (let i = 0; i < vertices.length; i += 6) {
+      xs.push(vertices[i])
+      ys.push(vertices[i + 1])
+    }
+    return {
+      left: Math.min(...xs),
+      right: Math.max(...xs),
+      top: Math.min(...ys),
+      bottom: Math.max(...ys),
+    }
+  }
+  it('keeps the wheel at the left wall on the divider and every morph inside the header surface', () => {
+    const geometry = new MotionGeometry()
+    for (const wheel of [0, 0.1, 0.3, 0.7, 1]) {
+      for (let time = 0; time < 5; time += 0.2) {
+        const pose = { ...restingPose(), rest: 0, wheel, warmth: wheel, input: full }
+        const vertices = geometry.build(width, height, time, pose, false, true)
+        const box = bounds(vertices)
+        expect(box.left).toBeGreaterThanOrEqual(-2)
+        expect(box.right).toBeLessThanOrEqual(width + 2)
+        expect(box.top).toBeGreaterThan(0)
+        expect(box.bottom).toBeLessThan(height)
+        expect(box.left).toBeLessThan(1.6)
+        if (wheel === 1) {
+          expect(box.right).toBeLessThan(17)
+          expect(Math.abs((box.top + box.bottom) / 2 - divider)).toBeLessThan(1.5)
+        }
+        if (wheel === 0) {
+          expect(box.right - box.left).toBeGreaterThan(width - 1)
+          expect(box.bottom - box.top).toBeGreaterThan(7)
+        }
+      }
+    }
+  })
+  it('stretches the same strands continuously from the left wall to the right', () => {
+    const geometry = new MotionGeometry()
+    const pose = { ...restingPose(), wheel: 1, warmth: 1, rest: 0 }
+    let previous = [...geometry.build(width, height, 0, pose, false, true)]
+    const start = bounds(previous)
+    for (let i = 0; i < 60; i++) {
+      advancePose(pose, { ...IDLE_MOTION, mode: 'thinking', input: full }, 1000 / 60, true)
+      const vertices = [...geometry.build(width, height, 0, pose, false, true)]
+      expect(vertices.length).toBe(previous.length)
+      // Follow each stroke's centre rather than the halo's changing normal at a fold.
+      for (let j = 0; j < vertices.length; j += 36) {
+        const dx = (vertices[j] + vertices[j + 30] - previous[j] - previous[j + 30]) / 2
+        const dy = (vertices[j + 1] + vertices[j + 31] - previous[j + 1] - previous[j + 31]) / 2
+        expect(Math.abs(dx)).toBeLessThan(32)
+        expect(Math.abs(dy)).toBeLessThan(2)
+      }
+      previous = vertices
+    }
+    const end = bounds(previous)
+    expect(end.right - end.left).toBeGreaterThan(330)
+    expect(start.right).toBeLessThan(17)
+    expect(end.left).toBeLessThan(2)
+    expect(end.right).toBeGreaterThan(width - 2)
+    expect(pose.wheel).toBeLessThan(0.01)
+  })
+  it('evolves colour smoothly without a repeated sweep, including a quiet waveform', () => {
+    const geometry = new MotionGeometry()
+    const colours = (time, reduced = false) =>
+      [...geometry.build(width, height, time, restingPose(), reduced, true)].filter(
+        (_, index) => index % 6 >= 2 && index % 6 <= 4,
+      )
+    const a = colours(1),
+      b = colours(1 + 1 / 60)
+    expect(a).not.toEqual(b)
+    expect(Math.max(...a.map((value, index) => Math.abs(value - b[index])))).toBeLessThan(0.04)
+    expect(colours(0)).not.toEqual(colours(50))
+    expect(colours(0)).not.toEqual(colours(100))
+    expect(colours(0, true)).toEqual(colours(500, true))
   })
 })

@@ -14,13 +14,19 @@ import { checkMicPill } from './mic-pill.smoke.mjs'
 import { readMotionFrame } from './motion-pixels.mjs'
 import { checkAgentSelection } from './agent-selection.smoke.mjs'
 import { checkThreadReading } from './thread-reading.smoke.mjs'
-import { checkPanelHeight } from './panel-height.smoke.mjs'
-import { checkTips } from './tips.smoke.mjs'
+import { checkPanelHeight, checkWorkspaceHeight } from './panel-height.smoke.mjs'
+import { checkTips, checkLastActive } from './tips.smoke.mjs'
+
 import { checkNowTimer } from './now-timer.smoke.mjs'
-import { checkToolbar } from './toolbar.smoke.mjs'
+import { checkToolbar, checkRecentLimit } from './toolbar.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
+import { checkWorkspacePicker } from './workspace-picker.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
 import { setupCommunication, checkCommunication } from './communication.smoke.mjs'
+import { checkThreadDiffs } from './thread-diffs.smoke.mjs'
+import { checkWorkspaceLinks } from './workspace-links.smoke.mjs'
+import { checkActivityRings } from './activity-rings.smoke.mjs'
+
 import { checkThreadBadges } from './thread-badges.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
@@ -115,29 +121,47 @@ let codexQuota = {
   week: { used: 0.27, resetsAt: Date.now() + 86400_000 },
 }
 let workspacePaths = null
+let workspaceFolders = null
+let workspaceRows = null
 let workspaceViews = {}
 const source = (provider) => ({
   provider,
   codexUsage: provider === 'codex' ? codexQuota : undefined,
   sessions: [chats[provider]],
-  currentWorkspace: workspacePaths?.[provider] ?? folder,
+  currentWorkspace: workspaceFolders?.[provider]?.[0]?.id ?? workspacePaths?.[provider] ?? folder,
   currentThreadId: chats[provider].id,
-  allWorkspaces: [{ id: workspacePaths?.[provider] ?? folder, name: 'shared' }],
-  workspaces: [
-    {
-      id: workspacePaths?.[provider] ?? folder,
-      name: 'shared',
-      threadCount: 1,
-      activeCount: 1,
-      anyWorking: false,
-      threads:
-        !workspacePaths || workspaceViews[provider]?.expanded?.includes(workspacePaths[provider])
-          ? [{ session: chats[provider], children: [] }]
-          : [],
-      hiddenCount: 0,
-      worktrees: 0,
-    },
+  allWorkspaces: workspaceFolders?.[provider] ?? [
+    { id: workspacePaths?.[provider] ?? folder, name: 'shared' },
   ],
+  workspaces:
+    workspaceRows === 0
+      ? []
+      : [
+          {
+            id: workspacePaths?.[provider] ?? folder,
+            name: 'shared',
+            threadCount: workspaceRows ?? 1,
+            activeCount: 1,
+            anyWorking: false,
+            threads:
+              !workspacePaths ||
+              workspaceViews[provider]?.expanded?.includes(workspacePaths[provider])
+                ? Array.from({ length: workspaceRows ?? 1 }, (_, i) => ({
+                    session:
+                      workspaceRows === null
+                        ? chats[provider]
+                        : {
+                            ...chats[provider],
+                            id: `${provider === 'codex' ? 'codex:' : ''}height-${provider}-${i}`,
+                            title: `Workspace height ${provider} ${i}`,
+                          },
+                    children: [],
+                  }))
+                : [],
+            hiddenCount: 0,
+            worktrees: 0,
+          },
+        ],
 })
 const state = () => ({
   settings,
@@ -233,6 +257,14 @@ checks: try {
     for (const { provider, view } of views) workspaceViews[provider] = view
     return { views, snapshot: workspacePaths ? state().snapshot : null }
   })
+  await page.exposeFunction('mockWorkspaceFolders', (folders) => {
+    workspaceFolders = folders
+    return state().snapshot
+  })
+  await page.exposeFunction('mockWorkspaceRows', (count) => {
+    workspaceRows = count
+    return state().snapshot
+  })
   await page.addInitScript(
     ({ agent }) => {
       const listeners = new Map()
@@ -273,6 +305,7 @@ checks: try {
           },
           getSettings: async () => (await window.mockState()).settings,
           getSnapshot: async () => (await window.mockState()).snapshot,
+          getAttentionMotion: async () => ({ active: false }),
           getSessions: async () => (await window.mockState()).snapshot.sessions,
           updateSettings: async (patch) => {
             const result = await window.mockUpdate(patch)
@@ -419,7 +452,23 @@ checks: try {
     const dir = process.env['THREADLIGHT_SCREENSHOTS']
     if (dir) {
       mkdirSync(dir, { recursive: true })
-      await page.locator('#root > div').screenshot({ path: join(dir, `${name}.local.png`) })
+      const stage = await page.locator('#root > div').boundingBox()
+      const tips = await page
+        .getByRole('tooltip')
+        .or(page.getByRole('menu'))
+        .evaluateAll((elements) => elements.map((el) => el.getBoundingClientRect().toJSON()))
+      const bounds = [stage, ...tips]
+      const x = Math.min(...bounds.map((box) => box.x))
+      const y = Math.min(...bounds.map((box) => box.y))
+      await page.screenshot({
+        path: join(dir, `${name}.local.png`),
+        clip: {
+          x,
+          y,
+          width: Math.max(...bounds.map((box) => box.x + box.width)) - x,
+          height: Math.max(...bounds.map((box) => box.y + box.height)) - y,
+        },
+      })
     }
   }
   const box = page.getByPlaceholder('Type a message…')
@@ -465,6 +514,74 @@ checks: try {
   if (process.env.THREADLIGHT_UI_FOCUS === 'thread-reading') {
     await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
     await checkThreadReading(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'workspace-picker') {
+    await checkWorkspacePicker(page, capture)
+    await checkWorkspacePaths(page, capture)
+    await checkToolbar(page)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'workspace-height') {
+    await checkWorkspaceHeight(page, capture)
+    await checkPanelHeight(page)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'activity-rings') {
+    await checkActivityRings(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'recent-limit') {
+    await checkRecentLimit(page, capture)
+    await checkToolbar(page)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'thread-hover') {
+    await checkThreadDiffs(page, capture)
+    await checkLastActive(page, row, capture)
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
+    )
+    await checkTips(page, row)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'compact-tips') {
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
+    )
+    await checkTips(page, row, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'compact-layout') {
+    await checkThreadDiffs(page, capture)
+    await checkWorkspaceLinks(page, capture)
+    await checkToolbar(page)
+    await checkSpacesSetup(page, spacesProof, capture)
+    await checkMemory(page, memoryProof, capture)
+    await checkSpaces(page, spacesProof, memoryProof.store, capture)
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
+    )
+    await checkTips(page, row)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'visual-updates') {
+    await checkWorkspaceLinks(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'thread-diff') {
+    await checkThreadDiffs(page, capture)
+    await checkChecklistDiff(page, row, capture)
+
     assert.deepEqual(errors, [])
     break checks
   }

@@ -9,8 +9,19 @@ do not download a browser.
 Set `THREADLIGHT_UI_FOCUS=workspace` to run the toolbar checks and mixed Windows path regression:
 Both + Workspace loads both providers from initially empty trees, combines ordinary
 and extended drive/UNC paths in the picker, and preserves original IDs when loading
-threads, saving a selection and switching providers. It also checks merged newest-first
-ordering, stable ties, nested side threads, workspace isolation and live activity reordering.
+threads, saving a selection and switching providers. It also checks merged completion
+ordering, stability during working/waiting updates, stable ties, nested side threads,
+workspace isolation and reordering when the task goes idle.
+
+`THREADLIGHT_UI_FOCUS=compact-layout` checks the 300px card, 6px thread spacing,
+Git count placement, wires, compact menus and Shared Spaces. `thread-hover` checks
+the one-second stationary last-active hover, movement/leave/scroll cancellation,
+time/date switching, and immediate context/diff/usage tips. These checks use the
+browser clock and synthetic timestamps.
+
+`THREADLIGHT_UI_FOCUS=workspace-height` checks full-height Workspace, quota hover
+tips and the height grip, persistent drag/keyboard picks, reload and smaller-screen
+clamping, plus the existing content-sized layout in other views.
 
 The test serves the built renderer on a temporary loopback port with synthetic IPC.
 It never launches Electron, either chat CLI, or a hook server, and needs no accounts.

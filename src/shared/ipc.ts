@@ -19,6 +19,7 @@ import type { MemoryInput, MemoryReply, MemorySnapshot } from './memory'
 import type { SpacesInput, SpacesReply, SpacesSnapshot } from './spaces'
 import type { LiveVoiceEvent, LiveVoiceResult } from './liveVoice'
 import type { MotionSnapshot } from './motion'
+import type { AttentionMotion } from './attentionMotion'
 import type { DraftResult } from './messaging'
 import type {
   Changes,
@@ -33,6 +34,10 @@ import type {
 export const IPC = {
   communicationRequest: 'communication:request',
   communicationChanged: 'communication:changed',
+
+  attentionMotion: 'motion:attention',
+  getAttentionMotion: 'motion:get-attention',
+
   spacesRequest: 'spaces:request',
   spacesChanged: 'spaces:changed',
   spacesRespond: 'spaces:respond',
@@ -78,11 +83,13 @@ export const IPC = {
   dotDragEnd: 'dot:drag-end',
   dotHover: 'dot:hover',
   panelOpened: 'panel:opened',
+  workspacePanel: 'panel:workspace-layout',
   panelResize: 'panel:resize',
   panelClose: 'panel:close',
   panelLeave: 'panel:leave',
   panelPointerOutside: 'panel:pointer-outside',
   panelStayOpen: 'panel:stay-open',
+  workspaceWireControl: 'panel:wire-control',
   openInClaude: 'claude:open-thread',
   answerQuestion: 'hold:answer-question',
   answerNextStep: 'hold:answer-next-step',
@@ -92,6 +99,9 @@ export const IPC = {
   releaseHold: 'hold:release',
   copyText: 'clipboard:copy',
   getChanges: 'changes:get',
+  getWorktreeChanges: 'changes:worktree',
+  getWorktreeFileDiff: 'changes:worktree-file',
+  openWorktreeChangedFile: 'changes:worktree-open',
   getStepActivity: 'plan:step-activity',
   getFileDiff: 'changes:file',
   openChangedFile: 'changes:open',
@@ -136,6 +146,10 @@ export interface ThreadlightApi {
     expectedRevision?: number
   }): Promise<import('./communication').CommunicationReply>
   onCommunication(listener: () => void): () => void
+
+  getAttentionMotion(): Promise<AttentionMotion>
+  onAttentionMotion(listener: (state: AttentionMotion) => void): () => void
+
   getMotion(): Promise<MotionSnapshot>
   setMotion(snapshot: MotionSnapshot): void
   onMotion(listener: (snapshot: MotionSnapshot) => void): () => void
@@ -164,6 +178,8 @@ export interface ThreadlightApi {
   /** Which workspaces are open; their threads are read and sent in the next snapshot. */
   setTreeView(view: TreeView): void
   onPanelOpened(listener: (info: PanelOpened) => void): () => void
+  /** Workspace can use the whole display work area; returns current available height. */
+  setWorkspacePanel(on: boolean): Promise<PanelOpened | null>
 
   dotClick(): void
   dotHover(): void
@@ -177,6 +193,7 @@ export interface ThreadlightApi {
   onPanelPointerOutside(listener: () => void): () => void
   /** While on, clicking elsewhere does not close the panel (the active or full list pinned open). */
   setStayOpen(on: boolean): void
+  setWorkspaceWireControl(bounds: { top: number; height: number } | null): void
   openInClaude(appId: string): void
 
   /** Relays `text` to a session in the background. Resolves once accepted, not when replied. */
@@ -221,8 +238,12 @@ export interface ThreadlightApi {
   /** Puts text on the clipboard (for an answer to paste into Claude). */
   copyText(text: string): void
 
-  /** A thread's changed files since the last commit (the Changes view); null outside git. */
+  /** This thread's own recorded changes; null when its history is unavailable. */
   getChanges(sessionId: string): Promise<Changes | null>
+  /** All current changes against HEAD in the thread's detected Git worktree. */
+  getWorktreeChanges(sessionId: string): Promise<Changes | null>
+  getWorktreeFileDiff(sessionId: string, path: string): Promise<FileDiff>
+  openWorktreeChangedFile(sessionId: string, path: string): void
   /** What a thread did on one of its plan steps (named by its text); null if unreadable. */
   getStepActivity(sessionId: string, step: string): Promise<StepActivity | null>
   /** One changed file's diff, fetched when it is opened. */

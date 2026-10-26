@@ -21,6 +21,10 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 const api: ThreadlightApi = {
   communicationRequest: (input) => ipcRenderer.invoke(IPC.communicationRequest, input),
   onCommunication: (listener) => subscribe(IPC.communicationChanged, listener),
+
+  getAttentionMotion: () => ipcRenderer.invoke(IPC.getAttentionMotion),
+  onAttentionMotion: (listener) => subscribe(IPC.attentionMotion, listener),
+
   getMotion: () => ipcRenderer.invoke(IPC.getMotion),
   setMotion: (snapshot) => ipcRenderer.send(IPC.motion, snapshot),
   onMotion: (listener) => subscribe(IPC.motion, listener),
@@ -44,6 +48,7 @@ const api: ThreadlightApi = {
   onSnapshot: (listener) => subscribe<Snapshot>(IPC.snapshotChanged, listener),
   setTreeView: (view) => ipcRenderer.send(IPC.setTreeView, view),
   onPanelOpened: (listener) => subscribe<PanelOpened>(IPC.panelOpened, listener),
+  setWorkspacePanel: (on) => ipcRenderer.invoke(IPC.workspacePanel, on),
 
   dotClick: () => ipcRenderer.send(IPC.dotClick),
   dotHover: () => ipcRenderer.send(IPC.dotHover),
@@ -55,6 +60,7 @@ const api: ThreadlightApi = {
   leavePanel: () => ipcRenderer.send(IPC.panelLeave),
   onPanelPointerOutside: (listener) => subscribe<void>(IPC.panelPointerOutside, listener),
   setStayOpen: (on) => ipcRenderer.send(IPC.panelStayOpen, on),
+  setWorkspaceWireControl: (bounds) => ipcRenderer.send(IPC.workspaceWireControl, bounds),
   openInClaude: (appId) => ipcRenderer.send(IPC.openInClaude, appId),
 
   sendMessage: (sessionId, text) => ipcRenderer.invoke(IPC.sendMessage, sessionId, text),
@@ -70,6 +76,11 @@ const api: ThreadlightApi = {
   releaseHold: (sessionId) => ipcRenderer.send(IPC.releaseHold, sessionId),
   copyText: (text) => ipcRenderer.send(IPC.copyText, text),
   getChanges: (sessionId) => ipcRenderer.invoke(IPC.getChanges, sessionId),
+  getWorktreeChanges: (sessionId) => ipcRenderer.invoke(IPC.getWorktreeChanges, sessionId),
+  getWorktreeFileDiff: (sessionId, path) =>
+    ipcRenderer.invoke(IPC.getWorktreeFileDiff, sessionId, path),
+  openWorktreeChangedFile: (sessionId, path) =>
+    ipcRenderer.send(IPC.openWorktreeChangedFile, sessionId, path),
   getStepActivity: (sessionId, step) => ipcRenderer.invoke(IPC.getStepActivity, sessionId, step),
   getFileDiff: (sessionId, path) => ipcRenderer.invoke(IPC.getFileDiff, sessionId, path),
   openChangedFile: (sessionId, path) => ipcRenderer.send(IPC.openChangedFile, sessionId, path),

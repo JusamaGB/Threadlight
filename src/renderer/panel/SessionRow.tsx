@@ -1,9 +1,9 @@
 import type { MouseEvent } from 'react'
 
-import type { GitState, RelayStatus, Session } from '../../shared/types'
-import { compact, gitSentence } from '../lib/git'
+import type { RelayStatus, Session, ThreadDiffSummary } from '../../shared/types'
+import { compact, gitLine, threadDiffSentence } from '../lib/git'
 import { en } from '../i18n/en'
-import { ageText } from '../lib/format'
+import { lastActiveText } from '../lib/format'
 import { relayLine } from '../lib/relay'
 import { AttentionCard, attentionLine } from './AttentionCard'
 import { ContextRing, contextLabel } from './ContextRing'
@@ -12,7 +12,7 @@ import { PullRequestBadge } from './PullRequestBadge'
 import { SessionDetail } from './SessionDetail'
 import { TaskTimer } from './TaskTimer'
 import { Tip } from './Tip'
-import { providerName, sessionProvider } from '../../shared/providers'
+import { providerName, sessionProvider, workspaceFolder } from '../../shared/providers'
 import { CodexPlan } from './CodexPlan'
 
 interface SessionRowProps {
@@ -27,32 +27,27 @@ interface SessionRowProps {
   onContextMenu: (event: MouseEvent) => void
   /** Opens the composer on this thread (a waiting thread's card uses it for Other). */
   onCompose: () => void
-  /** The Active list leaves the age out: everything there is happening now. */
-  hideAge?: boolean
-  /** Opens the Changes view on this thread's git folder. */
+  /** Opens only this thread's recorded changes. */
   onShowChanges: () => void
 }
 
-/**
- * Where its git folder stands, compactly, only what is not zero: "+22 −1" changed since the last
- * commit (as Claude shows it), "↑2" commits to push, "↓5" commits behind main. Hovering says it
- * in one sentence; clicking opens the Changes view.
- */
-function GitCount({ git, onOpen }: { git: GitState; onOpen: () => void }) {
-  if (!git.added && !git.removed && !git.ahead && !git.behind) return null
+/** The badge and opened viewer share this chat's recorded diff, never its worktree total. */
+function ThreadCount({ diff, onOpen }: { diff: ThreadDiffSummary; onOpen: () => void }) {
+  if (!diff.files && diff.complete) return null
   return (
     <Tip
       className={`${styles.diff} ${styles.diffLink}`}
-      text={gitSentence(git)}
+      text={threadDiffSentence(diff)}
       onClick={(event) => {
         event.stopPropagation() // the row itself would expand
         onOpen()
       }}
     >
-      {git.added > 0 && <span className={styles.added}>+{compact(git.added)}</span>}
-      {git.removed > 0 && <span className={styles.removed}>−{compact(git.removed)}</span>}
-      {git.ahead > 0 && <span className={styles.ahead}>↑{git.ahead}</span>}
-      {git.behind > 0 && <span className={styles.behind}>↓{git.behind}</span>}
+      {diff.added > 0 && <span className={styles.added}>+{compact(diff.added)}</span>}
+      {diff.removed > 0 && <span className={styles.removed}>−{compact(diff.removed)}</span>}
+      {!diff.added && !diff.removed && (
+        <span>{diff.files ? en.changes.files(diff.files) : en.changes.title}</span>
+      )}
     </Tip>
   )
 }
@@ -68,9 +63,13 @@ export function SessionRow(props: SessionRowProps) {
     <div
       className={expanded ? `${styles.row} ${styles.expanded}` : styles.row}
       data-session-id={session.id}
+      data-workspace-folder={workspaceFolder(session.git?.root || session.cwd) || undefined}
       data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
     >
-      <button
+      <Tip
+        as="button"
+        text={lastActiveText(session.lastActiveAt, now)}
+        restDelay={1000}
         className={styles.rowButton}
         data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
         aria-description={
@@ -81,26 +80,37 @@ export function SessionRow(props: SessionRowProps) {
         aria-expanded={expanded}
       >
         <span className={styles.rowTop}>
-          {/* The state dot, with the thread's context ring around it. */}
+          {/* The context ring also carries the working animation. Amber still marks attention. */}
           <Tip
+            data-workspace-anchor=""
             className={styles.dotSlot}
-            text={session.contextUsed !== null ? contextLabel(session.contextUsed) : ''}
+            text={
+              session.contextUsed !== null
+                ? contextLabel(session.contextUsed)
+                : session.state === 'working'
+                  ? 'Context unavailable'
+                  : ''
+            }
           >
-            {session.contextUsed !== null && (
+            {(session.contextUsed !== null || session.state === 'working') && (
               <ContextRing
                 used={session.contextUsed}
                 wide={attention !== null}
-                thinking={session.thinking && session.state === 'working' && !attention}
+                active={session.state === 'working'}
               />
             )}
-            <span
-              className={styles.stateDot}
-              data-state={session.state}
-              data-attention={attention ? '' : undefined}
-            />
+            {(session.state === 'waiting' || attention) && (
+              <span
+                className={styles.stateDot}
+                data-state={session.state}
+                data-attention={attention ? '' : undefined}
+              />
+            )}
           </Tip>
           <span className={titleClass}>{session.title}</span>
-          {session.git && <GitCount git={session.git} onOpen={props.onShowChanges} />}
+          {session.threadDiff && (
+            <ThreadCount diff={session.threadDiff} onOpen={props.onShowChanges} />
+          )}
           {/* A long title fades out behind this, so it always shows. */}
           {attention && <span className={styles.needsYou}>{en.attention.needsYou}</span>}
           {/* Keep space for Open ↗, drawn outside this button on expanded rows. */}
@@ -111,16 +121,19 @@ export function SessionRow(props: SessionRowProps) {
           <span className={styles.stage} data-tone={line?.tone}>
             {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
           </span>
-          {!(expanded && appId) &&
-            (session.backgroundTasks.length > 0 ? (
-              <TaskTimer tasks={session.backgroundTasks} />
-            ) : (
-              !props.hideAge && (
-                <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
-              )
-            ))}
+          {session.git && (session.git.ahead > 0 || session.git.behind > 0) && (
+            <Tip data-git-tracker="" className={styles.diff} text={gitLine(session.git)}>
+              {session.git.ahead > 0 && <span className={styles.ahead}>↑{session.git.ahead}</span>}
+              {session.git.behind > 0 && (
+                <span className={styles.behind}>↓{session.git.behind}</span>
+              )}
+            </Tip>
+          )}
+          {!(expanded && appId) && session.backgroundTasks.length > 0 && (
+            <TaskTimer tasks={session.backgroundTasks} />
+          )}
         </span>
-      </button>
+      </Tip>
       {expanded && appId && (
         <button className={styles.rowOpen} onClick={() => window.threadlight.openInClaude(appId)}>
           {en.detail.open}

@@ -250,16 +250,16 @@ export class CommunicationService {
   ) {
     const input = actor.humanInput
     if (!input || input.at < requestedAt || this.now() - input.at > 300000) return false
+    if (/[?？]/u.test(input.text)) return false
     const clean = (s: string) =>
       s
         .normalize('NFKC')
         .toLowerCase()
         .replace(/[^\p{L}\p{N}]+/gu, ' ')
         .trim()
-    const text = ` ${clean(input.text)} `,
+    const phrase = clean(input.text),
       expected = clean(answer)
     if (['allow', 'deny'].includes(expected)) {
-      const phrase = clean(input.text)
       return expected === 'allow'
         ? /^(?:(?:yes|please) )?(?:allow|approve)(?: (?:once|it|this|this action|this request|the request|the action))?(?: please)?$/.test(
             phrase,
@@ -268,10 +268,8 @@ export class CommunicationService {
             phrase,
           )
     }
-    if (['not', 'never', 'avoid'].some((negative) => text.includes(` ${negative} ${expected} `)))
-      return false
-    const ordinal = text.match(
-      /\b(?:choose|pick|select|option) (?:the )?(first|second|third|fourth|1|2|3|4)(?: option)?\b/,
+    const ordinal = phrase.match(
+      /^(?:please )?(?:(?:choose|pick|select) (?:the )?)?(?:option )?(first|second|third|fourth|1|2|3|4)(?: option)?(?: please)?$/,
     )?.[1]
     if (ordinal) {
       const index = ['first', 'second', 'third', 'fourth'].includes(ordinal)
@@ -279,7 +277,13 @@ export class CommunicationService {
         : Number(ordinal) - 1
       if (choices[index] && clean(choices[index]!) === expected) return true
     }
-    return expected.length > 0 && text.includes(` ${expected} `)
+    const response = phrase
+      .replace(
+        /^(?:please )?(?:(?:choose|pick|select|use|answer|reply)(?: with)?|my answer is) /,
+        '',
+      )
+      .replace(/ please$/, '')
+    return expected.length > 0 && response === expected
   }
   private pendingNative(actor: CommunicationActor, spaceId?: string) {
     if (spaceId) this.check(actor, spaceId)

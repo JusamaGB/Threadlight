@@ -7,6 +7,14 @@ import { BrowserWindow, screen, shell, type Rectangle } from 'electron'
 import { IPC, type PanelOpened } from '../shared/ipc'
 import { loadDotPosition, saveDotPosition, type Point } from './windowState'
 import { DOT_SIZE, micIndicatorBounds } from '../shared/micIndicator'
+import {
+  attentionThread,
+  attentionProvider,
+  NO_ATTENTION,
+  WORKSPACE_GUTTER,
+  type AttentionMotion,
+} from '../shared/attentionMotion'
+import type { Session } from '../shared/types'
 
 export { DOT_SIZE }
 export const PANEL_WIDTH = 300 // 298 of content plus a 1 px border each side
@@ -29,7 +37,7 @@ export function cornerPosition(corner: Corner, area: Rectangle): Point {
   }
 }
 
-type View = 'dot' | 'panel'
+type View = 'dot' | 'panel' | 'attention'
 
 /** Shared hardening for every window: no navigation away, no pop-ups, links open in the browser. */
 function harden(win: BrowserWindow): void {
@@ -84,6 +92,15 @@ export class WindowManager {
   private dotPosition: Point
   private openMicLive = false
   private pointerWatch: ReturnType<typeof setInterval> | null = null
+  private attentionWindow: BrowserWindow | null = null
+  private attentionSession: Session | undefined
+  private attentionState: AttentionMotion = NO_ATTENTION
+  private talking = false
+  private gutterIgnored = false
+  private wireControl: { top: number; height: number } | null = null
+  private workspacePanel = false
+  private workspaceTop: number | null = null
+  private workspaceDragTop: number | null = null
 
   constructor() {
     // The dot never takes focus, so clicking it does not pull focus from a game.
@@ -92,7 +109,7 @@ export class WindowManager {
     this.dotPosition = { x, y }
     this.placeDot()
     // The panel is created up front (hidden) so it opens instantly.
-    this.panel = createWindow('panel', { width: PANEL_WIDTH, height: 120 }, true)
+    this.panel = createWindow('panel', { width: PANEL_WIDTH + WORKSPACE_GUTTER, height: 120 }, true)
     this.panel.on('blur', () => {
       if (!this.stayOpen) this.closePanel()
     })
@@ -115,6 +132,7 @@ export class WindowManager {
       this.closePanel()
       this.dot.hide()
     }
+    this.syncAttention()
   }
 
   /**
@@ -128,6 +146,8 @@ export class WindowManager {
     if (!win.isVisible()) win.showInactive()
     win.setAlwaysOnTop(true, 'screen-saver')
     win.moveTop()
+    this.syncAttention()
+    if (this.attentionWindow?.isVisible()) this.attentionWindow.moveTop()
   }
 
   /** Ignore duplicate and delayed hover messages from the dot window being replaced. */
@@ -154,15 +174,21 @@ export class WindowManager {
    * state, because the panel has just filled in the composer itself.
    */
   openPanel({ focus = true, fresh = focus }: { focus?: boolean; fresh?: boolean } = {}): void {
-    if (fresh) this.stayOpen = false
+    if (fresh) {
+      this.stayOpen = false
+      this.workspacePanel = false
+      this.workspaceTop = null
+    }
     const info: PanelOpened = {
       maxHeight: this.maxPanelHeight(),
       opensDown: this.opensDown(),
       fresh,
     }
     this.panel.webContents.send(IPC.panelOpened, info)
-    this.placePanel(this.panel.getBounds().height)
+    this.placePanel(Math.min(this.panel.getBounds().height, info.maxHeight))
     this.dot.hide() // the panel takes the dot's place
+    this.attentionWindow?.hide()
+    this.broadcastAttention({ ...this.attentionState, active: false })
     if (focus) {
       this.panel.show()
       this.panel.focus()
@@ -182,6 +208,7 @@ export class WindowManager {
     if (!this.panel.isVisible()) return
     this.panel.hide()
     if (this.claudeRunning) this.dot.showInactive()
+    this.syncAttention()
   }
 
   /** Browser leave events may be stale while replacing or resizing a transparent window. */
@@ -210,6 +237,22 @@ export class WindowManager {
         this.stopPointerWatch()
         return
       }
+      const point = screen.getCursorScreenPoint()
+      const bounds = this.panel.getBounds()
+      const gutter =
+        point.x >= bounds.x &&
+        point.x < bounds.x + WORKSPACE_GUTTER &&
+        point.y >= bounds.y &&
+        point.y < bounds.y + bounds.height &&
+        !(
+          this.wireControl &&
+          point.y >= bounds.y + this.wireControl.top &&
+          point.y < bounds.y + this.wireControl.top + this.wireControl.height
+        )
+      if (gutter !== this.gutterIgnored) {
+        this.gutterIgnored = gutter
+        this.panel.setIgnoreMouseEvents(gutter, { forward: true })
+      }
       if (!this.stayOpen && !this.dragStart && !this.pointerInsidePanel())
         this.panel.webContents.send(IPC.panelPointerOutside)
     }, 16)
@@ -219,6 +262,29 @@ export class WindowManager {
   private stopPointerWatch(): void {
     if (this.pointerWatch) clearInterval(this.pointerWatch)
     this.pointerWatch = null
+    if (this.gutterIgnored) this.panel.setIgnoreMouseEvents(false)
+    this.gutterIgnored = false
+  }
+
+  /** Only the small header clip intercepts clicks in the otherwise transparent gutter. */
+  setWorkspaceWireControl(value: unknown): void {
+    if (value === null) {
+      this.wireControl = null
+      return
+    }
+    if (typeof value !== 'object' || !value) return
+    const { top, height } = value as Record<string, unknown>
+    if (
+      typeof top === 'number' &&
+      Number.isFinite(top) &&
+      top >= 0 &&
+      top <= 32768 &&
+      typeof height === 'number' &&
+      Number.isFinite(height) &&
+      height > 0 &&
+      height <= 32
+    )
+      this.wireControl = { top, height }
   }
 
   resizePanel(height: number): void {
@@ -226,10 +292,80 @@ export class WindowManager {
     this.placePanel(Math.max(40, Math.min(Math.ceil(height), this.maxPanelHeight())))
   }
 
+  /** Workspace grows from a stable top edge, so its bottom usage grip follows the pointer. */
+  setWorkspacePanel(on: boolean): PanelOpened {
+    if (on !== this.workspacePanel) {
+      this.workspaceTop = on ? this.panel.getBounds().y : null
+      this.workspacePanel = on
+    }
+    const info = { maxHeight: this.maxPanelHeight(), opensDown: this.opensDown(), fresh: false }
+    this.placePanel(Math.min(this.panel.getBounds().height, info.maxHeight))
+    return info
+  }
+
   setOpenMicLive(live: boolean): void {
     if (this.openMicLive === live) return
     this.openMicLive = live
     this.placeDot()
+    this.syncAttention()
+  }
+
+  get attentionMotion(): AttentionMotion {
+    return this.attentionState
+  }
+  setAttention(sessions: Session[]): void {
+    this.attentionSession = attentionThread(sessions, this.attentionSession?.id)
+    this.syncAttention()
+  }
+  setTalking(on: boolean): void {
+    this.talking = on
+    this.syncAttention()
+  }
+  private broadcastAttention(state: AttentionMotion): void {
+    if (JSON.stringify(state) === JSON.stringify(this.attentionState)) return
+    this.attentionState = state
+    this.dot.webContents.send(IPC.attentionMotion, state)
+    this.attentionWindow?.webContents.send(IPC.attentionMotion, state)
+  }
+  private syncAttention(): void {
+    const selected = this.attentionSession
+    if (
+      !selected ||
+      !this.claudeRunning ||
+      this.panel.isVisible() ||
+      this.openMicLive ||
+      this.talking
+    ) {
+      this.attentionWindow?.hide()
+      this.broadcastAttention({ ...this.attentionState, active: false })
+      return
+    }
+    const area = this.workArea()
+    const width = Math.min(140, area.width)
+    const x = clamp(
+      this.dotPosition.x + DOT_SIZE / 2 - width / 2,
+      area.x,
+      area.x + area.width - width,
+    )
+    const y = this.dotPosition.y
+    const height = Math.max(DOT_SIZE + 2, area.y + area.height - y + 2)
+    const bounds = { x, y, width, height }
+    if (!this.attentionWindow) {
+      this.attentionWindow = createWindow('attention', { width, height }, false)
+      this.attentionWindow.setIgnoreMouseEvents(true)
+    }
+    if (JSON.stringify(this.attentionWindow.getBounds()) !== JSON.stringify(bounds))
+      this.attentionWindow.setBounds(bounds)
+    this.broadcastAttention({
+      active: true,
+      provider: attentionProvider(selected),
+      width,
+      height,
+      x: this.dotPosition.x + DOT_SIZE / 2 - x,
+      y: DOT_SIZE / 2,
+      floor: height - 2,
+    })
+    if (!this.attentionWindow.isVisible()) this.attentionWindow.showInactive()
   }
 
   private dotBounds(): Rectangle {
@@ -247,6 +383,7 @@ export class WindowManager {
   private maxPanelHeight(): number {
     const dot = this.dotBounds()
     const area = this.workArea()
+    if (this.workspacePanel) return Math.max(40, area.height - MARGIN * 2)
     if (this.opensDown()) {
       const gap = clamp(dot.y - area.y, 0, MARGIN)
       return area.y + area.height - gap - dot.y
@@ -257,6 +394,7 @@ export class WindowManager {
 
   /** Downward from a dot in the top half of the screen, upward from one in the bottom half. */
   private opensDown(): boolean {
+    if (this.workspacePanel) return true
     const dot = this.dotBounds()
     const area = this.workArea()
     return dot.y + DOT_SIZE / 2 <= area.y + area.height / 2
@@ -277,7 +415,10 @@ export class WindowManager {
   dragDot(dx: number, dy: number): void {
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
     const { x, y } = this.dotPosition
+    if (!this.dragStart && this.workspacePanel) this.workspaceDragTop = this.panel.getBounds().y
     this.dragStart ??= { x, y }
+    if (this.workspacePanel && this.workspaceDragTop !== null)
+      this.workspaceTop = this.workspaceDragTop + dy
     // Kept inside the screen's work area, just as the panel is.
     const target = { x: Math.round(this.dragStart.x + dx), y: Math.round(this.dragStart.y + dy) }
     const area = screen.getDisplayNearestPoint(target).workArea
@@ -288,11 +429,13 @@ export class WindowManager {
     this.placeDot()
     // Dragging the panel's header moves the hidden dot, and the panel stays anchored to it.
     this.updatePanelLayout()
+    this.syncAttention()
   }
 
   endDrag(): void {
     if (!this.dragStart) return
     this.dragStart = null
+    this.workspaceDragTop = null
     saveDotPosition(this.dotPosition)
   }
 
@@ -300,9 +443,11 @@ export class WindowManager {
   resetDotPosition(): void {
     const { x, y } = cornerPosition('top-right', screen.getPrimaryDisplay().workArea)
     this.dotPosition = { x, y }
+    if (this.workspacePanel) this.workspaceTop = y
     this.placeDot()
     saveDotPosition({ x, y })
     this.updatePanelLayout()
+    this.syncAttention()
   }
 
   /**
@@ -312,13 +457,17 @@ export class WindowManager {
   private placePanel(height: number): void {
     const dot = this.dotBounds()
     const area = this.workArea()
-    const x = clamp(dot.x + DOT_SIZE - PANEL_WIDTH, area.x, area.x + area.width - PANEL_WIDTH)
-    const y = clamp(
-      this.opensDown() ? dot.y : dot.y + DOT_SIZE - height,
-      area.y,
-      area.y + area.height - height,
-    )
-    this.panel.setBounds({ x, y, width: PANEL_WIDTH, height })
+    const width = PANEL_WIDTH + WORKSPACE_GUTTER
+    const x = clamp(dot.x + DOT_SIZE - width, area.x, area.x + area.width - width)
+    const y = this.workspacePanel
+      ? clamp(this.workspaceTop ?? dot.y, area.y + MARGIN, area.y + area.height - MARGIN - height)
+      : clamp(
+          this.opensDown() ? dot.y : dot.y + DOT_SIZE - height,
+          area.y,
+          area.y + area.height - height,
+        )
+    if (this.workspacePanel) this.workspaceTop = y
+    this.panel.setBounds({ x, y, width, height })
   }
 
   private workArea(): Rectangle {

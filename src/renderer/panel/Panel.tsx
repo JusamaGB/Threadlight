@@ -26,8 +26,7 @@ import { useVoice } from '../hooks/useVoice'
 import { useRecordedAgentVoice } from '../hooks/useRecordedAgentVoice'
 import { MicSessionRouter, type MicRoute } from '../../shared/voiceCommands'
 import { en } from '../i18n/en'
-import { windowLabel } from '../lib/format'
-import { SettingsView } from '../settings/SettingsView'
+import { SettingsView, Stepper } from '../settings/SettingsView'
 import { SharedSpacesView, type SpacesNavigation } from '../spaces/SharedSpacesView'
 import { AgentView } from './AgentView'
 import { ChangesView } from './ChangesView'
@@ -42,10 +41,28 @@ import { motionMode } from '../../shared/motion'
 import { useMotion } from '../hooks/useMotion'
 import { VoicePresence } from '../motion/VoicePresence'
 import { ElectricMotion } from '../motion/ElectricMotion'
+import { WorkspaceLinks } from './WorkspaceLinks'
+import { ThreadScrollbar } from './ThreadScrollbar'
+import { WorkspaceResize, WORKSPACE_MIN_HEIGHT } from './WorkspaceResize'
+import { TimeWindowMessage } from './TimeWindowMessage'
 
 type View = 'active' | 'all'
 
 type HoldMode = 'normal' | 'pinned'
+function BackIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
+      <path
+        d="M8 2 4 5 8 8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 /** After a voice send is answered, an untouched panel turns back into the dot. */
 const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
@@ -101,14 +118,20 @@ export function Panel() {
       agent.status === 'working' ||
       agent.status === 'waiting' ||
       agent.status === 'stopping')
-  /** The Changes view, for this thread's git folder: it takes over the card too. */
-  const [changesFor, setChangesFor] = useState<string | null>(null)
+  /** The existing Changes view shows either recorded thread changes or its worktree. */
+  const [changesFor, setChangesFor] = useState<{
+    sessionId: string
+    scope: 'thread' | 'worktree'
+  } | null>(null)
   /** Choosing which workspace the Workspace list shows; takes over the card like settings. */
   const [pickingWorkspace, setPickingWorkspace] = useState(false)
   /** Open workspaces in the "All" list; null until changed means "just the current one". */
   const [openWorkspaces, setOpenWorkspaces] = useState<string[] | null>(null)
   /** Workspaces showing every thread, not just the most recent few. */
   const [moreWorkspaces, setMoreWorkspaces] = useState<string[]>([])
+  const [savingSessionLimit, setSavingSessionLimit] = useState(false)
+  const [workspaceDragHeight, setWorkspaceDragHeight] = useState<number | null>(null)
+  const [savingWorkspaceHeight, setSavingWorkspaceHeight] = useState(false)
   const [version, setVersion] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [voiceSelection, setVoiceSelection] = useState<string | null>(null)
@@ -139,6 +162,7 @@ export function Panel() {
   /** Double-clicking the bare header toggles staying open without changing the view. */
   const [hold, setHold] = useState<HoldMode>('normal')
   const card = useRef<HTMLDivElement>(null)
+  const threadList = useRef<HTMLDivElement>(null)
   const drag = useDotDrag()
 
   /** Agent Toggle listens until the next press; selecting a target never opens the mic. */
@@ -516,7 +540,13 @@ export function Panel() {
   // The panel only shows while the pointer is over it; no delayed close can race a re-entry.
   // Pinning holds any selected view open.
   const leave = useCallback(() => {
-    if (drag.isDragging() || hold !== 'normal' || showMemory) return
+    if (
+      drag.isDragging() ||
+      document.querySelector('[data-thread-scroll-dragging], [data-workspace-resizing]') ||
+      hold !== 'normal' ||
+      showMemory
+    )
+      return
     // Never hide the panel while the microphone is open or a voice send is counting down:
     // the recording or the send would carry on with nothing on screen to show or stop it.
     if (voice.state !== 'idle' || Date.now() < countdownUntil.current) return
@@ -702,34 +732,41 @@ export function Panel() {
     view === 'all' &&
     listMode !== 'recent' &&
     (!voiceSelection || voiceWorkspace !== null)
-  // The Workspace list shows the chosen workspace, or (Follow Claude) the one last open in Claude.
-  // A chosen folder that no longer has any threads falls back to following Claude.
+  // Workspace can combine all known folders, or focus on one folder.
+  // A voice-selected workspace temporarily narrows either saved selection.
+  const allDrives = (settings?.workspaceAllDrives ?? false) && voiceWorkspace === null
   const chosen =
     (provider === 'both'
       ? settings?.combinedFocusWorkspace
       : provider === 'codex'
         ? settings?.codexFocusWorkspace
         : settings?.focusWorkspace) ?? null
-  const focusId =
-    voiceWorkspace ??
-    (chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
-      ? chosen
-      : snapshot.currentWorkspace)
-  const focus = focusId
-    ? (snapshot.allWorkspaces.find((w) => sameFolder(w.id, focusId)) ?? {
-        id: focusId,
-        name: focusId.split(/[\\/]/).filter(Boolean).pop() ?? focusId,
-      })
-    : null
-  const windowText = windowLabel(settings?.listWindowHours ?? 24)
+  const focusId = allDrives
+    ? null
+    : (voiceWorkspace ??
+      (chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
+        ? chosen
+        : snapshot.currentWorkspace))
+  const focus = allDrives
+    ? { id: 'all-drives', name: 'All drives' }
+    : focusId
+      ? (snapshot.allWorkspaces.find((w) => sameFolder(w.id, focusId)) ?? {
+          id: focusId,
+          name: focusId.split(/[\\/]/).filter(Boolean).pop() ?? focusId,
+        })
+      : null
+  const emptyWindow = <TimeWindowMessage hours={settings?.listWindowHours ?? 24} />
   const focusGroups = snapshot.workspaces.filter(
     (w) =>
-      focusId &&
-      (provider === 'both'
-        ? workspaceFolder(w.id) === workspaceFolder(focusId)
-        : sameFolder(w.id, focusId)),
+      allDrives ||
+      (focusId &&
+        (provider === 'both'
+          ? workspaceFolder(w.id) === workspaceFolder(focusId)
+          : sameFolder(w.id, focusId))),
   )
-  const focusGroupKeys = focusGroups.map((w) => w.id).join('\n')
+  const focusGroupKeys = (allDrives ? snapshot.allWorkspaces : focusGroups)
+    .map((w) => w.id)
+    .join('\n')
   const treeFocus = focus ? { ...focus, ids: focusGroups.map((w) => w.id) } : null
   const pickerWorkspaces =
     provider === 'both'
@@ -810,35 +847,49 @@ export function Panel() {
       onSelect: () => void selectList(mode),
     })),
   ]
+  const selectApplications = async (selection: 'claude' | 'codex' | 'both') => {
+    const enabledProviders = selection === 'both' ? (['claude', 'codex'] as const) : [selection]
+    const result = await window.threadlight.updateSettings({
+      enabledProviders: [...enabledProviders],
+    })
+    if (!result.ok) setNotice(result.reason)
+  }
   const sourceMenuItems = [
-    { label: 'Codex', providers: ['codex'] as const },
-    { label: 'Claude', providers: ['claude'] as const },
-    { label: 'Both', providers: ['claude', 'codex'] as const },
-  ].map(({ label, providers }) => ({
+    { label: 'Codex', selection: 'codex' as const },
+    { label: 'Claude', selection: 'claude' as const },
+    { label: 'Both', selection: 'both' as const },
+  ].map(({ label, selection }) => ({
     label,
     disabled: label === sourceLabel,
-    onSelect: async () => {
-      const result = await window.threadlight.updateSettings({ enabledProviders: [...providers] })
-      if (!result.ok) setNotice(result.reason)
-    },
+    onSelect: () => selectApplications(selection),
   }))
 
-  // The Changes view's heading: "main · 3 files".
-  const changesThread = changesFor ? findInSnapshot(snapshot, changesFor) : undefined
-  const changesHeading = changesThread?.git
-    ? `${changesThread.git.branch ?? en.git.noBranch} · ${en.changes.files(changesThread.git.files)}`
-    : en.changes.title
-  const pickWorkspace = async (id: string | null) => {
+  const changesThread = changesFor ? findInSnapshot(snapshot, changesFor.sessionId) : undefined
+  const worktreeDiff = changesFor?.scope === 'worktree'
+  const changesTitle = worktreeDiff ? en.changes.worktreeTitle : en.changes.title
+  const changesFiles = worktreeDiff ? changesThread?.git?.files : changesThread?.threadDiff?.files
+  const changesHeading =
+    changesFiles !== undefined
+      ? `${changesTitle} · ${en.changes.files(changesFiles)}`
+      : changesTitle
+  const pickWorkspace = async (id: string | null, useAll = false) => {
     setVoiceSelection(null)
     setVoiceWorkspace(null)
-    await window.threadlight.updateSettings({
-      ...(provider === 'both'
-        ? { combinedFocusWorkspace: id }
-        : provider === 'codex'
-          ? { codexFocusWorkspace: id }
-          : { focusWorkspace: id }),
+    const result = await window.threadlight.updateSettings({
+      ...(!useAll
+        ? provider === 'both'
+          ? { combinedFocusWorkspace: id }
+          : provider === 'codex'
+            ? { codexFocusWorkspace: id }
+            : { focusWorkspace: id }
+        : {}),
+      workspaceAllDrives: useAll,
       listMode: 'workspace',
     })
+    if (!result.ok) {
+      setNotice(result.reason)
+      return
+    }
     setPickingWorkspace(false)
     setShowSettings(false)
     setView('all') // straight to that workspace's threads
@@ -867,6 +918,11 @@ export function Panel() {
     setMenu({ x: event.clientX, y: event.clientY, session })
   }
   const menuItems = (session: Session): MenuItem[] => [
+    {
+      label: en.changes.worktreeTitle,
+      disabled: !session.git?.root,
+      onSelect: () => setChangesFor({ sessionId: session.id, scope: 'worktree' }),
+    },
     { label: en.menu.compose, onSelect: () => setCompose({ sessionId: session.id }) },
     {
       label: session.provider === 'codex' ? 'Open in Codex' : en.menu.openInClaude,
@@ -888,8 +944,7 @@ export function Panel() {
       onToggle={() => onRowClick(session)}
       onContextMenu={(event) => openMenu(event, session)}
       onCompose={() => setCompose({ sessionId: session.id })}
-      hideAge={view === 'active'}
-      onShowChanges={() => setChangesFor(session.id)}
+      onShowChanges={() => setChangesFor({ sessionId: session.id, scope: 'thread' })}
     />
   )
 
@@ -909,385 +964,500 @@ export function Panel() {
   const inactiveMicrophone = !openMicListening && voice.state !== 'listening'
   const listHidden =
     showMemory || showSettings || pickingWorkspace || showAgent || changesFor !== null
+  const workspaceView = headerView === 'workspace' && !listHidden
+  const workspaceHeight = Math.min(
+    maxHeight,
+    Math.max(
+      WORKSPACE_MIN_HEIGHT,
+      workspaceDragHeight ?? settings?.workspacePanelHeight ?? maxHeight,
+    ),
+  )
+
+  useEffect(() => {
+    let live = true
+    void Promise.resolve(window.threadlight.setWorkspacePanel(workspaceView))
+      .then((info) => {
+        if (!live || !info) return
+        setMaxHeight(info.maxHeight)
+        setOpensDown(info.opensDown)
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [workspaceView])
+
+  const saveWorkspaceHeight = async (height: number) => {
+    setWorkspaceDragHeight(height)
+    setSavingWorkspaceHeight(true)
+    try {
+      const result = await window.threadlight.updateSettings({ workspacePanelHeight: height })
+      if (!result.ok) setNotice(result.reason)
+    } catch {
+      setNotice('Could not save the Workspace height.')
+    } finally {
+      setWorkspaceDragHeight(null)
+      setSavingWorkspaceHeight(false)
+    }
+  }
+
+  const usageBars = (
+    <>
+      {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
+      {usage && enabled.includes('claude') && (
+        <UsageBar
+          usage={usage}
+          weekly={view === 'all' && !listHidden}
+          source={provider === 'both' ? 'Claude' : undefined}
+        />
+      )}
+      {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
+    </>
+  )
 
   return (
     <PanelRoomContext.Provider value={panelRoom}>
-      <div
-        ref={card}
-        data-card=""
-        className={styles.card}
-        // Room above the card, when opening upwards, keeps the card in place on screen.
-        style={{ maxHeight, marginTop: opensDown ? 0 : room }}
-        onMouseLeave={leave}
-      >
-        <header
-          className={styles.header}
-          data-voice={showVoiceActivity || undefined}
-          onClick={onHeaderClick}
-          {...drag.handlers}
-        >
-          {showVoiceActivity && (
-            <div className={styles.voiceActivity} role="region" aria-label="Voice waveform">
-              <ElectricMotion source={motion.source} label={motion.label} edgeToEdge />
-            </div>
-          )}
-          {showVoiceActivity && inactiveMicrophone && !agentVisible && (
-            <span className={styles.microphoneStatus}>no active Mic</span>
-          )}
-          {pickingWorkspace ? (
-            <>
-              <button
-                className={styles.back}
-                onClick={() => setPickingWorkspace(false)}
-                aria-label={en.settings.back}
-                title={en.settings.back}
-              >
-                ‹
-              </button>
-              <span className={`${styles.heading} ${styles.pageHeading}`}>
-                {en.panel.chooseWorkspace}
-              </span>
-            </>
-          ) : changesFor ? (
-            <>
-              <button
-                className={styles.back}
-                onClick={() => setChangesFor(null)}
-                aria-label={en.settings.back}
-                title={en.settings.back}
-              >
-                ‹
-              </button>
-              <span className={`${styles.heading} ${styles.pageHeading}`} title={changesHeading}>
-                {changesHeading}
-              </span>
-            </>
-          ) : showAgent ? (
-            <>
-              <button
-                className={styles.back}
-                onClick={() => setShowAgent(false)}
-                aria-label={en.settings.back}
-                title={en.settings.back}
-              >
-                ‹
-              </button>
-              {hold !== 'normal' && (
-                <span role="img" aria-label="Pinned open" title="Pinned open">
-                  <PinIcon />
-                </span>
-              )}
-              <span className={`${styles.heading} ${styles.pageHeading}`}>{en.agent.title}</span>
-            </>
-          ) : showMemory ? (
-            <>
-              <button
-                className={styles.back}
-                aria-label="Back in Shared Spaces"
-                onClick={() => spacesNavigation.current?.back()}
-              >
-                ‹
-              </button>
-              <span className={`${styles.heading} ${styles.pageHeading}`}>Shared Spaces</span>
-            </>
-          ) : showSettings ? (
-            <>
-              <button
-                className={styles.back}
-                onClick={() => setShowSettings(false)}
-                aria-label={en.settings.back}
-                title={en.settings.back}
-              >
-                ‹
-              </button>
-              <span className={`${styles.heading} ${styles.pageHeading}`}>{en.settings.title}</span>
-            </>
-          ) : (
-            <>
-              {hold !== 'normal' && (
-                <button
-                  className={styles.unpin}
-                  aria-label={en.panel.unpin}
-                  title={en.panel.unpin}
-                  onClick={() => changeHold('normal')}
-                >
-                  <PinIcon />
-                </button>
-              )}
-              <button
-                className={styles.viewControl}
-                data-thread-view={headerView}
-                aria-pressed={view === 'all'}
-                aria-haspopup="menu"
-                onContextMenu={onListMenu}
-                onClick={cycleView}
-              >
-                {viewLabel} · {viewCount}
-              </button>
-              <div className={styles.sourceWorkspace}>
-                <button
-                  className={styles.sourceControl}
-                  aria-label={`Filter applications: ${sourceLabel}`}
-                  aria-haspopup="menu"
-                  aria-expanded={sourceMenu !== null}
-                  onClick={(event) => {
-                    const box = event.currentTarget.getBoundingClientRect()
-                    setSourceMenu({
-                      x: box.left,
-                      y: box.bottom + 2,
-                      anchor: event.currentTarget.closest('header') ?? event.currentTarget,
-                    })
-                  }}
-                >
-                  {sourceLabel}
-                </button>
-                <span aria-hidden="true">·</span>
-                <button
-                  className={styles.workspaceControl}
-                  aria-label={`Choose workspace: ${workspaceName}`}
-                  onClick={() => setPickingWorkspace(true)}
-                >
-                  {workspaceName}
-                </button>
-              </div>
-              {
-                <button
-                  className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
-                  onClick={() => setShowAgent(true)}
-                  aria-label={agentBusy ? en.agent.busy : en.agent.open}
-                  title={agentBusy ? en.agent.busy : en.agent.open}
-                >
-                  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z" />
-                  </svg>
-                </button>
-              }
-              <button
-                className={styles.gear}
-                onClick={() => setShowSettings(true)}
-                aria-label={en.settings.open}
-                title={en.settings.open}
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M6.6 1h2.8l.4 2 1.3.7 1.9-.7 1.4 2.4-1.5 1.3v1.6l1.5 1.3-1.4 2.4-1.9-.7-1.3.7-.4 2H6.6l-.4-2-1.3-.7-1.9.7L1.6 9.6l1.5-1.3V6.7L1.6 5.4 3 3l1.9.7L6.2 3z" />
-                  <circle cx="8" cy="8" r="2.2" />
-                </svg>
-              </button>
-            </>
-          )}
-        </header>
-
-        {showVoiceActivity && (
-          <VoicePresence
-            label={motion.label}
-            caption={motionCaption}
-            inactiveMicrophone={agentVisible && inactiveMicrophone}
-          />
-        )}
-
-        {pickingWorkspace && (
-          <div className={styles.list}>
-            <WorkspacePicker
-              provider={provider}
-              workspaces={pickerWorkspaces}
-              chosen={pickerId(chosen)}
-              current={pickerId(snapshot.currentWorkspace)}
-              onPick={(id) => void pickWorkspace(id)}
-            />
-          </div>
-        )}
-
-        {changesFor && !pickingWorkspace && (
-          <ChangesView
-            key={changesFor}
-            sessionId={changesFor}
-            stamp={JSON.stringify(changesThread?.git ?? null)}
-          />
-        )}
-
-        {openMic === 'blocked' && (
-          <p className={styles.notice} role="alert">
-            {en.openMic.blocked}
-          </p>
-        )}
-        {micLive && openMic !== 'blocked' && (
-          <p className={styles.notice} role="status" data-mic-mode={micMode}>
-            {gptLive
-              ? openMic === 'off'
-                ? 'Opening microphone and connecting GPT Live…'
-                : livePhase === 'live'
-                  ? 'Live · Speak naturally; press the hotkey to finish'
-                  : livePhase === 'waiting'
-                    ? 'Live · Waiting for a reply; you can keep talking'
-                    : livePhase === 'error'
-                      ? 'GPT Live could not connect'
-                      : livePhase === 'ready'
-                        ? 'GPT Live ready · Speak naturally'
-                        : 'Connecting GPT Live · Speak now; your audio is buffered'
-              : micMode === 'agent'
-                ? 'Local STT · Listening; text goes to the Agent'
-                : en.openMic.mode(micMode)}
-          </p>
-        )}
-        {showAgent && !pickingWorkspace && !changesFor && (
-          <>
-            {liveError && (
-              <div className={styles.picking} aria-label="Live voice error">
-                <p role="alert">{liveError}</p>
-                {openingDraft && (
-                  <>
-                    <span className={styles.pickText}>{openingDraft}</span>
-                    <button onClick={() => window.threadlight.copyText(openingDraft)}>
-                      Copy opening message
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-            <AgentView />
-          </>
-        )}
-
-        <SharedSpacesView
-          currentRoot={snapshot.currentWorkspace?.replace(/^(claude|codex):/, '') ?? null}
-          workspaces={pickerWorkspaces.map((w) => ({
-            id: w.id.replace(/^(claude|codex):/, ''),
-            name: w.name,
-          }))}
-          focusedRoot={
-            headerView === 'workspace' ? (focusId?.replace(/^(claude|codex):/, '') ?? null) : null
-          }
-          navigationRef={spacesNavigation}
-          visible={showMemory && !showAgent && !pickingWorkspace && changesFor === null}
-          sessions={snapshot.lookupSessions ?? snapshot.sessions}
-          onClose={() => {
-            setShowMemory(false)
-            window.threadlight.setStayOpen(hold !== 'normal')
+      <div className={styles.panelStage}>
+        <WorkspaceLinks
+          card={card}
+          enabled={settings?.workspaceWires ?? false}
+          onToggle={async () => {
+            try {
+              const result = await window.threadlight.updateSettings({
+                workspaceWires: !settings?.workspaceWires,
+              })
+              if (!result.ok) setNotice(result.reason)
+            } catch {
+              setNotice('Could not save the workspace wire setting.')
+            }
           }}
         />
-        {showSettings && settings && !pickingWorkspace && !showAgent && !showMemory && (
-          <SettingsView
-            currentAgentProvider={agent.provider ?? undefined}
-            providerLocked={voice.state !== 'idle'}
-            settings={settings}
-            stt={stt}
-            version={version}
-            onPickWorkspace={() => setPickingWorkspace(true)}
-            onOpenMemory={() => {
-              setShowMemory(true)
-              window.threadlight.setStayOpen(true)
-            }}
-          />
-        )}
-
-        {/* Kept mounted (just hidden) while settings show, so a half-typed message survives. */}
-        <div className={styles.sessions} hidden={listHidden}>
-          {(hotkeyProblem || notice) && <p className={styles.notice}>{notice ?? hotkeyProblem}</p>}
-          {picking && (
-            <div className={styles.picking}>
-              <span className={styles.pickHead}>
-                <span className={styles.pickPrompt}>
-                  {picking.heardThread
-                    ? en.voice.noMatch(picking.heardThread)
-                    : en.voice.pickThread}
-                </span>
-                {/* Not for any thread after all: throw it away. */}
+        <div
+          ref={card}
+          data-card=""
+          className={styles.card}
+          data-workspace-height={workspaceView || undefined}
+          // Room above the card, when opening upwards, keeps the card in place on screen.
+          style={{
+            maxHeight: workspaceView ? workspaceHeight : maxHeight,
+            marginTop: opensDown ? 0 : room,
+          }}
+          onMouseLeave={leave}
+        >
+          <header
+            className={styles.header}
+            data-voice={showVoiceActivity || undefined}
+            onClick={onHeaderClick}
+            {...drag.handlers}
+          >
+            {showVoiceActivity && (
+              <div className={styles.voiceActivity} role="region" aria-label="Voice waveform">
+                <ElectricMotion source={motion.source} label={motion.label} edgeToEdge />
+              </div>
+            )}
+            {showVoiceActivity && inactiveMicrophone && !agentVisible && (
+              <span className={styles.microphoneStatus}>no active Mic</span>
+            )}
+            {pickingWorkspace ? (
+              <>
                 <button
-                  className={styles.pickClose}
-                  aria-label={en.voice.discard}
-                  title={en.voice.discard}
-                  onClick={() => setPicking(null)}
+                  className={styles.back}
+                  onClick={() => setPickingWorkspace(false)}
+                  aria-label={en.settings.back}
+                  title={en.settings.back}
                 >
-                  ×
+                  <BackIcon />
                 </button>
-              </span>
-              <span className={styles.pickText}>“{picking.text}”</span>
-            </div>
-          )}
-
-          <div className={styles.list}>
-            {tree ? (
-              <WorkspaceTree
-                workspaces={snapshot.workspaces}
-                only={listMode === 'workspace' ? treeFocus : null}
-                isOpen={isOpen}
-                onToggle={toggleWorkspace}
-                onShowMore={(id) => setMoreWorkspaces((list) => [...list, id])}
-                emptyMessage={en.nothingInWindow(windowText)}
-                renderRow={renderRow}
-              />
+                <span className={`${styles.heading} ${styles.pageHeading}`}>
+                  {en.panel.chooseWorkspace}
+                </span>
+              </>
+            ) : changesFor ? (
+              <>
+                <button
+                  className={styles.back}
+                  onClick={() => setChangesFor(null)}
+                  aria-label={en.settings.back}
+                  title={en.settings.back}
+                >
+                  <BackIcon />
+                </button>
+                <span className={`${styles.heading} ${styles.pageHeading}`} title={changesHeading}>
+                  {changesHeading}
+                </span>
+              </>
+            ) : showAgent ? (
+              <>
+                <button
+                  className={styles.back}
+                  onClick={() => setShowAgent(false)}
+                  aria-label={en.settings.back}
+                  title={en.settings.back}
+                >
+                  <BackIcon />
+                </button>
+                {hold !== 'normal' && (
+                  <span role="img" aria-label="Pinned open" title="Pinned open">
+                    <PinIcon />
+                  </span>
+                )}
+                <span className={`${styles.heading} ${styles.pageHeading}`}>{en.agent.title}</span>
+              </>
+            ) : showMemory ? (
+              <>
+                <button
+                  className={styles.back}
+                  aria-label="Back in Shared Spaces"
+                  onClick={() => spacesNavigation.current?.back()}
+                >
+                  <BackIcon />
+                </button>
+                <span className={`${styles.heading} ${styles.pageHeading}`}>Shared Spaces</span>
+              </>
+            ) : showSettings ? (
+              <>
+                <button
+                  className={styles.back}
+                  onClick={() => setShowSettings(false)}
+                  aria-label={en.settings.back}
+                  title={en.settings.back}
+                >
+                  <BackIcon />
+                </button>
+                <span className={`${styles.heading} ${styles.pageHeading}`}>
+                  {en.settings.title}
+                </span>
+              </>
             ) : (
               <>
-                {shown.length === 0 && (
-                  <p className={styles.empty}>
-                    {provider === 'none'
-                      ? en.sources.paused
-                      : view === 'active'
-                        ? en.panel.nothingWorking
-                        : en.nothingInWindow(windowText)}
-                  </p>
+                {hold !== 'normal' && (
+                  <button
+                    className={styles.unpin}
+                    aria-label={en.panel.unpin}
+                    title={en.panel.unpin}
+                    onClick={() => changeHold('normal')}
+                  >
+                    <PinIcon />
+                  </button>
                 )}
-                {shown.map(renderRow)}
+                <button
+                  className={styles.viewControl}
+                  data-thread-view={headerView}
+                  aria-pressed={view === 'all'}
+                  aria-haspopup="menu"
+                  onContextMenu={onListMenu}
+                  onClick={cycleView}
+                >
+                  {headerView === 'recent' ? viewLabel : `${viewLabel} · ${viewCount}`}
+                </button>
+                {headerView === 'recent' && (
+                  <Stepper
+                    compact
+                    label={en.settings.maxSessions}
+                    value={settings?.maxSessions ?? 10}
+                    min={3}
+                    max={25}
+                    format={String}
+                    disabled={!settings || savingSessionLimit}
+                    onChange={async (maxSessions) => {
+                      setSavingSessionLimit(true)
+                      try {
+                        const result = await window.threadlight.updateSettings({ maxSessions })
+                        if (!result.ok) setNotice(result.reason)
+                      } catch {
+                        setNotice('Could not save the session count.')
+                      } finally {
+                        setSavingSessionLimit(false)
+                      }
+                    }}
+                  />
+                )}
+                <div className={styles.sourceWorkspace}>
+                  <button
+                    className={styles.sourceControl}
+                    aria-label={`Filter applications: ${sourceLabel}`}
+                    aria-haspopup="menu"
+                    aria-expanded={sourceMenu !== null}
+                    onClick={(event) => {
+                      const box = event.currentTarget.getBoundingClientRect()
+                      setSourceMenu({
+                        x: box.left,
+                        y: box.bottom + 2,
+                        anchor: event.currentTarget.closest('header') ?? event.currentTarget,
+                      })
+                    }}
+                  >
+                    {sourceLabel}
+                  </button>
+                  <span aria-hidden="true">·</span>
+                  <button
+                    className={styles.workspaceControl}
+                    aria-label={`Choose workspace: ${workspaceName}`}
+                    onClick={() => setPickingWorkspace(true)}
+                  >
+                    {workspaceName}
+                  </button>
+                </div>
+                {
+                  <button
+                    className={agentBusy ? `${styles.gear} ${styles.agentBusy}` : styles.gear}
+                    onClick={() => setShowAgent(true)}
+                    aria-label={agentBusy ? en.agent.busy : en.agent.open}
+                    title={agentBusy ? en.agent.busy : en.agent.open}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                      <path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z" />
+                    </svg>
+                  </button>
+                }
+                <button
+                  className={styles.gear}
+                  onClick={() => setShowSettings(true)}
+                  aria-label={en.settings.open}
+                  title={en.settings.open}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M6.6 1h2.8l.4 2 1.3.7 1.9-.7 1.4 2.4-1.5 1.3v1.6l1.5 1.3-1.4 2.4-1.9-.7-1.3.7-.4 2H6.6l-.4-2-1.3-.7-1.9.7L1.6 9.6l1.5-1.3V6.7L1.6 5.4 3 3l1.9.7L6.2 3z" />
+                    <circle cx="8" cy="8" r="2.2" />
+                  </svg>
+                </button>
               </>
+            )}
+          </header>
+
+          {showVoiceActivity && (
+            <VoicePresence
+              label={motion.label}
+              caption={motionCaption}
+              inactiveMicrophone={agentVisible && inactiveMicrophone}
+            />
+          )}
+
+          {pickingWorkspace && (
+            <WorkspacePicker
+              provider={provider}
+              onProviderChange={(selection) => void selectApplications(selection)}
+              workspaces={pickerWorkspaces}
+              chosen={pickerId(chosen)}
+              allDrives={allDrives}
+              onPickAll={() => void pickWorkspace(null, true)}
+              onPick={(id) => void pickWorkspace(id)}
+            />
+          )}
+
+          {changesFor && !pickingWorkspace && (
+            <ChangesView
+              key={`${changesFor.scope}:${changesFor.sessionId}`}
+              sessionId={changesFor.sessionId}
+              scope={changesFor.scope}
+              stamp={JSON.stringify(
+                (worktreeDiff ? changesThread?.git : changesThread?.threadDiff) ?? null,
+              )}
+            />
+          )}
+
+          {openMic === 'blocked' && (
+            <p className={styles.notice} role="alert">
+              {en.openMic.blocked}
+            </p>
+          )}
+          {micLive && openMic !== 'blocked' && (
+            <p className={styles.notice} role="status" data-mic-mode={micMode}>
+              {gptLive
+                ? openMic === 'off'
+                  ? 'Opening microphone and connecting GPT Live…'
+                  : livePhase === 'live'
+                    ? 'Live · Speak naturally; press the hotkey to finish'
+                    : livePhase === 'waiting'
+                      ? 'Live · Waiting for a reply; you can keep talking'
+                      : livePhase === 'error'
+                        ? 'GPT Live could not connect'
+                        : livePhase === 'ready'
+                          ? 'GPT Live ready · Speak naturally'
+                          : 'Connecting GPT Live · Speak now; your audio is buffered'
+                : micMode === 'agent'
+                  ? 'Local STT · Listening; text goes to the Agent'
+                  : en.openMic.mode(micMode)}
+            </p>
+          )}
+          {showAgent && !pickingWorkspace && !changesFor && (
+            <>
+              {liveError && (
+                <div className={styles.picking} aria-label="Live voice error">
+                  <p role="alert">{liveError}</p>
+                  {openingDraft && (
+                    <>
+                      <span className={styles.pickText}>{openingDraft}</span>
+                      <button onClick={() => window.threadlight.copyText(openingDraft)}>
+                        Copy opening message
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+              <AgentView />
+            </>
+          )}
+
+          <SharedSpacesView
+            currentRoot={snapshot.currentWorkspace?.replace(/^(claude|codex):/, '') ?? null}
+            workspaces={pickerWorkspaces.map((w) => ({
+              id: w.id.replace(/^(claude|codex):/, ''),
+              name: w.name,
+            }))}
+            focusedRoot={
+              headerView === 'workspace' ? (focusId?.replace(/^(claude|codex):/, '') ?? null) : null
+            }
+            navigationRef={spacesNavigation}
+            visible={showMemory && !showAgent && !pickingWorkspace && changesFor === null}
+            sessions={snapshot.lookupSessions ?? snapshot.sessions}
+            onClose={() => {
+              setShowMemory(false)
+              window.threadlight.setStayOpen(hold !== 'normal')
+            }}
+          />
+          {showSettings && settings && !pickingWorkspace && !showAgent && !showMemory && (
+            <SettingsView
+              currentAgentProvider={agent.provider ?? undefined}
+              providerLocked={voice.state !== 'idle'}
+              settings={settings}
+              stt={stt}
+              version={version}
+              onPickWorkspace={() => setPickingWorkspace(true)}
+              onOpenMemory={() => {
+                setShowMemory(true)
+                window.threadlight.setStayOpen(true)
+              }}
+            />
+          )}
+
+          {/* Kept mounted (just hidden) while settings show, so a half-typed message survives. */}
+          <div className={styles.sessions} hidden={listHidden}>
+            {(hotkeyProblem || notice) && (
+              <p className={styles.notice}>{notice ?? hotkeyProblem}</p>
+            )}
+            {picking && (
+              <div className={styles.picking}>
+                <span className={styles.pickHead}>
+                  <span className={styles.pickPrompt}>
+                    {picking.heardThread
+                      ? en.voice.noMatch(picking.heardThread)
+                      : en.voice.pickThread}
+                  </span>
+                  {/* Not for any thread after all: throw it away. */}
+                  <button
+                    className={styles.pickClose}
+                    aria-label={en.voice.discard}
+                    title={en.voice.discard}
+                    onClick={() => setPicking(null)}
+                  >
+                    ×
+                  </button>
+                </span>
+                <span className={styles.pickText}>“{picking.text}”</span>
+              </div>
+            )}
+
+            <div
+              ref={threadList}
+              id="thread-list"
+              className={styles.list}
+              data-workspace-thread-list=""
+            >
+              {tree ? (
+                <WorkspaceTree
+                  workspaces={snapshot.workspaces}
+                  only={listMode === 'workspace' ? treeFocus : null}
+                  isOpen={isOpen}
+                  onToggle={toggleWorkspace}
+                  onShowMore={(id) => setMoreWorkspaces((list) => [...list, id])}
+                  emptyMessage={emptyWindow}
+                  renderRow={renderRow}
+                />
+              ) : (
+                <>
+                  {shown.length === 0 && (
+                    <p
+                      className={
+                        provider !== 'none' && view !== 'active'
+                          ? `${styles.empty} ${styles.emptyWindow}`
+                          : styles.empty
+                      }
+                    >
+                      {provider === 'none'
+                        ? en.sources.paused
+                        : view === 'active'
+                          ? en.panel.nothingWorking
+                          : emptyWindow}
+                    </p>
+                  )}
+                  {shown.map(renderRow)}
+                </>
+              )}
+            </div>
+
+            <ThreadScrollbar list={threadList} />
+            {target && compose && (
+              <Composer
+                key={`${target.id}:${compose.initialText ?? ''}`}
+                session={target}
+                relay={relays.get(target.id)}
+                stt={stt}
+                voiceState={voice.state}
+                level={voice.level}
+                onMic={() => void micToggle()}
+                heard={heard}
+                voiceError={voiceError}
+                initialText={compose.initialText}
+                countdownSeconds={compose.countdownSeconds}
+                cancelToken={cancelToken}
+                onClose={closeComposer}
+              />
             )}
           </div>
 
-          {target && compose && (
-            <Composer
-              key={`${target.id}:${compose.initialText ?? ''}`}
-              session={target}
-              relay={relays.get(target.id)}
-              stt={stt}
-              voiceState={voice.state}
-              level={voice.level}
-              onMic={() => void micToggle()}
-              heard={heard}
-              voiceError={voiceError}
-              initialText={compose.initialText}
-              countdownSeconds={compose.countdownSeconds}
-              cancelToken={cancelToken}
-              onClose={closeComposer}
+          <div className={styles.usageBars} data-parallel={provider === 'both' || undefined}>
+            {workspaceView ? (
+              <WorkspaceResize
+                height={workspaceHeight}
+                maxHeight={maxHeight}
+                saving={savingWorkspaceHeight}
+                onPreview={setWorkspaceDragHeight}
+                onCommit={(height) => void saveWorkspaceHeight(height)}
+              >
+                {usageBars}
+              </WorkspaceResize>
+            ) : (
+              usageBars
+            )}
+          </div>
+
+          {menu && (
+            <ContextMenu
+              x={menu.x}
+              y={menu.y}
+              items={menuItems(menu.session)}
+              onClose={() => setMenu(null)}
+            />
+          )}
+          {listMenu && (
+            <ContextMenu
+              x={listMenu.x}
+              y={listMenu.y}
+              items={listMenuItems}
+              onClose={() => setListMenu(null)}
+            />
+          )}
+          {sourceMenu && (
+            <ContextMenu
+              x={sourceMenu.x}
+              y={sourceMenu.y}
+              anchor={sourceMenu.anchor}
+              items={sourceMenuItems}
+              onClose={() => setSourceMenu(null)}
             />
           )}
         </div>
-
-        <div className={styles.usageBars} data-parallel={provider === 'both' || undefined}>
-          {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
-          {usage && enabled.includes('claude') && (
-            <UsageBar
-              usage={usage}
-              weekly={view === 'all' && !listHidden}
-              source={provider === 'both' ? 'Claude' : undefined}
-            />
-          )}
-          {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
-        </div>
-
-        {menu && (
-          <ContextMenu
-            x={menu.x}
-            y={menu.y}
-            items={menuItems(menu.session)}
-            onClose={() => setMenu(null)}
-          />
-        )}
-        {listMenu && (
-          <ContextMenu
-            x={listMenu.x}
-            y={listMenu.y}
-            items={listMenuItems}
-            onClose={() => setListMenu(null)}
-          />
-        )}
-        {sourceMenu && (
-          <ContextMenu
-            x={sourceMenu.x}
-            y={sourceMenu.y}
-            anchor={sourceMenu.anchor}
-            items={sourceMenuItems}
-            onClose={() => setSourceMenu(null)}
-          />
-        )}
       </div>
     </PanelRoomContext.Provider>
   )

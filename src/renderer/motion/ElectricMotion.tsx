@@ -89,19 +89,31 @@ export function ElectricMotion({
       const telemetry = JSON.stringify(value)
       settled = telemetry === lastTelemetry ? settled + delta : 0
       lastTelemetry = telemetry
-      advancePose(pose, value, delta)
+      advancePose(pose, value, delta, edgeToEdge)
       const quiet = value.input.level < 0.008 && value.output.level < 0.008
       const staticMode = value.mode === 'idle' || value.mode === 'waiting' || value.mode === 'error'
-      const still = motion.matches || (quiet && staticMode)
+      // The quiet header keeps a slow colour drift. Waiting/error indicators and
+      // reduced motion remain still; other surfaces retain their resting policy.
+      const still =
+        motion.matches || (quiet && staticMode && (!edgeToEdge || value.mode !== 'idle'))
       if (!still) clock += delta / 1000
       const resting = still && settled > 1200
       if (width > 0 && height > 0 && renderer && (!resting || needsPaint)) {
-        const vertices = geometry.build(width, height, clock, pose, motion.matches, edgeToEdge)
+        const vertices = geometry.build(
+          width,
+          height,
+          clock,
+          pose,
+          motion.matches,
+          edgeToEdge,
+          value.mode === 'thinking' || value.mode === 'transcribing',
+        )
         renderer.draw(vertices, width, height, scale)
         needsPaint = false
       }
       // Poll only telemetry while at rest. Hidden/offscreen surfaces have no scheduled work.
-      const delay = resting || motion.matches || renderer?.kind === 'canvas' ? 50 : 0
+      const delay =
+        resting || motion.matches || renderer?.kind === 'canvas' ? 50 : edgeToEdge && quiet ? 33 : 0
       if (delay)
         timer = window.setTimeout(() => {
           frame = requestAnimationFrame(draw)

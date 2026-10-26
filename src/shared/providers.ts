@@ -1,4 +1,5 @@
 import type { Provider, Session, Snapshot, TreeView } from './types'
+import { compareSessionOrder, recentSessions } from './sessionOrder'
 
 export const PROVIDERS: Provider[] = ['claude', 'codex']
 export const DEFAULT_ENABLED_PROVIDERS: Provider[] = ['claude']
@@ -38,16 +39,10 @@ export function combinedSnapshot(
   const providers = PROVIDERS.filter((provider) => enabled.includes(provider))
   if (providers.length === 1)
     return { ...snapshots[providers[0]!], provider: providers[0], providers }
-  const order = { working: 0, waiting: 1, idle: 2 }
   const sessions: Session[] = providers.flatMap((provider) =>
     snapshots[provider].sessions.map((session) => ({ ...session, provider })),
   )
-  sessions.sort(
-    (a, b) =>
-      order[a.state] - order[b.state] ||
-      b.lastActiveAt - a.lastActiveAt ||
-      a.id.localeCompare(b.id),
-  )
+  sessions.sort(compareSessionOrder)
   const current = [...providers].sort(
     (a, b) =>
       Math.max(0, ...snapshots[b].sessions.map((s) => s.lastActiveAt)) -
@@ -57,7 +52,7 @@ export function combinedSnapshot(
   return {
     providers,
     codexUsage: providers.includes('codex') ? snapshots.codex.codexUsage : undefined,
-    sessions: sessions.slice(0, max),
+    sessions: recentSessions(sessions, max),
     lookupSessions: sessions,
     workspaces: providers.flatMap((provider) =>
       snapshots[provider].workspaces.map((workspace) => ({

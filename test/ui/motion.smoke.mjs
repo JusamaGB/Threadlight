@@ -124,12 +124,34 @@ try {
             ok: false,
             reason: 'No shared memory in this visual test',
           }),
+          communicationRequest: async () => ({
+            ok: true,
+            value: {
+              messages: [],
+              nativeRequests: [],
+              workflows: [],
+              assignments: [],
+              questions: [],
+              events: [],
+              cursor: 0,
+              snapshotRequired: false,
+            },
+          }),
           getAgent: async () => agent,
           agentHistory: async () => [],
           agentModels: async () => ({ error: null, models: [] }),
           agentApps: async () => [],
           getOpenMicIndicator: async () => ({ live: false, level: 0 }),
           getMotion: async () => motion,
+          getAttentionMotion: async () => ({
+            active: window.location.search.includes('attention'),
+            provider: 'claude',
+            width: 140,
+            height: 300,
+            x: 70,
+            y: 11,
+            floor: 280,
+          }),
           setMotion: (value) => {
             window.motionProof.telemetry = value
           },
@@ -210,7 +232,10 @@ try {
   assert.ok(idlePixels.span > 0.99, 'quiet header waveform reaches both panel edges')
   const activity = page.getByRole('region', { name: 'Voice activity' })
   assert.equal(await activity.locator('p').count(), 0, 'empty speech has no reserved caption')
-  assert.ok((await activity.boundingBox()).height < 32, 'idle activity stays compact')
+  assert.ok(
+    (await activity.boundingBox()).height < 38,
+    'idle activity reserves only the motion band',
+  )
   await activity
     .getByRole('status')
     .filter({ hasText: /^Ready - No active Mic$/ })
@@ -224,6 +249,11 @@ try {
   )
   assert.equal(await page.getByText(/^Ask it to do something\. Available tools/).count(), 0)
   await capture('agent-idle-header', page.locator('[data-card]'))
+  await page.waitForTimeout(1300)
+  const drift = await readMotionFrame(
+    page.getByRole('region', { name: 'Voice waveform', exact: true }),
+  )
+  assert.notEqual(drift.hash, idlePixels.hash, 'quiet header colours continue evolving')
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.locator('[class*="usageTrack"]').waitFor()
   assert.equal(await page.getByRole('region', { name: 'Voice waveform', exact: true }).count(), 0)
@@ -236,9 +266,9 @@ try {
   const ribbonBounds = await ribbon.boundingBox()
   const cardBounds = await page.locator('[data-card]').boundingBox()
   const headerBounds = await page.locator('[data-card] > header').boundingBox()
-  assert.equal(ribbonBounds.height, 18)
+  assert.equal(ribbonBounds.height, 36)
   assert.equal(ribbonBounds.width, cardBounds.width - 2)
-  assert.equal(ribbonBounds.y + ribbonBounds.height / 2, headerBounds.y + headerBounds.height - 1)
+  assert.equal(ribbonBounds.y + 9, headerBounds.y + headerBounds.height - 1)
   assert.equal(
     await page.locator('header').getByRole('region', { name: 'Voice waveform' }).count(),
     1,
@@ -255,6 +285,9 @@ try {
   const first = await ribbon.locator('canvas').screenshot()
   await page.waitForTimeout(150)
   assert.notDeepEqual(await ribbon.locator('canvas').screenshot(), first)
+  const speechPixels = await readMotionFrame(ribbon)
+  assert.ok(speechPixels.bottom - speechPixels.top > 6, 'speech opens visibly around the divider')
+  assert.ok(speechPixels.top >= 0, 'upper crests remain inside their header band')
   await capture('thread-view-speaking', page.locator('[data-card]'))
   await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
   assert.equal(await page.locator('[data-card] canvas').count(), 1)
@@ -278,7 +311,7 @@ try {
     window.motionProof.transcribe('Show me how the voice ribbon becomes a Catherine wheel.'),
   )
   await stage.getByRole('status').filter({ hasText: 'Thinking' }).waitFor()
-  await page.waitForTimeout(500)
+  await page.waitForTimeout(1000)
   assert.ok((await stage.boundingBox()).height > before.height, 'speech grows the caption area')
   assert.equal(
     await stage.locator('p').innerText(),
@@ -287,6 +320,13 @@ try {
   assert.ok((await stage.locator('p').boundingBox()).height <= 52, 'long captions stay bounded')
   assert.equal(await page.evaluate(() => window.motionProof.stopped), 1)
   await capture('thinking', page.locator('[data-card]'))
+  const wheelPixels = await readMotionFrame(ribbon)
+  assert.ok(
+    wheelPixels.top < 9 && wheelPixels.bottom > 9,
+    `thinking wheel is centred on the divider: ${JSON.stringify(wheelPixels)}`,
+  )
+  assert.ok(wheelPixels.left < 3 && wheelPixels.right < 18, 'wheel hugs the left wall')
+  assert.ok(wheelPixels.span < 0.08, 'thinking settles into the connected compact wheel')
   const spin = await ribbon.locator('canvas').screenshot()
   await page.waitForTimeout(160)
   assert.notDeepEqual(await ribbon.locator('canvas').screenshot(), spin)
@@ -408,6 +448,17 @@ try {
   )
   await page.waitForTimeout(500)
   await capture('thinking-dot', page.locator('#root'))
+  let activeColours
+  for (let attempt = 0; attempt < 16; attempt++) {
+    activeColours = await readMotionFrame(page.locator('#root'))
+    if (activeColours.orange > 0 && activeColours.blue > 0) break
+    await page.waitForTimeout(100)
+  }
+  assert.ok(
+    activeColours.orange > 0 && activeColours.blue > 0,
+    `active dot renders orange strands and a blue shine: ${JSON.stringify(activeColours)}`,
+  )
+  await capture('thinking-dot-blue-orange', page.locator('#root'))
   await page.evaluate(() => {
     window.motionProof.emit('onOpenMicLive', true)
     window.motionProof.emit('onMotion', {
@@ -437,6 +488,55 @@ try {
   await page.waitForFunction(
     () => document.querySelector('[data-renderer]')?.dataset.renderer === 'canvas',
   )
+  await page.addInitScript(() => {
+    if (window.location.search.includes('attention'))
+      Date.now = () => window.motionProof.attentionClock ?? 1300
+  })
+  await page.goto(url + '/?view=attention')
+  const attention = page.locator('[data-attention-provider]')
+  await attention.waitFor()
+  let painted = await readMotionFrame(attention)
+  assert.ok(painted.orange > painted.blue, 'Claude attention uses the orange provider palette')
+  await capture('claude-attention-pool', attention)
+  await page.evaluate(() =>
+    window.motionProof.emit('onAttentionMotion', {
+      active: true,
+      provider: 'codex',
+      width: 140,
+      height: 300,
+      x: 70,
+      y: 11,
+      floor: 280,
+    }),
+  )
+  await page.locator('[data-attention-provider="codex"]').waitFor()
+  painted = await readMotionFrame(attention)
+  assert.ok(painted.blue > painted.orange, 'Codex attention uses the blue provider palette')
+  await capture('codex-attention-pool', attention)
+  await page.evaluate(() => {
+    window.motionProof.attentionClock = 2150
+  })
+  await page.waitForTimeout(100)
+  painted = await readMotionFrame(attention)
+  assert.ok(
+    painted.bottom > 260,
+    'the production liquid reaches its native taskbar collision plane',
+  )
+  await capture('codex-attention-splash', attention)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.waitForTimeout(150)
+  const hanging = await attention.screenshot()
+  await page.evaluate(() => {
+    window.motionProof.attentionClock = 50000
+  })
+  await page.waitForTimeout(150)
+  assert.deepEqual(
+    await attention.screenshot(),
+    hanging,
+    'reduced motion holds a provider-coloured wheel and bead steady',
+  )
+  await page.evaluate(() => window.motionProof.emit('onAttentionMotion', { active: false }))
+  await page.waitForFunction(() => !document.querySelector('[data-attention-provider]'))
   assert.deepEqual(errors, [])
   console.log(
     'PASS: real microphone analysis, speech/silence, content-sized captions, thinking morph, reduced motion, context loss, native WebRTC playback/mute/stop, compact pill and unavailable-WebGL fallback.',

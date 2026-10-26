@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IPC } from '../src/shared/ipc'
+import type { Session } from '../src/shared/types'
 
 const state = vi.hoisted(() => ({
   saved: { x: 1200, y: 200 },
@@ -32,6 +33,7 @@ vi.mock('electron', () => {
       }
       on = vi.fn()
       setAlwaysOnTop = vi.fn()
+      setIgnoreMouseEvents = vi.fn()
       loadFile = vi.fn()
       focus = vi.fn()
       hide() {
@@ -58,12 +60,130 @@ vi.mock('electron', () => {
 import { WindowManager } from '../src/main/windows'
 
 describe('panel movement and available height', () => {
+  it('uses the full work area for Workspace, keeps its top fixed on resize, and restores normal layout', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    expect(windows.setWorkspacePanel(true)).toEqual({
+      maxHeight: 1024,
+      opensDown: true,
+      fresh: false,
+    })
+    windows.resizePanel(1024)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 1024 })
+    windows.resizePanel(540)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 540 })
+    windows.dragDot(0, 50)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 58, height: 540 })
+    windows.endDrag()
+    expect(windows.setWorkspacePanel(false)).toEqual({
+      maxHeight: 782,
+      opensDown: true,
+      fresh: false,
+    })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 250, height: 540 })
+  })
+
+  it('keeps Workspace inside a smaller display and resets the layout on a fresh Active open', () => {
+    state.saved = { x: -300, y: 600 }
+    const windows = new WindowManager()
+    windows.openPanel()
+    expect(windows.setWorkspacePanel(true).maxHeight).toBe(704)
+    windows.resizePanel(2000)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 704 })
+    windows.resizePanel(400)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 400 })
+    windows.openPanel({ fresh: true })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 222, height: 400 })
+  })
+
   beforeEach(() => {
     vi.useFakeTimers()
     state.saved = { x: 1200, y: 200 }
     state.cursor = { x: 1205, y: 205 }
   })
   afterEach(() => vi.useRealTimers())
+
+  it('keeps the external wire gutter click-through while the card remains interactive', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    const bounds = windows.panel.getBounds()
+    expect(bounds.width).toBe(316)
+    state.cursor = { x: bounds.x + 8, y: bounds.y + 30 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor.x = bounds.x + 25
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+  })
+
+  it('accepts clicks on the header wire clip while the rest of the gutter passes through', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    const bounds = windows.panel.getBounds()
+    windows.setWorkspaceWireControl({ top: 1, height: 24 })
+    state.cursor = { x: bounds.x + 8, y: bounds.y + 40 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor.y = bounds.y + 12
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    // An upward-opening popup can move the header down within its native window.
+    windows.setWorkspaceWireControl({ top: 70, height: 24 })
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor.y = bounds.y + 80
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    windows.setWorkspaceWireControl(null)
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+  })
+
+  it('shows provider-coloured attention only while minimised, with capture taking priority', () => {
+    const windows = new WindowManager()
+    const thread = {
+      id: 'codex:needs-input',
+      state: 'waiting',
+      attention: null,
+      lastActiveAt: 10,
+    } as Session
+    windows.setAttention([thread])
+    expect(windows.attentionMotion.active).toBe(false)
+    windows.setClaudeRunning(true)
+    expect(windows.attentionMotion).toMatchObject({ active: true, provider: 'codex', floor: 840 })
+    windows.openPanel()
+    expect(windows.attentionMotion.active).toBe(false)
+    windows.closePanel()
+    expect(windows.attentionMotion.active).toBe(true)
+    windows.setOpenMicLive(true)
+    expect(windows.attentionMotion.active).toBe(false)
+    windows.setOpenMicLive(false)
+    windows.setTalking(true)
+    expect(windows.attentionMotion.active).toBe(false)
+    windows.setTalking(false)
+    expect(windows.attentionMotion.active).toBe(true)
+    windows.setAttention([])
+    expect(windows.attentionMotion.active).toBe(false)
+  })
+
+  it('keeps one waiting provider stable, then switches when that thread is answered', () => {
+    const windows = new WindowManager()
+    windows.setClaudeRunning(true)
+    const claude = {
+      id: 'claude-waiting',
+      state: 'waiting',
+      attention: null,
+      lastActiveAt: 10,
+    } as Session
+    const codex = { ...claude, id: 'codex:waiting', lastActiveAt: 20 } as Session
+    windows.setAttention([claude])
+    windows.setAttention([claude, codex])
+    expect(windows.attentionMotion.provider).toBe('claude')
+    windows.setAttention([{ ...claude, state: 'idle' }, codex])
+    expect(windows.attentionMotion.provider).toBe('codex')
+    windows.setClaudeRunning(false)
+    expect(windows.attentionMotion.active).toBe(false)
+  })
 
   it('refreshes room during each drag without resetting the expanded view', () => {
     const windows = new WindowManager()
@@ -155,7 +275,7 @@ describe('panel movement and available height', () => {
       opensDown: false,
       fresh: false,
     })
-    expect(windows.panel.getBounds()).toMatchObject({ x: -578, y: 8, height: 614 })
+    expect(windows.panel.getBounds()).toMatchObject({ x: -594, y: 8, height: 614 })
     windows.endDrag()
     windows.dragDot(0, 98)
     expect(windows.panel.webContents.send).toHaveBeenLastCalledWith(IPC.panelOpened, {

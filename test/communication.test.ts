@@ -506,6 +506,50 @@ describe('Workflow progression and native response authority', () => {
       f.service.execute('respond_native_request', { ...input, operationId: randomUUID() }, agent),
     ).rejects.toThrow('no longer')
   })
+  it.each([
+    ['What does Blue mean?', 'Blue', false],
+    ['Do not choose Blue', 'Blue', false],
+    ['Do not choose option 2', 'Green', false],
+    ['Choose Blue or Green', 'Blue', false],
+    ['Blue?', 'Blue', false],
+    ['Blue', 'Blue', true],
+    ['Please choose Blue', 'Blue', true],
+    ['Choose option 2', 'Green', true],
+  ])('requires an explicit question answer from "%s"', async (text, answer, allowed) => {
+    const f = fixture(),
+      id = randomUUID()
+    f.native.push({
+      id,
+      generation: id,
+      target: f.b,
+      kind: 'question',
+      title: 'Choose colour',
+      startedAt: 900,
+      expiresAt: 2000,
+      questions: [{ question: 'Colour?', options: [{ label: 'Blue' }, { label: 'Green' }] }],
+    })
+    f.service.focusRequest(id, f.human)
+    const input = {
+      operationId: randomUUID(),
+      id,
+      generation: id,
+      response: { action: 'answer', answers: { 'Colour?': answer } },
+    }
+    const actor: CommunicationActor = {
+      id: 'agent',
+      kind: 'agent',
+      humanInput: { id: 'human-turn', text, at: 1000 },
+    }
+    if (allowed) {
+      await f.service.execute('respond_native_request', input, actor)
+      expect(f.respondNative).toHaveBeenCalledTimes(1)
+    } else {
+      await expect(f.service.execute('respond_native_request', input, actor)).rejects.toThrow(
+        'explicit',
+      )
+      expect(f.respondNative).not.toHaveBeenCalled()
+    }
+  })
   it('paginates retained history without leaking one-off messages to other conversations', async () => {
     const f = fixture()
     f.workflow.paused = true

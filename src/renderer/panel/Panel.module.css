@@ -1,4 +1,10 @@
 /* The panel card. The window is sized to this card, so it must not stretch. */
+.panelStage {
+  position: relative;
+  width: 316px;
+  padding-left: 16px;
+  box-sizing: border-box;
+}
 .card {
   position: relative;
   box-sizing: border-box;
@@ -9,6 +15,12 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+.card[data-workspace-height] .sessions,
+.card[data-workspace-height] .sessions > .list {
+  flex: 0 1 auto;
+  min-height: 0;
 }
 
 /* ---------- header ---------- */
@@ -151,12 +163,14 @@
 
 /* All subpages share a right-hand back chevron and a centered title. */
 .back {
-  width: 14px;
-  order: 1;
-  margin-left: auto;
-  font-size: 16px;
-  line-height: 1;
-  color: var(--muted);
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--fg);
 }
 
 .pageHeading {
@@ -211,6 +225,7 @@
 
 /* The sessions part of the card; hidden (not removed) while settings show. */
 .sessions {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -283,8 +298,39 @@
 
 .list {
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--faint) transparent;
+  scrollbar-width: none;
+}
+
+.list::-webkit-scrollbar,
+.pickerResults::-webkit-scrollbar {
+  display: none;
+}
+
+.threadScrollTrack {
+  position: absolute;
+  right: 1px;
+  width: 6px;
+  z-index: 2;
+}
+
+.threadScrollThumb {
+  position: absolute;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.threadScrollThumb:hover,
+.threadScrollThumb:focus-visible {
+  border-color: color-mix(in srgb, var(--faint) 60%, transparent);
+}
+
+.threadScrollThumb:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--faint) 60%, transparent);
+  outline-offset: 1px;
 }
 
 .empty {
@@ -292,6 +338,25 @@
   padding: 10px 10px 6px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.emptyWindow {
+  text-align: center;
+}
+.timeWindowChoice {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+}
+.timeWindowChoice:hover {
+  text-decoration: underline;
+}
+.timeWindowError {
+  display: block;
+  margin-top: 4px;
+  color: var(--amber);
 }
 
 /* ---------- workspaces (the full list grouped like the Claude sidebar) ---------- */
@@ -347,13 +412,135 @@
 }
 
 /* Choosing the Workspace list's workspace: the current choice is in the accent colour. */
-.pickerPrompt {
-  margin: 0;
-  padding: 8px 10px 2px;
-  font-size: 11px;
-  color: var(--faint);
+.workspacePicker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
+.workspacePicker > :not(.pickerResults) {
+  flex: none;
+}
+
+.pickerControls {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 7px 8px;
+  padding: 8px 10px;
+}
+
+.pickerControls label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pickerControls input,
+.pickerControls select {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  height: 28px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+}
+
+.pickerLocation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 5px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pickerLocation button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.pickerLocation button:hover {
+  color: var(--fg);
+}
+
+.pickerLocation .pickerUseAll {
+  width: auto;
+  border: 0;
+  color: var(--muted);
+}
+
+.pickerUseAll:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+.pickerLocation .pickerUseAll[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.pickerLocation span,
+.pickerPath {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pickerResults {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  border-top: 1px solid var(--border);
+}
+
+.pickerFolder {
+  display: flex;
+}
+.pickerFolder > .workspaceHeader {
+  min-width: 0;
+}
+.pickerFolderName {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+.pickerPath {
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 400;
+}
+.pickerBrowse {
+  flex: none;
+  width: 26px;
+  color: var(--muted);
+}
+.pickerBrowse:hover {
+  color: var(--fg);
+  background: var(--border);
+}
+.pickerEmpty {
+  margin: 0;
+  padding: 10px;
+  color: var(--faint);
+  font-size: 11px;
+}
 .workspaceHeader[aria-pressed='true'],
 .workspaceHeader[aria-pressed='true'] .workspaceCount {
   color: var(--accent);
@@ -457,11 +644,11 @@
   pointer-events: none;
 }
 
-.contextRing[data-thinking] {
-  animation: contextThinking 0.9s linear infinite;
+.contextRing[data-active] {
+  animation: contextActivity 0.9s linear infinite;
 }
 
-@keyframes contextThinking {
+@keyframes contextActivity {
   from {
     transform: translate(-50%, -50%) rotate(0deg);
   }
@@ -478,6 +665,10 @@
 
 .ringTrack {
   stroke: var(--border);
+}
+
+.ringTrack[data-unknown] {
+  stroke: var(--muted);
 }
 
 .ringFill {
@@ -500,11 +691,6 @@
   flex: none;
   /* Idle threads show no dot (it would be on nearly every row); the space keeps titles aligned. */
   background: transparent;
-}
-
-.stateDot[data-state='working'] {
-  background: var(--red);
-  animation: rowPulse 1.4s ease-in-out infinite;
 }
 
 .stateDot[data-state='waiting'] {
@@ -563,7 +749,7 @@
   opacity: 0.8;
 }
 
-/* The expanded thread's git line: branch · to push · behind main · worktrees. */
+/* The expanded thread's compact git line: branch · to push. */
 .gitLine {
   margin-top: 1px;
   font-family: 'Cascadia Mono', Consolas, monospace;
@@ -601,6 +787,7 @@
   position: fixed;
   z-index: 13;
   box-sizing: border-box; /* so the cap below includes the padding and border */
+  width: max-content;
   max-width: calc(100vw - 8px);
   padding: 4px 8px;
   border: 1px solid var(--border);
@@ -627,6 +814,7 @@
 }
 
 .rowBottom > .age,
+.rowBottom > .diff,
 .rowBottom > .taskTimer {
   margin-left: 8px;
 }
@@ -936,7 +1124,7 @@ span.planStep {
 
 @media (prefers-reduced-motion: reduce) {
   .spinner,
-  .contextRing[data-thinking] {
+  .contextRing[data-active] {
     animation: none;
   }
 }
@@ -1470,13 +1658,13 @@ span.planStep {
 .taskPopup {
   position: fixed;
   z-index: 12;
-  /* The width cap TaskTimer measures against includes the padding and border. */
+  /* Shared hover placement measures the intrinsic content against the card width. */
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 160px;
-  max-width: min(280px, calc(100vw - 8px));
+  width: max-content;
+  max-width: calc(100vw - 8px);
   padding: 5px 8px 6px;
   background: var(--raised);
   border: 1px solid var(--border);
@@ -1485,6 +1673,7 @@ span.planStep {
   color: var(--fg);
   font-size: 11px;
   text-align: left;
+  pointer-events: none;
 }
 
 .taskHeading {
@@ -1504,9 +1693,8 @@ span.planStep {
 .taskLabel {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .taskLine .taskTime {
@@ -1537,19 +1725,36 @@ span.planStep {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -9px;
-  height: 18px;
+  bottom: -27px;
+  height: 36px;
   z-index: 3;
   pointer-events: none;
 }
 
 /* The plan's usage along the card's foot (UsageBar.tsx): a 2px line in a taller hover strip. */
 .usageBars {
+  position: relative;
   /* Reserve room so the final row remains above the usage lines. */
   flex: none;
   display: flex;
   flex-direction: column;
   z-index: 2;
+}
+
+.workspaceResizeArea {
+  display: flex;
+  flex-direction: column;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.workspaceResizeArea * {
+  cursor: inherit;
+}
+
+.workspaceResizeArea:focus-visible {
+  outline: 1px solid var(--faint);
+  outline-offset: -1px;
 }
 
 .usage {

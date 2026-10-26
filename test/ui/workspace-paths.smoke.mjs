@@ -53,6 +53,7 @@ export async function checkWorkspacePaths(page, capture) {
       'both adapters receive their original path spelling for loading all threads',
     )
     await page.getByRole('button', { name: 'Choose workspace: shared', exact: true }).click()
+    await page.getByRole('searchbox', { name: 'Search workspaces' }).fill('shared')
     const shared = page.getByRole('button', { name: /^shared/ })
     assert.equal(await shared.count(), 1, 'equivalent Windows paths share one picker row')
     await shared.click()
@@ -72,6 +73,7 @@ export async function checkWorkspacePaths(page, capture) {
     await waitForProviders(['claude', 'codex'])
   }
   await checkMergedWorkspace(page, capture)
+  await checkAllDrivesWorkspace(page, capture)
   await page.evaluate(async (initial) => {
     window.proof.emit('onSnapshot', await window.mockWorkspacePaths(null))
     await window.threadlight.updateSettings(initial)
@@ -79,6 +81,79 @@ export async function checkWorkspacePaths(page, capture) {
   }, initial)
   console.log(
     'PASS: Both + Workspace loads both path formats, deduplicates the picker and preserves provider IDs.',
+  )
+}
+
+async function checkAllDrivesWorkspace(page, capture) {
+  const paths = { claude: 'C:/Projects/shared', codex: 'Z:/General' }
+  await page.evaluate(async (paths) => {
+    await window.threadlight.updateSettings({
+      enabledProviders: ['claude', 'codex'],
+      listMode: 'workspace',
+      workspaceAllDrives: false,
+    })
+    window.proof.emit('onSnapshot', await window.mockWorkspacePaths(paths))
+  }, paths)
+  await page.getByRole('button', { name: /^Choose workspace:/ }).click()
+  await page.getByRole('button', { name: 'Use All Drives', exact: true }).click()
+  const combined = async () => {
+    await page.getByRole('button', { name: 'Choose workspace: All drives', exact: true }).waitFor()
+    await page.waitForFunction(() => document.querySelectorAll('[data-session-id]').length === 2)
+    assert.equal(await page.locator('header [data-thread-view]').innerText(), 'Workspace · 2')
+  }
+  await combined()
+  assert.equal(
+    await page.evaluate(async () => (await window.threadlight.getSettings()).workspaceAllDrives),
+    true,
+  )
+  assert.deepEqual(
+    await page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'views').at(-1)[1]),
+    ['claude', 'codex'].map((provider) => ({
+      provider,
+      view: { expanded: [paths[provider]], showAll: [paths[provider]] },
+    })),
+  )
+  await capture('workspace-all-drives')
+  await page.reload()
+  await page.locator('header [data-thread-view]').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Workspace', exact: true }).click()
+  await combined()
+  for (const [name, count] of [
+    ['Claude', 1],
+    ['Codex', 1],
+    ['Both', 2],
+  ]) {
+    await page.getByRole('button', { name: /^Filter applications:/ }).click()
+    await page.getByRole('menuitem', { name, exact: true }).click()
+    await page.waitForFunction(
+      (count) => document.querySelectorAll('[data-session-id]').length === count,
+      count,
+    )
+    await page.getByRole('button', { name: 'Choose workspace: All drives', exact: true }).waitFor()
+  }
+  await page.getByRole('button', { name: 'Choose workspace: All drives', exact: true }).click()
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Use All Drives', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  )
+  await page.getByRole('searchbox', { name: 'Search workspaces' }).fill('General')
+  await page.locator('#workspace-folders button[title="Z:/General"]').click()
+  await page.waitForFunction(() => document.querySelectorAll('[data-session-id]').length === 1)
+  assert.equal(
+    await page.evaluate(async () => (await window.threadlight.getSettings()).workspaceAllDrives),
+    false,
+  )
+  await page.getByRole('button', { name: 'Choose workspace: shared', exact: true }).waitFor()
+  assert.deepEqual(
+    await page
+      .locator('[data-session-id]')
+      .evaluateAll((rows) => rows.map((row) => row.dataset.provider)),
+    ['codex'],
+  )
+  console.log(
+    'PASS: Use All Drives loads both drives, persists across reload/provider changes, and choosing a folder restores exact-folder scope.',
   )
 }
 
@@ -97,6 +172,7 @@ async function checkMergedWorkspace(page, capture) {
       state,
       attention: null,
       lastActiveAt: now - hoursAgo * 3600_000,
+      orderAt: now - hoursAgo * 3600_000,
     },
     children,
   })
@@ -153,14 +229,22 @@ async function checkMergedWorkspace(page, capture) {
   await waitForOrder(order)
   oldest.session.lastActiveAt = now + 1000
   await emit()
+  await waitForOrder(order)
+  oldest.session.state = 'waiting'
+  oldest.session.lastActiveAt = now + 2000
+  await emit()
+  await waitForOrder(order)
+  oldest.session.state = 'idle'
+  oldest.session.orderAt = now + 3000
+  await emit()
   await waitForOrder(['claude-oldest', ...order.slice(0, -1)])
   assert.equal(
     await middleButton.getAttribute('aria-expanded'),
     'true',
-    'activity reordering preserves the expanded chat',
+    'completion reordering preserves the expanded chat',
   )
   await middleButton.click()
   console.log(
-    'PASS: mixed provider chronology, stable ties, nested side threads, workspace isolation and live reordering.',
+    'PASS: mixed provider completion order, running/waiting stability, stable ties, nesting, workspace isolation and completion reordering.',
   )
 }

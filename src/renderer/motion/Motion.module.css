@@ -25,12 +25,13 @@
 
 .presence {
   flex: none;
-  padding: 6px 10px;
+  padding: 12px 10px 6px;
   border-bottom: 1px solid var(--border);
 }
 
 .surface[data-edge-to-edge][data-renderer='unavailable']::after {
   width: 100%;
+  top: 9px;
 }
 
 .status {

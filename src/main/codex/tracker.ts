@@ -22,6 +22,8 @@ import type { Usage } from '../../shared/usage'
 import { codexDisplayText, codexToolActivity, codexUserRequest } from './presentation'
 import { codexState } from './state'
 import { codexGitFolders, codexPullRequest } from './badges'
+import { CompletionOrder } from '../sessions/completionOrder'
+import { compareSessionOrder, recentSessions } from '../../shared/sessionOrder'
 
 type Row = Record<string, unknown>
 const json = (value: unknown): Row => {
@@ -201,6 +203,7 @@ export function summarizeCodex(records: Row[]): CodexSummary {
 }
 
 export class CodexTracker {
+  private completionOrder = new CompletionOrder()
   private windowHours = 24
   private maxSessions = 10
   private lastError = ''
@@ -373,9 +376,9 @@ export class CodexTracker {
             if (priorPlan) records.unshift(json(priorPlan['item_json']))
             turn = (history
               .prepare(
-                'SELECT status,started_at,completed_at FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1',
+                'SELECT status,started_at,completed_at,(SELECT completed_at FROM thread_turns WHERE thread_id=? AND completed_at IS NOT NULL ORDER BY rollout_ordinal DESC LIMIT 1) AS last_completed_at FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1',
               )
-              .get(id) || {}) as Row
+              .get(id, id) || {}) as Row
           } catch {
             /* use rollout fallback */
           }
@@ -466,8 +469,9 @@ export class CodexTracker {
             return pr ? [pr] : []
           }),
         }
-        built.set(key, session)
-        return session
+        const ordered = this.completionOrder.observe(session, ms(turn['last_completed_at']))
+        built.set(key, ordered)
+        return ordered
       }
       const buildList = async (rows: Row[]) => {
         const list: Session[] = []
@@ -480,13 +484,18 @@ export class CodexTracker {
       }
       const recent = valid.filter((row) => activity(row) > cutoff).slice(0, 200)
       const sessions = await buildList(recent)
-      const order = { working: 0, waiting: 1, idle: 2 }
-      sessions.sort((a, b) => order[a.state] - order[b.state] || b.lastActiveAt - a.lastActiveAt)
+      sessions.sort(compareSessionOrder)
       const expanded = new Set(view.expanded ?? (currentWorkspace ? [currentWorkspace] : [])),
         all = new Set(view.showAll)
       const workspaces: Workspace[] = []
       for (const [cwd, members] of groups) {
-        const recentMembers = members.filter((row) => activity(row) > cutoff)
+        const orderedAt = (row: Row) =>
+          this.completionOrder.time(codexKey(String(row['id'])), activity(row))
+        const recentMembers = members
+          .filter((row) => activity(row) > cutoff)
+          .sort(
+            (a, b) => orderedAt(b) - orderedAt(a) || String(a['id']).localeCompare(String(b['id'])),
+          )
         if (!recentMembers.length) continue
         const list = expanded.has(cwd)
           ? await buildList(all.has(cwd) ? recentMembers : recentMembers.slice(0, this.maxSessions))
@@ -523,7 +532,7 @@ export class CodexTracker {
       return {
         provider: 'codex',
         codexUsage: usage,
-        sessions: sessions.slice(0, this.maxSessions),
+        sessions: recentSessions(sessions, this.maxSessions),
         workspaces,
         allWorkspaces: [...groups.keys()].map((id) => ({
           id,

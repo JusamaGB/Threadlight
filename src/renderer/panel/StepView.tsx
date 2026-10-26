@@ -17,7 +17,7 @@ interface StepViewProps {
   cwd: string | null
   gitRoot: string | null
   /** Changes whenever the thread does something, so a step in progress keeps up. */
-  version: number
+  version: number | string
 }
 
 /**
@@ -111,7 +111,7 @@ function FileList({
   rows: FileRow[]
   cwd: string | null
   pending: boolean
-  diff?: { sessionId: string; gitRoot: string | null; version: number }
+  diff?: { sessionId: string; gitRoot: string | null; version: number | string }
 }) {
   const [open, setOpen] = useState<string | null>(null)
   if (!rows.length) return null
@@ -168,7 +168,7 @@ function FileList({
             <FileDiffView
               key={`${row.path}:${diff.version}`}
               sessionId={diff.sessionId}
-              path={repositoryPath(row.path, cwd, diff.gitRoot)}
+              path={repositoryPath(row.path, cwd, diff.gitRoot) ?? row.path.replace(/\\/g, '/')}
               stamp={String(diff.version)}
               resolvePath
             />

@@ -77,7 +77,7 @@ export async function checkMemory(page, proof, capture) {
     })
   await view.getByRole('button', { name: /More folders/ }).click()
   await view.getByRole('button', { name: /Open questions 0 items/ }).waitFor()
-  assert.equal(Math.round((await page.locator('#root > div').boundingBox()).width), 300)
+  assert.equal(Math.round((await page.locator('[data-card]').boundingBox()).width), 300)
   await capture('memory-map')
   const pairing = {
     action: 'request',

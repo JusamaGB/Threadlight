@@ -23,6 +23,8 @@ import { oneLine } from './json'
 import { liveSessionIds } from './liveSessions'
 import type { ClaudePaths } from './paths'
 import { TranscriptReader, type TranscriptSummary } from './transcript'
+import { CompletionOrder } from './completionOrder'
+import { compareSessionOrder, recentSessions } from '../../shared/sessionOrder'
 
 /** "Working" with no heartbeat for this long means the session crashed or was killed. */
 export const STALE_MS = 10 * 60 * 1000
@@ -52,10 +54,10 @@ interface TranscriptFile {
   mtimeMs: number
 }
 
-const ORDER: Record<SessionState, number> = { working: 0, waiting: 1, idle: 2 }
 const DEFAULT_VIEW: TreeView = { expanded: null, showAll: [] }
 
 export class Tracker {
+  private completionOrder = new CompletionOrder()
   private readers = new Map<string, TranscriptReader>()
   private appRecords: AppRecordIndex
   private windowMs = 0
@@ -92,7 +94,7 @@ export class Tracker {
       return session
     }
 
-    // The recent list: everything active within the window, working first.
+    // Time-window membership follows live activity; order follows task completion.
     const cutoff = now - this.windowMs
     const recentIds = new Set(hooks.keys())
     for (const [id, file] of files) if (file.mtimeMs > cutoff) recentIds.add(id)
@@ -104,7 +106,7 @@ export class Tracker {
       if (hidden && session.cwd.toLowerCase() === hidden) continue
       recent.push(session)
     }
-    recent.sort(byStateThenActivity)
+    recent.sort(compareSessionOrder)
 
     // The workspace tree: every thread the Claude app has, grouped like its sidebar.
     const records = [...apps.values()].filter((app) => !app.archived && app.workspace)
@@ -193,7 +195,9 @@ export class Tracker {
             roots.push(app)
           }
         }
-        roots.sort((a, b) => activity(b) - activity(a))
+        const orderedAt = (app: AppRecord) =>
+          this.completionOrder.time(app.cliSessionId, activity(app))
+        roots.sort((a, b) => orderedAt(b) - orderedAt(a) || a.appId.localeCompare(b.appId))
         const shown = showAll.has(key) ? roots : roots.slice(0, this.maxSessions)
         workspace.hiddenCount = roots.length - shown.length
         const seen = new Set<string>()
@@ -201,7 +205,7 @@ export class Tracker {
           seen.add(app.appId)
           const kids = (childrenOf.get(app.appId) ?? [])
             .filter((kid) => !seen.has(kid.appId)) // guards against a loop in bad data
-            .sort((a, b) => activity(b) - activity(a))
+            .sort((a, b) => orderedAt(b) - orderedAt(a) || a.appId.localeCompare(b.appId))
           return {
             session: await build(app.cliSessionId),
             children: await Promise.all(kids.map(node)),
@@ -217,7 +221,7 @@ export class Tracker {
     workspaces.sort(byName)
 
     return {
-      sessions: recent.slice(0, this.maxSessions),
+      sessions: recentSessions(recent, this.maxSessions),
       workspaces,
       allWorkspaces: [...allWorkspaces.values()].sort(byName),
       currentWorkspace,
@@ -248,40 +252,43 @@ export class Tracker {
       now,
     })
     const cwd = hook?.cwd ?? app?.cwd ?? summary?.cwd ?? ''
-    return {
-      id,
-      appId: app?.appId ?? null,
-      title: oneLine(app?.title ?? summary?.title ?? lastPathPart(cwd) ?? id.slice(0, 8)),
-      state,
-      tracked: hook !== undefined,
-      cwd,
-      lastActiveAt,
-      focusedAt: app?.lastFocusedAt ?? 0,
-      stage: stageLine(state, summary),
-      thinking: isThinking(state, summary),
-      lastPrompt: summary?.lastPrompt ?? null,
-      plan: summary?.plan ?? [],
-      currentStep: summary?.currentStep ?? null,
-      recap: summary?.recap ?? null,
-      lastReply: summary?.lastReply ?? null,
-      lastAction: summary?.lastAction ?? null,
-      // The Claude app's own turn timer when it tracks the thread; else the prompt's time.
-      turnStartedAt: app?.lastTurnEdgeAt || summary?.turnStartedAt || null,
-      // A task whose thread was closed never reports back; past a while, stop counting it.
-      // A foreground command counts only while its thread works: one whose result never came
-      // (the thread stopped) is not still running.
-      backgroundTasks: (summary?.backgroundTasks ?? []).filter(
-        (task) =>
-          now - task.startedAt < TASK_GIVE_UP_MS && (!task.foreground || state === 'working'),
-      ),
-      git: this.options.gitFor?.(gitFolder(app, summary, cwd)) ?? null,
-      live: live.has(id),
-      contextUsed: contextUsed(summary, app?.model ?? null),
-      attention: attentionFor(state, summary, this.options.held?.(id) ?? null),
-      permissionMode: app?.permissionMode ?? null,
-      model: app?.model ?? null,
-      pullRequests: app?.pullRequests ?? [],
-    }
+    return this.completionOrder.observe(
+      {
+        id,
+        appId: app?.appId ?? null,
+        title: oneLine(app?.title ?? summary?.title ?? lastPathPart(cwd) ?? id.slice(0, 8)),
+        state,
+        tracked: hook !== undefined,
+        cwd,
+        lastActiveAt,
+        focusedAt: app?.lastFocusedAt ?? 0,
+        stage: stageLine(state, summary),
+        thinking: isThinking(state, summary),
+        lastPrompt: summary?.lastPrompt ?? null,
+        plan: summary?.plan ?? [],
+        currentStep: summary?.currentStep ?? null,
+        recap: summary?.recap ?? null,
+        lastReply: summary?.lastReply ?? null,
+        lastAction: summary?.lastAction ?? null,
+        // The Claude app's own turn timer when it tracks the thread; else the prompt's time.
+        turnStartedAt: app?.lastTurnEdgeAt || summary?.turnStartedAt || null,
+        // A task whose thread was closed never reports back; past a while, stop counting it.
+        // A foreground command counts only while its thread works: one whose result never came
+        // (the thread stopped) is not still running.
+        backgroundTasks: (summary?.backgroundTasks ?? []).filter(
+          (task) =>
+            now - task.startedAt < TASK_GIVE_UP_MS && (!task.foreground || state === 'working'),
+        ),
+        git: this.options.gitFor?.(gitFolder(app, summary, cwd)) ?? null,
+        live: live.has(id),
+        contextUsed: contextUsed(summary, app?.model ?? null),
+        attention: attentionFor(state, summary, this.options.held?.(id) ?? null),
+        permissionMode: app?.permissionMode ?? null,
+        model: app?.model ?? null,
+        pullRequests: app?.pullRequests ?? [],
+      },
+      hook?.completedAt,
+    )
   }
 
   /** The transcript a session was last read from, if any. */
@@ -331,10 +338,6 @@ export class Tracker {
     }
     return found
   }
-}
-
-function byStateThenActivity(a: Session, b: Session): number {
-  return ORDER[a.state] - ORDER[b.state] || b.lastActiveAt - a.lastActiveAt
 }
 
 /** State without reading the transcript, for collapsed workspaces' header dots. */

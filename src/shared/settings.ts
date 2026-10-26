@@ -1,11 +1,12 @@
 // Threadlight's settings: one schema, validated with zod, with a default for every field.
 // The main process owns the file; the UI only ever sends changes through IPC.
-// Every setting here has a control in the panel's settings view.
+// Settings are controlled through the panel and its settings view.
 
 import { z } from 'zod'
 import { DEFAULT_ENABLED_PROVIDERS, PROVIDERS } from './providers'
 
 export const SETTINGS_VERSION = 1
+export const SESSION_WINDOW_HOURS = [6, 12, 24, 72, 168] as const
 
 export const settingsSchema = z.object({
   enabledProviders: z
@@ -32,6 +33,8 @@ export const settingsSchema = z.object({
   openOn: z.enum(['hover', 'click']).default('hover'),
   /** Start Threadlight when you sign in to Windows. Off until you turn it on. */
   launchAtSignIn: z.boolean().default(false),
+  /** The header's wire clip connects/disconnects workspace links. Opt in on first use. */
+  workspaceWires: z.boolean().default(false),
   /**
    * What the full list (the "recent" view) shows: the most recent threads, one workspace with
    * all its threads (the workspace of the thread last open in Claude), or every workspace as
@@ -40,10 +43,14 @@ export const settingsSchema = z.object({
   listMode: z.enum(['recent', 'workspace', 'all']).default('recent'),
   /** The workspace the Workspace list shows (its folder), or null to follow the Claude app. */
   focusWorkspace: z.string().min(1).max(1000).nullable().default(null),
+  /** Workspace view combines all known folders from the enabled applications. */
+  workspaceAllDrives: z.boolean().default(false),
   /** Sessions active within this many hours are listed. */
   listWindowHours: z.number().int().min(1).max(168).default(24),
   /** At most this many sessions are listed. */
   maxSessions: z.number().int().min(3).max(25).default(10),
+  /** Workspace's picked maximum height in logical pixels; null uses the available work area. */
+  workspacePanelHeight: z.number().int().min(120).max(16384).nullable().default(null),
   /**
    * How long an agent conversation stays open after its last reply, in minutes; then the next
    * message starts a fresh one (the old one stays on disk). 0: until it is ended by hand.

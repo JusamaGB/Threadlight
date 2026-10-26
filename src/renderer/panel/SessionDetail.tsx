@@ -54,8 +54,10 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
           </span>
         )}
       </div>
-      {/* Where its git folder stands: branch, to push, behind main, worktrees. */}
-      {session.git && <div className={styles.gitLine}>{gitLine(session.git)}</div>}
+      {/* Keep the branch and worktree path clear of repository-wide status counts. */}
+      {session.git && (
+        <div className={styles.gitLine}>{gitLine(session.git, { compact: true })}</div>
+      )}
 
       {message && (
         <Section label={en.detail.yourMessage}>
@@ -96,7 +98,7 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
                     item={item}
                     cwd={session.cwd}
                     gitRoot={session.git?.root ?? null}
-                    version={session.lastActiveAt}
+                    version={`${session.lastActiveAt}:${session.threadDiff?.revision ?? ''}`}
                   />
                 )}
               </li>

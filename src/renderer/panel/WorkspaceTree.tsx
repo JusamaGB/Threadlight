@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 
 import type { Session, ThreadNode, Workspace } from '../../shared/types'
+import { compareSessionOrder } from '../../shared/sessionOrder'
 import { en } from '../i18n/en'
 import styles from './Panel.module.css'
 
@@ -12,7 +13,7 @@ interface WorkspaceTreeProps {
   onToggle: (workspaceId: string) => void
   onShowMore: (workspaceId: string) => void
   /** Shown when nothing falls inside the chosen time window. */
-  emptyMessage: string
+  emptyMessage: ReactNode
   /** Renders a thread exactly as the recent list does. */
   renderRow: (session: Session) => ReactNode
 }
@@ -27,7 +28,7 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
   if (shown.length === 0) {
     return (
       <>
-        <p className={styles.empty}>{props.emptyMessage}</p>
+        <p className={`${styles.empty} ${styles.emptyWindow}`}>{props.emptyMessage}</p>
       </>
     )
   }
@@ -36,12 +37,7 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
     // One selected folder can contain several providers. Merge its root threads by activity;
     // children stay attached to their parent, and adapter-owned arrays are never reordered.
     const threads = shown.flatMap((workspace) => workspace.threads)
-    if (shown.length > 1)
-      threads.sort(
-        (a, b) =>
-          b.session.lastActiveAt - a.session.lastActiveAt ||
-          a.session.id.localeCompare(b.session.id),
-      )
+    if (shown.length > 1) threads.sort((a, b) => compareSessionOrder(a.session, b.session))
     return (
       <section className={styles.workspace}>
         <div className={styles.workspaceThreads}>

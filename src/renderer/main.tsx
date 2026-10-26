@@ -7,12 +7,14 @@ import { FloatingDot } from './dot/Dot'
 import { useSessions } from './hooks/useSessions'
 import { useSettings } from './hooks/useSettings'
 import { Panel } from './panel/Panel'
+import { AttentionView, useAttentionMotion } from './motion/AttentionView'
 import './theme.css'
 
 // Each window loads this page with ?view=… and renders only its own piece.
 const view = new URLSearchParams(window.location.search).get('view') ?? 'dot'
 
 function DotView() {
+  const attention = useAttentionMotion()
   const sessions = useSessions()
   const settings = useSettings()
   const [talk, setTalk] = useState<TalkState>('idle')
@@ -56,19 +58,25 @@ function DotView() {
     }
   }, [])
   return (
-    <FloatingDot
-      providers={settings?.enabledProviders}
-      working={sessions.some((s) => s.state === 'working')}
-      talk={talk}
-      openOn={settings?.openOn ?? 'hover'}
-      openMic={openMic}
-      micLevel={micLevel}
-      motion={motion}
-    />
+    <div style={{ opacity: attention.active ? 0 : 1 }}>
+      <FloatingDot
+        providers={settings?.enabledProviders}
+        working={sessions.some((s) => s.state === 'working')}
+        talk={talk}
+        openOn={settings?.openOn ?? 'hover'}
+        openMic={openMic}
+        micLevel={micLevel}
+        motion={motion}
+      />
+    </div>
   )
 }
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing #root element')
 
-createRoot(root).render(<StrictMode>{view === 'panel' ? <Panel /> : <DotView />}</StrictMode>)
+createRoot(root).render(
+  <StrictMode>
+    {view === 'panel' ? <Panel /> : view === 'attention' ? <AttentionView /> : <DotView />}
+  </StrictMode>,
+)

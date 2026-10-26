@@ -16,7 +16,12 @@ export const restingPose = (): MotionPose => ({
 })
 
 /** Time-based attack/release keeps the response consistent at 30, 60 and 120 Hz. */
-export function advancePose(pose: MotionPose, snapshot: MotionSnapshot, elapsed: number): void {
+export function advancePose(
+  pose: MotionPose,
+  snapshot: MotionSnapshot,
+  elapsed: number,
+  header = false,
+): void {
   const dt = Math.max(0, Math.min(100, elapsed))
   const ease = (current: number, target: number, ms: number) =>
     current + (target - current) * (1 - Math.exp(-dt / ms))
@@ -29,7 +34,7 @@ export function advancePose(pose: MotionPose, snapshot: MotionSnapshot, elapsed:
   // Real speech has precedence over the background work state, including interruptions.
   const speaking = Math.max(unit(snapshot.input.level), unit(snapshot.output.level)) > 0.035
   const wheel = !speaking && ['thinking', 'transcribing', 'waiting'].includes(snapshot.mode)
-  pose.wheel = ease(pose.wheel, wheel ? 1 : 0, speaking ? 70 : 115)
+  pose.wheel = ease(pose.wheel, wheel ? 1 : 0, header ? 180 : speaking ? 70 : 115)
   pose.warmth = ease(pose.warmth, wheel ? 1 : 0, 150)
   pose.rest = ease(pose.rest, snapshot.mode === 'idle' && !speaking ? 1 : 0, 180)
 }
@@ -42,9 +47,28 @@ const VIOLET: Colour = [0.58, 0.25, 1]
 const PINK: Colour = [1, 0.13, 0.6]
 const GOLD: Colour = [1, 0.67, 0.18]
 const SHINE: Colour = [1, 0.96, 0.78]
+// Approved active-wheel preview: vibrant Claude orange with a glossy Codex-blue sweep.
+const ACTIVE_ORANGE: Colour = [(218 / 255) * 1.15, (138 / 255) * 1.1, (98 / 255) * 0.94]
+const ACTIVE_BLUE: Colour = [(104 / 255) * 0.87, (170 / 255) * 1.08, 1]
 const PEARL: Colour = [0.8, 1, 0.98]
 const mix = (a: number, b: number, t: number) => a + (b - a) * t
 const palette = [PINK, VIOLET, BLUE, CYAN, PEARL, GOLD, PINK]
+
+// Continuous lattice noise has no wrap-around clock or repeating colour sweep.
+const smooth = (value: number) => value * value * (3 - 2 * value)
+const noise = (x: number, y: number): number => {
+  const ix = Math.floor(x),
+    iy = Math.floor(y)
+  const hash = (a: number, b: number) => {
+    const value = Math.sin(a * 127.1 + b * 311.7) * 43758.5453123
+    return value - Math.floor(value)
+  }
+  return mix(
+    mix(hash(ix, iy), hash(ix + 1, iy), smooth(x - ix)),
+    mix(hash(ix, iy + 1), hash(ix + 1, iy + 1), smooth(x - ix)),
+    smooth(y - iy),
+  )
+}
 
 /** Interleaved position/RGBA triangles. Both renderers consume the same bounded geometry. */
 export class MotionGeometry {
@@ -58,19 +82,49 @@ export class MotionGeometry {
     pose: MotionPose,
     reduced: boolean,
     edgeToEdge = false,
+    activeWheel = false,
   ): Float32Array {
     this.count = 0
-    const compact = height < 36
+    const compact = height < 36 || edgeToEdge
     const strands = compact ? 5 : 7
     const segments = compact ? 48 : 104
     const t = reduced ? 0 : time
     const both = pose.input.level > 0.045 && pose.output.level > 0.045
     const output = pose.output.level > pose.input.level
+    // The wheel touches the left wall, centred on the divider. Its existing
+    // strands stretch to the right while the left end stays at that wall.
+    const divider = Math.min(9, height * 0.3)
+    const wheelRadius = Math.min(6.5, height * 0.18)
+    const wheelX = wheelRadius + 1
+    // Keep the left end fixed while different turns of the spiral unwind.
+    let headerLeft = 0
+    if (edgeToEdge) {
+      headerLeft = Infinity
+      for (let strand = 0; strand < strands; strand++) {
+        for (let i = 0; i <= segments; i++) {
+          const u = i / segments
+          const angle = (strand / strands) * Math.PI * 2 + t * 2.5 - u * 4.1
+          const radius = wheelRadius * (0.15 + u * 0.85)
+          headerLeft = Math.min(
+            headerLeft,
+            mix(u * width, wheelX + Math.cos(angle) * radius, pose.wheel),
+          )
+        }
+      }
+      headerLeft -= pose.wheel * 1.1
+    }
     const drawBody = (audio: AudioEnergy, agent: boolean, offset: number, size: number) => {
       const energy = Math.sqrt(unit(Math.max(0, audio.level - 0.008)))
-      const amplitude = (0.025 + (compact ? pose.rest * 0.02 : 0) + energy * 0.38) * height * size
+      const amplitude = edgeToEdge
+        ? (0.6 + energy * 16) * size
+        : (0.025 + (compact ? pose.rest * 0.02 : 0) + energy * 0.38) * height * size
       const colourAt = (u: number, strand: number): Colour => {
-        const p = (((u * 4 + strand * 0.55 + t * 0.12) % 6) + 6) % 6
+        const flow = edgeToEdge
+          ? t * 0.32 +
+            noise(u * 2.7 + strand * 2.13, t * 0.38) * 2.3 +
+            noise(u * 6.1 - t * 0.11, t * 0.19 + strand * 0.71) * 0.65
+          : t * 0.12
+        const p = (((u * 4 + strand * 0.55 + flow) % 6) + 6) % 6
         const a = palette[Math.floor(p)]!
         const b = palette[Math.floor(p) + 1]!
         const f = p % 1
@@ -92,12 +146,20 @@ export class MotionGeometry {
           Math.sin(u * Math.PI * 13 - t * 3.2 + phase) * audio.high * 0.16
         const span = edgeToEdge ? width : width * 0.96 * (1 - pose.rest * (compact ? 0.15 : 0.6))
         const x = (u - 0.5) * span
-        const y = envelope * amplitude * sway + offset
+        const rawY = envelope * amplitude * sway + offset
+        // Most expression opens below the bar; the short upper crest stays clear
+        // of header text. Soft compression avoids clipped, flat-topped waves.
+        const room = rawY < 0 ? Math.max(1, Math.min(4.5, divider - 1.5)) : 11
+        const y = edgeToEdge ? room * Math.tanh(rawY / room) : rawY
         const angle = (strand / strands) * Math.PI * 2 + t * 2.5 - u * 4.1
-        const radius = height * (0.055 + u * 0.31)
+        const radius = edgeToEdge ? wheelRadius * (0.15 + u * 0.85) : height * (0.055 + u * 0.31)
         return {
-          x: width / 2 + mix(x, Math.cos(angle) * radius, pose.wheel),
-          y: height / 2 + mix(y, Math.sin(angle) * radius, pose.wheel),
+          x: edgeToEdge
+            ? mix(u * width, wheelX + Math.cos(angle) * radius, pose.wheel) - headerLeft
+            : width / 2 + mix(x, Math.cos(angle) * radius, pose.wheel),
+          y: edgeToEdge
+            ? divider + mix(y, Math.sin(angle) * radius, pose.wheel)
+            : height / 2 + mix(y, Math.sin(angle) * radius, pose.wheel),
         }
       }
       for (let strand = 0; strand < strands; strand++) {
@@ -105,19 +167,35 @@ export class MotionGeometry {
         for (let i = 1; i <= segments; i++) {
           const u = i / segments
           const next = point(u, strand)
-          const baseColour = colourAt(u, strand)
+          const ribbonColour = colourAt(u, strand)
+          const baseColour: Colour = activeWheel
+            ? [
+                mix(ribbonColour[0], ACTIVE_ORANGE[0], pose.wheel),
+                mix(ribbonColour[1], ACTIVE_ORANGE[1], pose.wheel),
+                mix(ribbonColour[2], ACTIVE_ORANGE[2], pose.wheel),
+              ]
+            : ribbonColour
           // A narrow leading edge and a longer tail travel from each spiral's root to its tip.
-          // The quiet interval lets the gold strands settle between sweeps. Reduced motion
+          // The quiet interval lets the strands settle between sweeps. Reduced motion
           // keeps the original static wheel, and ribbons retain their audio-driven light.
           const head = (t % 2.1) / 1.35 - 0.12
           const distance = u - head
           const spread = distance > 0 ? 0.055 : 0.16
           const fade = unit(head / 0.08) * unit((1.32 - head) / 0.28)
           const shine = reduced ? 0 : Math.exp(-0.5 * (distance / spread) ** 2) * fade * pose.wheel
+          const glint = reduced ? 0 : Math.exp(-0.5 * (distance / 0.026) ** 2) * fade * 0.28
+          const highlight: Colour = activeWheel
+            ? [
+                mix(ACTIVE_BLUE[0], 1, glint),
+                mix(ACTIVE_BLUE[1], 1, glint),
+                mix(ACTIVE_BLUE[2], 1, glint),
+              ]
+            : SHINE
+          const light = shine * (activeWheel ? 1 : 0.92)
           const colour: Colour = [
-            mix(baseColour[0], SHINE[0], shine * 0.92),
-            mix(baseColour[1], SHINE[1], shine * 0.92),
-            mix(baseColour[2], SHINE[2], shine * 0.92),
+            mix(baseColour[0], highlight[0], light),
+            mix(baseColour[1], highlight[1], light),
+            mix(baseColour[2], highlight[2], light),
           ]
           const envelope = Math.pow(Math.sin(Math.PI * u), 0.35)
           // Header ribbons keep visible ends even after their resting pose settles.
@@ -126,15 +204,19 @@ export class MotionGeometry {
             0.25 + u * 0.75,
             pose.wheel,
           )
-          const alpha = taper * (0.55 + energy * 0.4) * (1 - pose.rest * (compact ? 0.2 : 0.5))
-          if (!compact && strand % 2 === 0 && strand + 1 < strands) {
+          const alpha =
+            taper *
+            (0.55 + energy * 0.4) *
+            (1 - pose.rest * (compact ? 0.2 : 0.5)) *
+            (1 + (activeWheel ? (0.18 + shine * 0.16) * pose.wheel : 0))
+          if ((!compact || edgeToEdge) && strand % 2 === 0 && strand + 1 < strands) {
             this.quad(
               previous,
               next,
               point(u, strand + 1),
               point((i - 1) / segments, strand + 1),
               colour,
-              alpha * 0.13,
+              alpha * (edgeToEdge ? 0.08 : 0.13),
             )
           }
           this.line(previous, next, compact ? 2.2 : 5, colour, alpha * (0.065 + shine * 0.14))
@@ -162,7 +244,7 @@ export class MotionGeometry {
             p,
             { x: p.x + Math.sin(angle) * 3, y: p.y - Math.cos(angle) * 3 },
             0.75,
-            GOLD,
+            activeWheel ? ACTIVE_ORANGE : GOLD,
             (1 - life) * 0.45 * pose.wheel,
           )
         }
