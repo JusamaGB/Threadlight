@@ -209,6 +209,10 @@ colours and reset information are unchanged. Longer messages wrap and can scroll
 within the footer. A stationary pointer keeps the message open through relayout;
 moving away, scrolling elsewhere, Escape or blur dismisses it. Clicking the
 message does not activate its source control or resize the panel.
+When a hover target also offers an action, its action hint shares the same tooltip,
+separated from the information by a thin divider. Workspace usage bars show their
+quota information above the divider and the drag-to-resize hint below it; there is
+no separate native resize tooltip. Other views omit the resize hint.
 The panel is 264px wide, with the existing 16px outside wire area. Scrollbars are
 hidden throughout the app. Wheel, trackpad and keyboard scrolling remain native;
 thread and workspace lists can receive keyboard focus. There is no scrollbar

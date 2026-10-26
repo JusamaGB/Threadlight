@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import styles from './Panel.module.css'
 
 export const WORKSPACE_MIN_HEIGHT = 120
+export const WORKSPACE_RESIZE_HINT = 'Drag to set Workspace maximum height'
 
 /** The whole quota strip resizes Workspace; saves once the pointer is released. */
 export function WorkspaceResize({
@@ -34,7 +35,7 @@ export function WorkspaceResize({
       aria-valuemax={Math.round(maxHeight)}
       aria-valuenow={Math.round(height)}
       aria-disabled={saving || undefined}
-      title="Drag to set Workspace maximum height"
+      aria-description={WORKSPACE_RESIZE_HINT}
       onPointerDown={(event) => {
         if (event.button !== 0 || saving) return
         event.preventDefault()

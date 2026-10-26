@@ -17,7 +17,13 @@ function resetText(at: number, now: Date): string {
 }
 
 /** Codex reports account quotas in its local sessions; the weekly window can be primary. */
-export function CodexUsageBar({ usage }: { usage: Usage | null | undefined }) {
+export function CodexUsageBar({
+  usage,
+  actionHint,
+}: {
+  usage: Usage | null | undefined
+  actionHint?: string
+}) {
   const now = useNow(60_000)
   const week = usage?.week && usage.week.resetsAt > now ? usage.week : null
   const text = week
@@ -26,7 +32,12 @@ export function CodexUsageBar({ usage }: { usage: Usage | null | undefined }) {
   const level =
     week && week.used >= RED_FROM ? 'red' : week && week.used >= AMBER_FROM ? 'amber' : 'normal'
   return (
-    <Tip text={text} title="" className={`${styles.usage} ${styles.codexUsage}`}>
+    <Tip
+      text={text}
+      actionHint={actionHint}
+      title=""
+      className={`${styles.usage} ${styles.codexUsage}`}
+    >
       <span className={styles.usageTrack} data-unavailable={!week || undefined}>
         {week && (
           <span
@@ -54,10 +65,12 @@ export function UsageBar({
   usage,
   weekly,
   source,
+  actionHint,
 }: {
   usage: Usage
   weekly: boolean
   source?: string
+  actionHint?: string
 }) {
   const shown = weekly ? (usage.week ?? usage.fiveHour) : (usage.fiveHour ?? usage.week)
   if (!shown) return null
@@ -67,7 +80,12 @@ export function UsageBar({
     .join(' · ')
   const level = shown.used >= RED_FROM ? 'red' : shown.used >= AMBER_FROM ? 'amber' : 'normal'
   return (
-    <Tip text={source ? `${source} · ${text}` : text} title="" className={styles.usage}>
+    <Tip
+      text={source ? `${source} · ${text}` : text}
+      actionHint={actionHint}
+      title=""
+      className={styles.usage}
+    >
       <span className={styles.usageTrack}>
         <span
           className={styles.usageFill}

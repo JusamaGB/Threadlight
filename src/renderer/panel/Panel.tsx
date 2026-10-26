@@ -48,7 +48,7 @@ import { useMotion } from '../hooks/useMotion'
 import { VoicePresence } from '../motion/VoicePresence'
 import { ElectricMotion } from '../motion/ElectricMotion'
 import { WorkspaceLinks } from './WorkspaceLinks'
-import { WorkspaceResize, WORKSPACE_MIN_HEIGHT } from './WorkspaceResize'
+import { WorkspaceResize, WORKSPACE_MIN_HEIGHT, WORKSPACE_RESIZE_HINT } from './WorkspaceResize'
 import { TimeWindowMessage } from './TimeWindowMessage'
 
 type View = 'active' | 'all'
@@ -1019,10 +1019,14 @@ export function Panel() {
         usage={usage}
         weekly={view === 'all' && !listHidden}
         source={provider === 'both' ? 'Claude' : undefined}
+        actionHint={workspaceView ? WORKSPACE_RESIZE_HINT : undefined}
       />
     ) : null
   const codexUsage = enabled.includes('codex') ? (
-    <CodexUsageBar usage={snapshot.codexUsage} />
+    <CodexUsageBar
+      usage={snapshot.codexUsage}
+      actionHint={workspaceView ? WORKSPACE_RESIZE_HINT : undefined}
+    />
   ) : null
   const usageBars = (
     <>

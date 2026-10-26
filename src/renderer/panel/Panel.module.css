@@ -843,6 +843,14 @@
   pointer-events: none;
 }
 
+.tipDivider {
+  display: block;
+  flex: none;
+  align-self: stretch;
+  border-top: 1px solid var(--border);
+  margin: 6px 0;
+}
+
 .age {
   color: var(--faint);
   font-size: 11px;

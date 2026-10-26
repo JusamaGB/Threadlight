@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { hasDockedHover, HoverInfo, type HoverPoint } from './HoverInfo'
+import styles from './Panel.module.css'
 
 type Point = {
   x: number
@@ -21,6 +22,8 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
   as?: 'span' | 'button'
   /** What the tip says; shown while the pointer is over the anchor. */
   text: string
+  /** A separate action available on the same hover target. */
+  actionHint?: string
   /** Wait for the pointer to stay still this long. Other tips remain immediate. */
   restDelay?: number
   /** The anchor: what is hovered. */
@@ -33,6 +36,7 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
 export function Tip({
   as: Tag = 'span',
   text,
+  actionHint,
   restDelay = 0,
   children,
   className,
@@ -177,7 +181,15 @@ export function Tip({
       {children}
       {point && text && (
         <HoverInfo anchor={anchor} point={point.local} onDismiss={dismiss}>
-          {text}
+          {actionHint ? (
+            <>
+              <span>{text}</span>
+              <span role="separator" className={styles.tipDivider} />
+              <span>{actionHint}</span>
+            </>
+          ) : (
+            text
+          )}
         </HoverInfo>
       )}
     </Tag>

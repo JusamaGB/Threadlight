@@ -319,6 +319,8 @@ export async function checkFooterExpansion(page, row, capture) {
       .hover()
     await tip.waitFor()
     assert.equal(await tip.getAttribute('data-docked'), '')
+    assert.equal(await tip.getByRole('separator').count(), 0, 'Recent has no resize action')
+    assert.doesNotMatch(await tip.innerText(), /Drag to set Workspace maximum height/)
     const after = await sizes()
     assert.ok(after.card.height > before.card.height, 'Recent grows to fit the footer message')
     assert.equal(after.top.y, before.top.y, 'upper bar remains in place while a short panel grows')
@@ -341,6 +343,12 @@ export async function checkFooterExpansion(page, row, capture) {
     await page.locator('header').hover()
     await tip.waitFor({ state: 'detached' })
     assert.equal((await card.boundingBox()).height, before.card.height)
+    await page.getByLabel(/^Claude · 5-hour limit/).hover()
+    await tip.waitFor()
+    assert.equal(await tip.getByRole('separator').count(), 0, 'Recent usage has no resize action')
+    assert.doesNotMatch(await tip.innerText(), /Drag to set Workspace maximum height/)
+    await page.locator('header').hover()
+    await tip.waitFor({ state: 'detached' })
 
     await page.evaluate(async () => {
       window.threadlight.setWorkspacePanel = async () => ({
@@ -358,6 +366,17 @@ export async function checkFooterExpansion(page, row, capture) {
     const full = await sizes()
     await page.getByLabel(/^Claude · 5-hour limit/).hover()
     await tip.waitFor()
+    assert.equal(
+      await tip.getByRole('separator').count(),
+      1,
+      'usage and resize hints have a divider',
+    )
+    assert.match(await tip.innerText(), /Drag to set Workspace maximum height/)
+    assert.equal(
+      await page.getByRole('separator', { name: 'Resize Workspace height' }).getAttribute('title'),
+      null,
+      'resize has no separate native tooltip',
+    )
     const opened = await sizes()
     assert.equal(opened.card.height, 300, 'full Workspace stays at its height cap')
     assert.equal(opened.bottom.y, full.bottom.y, 'lower bar stays at the bottom of a full panel')
@@ -372,6 +391,8 @@ export async function checkFooterExpansion(page, row, capture) {
     assert.equal((await sizes()).top.y, full.top.y)
     await page.getByLabel(/^Codex · Weekly limit/).hover()
     await tip.waitFor()
+    assert.equal(await tip.getByRole('separator').count(), 1)
+    assert.match(await tip.innerText(), /Drag to set Workspace maximum height/)
     await tip.click()
     assert.equal(await tip.count(), 1, 'footer text can be read/clicked without starting a resize')
     assert.equal(
