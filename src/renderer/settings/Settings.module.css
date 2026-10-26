@@ -18,7 +18,8 @@
   padding: 4px;
 }
 .agentSelection {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
   align-items: baseline;
   gap: 6px;
   min-width: 0;
@@ -26,7 +27,18 @@
   color: var(--fg);
   font-size: 12px;
 }
+.agentSelection > button {
+  max-width: 100%;
+}
+.agentSelection > button[data-field='provider'] {
+  justify-self: start;
+}
+.agentSelection > button[data-field='model'] {
+  justify-self: center;
+  text-align: center;
+}
 .agentSelection > button[data-field='effort'] {
+  justify-self: end;
   color: var(--muted);
 }
 
