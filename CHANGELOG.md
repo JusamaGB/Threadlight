@@ -27,6 +27,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Connected the Agent's orange wheel at the left end of the divider to a richer
   voice ribbon that stretches rightward, with smoothly evolving colours.
 
+- Preserved the conversation E2E observer and its cleanup check, with portable
+  paths and conversation evidence stored outside the repository.
+
 - Moved the Agent's inactive microphone text beside its status, such as
   "Ready - No active Mic", clearing it from the header.
 
