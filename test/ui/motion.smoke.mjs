@@ -211,7 +211,17 @@ try {
   const activity = page.getByRole('region', { name: 'Voice activity' })
   assert.equal(await activity.locator('p').count(), 0, 'empty speech has no reserved caption')
   assert.ok((await activity.boundingBox()).height < 32, 'idle activity stays compact')
-  await page.locator('header').getByText('no active Mic', { exact: true }).waitFor()
+  await activity
+    .getByRole('status')
+    .filter({ hasText: /^Ready - No active Mic$/ })
+    .waitFor()
+  assert.equal(
+    await page
+      .locator('header')
+      .getByText(/no active mic/i)
+      .count(),
+    0,
+  )
   assert.equal(await page.getByText(/^Ask it to do something\. Available tools/).count(), 0)
   await capture('agent-idle-header', page.locator('[data-card]'))
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()

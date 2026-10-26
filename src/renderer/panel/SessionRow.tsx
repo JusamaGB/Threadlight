@@ -87,7 +87,11 @@ export function SessionRow(props: SessionRowProps) {
             text={session.contextUsed !== null ? contextLabel(session.contextUsed) : ''}
           >
             {session.contextUsed !== null && (
-              <ContextRing used={session.contextUsed} wide={attention !== null} />
+              <ContextRing
+                used={session.contextUsed}
+                wide={attention !== null}
+                thinking={session.thinking && session.state === 'working' && !attention}
+              />
             )}
             <span
               className={styles.stateDot}
@@ -105,7 +109,6 @@ export function SessionRow(props: SessionRowProps) {
         <span className={styles.rowBottom}>
           <PullRequestBadge pullRequests={session.pullRequests} />
           <span className={styles.stage} data-tone={line?.tone}>
-            {!line && !attention && session.thinking && <span className={styles.spinner} />}
             {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
           </span>
           {!(expanded && appId) &&

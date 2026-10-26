@@ -457,6 +457,19 @@
   pointer-events: none;
 }
 
+.contextRing[data-thinking] {
+  animation: contextThinking 0.9s linear infinite;
+}
+
+@keyframes contextThinking {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
 .ringTrack,
 .ringFill {
   fill: none;
@@ -667,13 +680,6 @@
   overflow: hidden;
   white-space: nowrap;
   mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-}
-
-/* Thinking: the same turning ring as the agent's progress line, before the word. */
-.stage > .spinner {
-  display: inline-block;
-  margin-right: 6px;
-  vertical-align: -1px;
 }
 
 /* The badge already fills the gutter. */
@@ -929,7 +935,8 @@ span.planStep {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
+  .spinner,
+  .contextRing[data-thinking] {
     animation: none;
   }
 }

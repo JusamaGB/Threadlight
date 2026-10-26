@@ -887,6 +887,7 @@ export function Panel() {
   const agentVisible = showAgent && !pickingWorkspace && !changesFor
   const showVoiceActivity =
     voice.state !== 'idle' || micLive || agentVisible || Boolean(voiceSendId)
+  const inactiveMicrophone = !openMicListening && voice.state !== 'listening'
   const listHidden =
     showMemory || showSettings || pickingWorkspace || showAgent || changesFor !== null
 
@@ -911,7 +912,7 @@ export function Panel() {
               <ElectricMotion source={motion.source} label={motion.label} edgeToEdge />
             </div>
           )}
-          {showVoiceActivity && !openMicListening && voice.state !== 'listening' && (
+          {showVoiceActivity && inactiveMicrophone && !agentVisible && (
             <span className={styles.microphoneStatus}>no active Mic</span>
           )}
           {pickingWorkspace ? (
@@ -1057,7 +1058,13 @@ export function Panel() {
           )}
         </header>
 
-        {showVoiceActivity && <VoicePresence label={motion.label} caption={motionCaption} />}
+        {showVoiceActivity && (
+          <VoicePresence
+            label={motion.label}
+            caption={motionCaption}
+            inactiveMicrophone={agentVisible && inactiveMicrophone}
+          />
+        )}
 
         {pickingWorkspace && (
           <div className={styles.list}>
