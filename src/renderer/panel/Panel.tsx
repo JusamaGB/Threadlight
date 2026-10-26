@@ -41,6 +41,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
 import { PanelRoomContext, type PanelRoom } from './room'
 import { HoverHelp } from './HoverHelp'
+import { HoverFooter } from './HoverFooter'
 import type { HelpMode } from './helpMode'
 import { SessionRow } from './SessionRow'
 import { CodexUsageBar, UsageBar } from './UsageBar'
@@ -1034,7 +1035,7 @@ export function Panel() {
   const usageBars = (
     <>
       {codexUsage && claudeUsage}
-      <div className={styles.hoverMessage} data-hover-message="" />
+      <HoverFooter />
       {codexUsage ?? claudeUsage}
     </>
   )

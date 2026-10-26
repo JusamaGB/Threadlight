@@ -21,6 +21,7 @@ import { checkThreadReading } from './thread-reading.smoke.mjs'
 import { checkPanelHeight, checkWorkspaceHeight } from './panel-height.smoke.mjs'
 import { checkTips, checkLastActive, checkFooterExpansion } from './tips.smoke.mjs'
 import { checkHelpModes } from './help-modes.smoke.mjs'
+import { checkHoverMotion } from './hover-motion.smoke.mjs'
 
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar, checkRecentLimit, checkSubpagePinning } from './toolbar.smoke.mjs'
@@ -621,6 +622,11 @@ checks: try {
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'help-modes') {
     await checkHelpModes(page, row, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'hover-motion') {
+    await checkHoverMotion(page, capture)
     assert.deepEqual(errors, [])
     break checks
   }

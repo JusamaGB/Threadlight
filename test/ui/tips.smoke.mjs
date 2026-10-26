@@ -66,6 +66,7 @@ export async function checkLastActive(page, row, capture) {
 }
 
 export async function checkTips(page, row, capture = async () => {}) {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.setViewportSize({ width: 280, height: 900 })
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
   const tip = page.getByRole('tooltip')
@@ -259,11 +260,13 @@ export async function checkTips(page, row, capture = async () => {}) {
     )
   } finally {
     await page.clock.resume()
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.setViewportSize({ width: 460, height: 900 })
   }
 }
 
 export async function checkFooterExpansion(page, row, capture) {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   const initial = await page.evaluate(async () => {
     window.proof.hoverOriginalWorkspacePanel = window.threadlight.setWorkspacePanel
     return {
@@ -421,6 +424,7 @@ export async function checkFooterExpansion(page, row, capture) {
       'PASS: Recent opens downward; capped Workspace opens upward, remains stable and resizable; readable footer text and single-provider fallback.',
     )
   } finally {
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async ({ settings, snapshot }) => {
       window.threadlight.setWorkspacePanel = window.proof.hoverOriginalWorkspacePanel
       await window.mockWorkspaceRows(null)

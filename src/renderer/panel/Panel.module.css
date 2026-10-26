@@ -1797,15 +1797,31 @@ span.planStep {
 }
 
 .hoverMessage {
+  position: relative;
   flex: none;
+  min-width: 0;
+  height: 0;
+  overflow: hidden;
+  transition: height 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.hoverMessage[data-help-off] {
+  transition: none;
+}
+
+.hoverMessageContent {
   min-width: 0;
 }
 
-.hoverMessage:empty {
-  display: none;
+.hoverMessageGhost {
+  position: absolute;
+  inset: 0 0 auto;
+  pointer-events: none;
+  user-select: none;
 }
 
-.hoverMessage > .dockedInfo {
+.hoverMessageContent > .dockedInfo,
+.hoverMessageGhost > .dockedInfo {
   position: static;
   display: flex;
   flex-direction: column;
@@ -1824,8 +1840,30 @@ span.planStep {
   user-select: text;
 }
 
-.hoverMessage > .dockedInfo * {
+.hoverMessageContent > .dockedInfo * {
   cursor: auto;
+}
+
+.tip:not(.dockedInfo) {
+  animation: hoverHintIn 110ms ease-out both;
+}
+
+@keyframes hoverHintIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hoverMessage {
+    transition: none;
+  }
+  .tip:not(.dockedInfo) {
+    animation: none;
+  }
 }
 
 .workspaceResizeArea {

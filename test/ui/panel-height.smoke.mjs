@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 
 export async function checkWorkspaceHeight(page, capture) {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   const initial = await page.evaluate(() => window.threadlight.getSettings())
   const card = page.locator('[data-card]')
   const grip = page.getByRole('separator', { name: 'Resize Workspace height' })
@@ -204,6 +205,7 @@ export async function checkWorkspaceHeight(page, capture) {
       'PASS: Workspace shrinks to empty/sparse content, grows to its saved maximum, drags from its visible height, persists limits, clamps on smaller screens and keeps other views content-sized.',
     )
   } finally {
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
     await setRows(null)
     await page.evaluate((settings) => window.threadlight.updateSettings(settings), initial)
     await page.setViewportSize({ width: 460, height: 900 })

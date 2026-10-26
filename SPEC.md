@@ -224,6 +224,11 @@ hides custom and native hover help, including structured task hints, and release
 the footer space. Controls, hover menus, clicks, scrolling and resizing still work.
 New explanatory help can use the shared Tip's `tourText` or `tourOnly` options;
 adding Tour help does not change the Info baseline.
+Footer hints animate their height over 180ms. When the text changes, the outgoing
+message fades out for 65ms before the new message fades in over 110ms. Rapid hover
+changes cancel stale transitions and keep only the latest hint interactive. The
+bars follow the same content-sized and capped layout throughout the movement.
+Reduced-motion preferences skip these animations; Off clears help immediately.
 
 The panel is 264px wide, with the existing 16px outside wire area. Scrollbars are
 hidden throughout the app. Wheel, trackpad and keyboard scrolling remain native;
