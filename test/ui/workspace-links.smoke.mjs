@@ -71,15 +71,52 @@ export async function checkWorkspaceLinks(page, capture) {
       window.proof.emit('onPanelOpened', { maxHeight: 280, opensDown: true, fresh: false })
     })
     const toggle = page.locator('[data-wire-toggle]')
+    const wire = toggle.locator('[data-header-wire]')
+    await wire.locator('.conductor').waitFor()
+    const target = await toggle.boundingBox()
+    assert.equal(target.width, 16)
+    assert.equal(target.height, 24)
+    assert.equal(await wire.locator('.conductor').getAttribute('stroke'), '#737b86')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.waitForFunction(() => {
+      const burst = document.querySelector('[data-header-wire] .discharge')
+      if (Number(burst?.style.opacity) < 0.9) return false
+      const sparks = [...document.querySelectorAll('[data-header-wire] .embers path')].filter(
+        (p) => Number(p.getAttribute('opacity')) > 0.4,
+      )
+      return sparks.length >= 10 && Math.min(...sparks.map((p) => p.getBBox().x)) < 8
+    })
+    await capture('workspace-wires-bright-spark')
     assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
     assert.equal(await page.locator('[data-wire-key]').count(), 0)
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    assert.equal(
-      await toggle.locator('g').evaluate((spark) => getComputedStyle(spark).animationName),
-      'none',
+    await page.waitForFunction(
+      () => document.querySelector('[data-header-wire] .discharge')?.style.opacity === '0.18',
     )
+    const still = await wire.screenshot()
+    await page.waitForTimeout(150)
+    assert.deepEqual(await wire.screenshot(), still, 'reduced motion holds the live wire steady')
     await capture('workspace-wires-cut')
     await page.getByRole('button', { name: 'Show workspace wires', exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[data-header-wire] .conductor')?.getAttribute('stroke') ===
+        '#aacfd6',
+    )
+    assert.equal(await wire.locator('.live-halo').getAttribute('opacity'), '.22')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('[data-header-wire] .travelling-core path')].some(
+        (p) => Number(p.getAttribute('opacity')) > 0.1,
+      ),
+    )
+    const moving = await wire.locator('.travelling-core').innerHTML()
+    await page.waitForFunction(
+      (before) =>
+        document.querySelector('[data-header-wire] .travelling-core')?.innerHTML !== before,
+      moving,
+    )
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.waitForFunction(
       () => document.querySelector('[data-wire-key]')?.getAttribute('data-members') === '3',
     )

@@ -24,7 +24,8 @@ design previews, not a desktop overlay or an application feature flag.
   branches and particles vary per burst, with occasional clusters. The preview
   supports keyboard toggling, paused inspection, slow playback and reduced motion.
   Its renderer reuses sampled geometry and SVG elements, and preserves complete
-  travel through delayed frames. This treatment is preview-only.
+  travel through delayed frames. The application's header toggle now shares this
+  renderer; cutting and reconnecting still saves the workspace-wire setting.
 - `/workspace-links.html` is a proposal using sample threads. Thin wires connect
   listed Claude and Codex threads with the exact same normalized workspace folder.
   Hover/focus traces a group; preview buttons hold that trace, switch list filters,
