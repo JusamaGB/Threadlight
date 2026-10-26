@@ -99,16 +99,8 @@ export function SessionRow(props: SessionRowProps) {
           {session.git && <GitCount git={session.git} onOpen={props.onShowChanges} />}
           {/* A long title fades out behind this, so it always shows. */}
           {attention && <span className={styles.needsYou}>{en.attention.needsYou}</span>}
-          {/* Expanded, Open ↗ takes the age's place (drawn outside this button, below). */}
-          {expanded && appId ? (
-            <span className={styles.openSpace} aria-hidden="true" />
-          ) : session.backgroundTasks.length > 0 ? (
-            <TaskTimer tasks={session.backgroundTasks} />
-          ) : (
-            !props.hideAge && (
-              <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
-            )
-          )}
+          {/* Keep space for Open ↗, drawn outside this button on expanded rows. */}
+          {expanded && appId && <span className={styles.openSpace} aria-hidden="true" />}
         </span>
         <span className={styles.rowBottom}>
           <PullRequestBadge pullRequests={session.pullRequests} />
@@ -116,6 +108,14 @@ export function SessionRow(props: SessionRowProps) {
             {!line && !attention && session.thinking && <span className={styles.spinner} />}
             {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
           </span>
+          {!(expanded && appId) &&
+            (session.backgroundTasks.length > 0 ? (
+              <TaskTimer tasks={session.backgroundTasks} />
+            ) : (
+              !props.hideAge && (
+                <span className={styles.age}>{ageText(session.lastActiveAt, now)}</span>
+              )
+            ))}
         </span>
       </button>
       {expanded && appId && (

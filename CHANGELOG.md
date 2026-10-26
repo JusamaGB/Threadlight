@@ -6,6 +6,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Aligned status text with and without a branch icon; only a numbered branch badge
+  adds extra indentation.
+
+- Moved thread ages and background task timers to the lower-right of each row,
+  leaving more room for titles and stats above.
+
 - Kept nested thread gradients flush with the panel edge at every depth while
   preserving thread indentation and guide lines.
 
