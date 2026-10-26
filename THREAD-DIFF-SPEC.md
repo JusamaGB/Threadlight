@@ -133,3 +133,15 @@ reader measurement returned branch metadata in 4 ms and full counts in 337 ms.
 These are local observations, not cross-machine latency guarantees. Evidence:
 `Z:/Temp/threadlight-git-latency-startup.json`; production UI screenshots:
 `Z:/General/threadlight-e2e/git-latency`.
+
+## Follow-up: unexplained unattributed edits (26 October 2026)
+
+Deferred at the user's request because remaining usage is limited; investigate later.
+
+- Reproduce the warning that some uncommitted edits could not be attributed, and
+  determine why edits made by the selected thread are missing from its diff.
+- Trace recorded edits through path matching, refresh/cache state and the
+  uncommitted projection; check shell/binary edits and overlapping writers where relevant.
+- Improve attribution accuracy using verified evidence, with regression coverage
+  for the identified causes. Keep uncertain ownership explicit and the full worktree
+  diff available; an unhighlighted file does not prove another thread owns it.
