@@ -15,6 +15,7 @@ import { checkPanelHeight } from './panel-height.smoke.mjs'
 import { checkTips } from './tips.smoke.mjs'
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar } from './toolbar.smoke.mjs'
+import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
 import { setupSpaces, checkSpaces } from './spaces.smoke.mjs'
@@ -389,6 +390,7 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  await checkChecklistDiff(page, row, capture)
   await checkPanelHeight(page)
   await checkToolbar(page)
   await checkMemory(page, memoryProof, capture)
