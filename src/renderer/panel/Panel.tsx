@@ -713,34 +713,41 @@ export function Panel() {
     view === 'all' &&
     listMode !== 'recent' &&
     (!voiceSelection || voiceWorkspace !== null)
-  // The Workspace list shows the chosen workspace, or (Follow Claude) the one last open in Claude.
-  // A chosen folder that no longer has any threads falls back to following Claude.
+  // Workspace can combine all known folders, or focus on one folder.
+  // A voice-selected workspace temporarily narrows either saved selection.
+  const allDrives = (settings?.workspaceAllDrives ?? false) && voiceWorkspace === null
   const chosen =
     (provider === 'both'
       ? settings?.combinedFocusWorkspace
       : provider === 'codex'
         ? settings?.codexFocusWorkspace
         : settings?.focusWorkspace) ?? null
-  const focusId =
-    voiceWorkspace ??
-    (chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
-      ? chosen
-      : snapshot.currentWorkspace)
-  const focus = focusId
-    ? (snapshot.allWorkspaces.find((w) => sameFolder(w.id, focusId)) ?? {
-        id: focusId,
-        name: focusId.split(/[\\/]/).filter(Boolean).pop() ?? focusId,
-      })
-    : null
+  const focusId = allDrives
+    ? null
+    : (voiceWorkspace ??
+      (chosen && snapshot.allWorkspaces.some((w) => sameFolder(w.id, chosen))
+        ? chosen
+        : snapshot.currentWorkspace))
+  const focus = allDrives
+    ? { id: 'all-drives', name: 'All drives' }
+    : focusId
+      ? (snapshot.allWorkspaces.find((w) => sameFolder(w.id, focusId)) ?? {
+          id: focusId,
+          name: focusId.split(/[\\/]/).filter(Boolean).pop() ?? focusId,
+        })
+      : null
   const windowText = windowLabel(settings?.listWindowHours ?? 24)
   const focusGroups = snapshot.workspaces.filter(
     (w) =>
-      focusId &&
-      (provider === 'both'
-        ? workspaceFolder(w.id) === workspaceFolder(focusId)
-        : sameFolder(w.id, focusId)),
+      allDrives ||
+      (focusId &&
+        (provider === 'both'
+          ? workspaceFolder(w.id) === workspaceFolder(focusId)
+          : sameFolder(w.id, focusId))),
   )
-  const focusGroupKeys = focusGroups.map((w) => w.id).join('\n')
+  const focusGroupKeys = (allDrives ? snapshot.allWorkspaces : focusGroups)
+    .map((w) => w.id)
+    .join('\n')
   const treeFocus = focus ? { ...focus, ids: focusGroups.map((w) => w.id) } : null
   const pickerWorkspaces =
     provider === 'both'
@@ -846,15 +853,18 @@ export function Panel() {
     changesFiles !== undefined
       ? `${changesTitle} · ${en.changes.files(changesFiles)}`
       : changesTitle
-  const pickWorkspace = async (id: string | null) => {
+  const pickWorkspace = async (id: string | null, useAll = false) => {
     setVoiceSelection(null)
     setVoiceWorkspace(null)
     const result = await window.threadlight.updateSettings({
-      ...(provider === 'both'
-        ? { combinedFocusWorkspace: id }
-        : provider === 'codex'
-          ? { codexFocusWorkspace: id }
-          : { focusWorkspace: id }),
+      ...(!useAll
+        ? provider === 'both'
+          ? { combinedFocusWorkspace: id }
+          : provider === 'codex'
+            ? { codexFocusWorkspace: id }
+            : { focusWorkspace: id }
+        : {}),
+      workspaceAllDrives: useAll,
       listMode: 'workspace',
     })
     if (!result.ok) {
@@ -1211,6 +1221,8 @@ export function Panel() {
               onProviderChange={(selection) => void selectApplications(selection)}
               workspaces={pickerWorkspaces}
               chosen={pickerId(chosen)}
+              allDrives={allDrives}
+              onPickAll={() => void pickWorkspace(null, true)}
               onPick={(id) => void pickWorkspace(id)}
             />
           )}

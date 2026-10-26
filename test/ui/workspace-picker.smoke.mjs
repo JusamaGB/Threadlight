@@ -40,6 +40,8 @@ export async function checkWorkspacePicker(page, capture) {
     assert.equal(await page.getByLabel('Workspace drive', { exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: /^Follow .*activity/ }).count(), 0)
     assert.equal(await page.getByText(/Choose which folder’s threads/).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Parent folder', exact: true }).count(), 0)
+    await page.getByRole('button', { name: 'Use All Drives', exact: true }).waitFor()
     const appBox = await applications.boundingBox()
     const searchBox = await search.boundingBox()
     assert.equal(appBox.y, searchBox.y, 'applications and search share one row')
@@ -48,6 +50,7 @@ export async function checkWorkspacePicker(page, capture) {
     await capture('workspace-picker-drives')
     await zDrive.click()
     await applications.waitFor()
+    await page.getByRole('button', { name: 'Parent folder', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Use Z:', exact: true }).waitFor()
     assert.equal(
       await page.evaluate(

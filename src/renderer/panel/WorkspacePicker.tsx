@@ -14,6 +14,8 @@ interface WorkspacePickerProps {
   /** Every known workspace, including threads outside the recent time window. */
   workspaces: KnownWorkspace[]
   chosen: string | null
+  allDrives: boolean
+  onPickAll: () => void
   onProviderChange: (provider: 'claude' | 'codex' | 'both') => void
   onPick: (workspaceId: string) => void
 }
@@ -22,6 +24,8 @@ interface WorkspacePickerProps {
 export function WorkspacePicker({
   workspaces,
   chosen,
+  allDrives,
+  onPickAll,
   onPick,
   provider,
   onProviderChange,
@@ -76,15 +80,22 @@ export function WorkspacePicker({
         </label>
       </div>
       <nav className={styles.pickerLocation} aria-label="Workspace folder navigation">
-        <button
-          aria-label="Parent folder"
-          title="Parent folder"
-          disabled={!folder}
-          onClick={() => setLocation(folder?.parent ?? '')}
-        >
-          ↑
-        </button>
-        <span title={folder?.path}>{folder?.path ?? 'All drives'}</span>
+        {folder ? (
+          <>
+            <button
+              aria-label="Parent folder"
+              title="Parent folder"
+              onClick={() => setLocation(folder?.parent ?? '')}
+            >
+              ↑
+            </button>
+            <span title={folder.path}>{folder.path}</span>
+          </>
+        ) : (
+          <button className={styles.pickerUseAll} aria-pressed={allDrives} onClick={onPickAll}>
+            Use All Drives
+          </button>
+        )}
       </nav>
       {folder?.workspace && !searching && (
         <button

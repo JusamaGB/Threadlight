@@ -57,6 +57,23 @@ describe('parseSettings', () => {
 })
 
 describe('focusWorkspace', () => {
+  it('persists all-drives scope without forgetting saved folder selections', async () => {
+    const store = new SettingsStore(box.root)
+    expect((await store.load()).workspaceAllDrives).toBe(false)
+    await store.update({
+      focusWorkspace: 'C:/saved',
+      combinedFocusWorkspace: 'codex:Z:/General',
+      workspaceAllDrives: true,
+    })
+    expect(await new SettingsStore(box.root).load()).toMatchObject({
+      workspaceAllDrives: true,
+      focusWorkspace: 'C:/saved',
+      combinedFocusWorkspace: 'codex:Z:/General',
+    })
+    await store.update({ workspaceAllDrives: false })
+    expect((await new SettingsStore(box.root).load()).workspaceAllDrives).toBe(false)
+    expect(validatePatch({ workspaceAllDrives: 'all' }).ok).toBe(false)
+  })
   it('defaults to following Claude and accepts a folder or null', () => {
     expect(parseSettings({}).focusWorkspace).toBeNull()
     expect(validatePatch({ focusWorkspace: 'C:\\demo\\ws' })).toEqual({

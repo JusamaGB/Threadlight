@@ -40,6 +40,8 @@ export const settingsSchema = z.object({
   listMode: z.enum(['recent', 'workspace', 'all']).default('recent'),
   /** The workspace the Workspace list shows (its folder), or null to follow the Claude app. */
   focusWorkspace: z.string().min(1).max(1000).nullable().default(null),
+  /** Workspace view combines all known folders from the enabled applications. */
+  workspaceAllDrives: z.boolean().default(false),
   /** Sessions active within this many hours are listed. */
   listWindowHours: z.number().int().min(1).max(168).default(24),
   /** At most this many sessions are listed. */
