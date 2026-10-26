@@ -136,6 +136,8 @@ Microphone and playback energy do not affect the header's shape, brightness or
 overlapping ribbons during the morph. The strands reach the full panel width
 first; then live audio eases in from silence. Audio capture and playback continue
 throughout the transition.
+Once opening starts, audio fluctuations cannot reverse or retime the morph;
+the animation clock and resting pose also ignore audio until full width.
 
 The header canvas has a 9px upper band and 27px below the divider. Its small wheel
 stays flush with the left edge throughout the morph. Ribbon crests have more vertical range below the bar,

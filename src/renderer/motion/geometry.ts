@@ -5,6 +5,7 @@ export interface MotionPose {
   warmth: number
   rest: number
   audioReveal: number
+  headerOpening: boolean
   input: AudioEnergy
   output: AudioEnergy
 }
@@ -13,6 +14,7 @@ export const restingPose = (): MotionPose => ({
   warmth: 0,
   rest: 1,
   audioReveal: 1,
+  headerOpening: false,
   input: { ...SILENT_AUDIO },
   output: { ...SILENT_AUDIO },
 })
@@ -29,10 +31,14 @@ export function advancePose(
     current + (target - current) * (1 - Math.exp(-dt / ms))
   // Real speech has precedence over the background work state, including interruptions.
   const speaking = Math.max(unit(snapshot.input.level), unit(snapshot.output.level)) > 0.035
-  const wheel = !speaking && ['thinking', 'transcribing', 'waiting'].includes(snapshot.mode)
+  let wheel = !speaking && ['thinking', 'transcribing', 'waiting'].includes(snapshot.mode)
+  // Once the header starts opening, audio gaps cannot fold it back into the wheel.
+  if (header && pose.wheel > 0 && !wheel) pose.headerOpening = true
+  if (header && pose.headerOpening) wheel = false
   pose.wheel = ease(pose.wheel, wheel ? 1 : 0, header ? 180 : speaking ? 70 : 115)
   // Finish the header's asymptotic opening at full width before audio can move it.
   if (header && !wheel && pose.wheel < 0.005) pose.wheel = 0
+  if (pose.wheel === 0) pose.headerOpening = false
   pose.audioReveal = header && pose.wheel > 0 ? 0 : ease(pose.audioReveal, 1, 120)
   for (const channel of ['input', 'output'] as const) {
     for (const key of ['level', 'low', 'mid', 'high'] as const) {
@@ -44,7 +50,8 @@ export function advancePose(
     }
   }
   pose.warmth = ease(pose.warmth, wheel ? 1 : 0, 150)
-  pose.rest = ease(pose.rest, snapshot.mode === 'idle' && !speaking ? 1 : 0, 180)
+  const visibleSpeech = speaking && (!header || pose.wheel === 0)
+  pose.rest = ease(pose.rest, snapshot.mode === 'idle' && !visibleSpeech ? 1 : 0, 180)
 }
 
 type Point = { x: number; y: number }

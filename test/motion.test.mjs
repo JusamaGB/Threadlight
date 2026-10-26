@@ -188,7 +188,7 @@ describe('connected header motion', () => {
       expect(pose.input.level).toBeGreaterThan(0)
       expect(pose.input.level).toBeLessThan(0.4)
       expect(pose.output).toEqual(pose.input)
-      for (let i = 0; i < 30; i++)
+      for (let i = 0; i < 40; i++)
         advancePose(
           pose,
           { ...IDLE_MOTION, mode: 'listening', input: full, output: full },
@@ -198,6 +198,50 @@ describe('connected header motion', () => {
       expect(pose.input.level).toBeGreaterThan(0.98)
       for (let i = 0; i < 120; i++)
         advancePose(pose, { ...IDLE_MOTION, mode: 'thinking' }, 1000 / 60, true)
+    }
+  })
+  it('does not let speech gaps reverse an opening header or change its pace', () => {
+    const steady = { ...restingPose(), wheel: 1, warmth: 1, rest: 0 }
+    const interrupted = { ...steady, input: { ...SILENT_AUDIO }, output: { ...SILENT_AUDIO } }
+    for (let frame = 0; frame < 58; frame++) {
+      advancePose(steady, { ...IDLE_MOTION, mode: 'thinking', input: full }, 1000 / 60, true)
+      advancePose(
+        interrupted,
+        {
+          ...IDLE_MOTION,
+          mode: 'thinking',
+          input: frame === 0 || frame % 5 === 0 ? full : SILENT_AUDIO,
+          output: frame % 7 === 0 ? full : SILENT_AUDIO,
+        },
+        1000 / 60,
+        true,
+      )
+      expect(interrupted.wheel).toBe(steady.wheel)
+      expect(interrupted.warmth).toBe(steady.warmth)
+      expect(interrupted.rest).toBe(steady.rest)
+      if (interrupted.wheel > 0) {
+        expect(interrupted.input).toEqual(SILENT_AUDIO)
+        expect(interrupted.output).toEqual(SILENT_AUDIO)
+      }
+    }
+    expect(interrupted.wheel).toBe(0)
+  })
+  it('keeps an idle header transition identical with quiet or changing audio', () => {
+    const quiet = { ...restingPose(), wheel: 1, warmth: 1, rest: 0 }
+    const noisy = { ...quiet, input: { ...SILENT_AUDIO }, output: { ...SILENT_AUDIO } }
+    const geometry = new MotionGeometry()
+    for (let frame = 0; frame < 57; frame++) {
+      advancePose(quiet, IDLE_MOTION, 1000 / 60, true)
+      advancePose(
+        noisy,
+        { ...IDLE_MOTION, input: frame % 2 ? full : SILENT_AUDIO },
+        1000 / 60,
+        true,
+      )
+      expect(noisy).toEqual(quiet)
+      expect([...geometry.build(width, height, frame / 60, noisy, false, true)]).toEqual([
+        ...geometry.build(width, height, frame / 60, quiet, false, true),
+      ])
     }
   })
   it('keeps the wheel at the left wall on the divider and every morph inside the header surface', () => {
