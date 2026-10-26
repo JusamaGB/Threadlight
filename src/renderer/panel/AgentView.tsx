@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { agentBusy, type AgentConversation, type AgentItem } from '../../shared/agent'
 import { AgentRequestCard } from './AgentRequestCard'
@@ -6,6 +6,7 @@ import { useAgent } from '../hooks/useAgent'
 import { useSettings } from '../hooks/useSettings'
 import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
+import { AgentIdentity } from './AgentIdentity'
 import { ageText } from '../lib/format'
 import styles from './Panel.module.css'
 
@@ -40,7 +41,7 @@ function Earlier({
 }: {
   current: string | null
   onOpen: (id: string) => void
-  identity: string
+  identity: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [past, setPast] = useState<AgentConversation[] | null>(null)
@@ -69,9 +70,9 @@ function Earlier({
             {en.agent.earlier(shown.length)}
           </button>
         )}
-        <p className={styles.agentIdentity} title={identity}>
+        <div className={styles.agentIdentity} role="group" aria-label="Agent settings">
           {identity}
-        </p>
+        </div>
       </div>
       {open && hasHistory && (
         <div className={styles.agentPast}>
@@ -133,7 +134,6 @@ export function AgentView() {
   const provider = hasConversation ? agent.provider : selectedProvider
   const model = hasConversation ? agent.model : selectedModel
   const reasoning = hasConversation ? agent.reasoning : selectedReasoning
-  const identity = `${provider === 'codex' ? 'Codex' : 'Claude'} · ${model ?? (hasConversation ? 'Model not recorded' : 'Runtime default')}${reasoning ? ` · ${reasoning}` : ''}`
 
   // Keep the newest line in view.
   useEffect(() => {
@@ -283,7 +283,11 @@ export function AgentView() {
         {agent.status === 'interrupted' && (
           <p className={styles.agentEmpty}>Turn stopped. You can continue this conversation.</p>
         )}
-        {(agent.error || error) && <p className={styles.qError}>{agent.error ?? error}</p>}
+        {(agent.error || error) && (
+          <p className={styles.qError} role="alert">
+            {agent.error ?? error}
+          </p>
+        )}
         {agent.ended && <p className={styles.agentEmpty}>{en.agent.ended}</p>}
       </div>
       <div className={styles.agentInput}>
@@ -326,7 +330,16 @@ export function AgentView() {
       <Earlier
         current={agent.ended ? null : agent.conversationId}
         onOpen={(id) => void read(id)}
-        identity={identity}
+        identity={
+          <AgentIdentity
+            provider={provider}
+            model={model}
+            reasoning={reasoning}
+            hasConversation={hasConversation}
+            settings={settings}
+            onError={setError}
+          />
+        }
       />
     </div>
   )

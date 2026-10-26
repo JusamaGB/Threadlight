@@ -57,6 +57,7 @@ export class MotionGeometry {
     time: number,
     pose: MotionPose,
     reduced: boolean,
+    edgeToEdge = false,
   ): Float32Array {
     this.count = 0
     const compact = height < 36
@@ -89,7 +90,8 @@ export class MotionGeometry {
           Math.sin(u * Math.PI * 3.1 - t * (agent ? 1.7 : 2.1) + phase) * (0.62 + audio.low * 0.1) +
           Math.sin(u * Math.PI * 5 + t * 0.65 + phase * 0.7) * (0.2 + audio.mid * 0.08) +
           Math.sin(u * Math.PI * 13 - t * 3.2 + phase) * audio.high * 0.16
-        const x = (u - 0.5) * width * 0.96 * (1 - pose.rest * (compact ? 0.15 : 0.6))
+        const span = edgeToEdge ? width : width * 0.96 * (1 - pose.rest * (compact ? 0.15 : 0.6))
+        const x = (u - 0.5) * span
         const y = envelope * amplitude * sway + offset
         const angle = (strand / strands) * Math.PI * 2 + t * 2.5 - u * 4.1
         const radius = height * (0.055 + u * 0.31)
@@ -117,7 +119,13 @@ export class MotionGeometry {
             mix(baseColour[1], SHINE[1], shine * 0.92),
             mix(baseColour[2], SHINE[2], shine * 0.92),
           ]
-          const taper = mix(Math.pow(Math.sin(Math.PI * u), 0.35), 0.25 + u * 0.75, pose.wheel)
+          const envelope = Math.pow(Math.sin(Math.PI * u), 0.35)
+          // Header ribbons keep visible ends even after their resting pose settles.
+          const taper = mix(
+            edgeToEdge ? 0.55 + envelope * 0.45 : envelope,
+            0.25 + u * 0.75,
+            pose.wheel,
+          )
           const alpha = taper * (0.55 + energy * 0.4) * (1 - pose.rest * (compact ? 0.2 : 0.5))
           if (!compact && strand % 2 === 0 && strand + 1 < strands) {
             this.quad(

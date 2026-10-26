@@ -9,10 +9,17 @@ interface Props {
   source?: RefObject<MotionSnapshot>
   label: string
   className?: string
+  edgeToEdge?: boolean
 }
 
 /** The canvas owns only presentation. Capture, playback and state transitions stay outside it. */
-export function ElectricMotion({ snapshot = IDLE_MOTION, source, label, className = '' }: Props) {
+export function ElectricMotion({
+  snapshot = IDLE_MOTION,
+  source,
+  label,
+  className = '',
+  edgeToEdge = false,
+}: Props) {
   const host = useRef<HTMLSpanElement>(null)
   const latest = useRef(snapshot)
   useEffect(() => {
@@ -89,7 +96,7 @@ export function ElectricMotion({ snapshot = IDLE_MOTION, source, label, classNam
       if (!still) clock += delta / 1000
       const resting = still && settled > 1200
       if (width > 0 && height > 0 && renderer && (!resting || needsPaint)) {
-        const vertices = geometry.build(width, height, clock, pose, motion.matches)
+        const vertices = geometry.build(width, height, clock, pose, motion.matches, edgeToEdge)
         renderer.draw(vertices, width, height, scale)
         needsPaint = false
       }
@@ -129,9 +136,15 @@ export function ElectricMotion({ snapshot = IDLE_MOTION, source, label, classNam
       renderer?.dispose()
       element.replaceChildren()
     }
-  }, [source])
+  }, [source, edgeToEdge])
 
   return (
-    <span ref={host} className={`${styles.surface} ${className}`} role="img" aria-label={label} />
+    <span
+      ref={host}
+      className={`${styles.surface} ${className}`}
+      role="img"
+      aria-label={label}
+      data-edge-to-edge={edgeToEdge || undefined}
+    />
   )
 }

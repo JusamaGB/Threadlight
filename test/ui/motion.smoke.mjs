@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 import { join, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
+import { readMotionFrame } from './motion-pixels.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(import.meta.url)
@@ -108,7 +109,17 @@ try {
           getStt: async () => ({ state: 'ready' }),
           getUsage: async () => null,
           getVersion: async () => 'motion-preview',
-          spacesRequest: async () => ({ ok: true, snapshot: { ideas: [], activeId: null, agent } }),
+          spacesRequest: async () => ({
+            ok: true,
+            snapshot: {
+              ideas: [],
+              activeId: null,
+              agent,
+              workspaces: [],
+              spaceOwners: {},
+              documents: [],
+            },
+          }),
           memoryRequest: async () => ({
             ok: false,
             reason: 'No shared memory in this visual test',
@@ -193,6 +204,10 @@ try {
   await page.getByRole('region', { name: 'Voice waveform', exact: true }).waitFor()
   assert.equal(await page.locator('[class*="usageTrack"]').count(), 1)
   await page.waitForTimeout(500)
+  const idlePixels = await readMotionFrame(
+    page.getByRole('region', { name: 'Voice waveform', exact: true }),
+  )
+  assert.ok(idlePixels.span > 0.99, 'quiet header waveform reaches both panel edges')
   await capture('agent-idle-header', page.locator('[data-card]'))
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.locator('[class*="usageTrack"]').waitFor()

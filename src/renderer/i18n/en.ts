@@ -43,8 +43,7 @@ export const en = {
     nothingWorking: 'Nothing working right now',
     showList: 'Show the full list',
     hideList: 'Show only active sessions',
-    unpin: 'Pinned open. Click (or triple-click the bar) to unpin',
-    unpinActive: 'Pinned open. Double-click the bar to unpin',
+    unpin: 'Pinned open. Click to unpin, or double-click the bar',
   },
   state: {
     working: 'Working',

@@ -45,10 +45,7 @@ import { ElectricMotion } from '../motion/ElectricMotion'
 
 type View = 'active' | 'all'
 
-/** How long a double-click on the header waits to see whether it becomes a triple-click. */
-const TRIPLE_CLICK_WAIT_MS = 250
-
-type HoldMode = 'normal' | 'active' | 'pinned'
+type HoldMode = 'normal' | 'pinned'
 /** After a voice send is answered, an untouched panel turns back into the dot. */
 const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
@@ -61,7 +58,7 @@ const workspaceFolder = (id: string) =>
     .replace(/\/+$/, '')
     .toLowerCase()
 
-/** While pinned, this icon takes the place of the thread count, next to the word "recent". */
+/** Pinning is independent of the view/count control beside this icon. */
 function PinIcon() {
   return (
     <svg className={styles.pin} width="10" height="10" viewBox="0 0 16 16" aria-hidden="true">
@@ -145,13 +142,8 @@ export function Panel() {
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [voiceCaption, setVoiceCaption] = useState('')
   const [cancelToken, setCancelToken] = useState(0)
-  /**
-   * How the panel behaves when the pointer leaves. Normal: it closes. Double-click the
-   * header's bare space to pin the active list open ("active"); triple-click to pin the full
-   * list open ("pinned"). The same clicks again unpin it.
-   */
+  /** Double-clicking the bare header toggles staying open without changing the view. */
   const [hold, setHold] = useState<HoldMode>('normal')
-  const pendingDoubleClick = useRef<number | undefined>(undefined)
   const card = useRef<HTMLDivElement>(null)
   const drag = useDotDrag()
 
@@ -256,7 +248,6 @@ export function Panel() {
         setMaxHeight(maxHeight)
         setOpensDown(opensDown)
         if (!fresh) return
-        window.clearTimeout(pendingDoubleClick.current)
         setView('active')
         setExpanded(null)
         setVoiceSelection(null)
@@ -513,20 +504,16 @@ export function Panel() {
   }
 
   // The panel only shows while the pointer is over it; no delayed close can race a re-entry.
-  // Pinned (either list), leaving does nothing at all.
+  // Pinning holds any selected view open.
   const leave = useCallback(() => {
     if (drag.isDragging() || hold !== 'normal' || showMemory) return
     // Never hide the panel while the microphone is open or a voice send is counting down:
     // the recording or the send would carry on with nothing on screen to show or stop it.
     if (voice.state !== 'idle' || Date.now() < countdownUntil.current) return
-    window.clearTimeout(pendingDoubleClick.current)
     window.threadlight.leavePanel()
   }, [drag, hold, showMemory, voice.state])
   useEffect(() => window.threadlight.onPanelPointerOutside(leave), [leave])
   const changeHold = (next: HoldMode) => {
-    // Pinned holds the full list open, pinned active the active list; unpinning goes back to
-    // the active list.
-    setView(next === 'pinned' ? 'all' : 'active')
     setHold(next)
     window.threadlight.setStayOpen(next !== 'normal')
   }
@@ -568,6 +555,8 @@ export function Panel() {
     setChangesFor(null)
     setPicking(null)
     window.threadlight.openPanelQuietly()
+    // Voice commands deliberately reveal the full list; pinning alone never selects a view.
+    setView('all')
     changeHold('pinned')
     if (route.kind === 'unmatched') {
       setNotice(en.openMic.unmatched(route.text))
@@ -670,19 +659,10 @@ export function Panel() {
     }
   }, [openMicListening, openMicLevel])
 
-  // Clicks on the header's bare space: 2 pins the active list, 3 pins the full list. A triple-click arrives
-  // as a double-click first, so the double waits a moment in case a third click follows.
+  // Only a double-click on bare space toggles pinning. A third click has no extra action.
   const onHeaderClick = (event: MouseEvent) => {
-    if (event.target !== event.currentTarget) return
-    if (event.detail === 2) {
-      pendingDoubleClick.current = window.setTimeout(
-        () => changeHold(hold === 'active' ? 'normal' : 'active'),
-        TRIPLE_CLICK_WAIT_MS,
-      )
-    } else if (event.detail === 3) {
-      window.clearTimeout(pendingDoubleClick.current)
-      changeHold(hold === 'pinned' ? 'normal' : 'pinned')
-    }
+    if (event.target !== event.currentTarget || event.detail !== 2) return
+    changeHold(hold === 'normal' ? 'pinned' : 'normal')
   }
 
   const active = sessions.filter(isActive).length
@@ -929,7 +909,7 @@ export function Panel() {
         <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>
           {showVoiceActivity && (
             <div className={styles.voiceActivity} role="region" aria-label="Voice waveform">
-              <ElectricMotion source={motion.source} label={motion.label} />
+              <ElectricMotion source={motion.source} label={motion.label} edgeToEdge />
             </div>
           )}
           {pickingWorkspace ? (

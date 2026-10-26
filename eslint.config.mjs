@@ -10,7 +10,7 @@ export default defineConfig(
   js.configs.recommended,
   tseslint.configs.recommended,
   {
-    files: ['src/renderer/**/*.{ts,tsx}'],
+    files: ['src/renderer/**/*.{ts,tsx}', 'previews/**/*.ts'],
     extends: [reactHooks.configs.flat.recommended],
     languageOptions: { globals: globals.browser },
   },
@@ -20,6 +20,7 @@ export default defineConfig(
       'src/preload/**/*.ts',
       'test/**/*.{ts,mjs}',
       'scripts/**/*.mjs',
+      'previews/**/*.mjs',
       'codex-plugin/scripts/**/*.mjs',
       '*.mjs',
     ],
