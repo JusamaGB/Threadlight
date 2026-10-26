@@ -310,7 +310,7 @@
   position: absolute;
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--faint);
+  border: 1px solid var(--border);
   border-radius: 999px;
   background: transparent;
   pointer-events: auto;
@@ -318,11 +318,11 @@
 
 .threadScrollThumb:hover,
 .threadScrollThumb:focus-visible {
-  border-color: var(--muted);
+  border-color: color-mix(in srgb, var(--faint) 60%, transparent);
 }
 
 .threadScrollThumb:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 1px solid color-mix(in srgb, var(--faint) 60%, transparent);
   outline-offset: 1px;
 }
 

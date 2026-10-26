@@ -6,6 +6,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Muted the hollow thread scrollbar's outline and hover/focus colours to match the panel.
+
 - Context circles now spin throughout active work, including tools and replies,
   then stop on idle. Removed the flashing red row dot; measured context fill and
   colour remain unchanged, with a neutral ring when context is unavailable.
