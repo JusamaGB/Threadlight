@@ -128,31 +128,35 @@ const source = (provider) => ({
   allWorkspaces: workspaceFolders?.[provider] ?? [
     { id: workspacePaths?.[provider] ?? folder, name: 'shared' },
   ],
-  workspaces: [
-    {
-      id: workspacePaths?.[provider] ?? folder,
-      name: 'shared',
-      threadCount: workspaceRows ?? 1,
-      activeCount: 1,
-      anyWorking: false,
-      threads:
-        !workspacePaths || workspaceViews[provider]?.expanded?.includes(workspacePaths[provider])
-          ? Array.from({ length: workspaceRows ?? 1 }, (_, i) => ({
-              session:
-                workspaceRows === null
-                  ? chats[provider]
-                  : {
-                      ...chats[provider],
-                      id: `${provider === 'codex' ? 'codex:' : ''}height-${provider}-${i}`,
-                      title: `Workspace height ${provider} ${i}`,
-                    },
-              children: [],
-            }))
-          : [],
-      hiddenCount: 0,
-      worktrees: 0,
-    },
-  ],
+  workspaces:
+    workspaceRows === 0
+      ? []
+      : [
+          {
+            id: workspacePaths?.[provider] ?? folder,
+            name: 'shared',
+            threadCount: workspaceRows ?? 1,
+            activeCount: 1,
+            anyWorking: false,
+            threads:
+              !workspacePaths ||
+              workspaceViews[provider]?.expanded?.includes(workspacePaths[provider])
+                ? Array.from({ length: workspaceRows ?? 1 }, (_, i) => ({
+                    session:
+                      workspaceRows === null
+                        ? chats[provider]
+                        : {
+                            ...chats[provider],
+                            id: `${provider === 'codex' ? 'codex:' : ''}height-${provider}-${i}`,
+                            title: `Workspace height ${provider} ${i}`,
+                          },
+                    children: [],
+                  }))
+                : [],
+            hiddenCount: 0,
+            worktrees: 0,
+          },
+        ],
 })
 const state = () => ({
   settings,

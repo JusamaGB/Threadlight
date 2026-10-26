@@ -75,6 +75,7 @@ export async function checkWorkspaceHeight(page, capture) {
     )
     await capture('workspace-picked-height')
     await setRows(0)
+    await page.getByText(/Nothing within your chosen time frame/).waitFor()
     const emptyHeight = await card.evaluate((el) => el.getBoundingClientRect().height)
     assert.ok(emptyHeight < 120, 'an empty workspace uses only its empty-state content')
     assert.equal(await card.evaluate((el) => getComputedStyle(el).maxHeight), '700px')
