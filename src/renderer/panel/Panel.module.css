@@ -1503,6 +1503,11 @@ span.planStep {
 }
 
 /* The plan's usage along the card's foot (UsageBar.tsx): a 2px line in a taller hover strip. */
+.agentActivity {
+  flex: none;
+  height: 18px;
+}
+
 .usageBars {
   /* Reserve room so the final row remains above the usage lines. */
   flex: none;

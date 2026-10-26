@@ -187,15 +187,34 @@ try {
   }
   await page.goto(url + '/?view=panel')
   await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).waitFor()
+  await page.evaluate(() => window.motionProof.settings({ enabledProviders: ['codex'] }))
+  await page.locator('[class*="usageTrack"]').waitFor()
+  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  await page.getByRole('region', { name: 'Agent activity', exact: true }).waitFor()
+  assert.equal(await page.locator('[class*="usageTrack"]').count(), 0)
+  await page.waitForTimeout(500)
+  await capture('agent-idle-footer', page.locator('[data-card]'))
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  await page.locator('[class*="usageTrack"]').waitFor()
+  assert.equal(await page.getByRole('region', { name: 'Agent activity', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
   await page.evaluate(() => window.motionProof.emit('onTalkHold', 'down'))
   const stage = page.getByRole('region', { name: 'Voice activity' })
   await stage.waitFor()
+  const ribbon = page.getByRole('region', { name: 'Agent activity', exact: true })
+  await ribbon.waitFor()
+  assert.equal(await stage.locator('canvas').count(), 0)
+  const ribbonBounds = await ribbon.boundingBox()
+  const cardBounds = await page.locator('[data-card]').boundingBox()
+  assert.equal(ribbonBounds.height, 18)
+  assert.equal(ribbonBounds.width, cardBounds.width - 2)
+  assert.equal(ribbonBounds.y + ribbonBounds.height, cardBounds.y + cardBounds.height - 1)
   await page.waitForFunction(() => window.motionProof.telemetry.input.level > 0.2)
-  assert.equal(await stage.locator('[data-renderer]').getAttribute('data-renderer'), 'webgl')
+  assert.equal(await ribbon.locator('[data-renderer]').getAttribute('data-renderer'), 'webgl')
   await stage.getByRole('status').filter({ hasText: 'You speaking' }).waitFor()
-  const first = await stage.locator('canvas').screenshot()
+  const first = await ribbon.locator('canvas').screenshot()
   await page.waitForTimeout(150)
-  assert.notDeepEqual(await stage.locator('canvas').screenshot(), first)
+  assert.notDeepEqual(await ribbon.locator('canvas').screenshot(), first)
   await capture('human-speaking', page.locator('[data-card]'))
   await page.evaluate(() => window.motionProof.setLevel(0))
   await page.waitForFunction(() => window.motionProof.telemetry.input.level === 0)
@@ -216,14 +235,14 @@ try {
   assert.equal((await stage.boundingBox()).height, before.height)
   assert.equal(await page.evaluate(() => window.motionProof.stopped), 1)
   await capture('thinking', page.locator('[data-card]'))
-  const spin = await stage.locator('canvas').screenshot()
+  const spin = await ribbon.locator('canvas').screenshot()
   await page.waitForTimeout(160)
-  assert.notDeepEqual(await stage.locator('canvas').screenshot(), spin)
+  assert.notDeepEqual(await ribbon.locator('canvas').screenshot(), spin)
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.waitForTimeout(1600)
-  const still = await stage.locator('canvas').screenshot()
+  const still = await ribbon.locator('canvas').screenshot()
   await page.waitForTimeout(200)
-  assert.deepEqual(await stage.locator('canvas').screenshot(), still)
+  assert.deepEqual(await ribbon.locator('canvas').screenshot(), still)
   await page.evaluate(() => window.motionProof.agent({ status: 'waiting' }))
   await stage.getByRole('status').filter({ hasText: 'Waiting for you' }).waitFor()
   await page.evaluate(() => window.motionProof.agent({ status: 'ready' }))
@@ -231,21 +250,21 @@ try {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
 
   // Force a real GPU context loss, then verify the replacement canvas still animates.
-  await stage
+  await ribbon
     .locator('canvas')
     .evaluate((canvas) =>
       canvas.getContext('webgl').getExtension('WEBGL_lose_context').loseContext(),
     )
   await page.waitForFunction(
     () =>
-      document.querySelector('[aria-label="Voice activity"] [data-renderer]')?.dataset.renderer ===
+      document.querySelector('[aria-label="Agent activity"] [data-renderer]')?.dataset.renderer ===
       'canvas',
   )
   await page.evaluate(() => window.motionProof.agent({ status: 'working' }))
   await page.waitForTimeout(500)
-  await capture('canvas-fallback', stage)
+  await capture('canvas-fallback', page.locator('[data-card]'))
   assert.ok(
-    await stage.locator('canvas').evaluate((canvas) =>
+    await ribbon.locator('canvas').evaluate((canvas) =>
       canvas
         .getContext('2d')
         .getImageData(0, 0, canvas.width, canvas.height)

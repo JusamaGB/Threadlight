@@ -42,6 +42,7 @@ import { MicDivider } from './MicDivider'
 import { motionMode } from '../../shared/motion'
 import { useMotion } from '../hooks/useMotion'
 import { VoicePresence } from '../motion/VoicePresence'
+import { ElectricMotion } from '../motion/ElectricMotion'
 
 type View = 'active' | 'all'
 
@@ -913,6 +914,7 @@ export function Panel() {
     setExpanded(expanded === session.id ? null : session.id)
   }
 
+  const agentVisible = showAgent && !pickingWorkspace && !changesFor
   const listHidden =
     showMemory || showSettings || pickingWorkspace || showAgent || changesFor !== null
 
@@ -1090,6 +1092,7 @@ export function Panel() {
             label={motion.label}
             microphone={openMicListening || voice.state === 'listening'}
             caption={motionCaption}
+            showWaveform={!agentVisible}
           />
         )}
 
@@ -1246,17 +1249,23 @@ export function Panel() {
           )}
         </div>
 
-        <div className={styles.usageBars} data-parallel={provider === 'both' || undefined}>
-          {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
-          {usage && enabled.includes('claude') && (
-            <UsageBar
-              usage={usage}
-              weekly={view === 'all' && !listHidden}
-              source={provider === 'both' ? 'Claude' : undefined}
-            />
-          )}
-          {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
-        </div>
+        {agentVisible ? (
+          <div className={styles.agentActivity} role="region" aria-label="Agent activity">
+            <ElectricMotion source={motion.source} label={motion.label} />
+          </div>
+        ) : (
+          <div className={styles.usageBars} data-parallel={provider === 'both' || undefined}>
+            {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
+            {usage && enabled.includes('claude') && (
+              <UsageBar
+                usage={usage}
+                weekly={view === 'all' && !listHidden}
+                source={provider === 'both' ? 'Claude' : undefined}
+              />
+            )}
+            {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
+          </div>
+        )}
 
         {menu && (
           <ContextMenu
