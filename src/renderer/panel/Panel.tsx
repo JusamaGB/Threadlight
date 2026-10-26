@@ -43,6 +43,7 @@ import { useMotion } from '../hooks/useMotion'
 import { VoicePresence } from '../motion/VoicePresence'
 import { ElectricMotion } from '../motion/ElectricMotion'
 import { WorkspaceLinks } from './WorkspaceLinks'
+import { ThreadScrollbar } from './ThreadScrollbar'
 
 type View = 'active' | 'all'
 
@@ -157,6 +158,7 @@ export function Panel() {
   /** Double-clicking the bare header toggles staying open without changing the view. */
   const [hold, setHold] = useState<HoldMode>('normal')
   const card = useRef<HTMLDivElement>(null)
+  const threadList = useRef<HTMLDivElement>(null)
   const drag = useDotDrag()
 
   /** Agent Toggle listens until the next press; selecting a target never opens the mic. */
@@ -518,7 +520,13 @@ export function Panel() {
   // The panel only shows while the pointer is over it; no delayed close can race a re-entry.
   // Pinning holds any selected view open.
   const leave = useCallback(() => {
-    if (drag.isDragging() || hold !== 'normal' || showMemory) return
+    if (
+      drag.isDragging() ||
+      document.querySelector('[data-thread-scroll-dragging]') ||
+      hold !== 'normal' ||
+      showMemory
+    )
+      return
     // Never hide the panel while the microphone is open or a voice send is counting down:
     // the recording or the send would carry on with nothing on screen to show or stop it.
     if (voice.state !== 'idle' || Date.now() < countdownUntil.current) return
@@ -1228,7 +1236,12 @@ export function Panel() {
               </div>
             )}
 
-            <div className={styles.list} data-workspace-thread-list="">
+            <div
+              ref={threadList}
+              id="thread-list"
+              className={styles.list}
+              data-workspace-thread-list=""
+            >
               {tree ? (
                 <WorkspaceTree
                   workspaces={snapshot.workspaces}
@@ -1255,6 +1268,7 @@ export function Panel() {
               )}
             </div>
 
+            <ThreadScrollbar list={threadList} />
             {target && compose && (
               <Composer
                 key={`${target.id}:${compose.initialText ?? ''}`}

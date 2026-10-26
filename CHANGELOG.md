@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Made the thread scrollbar track transparent and its thumb outline-only, overlaid
+  on the rows so provider gradients continue underneath it.
+
 - Corrected the thread context menu to open Worktree diff, including all current
   changes in its checkout. Row badges and checklist links keep their thread-specific diffs.
 

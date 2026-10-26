@@ -104,6 +104,22 @@ export async function checkWorkspaceLinks(page, capture) {
       wires = await page.locator('[data-workspace-links]').boundingBox()
     assert.equal(card.width, 300)
     assert.equal(card.x - wires.x, 16)
+    const scrollbar = page.getByRole('scrollbar', { name: 'Scroll threads' })
+    await scrollbar.waitFor()
+    const appearance = await scrollbar.evaluate((thumb) => ({
+      fill: getComputedStyle(thumb).backgroundColor,
+      outline: getComputedStyle(thumb).borderTopWidth,
+      track: getComputedStyle(thumb.parentElement).backgroundColor,
+      gutter:
+        document.querySelector('[data-workspace-thread-list]').offsetWidth -
+        document.querySelector('[data-workspace-thread-list]').clientWidth,
+    }))
+    assert.deepEqual(appearance, {
+      fill: 'rgba(0, 0, 0, 0)',
+      outline: '1px',
+      track: 'rgba(0, 0, 0, 0)',
+      gutter: 0,
+    })
     const row = page.locator('[data-session-id="wire-claude"]')
     await row.hover()
     await page.locator('[data-wire-key][data-highlight]').waitFor()
@@ -115,13 +131,34 @@ export async function checkWorkspaceLinks(page, capture) {
     )
     await capture('workspace-wires-production')
     const expanded = await page.locator('[data-wire-key] path').first().getAttribute('d')
-    await page.locator('[data-workspace-thread-list]').evaluate((list) => {
-      list.scrollTop = 120
-    })
+    const thumb = await scrollbar.boundingBox()
+    await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2 + 25)
+    await page.mouse.up()
     await page.waitForFunction(
       (before) => document.querySelector('[data-wire-key] path')?.getAttribute('d') !== before,
       expanded,
     )
+    assert.ok(
+      await page.locator('[data-workspace-thread-list]').evaluate((list) => list.scrollTop > 0),
+      'outline thumb can be dragged',
+    )
+    await scrollbar.press('Home')
+    await page.waitForFunction(
+      () => document.querySelector('[data-workspace-thread-list]').scrollTop === 0,
+    )
+    await scrollbar.press('End')
+    await page.waitForFunction(() => {
+      const list = document.querySelector('[data-workspace-thread-list]')
+      return Math.abs(list.scrollTop - (list.scrollHeight - list.clientHeight)) < 1
+    })
+    await scrollbar.hover()
+    await page.mouse.wheel(0, -100)
+    await page.waitForFunction(() => {
+      const list = document.querySelector('[data-workspace-thread-list]')
+      return list.scrollTop < list.scrollHeight - list.clientHeight - 20
+    })
     await page.keyboard.press('Escape')
     assert.equal(await page.locator('[data-wire-key][data-highlight]').count(), 0)
     await page.getByRole('button', { name: 'Hide workspace wires', exact: true }).click()

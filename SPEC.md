@@ -116,6 +116,9 @@ leaving the top row for the title and this thread's diff totals.
 Last active has no inline marker. Resting the pointer on a thread for one second
 shows its local time, or its date when at least 24 hours old. Movement, leave,
 scroll and blur cancel the delayed tip; specific diff/context/task tips take priority.
+The thread scrollbar overlays the rows with a transparent track and hollow 6px
+thumb, preserving provider gradients to the panel edge. Drag, wheel, track clicks
+and keyboard scrolling remain available; dragging keeps an unpinned panel open.
 
 Active spinning indicators use vibrant Claude-orange strands and a glossy
 Codex-blue outward sweep. The voice ribbon retains its own evolving palette.

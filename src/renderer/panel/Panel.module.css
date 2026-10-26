@@ -219,6 +219,7 @@
 
 /* The sessions part of the card; hidden (not removed) while settings show. */
 .sessions {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -291,8 +292,38 @@
 
 .list {
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--faint) transparent;
+  scrollbar-width: none;
+}
+
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+.threadScrollTrack {
+  position: absolute;
+  right: 1px;
+  width: 6px;
+  z-index: 2;
+}
+
+.threadScrollThumb {
+  position: absolute;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--faint);
+  border-radius: 999px;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.threadScrollThumb:hover,
+.threadScrollThumb:focus-visible {
+  border-color: var(--muted);
+}
+
+.threadScrollThumb:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .empty {
