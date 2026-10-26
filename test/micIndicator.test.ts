@@ -27,7 +27,7 @@ describe('floating microphone indicator', () => {
     const area = { x: anchor.x < 0 ? -1920 : 0, y: 0, width: 1920, height: 1080 }
     const pill = micIndicatorBounds(anchor, area, true)
     expect(pill.width).toBe(92)
-    expect(pill.height).toBe(32)
+    expect(pill.height).toBe(18)
     expect(pill.x).toBeGreaterThanOrEqual(area.x)
     expect(pill.x + pill.width).toBeLessThanOrEqual(area.x + area.width)
     expect(pill.y + pill.height).toBeLessThanOrEqual(area.height)

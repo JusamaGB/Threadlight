@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Enlarged the resting floating waveform and slimmed the live microphone pill from
+  32px to 18px tall, with a smaller stop control.
+
 ### Added
 
 - Shared Spaces now has Handoffs, Ideas and Brainstorm tabs beneath one header and

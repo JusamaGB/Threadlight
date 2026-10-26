@@ -326,6 +326,8 @@ try {
 
   await page.goto(url + '/?view=dot')
   await page.getByRole('status').waitFor()
+  await page.waitForTimeout(500)
+  await capture('idle-dot', page.locator('#root'))
   await page.evaluate(() =>
     window.motionProof.emit('onMotion', {
       mode: 'thinking',
@@ -346,6 +348,7 @@ try {
   const pill = page.getByRole('group', { name: 'Microphone is open', exact: true })
   await pill.getByRole('img', { name: 'Agent speaking', exact: true }).waitFor()
   assert.equal((await pill.boundingBox()).width, 92)
+  assert.equal((await pill.boundingBox()).height, 18)
   await page.waitForTimeout(350)
   await capture('agent-speaking-pill', pill)
   await pill.getByRole('button', { name: 'Close microphone', exact: true }).click()

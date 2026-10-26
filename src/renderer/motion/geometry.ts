@@ -66,7 +66,7 @@ export class MotionGeometry {
     const output = pose.output.level > pose.input.level
     const drawBody = (audio: AudioEnergy, agent: boolean, offset: number, size: number) => {
       const energy = Math.sqrt(unit(Math.max(0, audio.level - 0.008)))
-      const amplitude = (0.025 + energy * 0.38) * height * size
+      const amplitude = (0.025 + (compact ? pose.rest * 0.02 : 0) + energy * 0.38) * height * size
       const colourAt = (u: number, strand: number): Colour => {
         const p = (((u * 4 + strand * 0.55 + t * 0.12) % 6) + 6) % 6
         const a = palette[Math.floor(p)]!
@@ -88,7 +88,7 @@ export class MotionGeometry {
           Math.sin(u * Math.PI * 3.1 - t * (agent ? 1.7 : 2.1) + phase) * (0.62 + audio.low * 0.1) +
           Math.sin(u * Math.PI * 5 + t * 0.65 + phase * 0.7) * (0.2 + audio.mid * 0.08) +
           Math.sin(u * Math.PI * 13 - t * 3.2 + phase) * audio.high * 0.16
-        const x = (u - 0.5) * width * 0.96 * (1 - pose.rest * 0.6)
+        const x = (u - 0.5) * width * 0.96 * (1 - pose.rest * (compact ? 0.15 : 0.6))
         const y = envelope * amplitude * sway + offset
         const angle = (strand / strands) * Math.PI * 2 + t * 2.5 - u * 4.1
         const radius = height * (0.055 + u * 0.31)
@@ -104,7 +104,7 @@ export class MotionGeometry {
           const next = point(u, strand)
           const colour = colourAt(u, strand)
           const taper = mix(Math.pow(Math.sin(Math.PI * u), 0.35), 0.25 + u * 0.75, pose.wheel)
-          const alpha = taper * (0.55 + energy * 0.4) * (1 - pose.rest * 0.5)
+          const alpha = taper * (0.55 + energy * 0.4) * (1 - pose.rest * (compact ? 0.2 : 0.5))
           if (!compact && strand % 2 === 0 && strand + 1 < strands) {
             this.quad(
               previous,

@@ -144,7 +144,7 @@ export function FloatingDot({
           aria-label={en.openMic.stop}
           title={en.openMic.stop}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <svg width="7" height="7" viewBox="0 0 10 10" aria-hidden="true">
             <rect width="10" height="10" rx="1.5" fill="currentColor" />
           </svg>
         </button>

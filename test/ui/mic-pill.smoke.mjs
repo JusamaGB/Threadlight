@@ -8,7 +8,7 @@ export async function checkMicPill(page, capture) {
   await pill.waitFor()
   const bounds = await pill.boundingBox()
   assert.equal(bounds.width, 92)
-  assert.equal(bounds.height, 32)
+  assert.equal(bounds.height, 18)
   const opens = () =>
     page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'dotClick').length)
   const before = await opens()

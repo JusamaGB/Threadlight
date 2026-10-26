@@ -1,6 +1,6 @@
 export const DOT_SIZE = 22
 export const MIC_PILL_WIDTH = 92
-export const MIC_PILL_HEIGHT = 32
+export const MIC_PILL_HEIGHT = 18
 
 type Point = { x: number; y: number }
 type Bounds = Point & { width: number; height: number }
