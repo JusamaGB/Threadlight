@@ -181,6 +181,7 @@ export function WorkspacePicker({
       {folder && (
         <nav className={styles.pickerLocation} aria-label="Workspace folder navigation">
           <button
+            className={styles.pickerBack}
             aria-label="Parent folder"
             title="Back to parent folder"
             onClick={() => setLocation(folder?.parent ?? '')}
@@ -196,20 +197,23 @@ export function WorkspacePicker({
               />
             </svg>
           </button>
-          <span title={folder.path}>{folder.path}</span>
+          {folder.workspace && !searching ? (
+            <button
+              className={styles.pickerChoose}
+              title={folder.path}
+              aria-label={`Use ${folder.path}`}
+              aria-pressed={
+                chosen !== null && workspaceFolder(chosen) === workspaceFolder(folder.workspace.id)
+              }
+              onClick={() => onPick(folder.workspace!.id)}
+            >
+              <span className={styles.pickerUseLabel}>Use</span>
+              <span>{folder.path}</span>
+            </button>
+          ) : (
+            <span title={folder.path}>{folder.path}</span>
+          )}
         </nav>
-      )}
-      {folder?.workspace && !searching && (
-        <button
-          className={styles.workspaceHeader}
-          title={folder.path}
-          aria-pressed={
-            chosen !== null && workspaceFolder(chosen) === workspaceFolder(folder.workspace.id)
-          }
-          onClick={() => onPick(folder.workspace!.id)}
-        >
-          Use {nameOf(folder)}
-        </button>
       )}
       <div
         id="workspace-folders"

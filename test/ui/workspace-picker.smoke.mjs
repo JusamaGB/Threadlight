@@ -1,4 +1,4 @@
-/* global window, document */
+/* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 
 export async function checkWorkspacePicker(page, capture) {
@@ -150,8 +150,45 @@ export async function checkWorkspacePicker(page, capture) {
       .getByText('Z:/General', { exact: true })
       .waitFor()
     await choose('lib').waitFor()
-    await page.getByRole('button', { name: 'Use General', exact: true }).waitFor()
+    const useFolder = page.getByRole('button', { name: 'Use Z:/General', exact: true })
+    await useFolder.waitFor()
+    const navigation = page.getByRole('navigation', { name: 'Workspace folder navigation' })
+    const back = navigation.getByRole('button', { name: 'Parent folder', exact: true })
+    const backBox = await back.boundingBox(),
+      useBox = await useFolder.boundingBox()
+    assert.equal(backBox.y, useBox.y, 'back arrow and workspace link share one row')
+    assert.ok(backBox.x + backBox.width < useBox.x)
+    const colours = () =>
+      useFolder
+        .locator('span')
+        .evaluateAll((spans) => spans.map((span) => getComputedStyle(span).color))
+    await page.locator('header').hover()
+    const normal = await colours()
+    assert.notEqual(normal[0], normal[1], 'only Use is accented at rest')
+    for (const text of ['Use', 'Z:/General']) {
+      await useFolder.getByText(text, { exact: true }).hover()
+      assert.deepEqual(
+        await colours(),
+        [normal[0], normal[0]],
+        'hovering either part accents the whole link',
+      )
+    }
     await capture('workspace-picker-browse')
+    await useFolder.getByText('Z:/General', { exact: true }).click()
+    assert.equal(
+      await page.evaluate(
+        async () => (await window.threadlight.getSettings()).combinedFocusWorkspace,
+      ),
+      'codex:Z:/General',
+    )
+    await open()
+    await zDrive.click()
+    await results.getByRole('button', { name: 'Browse General', exact: true }).click()
+    await useFolder.press('Enter')
+    await page.getByRole('button', { name: 'Filter applications: Both', exact: true }).waitFor()
+    await open()
+    await zDrive.click()
+    await results.getByRole('button', { name: 'Browse General', exact: true }).click()
     await page.getByRole('button', { name: 'Parent folder', exact: true }).click()
     await choose('General').click()
     assert.equal(
@@ -189,6 +226,7 @@ export async function checkWorkspacePicker(page, capture) {
     assert.ok(await results.evaluate((el) => el.scrollHeight > el.clientHeight))
     assert.equal(await page.getByRole('scrollbar').count(), 0)
     await results.press('End')
+    await page.waitForFunction(() => document.getElementById('workspace-folders')?.scrollTop > 0)
     assert.ok(await results.evaluate((el) => el.scrollTop > 0))
     assert.deepEqual(
       await search.boundingBox(),

@@ -464,12 +464,12 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 10px 4px;
+  padding: 0 10px 2px;
   color: var(--muted);
   font-size: 11px;
 }
 
-.pickerLocation button {
+.pickerBack {
   display: grid;
   place-items: center;
   width: 22px;
@@ -481,8 +481,26 @@
   color: var(--muted);
 }
 
-.pickerLocation button:hover {
+.pickerBack:hover {
   color: var(--fg);
+}
+
+.pickerChoose {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 22px;
+  color: var(--muted);
+  font: inherit;
+}
+.pickerUseLabel {
+  flex: none;
+  color: var(--accent);
+}
+.pickerChoose:hover,
+.pickerChoose:focus-visible {
+  color: var(--accent);
 }
 
 .pickerUseAll:hover {

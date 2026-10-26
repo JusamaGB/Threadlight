@@ -48,7 +48,10 @@ The workspace picker browses known thread folders, grouped by drive or UNC share
 it does not scan unrelated files on disk. Its Claude/Codex/Both selector uses the
 same application setting as the main header. Both combines equivalent folder paths
 while retaining each provider's original selection ID. The picker opens at All
-drives and offers parent/child navigation. One control line has "Use All Drives"
+drives and offers parent/child navigation. Inside a selectable folder, one compact
+row contains the parent arrow and `Use <full folder path>` selection link. Only
+"Use" is accented at rest; hovering either part or focusing the link accents the
+whole link. The path is not repeated on a separate row. One control line has "Use All Drives"
 at the left and "Apps | Search" at the right. Apps reveals Claude/Codex/Both on
 hover without taking keyboard focus; clicking also opens a keyboard-operable menu.
 Search reveals its input on hover. Moving into the input keeps it visible; clicking
