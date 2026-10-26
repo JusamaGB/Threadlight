@@ -6,6 +6,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Context circles now spin throughout active work, including tools and replies,
+  then stop on idle. Removed the flashing red row dot; measured context fill and
+  colour remain unchanged, with a neutral ring when context is unavailable.
+
 - Added compact −count+ controls beside Recent, linked to the Sessions listed
   setting. Other views retain their existing thread totals.
 

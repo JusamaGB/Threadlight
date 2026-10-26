@@ -20,6 +20,7 @@ import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
 import { checkThreadDiffs } from './thread-diffs.smoke.mjs'
 import { checkWorkspaceLinks } from './workspace-links.smoke.mjs'
+import { checkActivityRings } from './activity-rings.smoke.mjs'
 import { checkThreadBadges } from './thread-badges.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
@@ -413,6 +414,11 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'activity-rings') {
+    await checkActivityRings(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'recent-limit') {
     await checkRecentLimit(page, capture)
     await checkToolbar(page)

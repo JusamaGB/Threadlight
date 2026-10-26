@@ -181,9 +181,9 @@ const escape = (text: string) =>
 
 function ring(thread: Thread) {
   const value = thread.context
-  if (value === null) return ''
+  if (value === null && thread.state !== 'working') return ''
   const length = 2 * Math.PI * 6.25
-  return `<svg class="ring" viewBox="0 0 14 14" data-level="${value >= 0.8 ? 'red' : value >= 0.6 ? 'amber' : 'normal'}" ${thread.thinking ? 'data-thinking' : ''} aria-hidden="true"><circle class="track" cx="7" cy="7" r="6.25"/><circle class="fill" cx="7" cy="7" r="6.25" stroke-dasharray="${length}" stroke-dashoffset="${length * (1 - value)}" transform="rotate(-90 7 7)"/></svg>`
+  return `<svg class="ring" viewBox="0 0 14 14" data-level="${value !== null && value >= 0.8 ? 'red' : value !== null && value >= 0.6 ? 'amber' : 'normal'}" ${thread.state === 'working' ? 'data-active' : ''} aria-hidden="true"><circle class="track" cx="7" cy="7" r="6.25" ${value === null ? 'stroke-dasharray="2 3"' : ''}/>${value === null ? '' : `<circle class="fill" cx="7" cy="7" r="6.25" stroke-dasharray="${length}" stroke-dashoffset="${length * (1 - value)}" transform="rotate(-90 7 7)"/>`}</svg>`
 }
 function render() {
   shown = order.filter((thread) =>

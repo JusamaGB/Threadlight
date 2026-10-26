@@ -290,7 +290,7 @@
     .ring[data-level='red'] .fill {
       stroke: #e86c5f;
     }
-    .ring[data-thinking] {
+    .ring[data-active] {
       animation: think 0.9s linear infinite;
     }
     @keyframes think {
@@ -302,9 +302,6 @@
       width: 6px;
       height: 6px;
       border-radius: 50%;
-    }
-    .dot[data-state='working'] {
-      background: #d66a61;
     }
     .dot[data-state='waiting'] {
       background: #e8ad44;
@@ -478,7 +475,7 @@
       }
     }
     @media (prefers-reduced-motion: reduce) {
-      .ring[data-thinking] {
+      .ring[data-active] {
         animation: none;
       }
       .wire {

@@ -137,6 +137,12 @@ The thread scrollbar overlays the rows with a transparent track and hollow 6px
 thumb, preserving provider gradients to the panel edge. Drag, wheel, track clicks
 and keyboard scrolling remain available; dragging keeps an unpinned panel open.
 
+Context circles spin for the full `working` state, including thinking, tools and
+reply generation, replacing the flashing red row dot. Idle/waiting circles are
+still; amber attention markers remain. Context percentages, arc fill and threshold
+colours are unchanged. A working thread without a context reading shows a neutral
+dashed activity track with no percentage arc. Reduced motion keeps the ring still.
+
 Active spinning indicators use vibrant Claude-orange strands and a glossy
 Codex-blue outward sweep. The voice ribbon retains its own evolving palette.
 While minimised, pending input in the listed Active/Recent threads instead shows

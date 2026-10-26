@@ -80,24 +80,32 @@ export function SessionRow(props: SessionRowProps) {
         aria-expanded={expanded}
       >
         <span className={styles.rowTop}>
-          {/* The state dot, with the thread's context ring around it. */}
+          {/* The context ring also carries the working animation. Amber still marks attention. */}
           <Tip
             data-workspace-anchor=""
             className={styles.dotSlot}
-            text={session.contextUsed !== null ? contextLabel(session.contextUsed) : ''}
+            text={
+              session.contextUsed !== null
+                ? contextLabel(session.contextUsed)
+                : session.state === 'working'
+                  ? 'Context unavailable'
+                  : ''
+            }
           >
-            {session.contextUsed !== null && (
+            {(session.contextUsed !== null || session.state === 'working') && (
               <ContextRing
                 used={session.contextUsed}
                 wide={attention !== null}
-                thinking={session.thinking && session.state === 'working' && !attention}
+                active={session.state === 'working'}
               />
             )}
-            <span
-              className={styles.stateDot}
-              data-state={session.state}
-              data-attention={attention ? '' : undefined}
-            />
+            {(session.state === 'waiting' || attention) && (
+              <span
+                className={styles.stateDot}
+                data-state={session.state}
+                data-attention={attention ? '' : undefined}
+              />
+            )}
           </Tip>
           <span className={titleClass}>{session.title}</span>
           {session.threadDiff && (

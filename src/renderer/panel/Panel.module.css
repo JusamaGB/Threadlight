@@ -496,11 +496,11 @@
   pointer-events: none;
 }
 
-.contextRing[data-thinking] {
-  animation: contextThinking 0.9s linear infinite;
+.contextRing[data-active] {
+  animation: contextActivity 0.9s linear infinite;
 }
 
-@keyframes contextThinking {
+@keyframes contextActivity {
   from {
     transform: translate(-50%, -50%) rotate(0deg);
   }
@@ -517,6 +517,10 @@
 
 .ringTrack {
   stroke: var(--border);
+}
+
+.ringTrack[data-unknown] {
+  stroke: var(--muted);
 }
 
 .ringFill {
@@ -539,11 +543,6 @@
   flex: none;
   /* Idle threads show no dot (it would be on nearly every row); the space keeps titles aligned. */
   background: transparent;
-}
-
-.stateDot[data-state='working'] {
-  background: var(--red);
-  animation: rowPulse 1.4s ease-in-out infinite;
 }
 
 .stateDot[data-state='waiting'] {
@@ -976,7 +975,7 @@ span.planStep {
 
 @media (prefers-reduced-motion: reduce) {
   .spinner,
-  .contextRing[data-thinking] {
+  .contextRing[data-active] {
     animation: none;
   }
 }
