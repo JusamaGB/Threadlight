@@ -28,8 +28,8 @@ export async function checkThreadBadges(page, capture) {
         files: 2,
         newFiles: 0,
         ahead: 2,
-        behind: 0,
-        worktrees: ['Z:/General/repo'],
+        behind: 7,
+        worktrees: Array.from({ length: 5 }, (_, i) => `Z:/General/repo-${i}`),
       },
       pullRequests: [{ number: 25, state: session.provider === 'codex' ? 'unknown' : 'merged' }],
     })
@@ -47,6 +47,17 @@ export async function checkThreadBadges(page, capture) {
     await row.getByText('+124', { exact: true }).waitFor()
     await row.getByText('−13', { exact: true }).waitFor()
     await row.getByText('↑2', { exact: true }).waitFor()
+    if (provider === 'claude') {
+      await row.locator(':scope > button').first().click()
+      const line = row.locator('[class*="_gitLine_"]')
+      assert.equal(await line.innerText(), 'main · 2 to push')
+      assert.doesNotMatch(await line.innerText(), /behind main|worktrees/)
+      assert.equal(
+        await row.locator('[class*="_cwd_"]').innerText(),
+        snapshot.sessions.find((session) => !session.id.startsWith('codex:')).cwd,
+      )
+      await row.locator(':scope > button').first().click()
+    }
     const badge = row.locator('[title^="Pull request #25"]')
     assert.equal(
       await badge.getAttribute('data-state'),

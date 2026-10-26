@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Removed worktree-count and behind-main text from expanded thread details,
+  retaining the branch, folder path and existing links.
+
 - Workspace fills the display's usable height by default. Hovering the usage bars
   reveals a height grip; picked heights persist for Workspace across restarts and
   clamp to smaller displays. Other views keep their content-sized layout.

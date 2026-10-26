@@ -607,7 +607,7 @@
   opacity: 0.8;
 }
 
-/* The expanded thread's git line: branch · to push · behind main · worktrees. */
+/* The expanded thread's compact git line: branch · to push. */
 .gitLine {
   margin-top: 1px;
   font-family: 'Cascadia Mono', Consolas, monospace;
