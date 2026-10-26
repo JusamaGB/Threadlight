@@ -1,30 +1,114 @@
-import { en } from '../i18n/en'
+import { useMemo, useRef, useState } from 'react'
+import { workspaceFolder } from '../../shared/providers'
+import {
+  searchWorkspaces,
+  workspaceExplorer,
+  type KnownWorkspace,
+  type WorkspaceFolder,
+} from '../lib/workspaceExplorer'
 import styles from './Panel.module.css'
-import { sameFolder } from './WorkspaceTree'
+import { ThreadScrollbar } from './ThreadScrollbar'
 
 interface WorkspacePickerProps {
-  provider?: 'claude' | 'codex' | 'both' | 'none'
-  /** Every workspace, whether or not it has threads inside the time window. */
-  workspaces: { id: string; name: string }[]
-  /** The workspace now in focus, or null when following the Claude app. */
+  provider: 'claude' | 'codex' | 'both' | 'none'
+  /** Every known workspace, including threads outside the recent time window. */
+  workspaces: KnownWorkspace[]
   chosen: string | null
-  /** The workspace of the thread last open in Claude, named on the "Follow Claude" row. */
   current: string | null
+  onProviderChange: (provider: 'claude' | 'codex' | 'both') => void
   onPick: (workspaceId: string | null) => void
 }
 
-/** Choosing which workspace the Workspace list shows: one row per workspace, all collapsed. */
+/** A folder browser over known thread locations, rather than unrelated files on disk. */
 export function WorkspacePicker({
   workspaces,
   chosen,
   current,
   onPick,
   provider,
+  onProviderChange,
 }: WorkspacePickerProps) {
-  const currentName = workspaces.find((w) => current && sameFolder(w.id, current))?.name
+  const explorer = useMemo(() => workspaceExplorer(workspaces), [workspaces])
+  const [location, setLocation] = useState(
+    () => explorer.folders.get(workspaceFolder(chosen ?? current ?? ''))?.parent ?? '',
+  )
+  const [query, setQuery] = useState('')
+  const list = useRef<HTMLDivElement>(null)
+  const folder = explorer.folders.get(location)
+  const drive = folder?.root ?? ''
+  const searching = query.trim().length > 0
+  const rows = searching
+    ? searchWorkspaces([...explorer.folders.values()], query, drive)
+    : (folder?.children ?? explorer.roots)
+  const currentName = workspaces
+    .find((w) => current && workspaceFolder(w.id) === workspaceFolder(current))
+    ?.name.replace(/^(Claude|Codex) · /, '')
+  const nameOf = (entry: WorkspaceFolder) =>
+    entry.workspace?.name.replace(/^(Claude|Codex) · /, '') ?? entry.name
+  const browse = (entry: WorkspaceFolder) => {
+    setLocation(entry.key)
+    setQuery('')
+  }
+
   return (
-    <>
-      <p className={styles.pickerPrompt}>{en.workspaces.choose}</p>
+    <div className={styles.workspacePicker}>
+      <p className={styles.pickerPrompt}>
+        Choose which folder’s threads to show. Only known thread folders are listed.
+      </p>
+      <div className={styles.pickerControls}>
+        <label>
+          Applications
+          <select
+            aria-label="Workspace applications"
+            value={provider === 'none' ? '' : provider}
+            onChange={(event) =>
+              onProviderChange(event.target.value as 'claude' | 'codex' | 'both')
+            }
+          >
+            {provider === 'none' && (
+              <option value="" disabled>
+                Choose apps…
+              </option>
+            )}
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+            <option value="both">Both</option>
+          </select>
+        </label>
+        <label>
+          Drive
+          <select
+            aria-label="Workspace drive"
+            value={drive}
+            onChange={(event) => setLocation(event.target.value)}
+          >
+            <option value="">All drives</option>
+            {explorer.roots.map((root) => (
+              <option key={root.key} value={root.key}>
+                {root.path}
+              </option>
+            ))}
+          </select>
+        </label>
+        <input
+          type="search"
+          aria-label="Search workspaces"
+          placeholder="Search workspace name or path…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
+      <nav className={styles.pickerLocation} aria-label="Workspace folder navigation">
+        <button
+          aria-label="Parent folder"
+          title="Parent folder"
+          disabled={!folder}
+          onClick={() => setLocation(folder?.parent ?? '')}
+        >
+          ↑
+        </button>
+        <span title={folder?.path}>{folder?.path ?? 'All drives'}</span>
+      </nav>
       <button
         className={styles.workspaceHeader}
         aria-pressed={chosen === null}
@@ -35,22 +119,76 @@ export function WorkspacePicker({
             ? 'Follow recent activity'
             : provider === 'codex'
               ? 'Follow Codex activity'
-              : en.workspaces.followClaude}
+              : 'Follow Claude activity'}
         </span>
         {currentName && <span className={styles.workspaceCount}>{currentName}</span>}
       </button>
-      {workspaces.map((workspace) => (
+      {folder?.workspace && !searching && (
         <button
-          key={workspace.id}
           className={styles.workspaceHeader}
-          aria-pressed={chosen !== null && sameFolder(chosen, workspace.id)}
-          title={workspace.id}
-          onClick={() => onPick(workspace.id)}
+          title={folder.path}
+          aria-pressed={
+            chosen !== null && workspaceFolder(chosen) === workspaceFolder(folder.workspace.id)
+          }
+          onClick={() => onPick(folder.workspace!.id)}
         >
-          <span className={styles.workspaceName}>{workspace.name}</span>
-          <span className={styles.caret}>▸</span>
+          Use {nameOf(folder)}
         </button>
-      ))}
-    </>
+      )}
+      <div
+        ref={list}
+        id="workspace-folders"
+        className={styles.pickerResults}
+        aria-label={searching ? 'Workspace search results' : 'Workspace folders'}
+      >
+        {rows.map((entry) => (
+          <div key={entry.key} className={styles.pickerFolder}>
+            <button
+              className={styles.workspaceHeader}
+              aria-pressed={
+                entry.workspace
+                  ? chosen !== null &&
+                    workspaceFolder(chosen) === workspaceFolder(entry.workspace.id)
+                  : undefined
+              }
+              title={entry.path}
+              onClick={() => (entry.workspace ? onPick(entry.workspace.id) : browse(entry))}
+            >
+              <span className={styles.pickerFolderName}>
+                <span className={styles.workspaceName}>{nameOf(entry)}</span>
+                {searching && <span className={styles.pickerPath}>{entry.path}</span>}
+              </span>
+              {!entry.workspace && (
+                <>
+                  <span className={styles.workspaceCount}>
+                    {entry.count} {entry.count === 1 ? 'workspace' : 'workspaces'}
+                  </span>
+                  <span className={styles.caret}>▸</span>
+                </>
+              )}
+            </button>
+            {entry.workspace && entry.children.length > 0 && (
+              <button
+                className={styles.pickerBrowse}
+                aria-label={`Browse ${nameOf(entry)}`}
+                title={`Browse folders inside ${entry.path}`}
+                onClick={() => browse(entry)}
+              >
+                ▸
+              </button>
+            )}
+          </div>
+        ))}
+        {rows.length === 0 && (
+          <p className={styles.pickerEmpty} role="status">
+            {searching
+              ? 'No workspaces match your search.'
+              : 'No other known workspaces in this folder.'}
+            {drive && <button onClick={() => setLocation('')}>Look across all drives</button>}
+          </p>
+        )}
+      </div>
+      <ThreadScrollbar list={list} label="Scroll workspaces" controls="workspace-folders" />
+    </div>
   )
 }

@@ -301,7 +301,8 @@
   scrollbar-width: none;
 }
 
-.list::-webkit-scrollbar {
+.list::-webkit-scrollbar,
+.pickerResults::-webkit-scrollbar {
   display: none;
 }
 
@@ -397,6 +398,123 @@
   padding: 8px 10px 2px;
   font-size: 11px;
   color: var(--faint);
+}
+
+.workspacePicker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspacePicker > :not(.pickerResults) {
+  flex: none;
+}
+
+.pickerControls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 8px;
+  padding: 8px 10px;
+}
+
+.pickerControls label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pickerControls input,
+.pickerControls select {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  height: 28px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+}
+
+.pickerControls input {
+  grid-column: 1 / -1;
+}
+
+.pickerLocation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 5px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pickerLocation button {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.pickerLocation span,
+.pickerPath {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pickerResults {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  border-top: 1px solid var(--border);
+}
+
+.pickerFolder {
+  display: flex;
+}
+.pickerFolder > .workspaceHeader {
+  min-width: 0;
+}
+.pickerFolderName {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+.pickerPath {
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 400;
+}
+.pickerBrowse {
+  flex: none;
+  width: 26px;
+  color: var(--muted);
+}
+.pickerBrowse:hover {
+  color: var(--fg);
+  background: var(--border);
+}
+.pickerEmpty {
+  margin: 0;
+  padding: 10px;
+  color: var(--faint);
+  font-size: 11px;
+}
+.pickerEmpty button {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
 }
 
 .workspaceHeader[aria-pressed='true'],

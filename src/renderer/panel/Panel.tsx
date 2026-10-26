@@ -821,17 +821,21 @@ export function Panel() {
       onSelect: () => void selectList(mode),
     })),
   ]
+  const selectApplications = async (selection: 'claude' | 'codex' | 'both') => {
+    const enabledProviders = selection === 'both' ? (['claude', 'codex'] as const) : [selection]
+    const result = await window.threadlight.updateSettings({
+      enabledProviders: [...enabledProviders],
+    })
+    if (!result.ok) setNotice(result.reason)
+  }
   const sourceMenuItems = [
-    { label: 'Codex', providers: ['codex'] as const },
-    { label: 'Claude', providers: ['claude'] as const },
-    { label: 'Both', providers: ['claude', 'codex'] as const },
-  ].map(({ label, providers }) => ({
+    { label: 'Codex', selection: 'codex' as const },
+    { label: 'Claude', selection: 'claude' as const },
+    { label: 'Both', selection: 'both' as const },
+  ].map(({ label, selection }) => ({
     label,
     disabled: label === sourceLabel,
-    onSelect: async () => {
-      const result = await window.threadlight.updateSettings({ enabledProviders: [...providers] })
-      if (!result.ok) setNotice(result.reason)
-    },
+    onSelect: () => selectApplications(selection),
   }))
 
   const changesThread = changesFor ? findInSnapshot(snapshot, changesFor.sessionId) : undefined
@@ -845,7 +849,7 @@ export function Panel() {
   const pickWorkspace = async (id: string | null) => {
     setVoiceSelection(null)
     setVoiceWorkspace(null)
-    await window.threadlight.updateSettings({
+    const result = await window.threadlight.updateSettings({
       ...(provider === 'both'
         ? { combinedFocusWorkspace: id }
         : provider === 'codex'
@@ -853,6 +857,10 @@ export function Panel() {
           : { focusWorkspace: id }),
       listMode: 'workspace',
     })
+    if (!result.ok) {
+      setNotice(result.reason)
+      return
+    }
     setPickingWorkspace(false)
     setShowSettings(false)
     setView('all') // straight to that workspace's threads
@@ -1198,15 +1206,14 @@ export function Panel() {
           )}
 
           {pickingWorkspace && (
-            <div className={styles.list}>
-              <WorkspacePicker
-                provider={provider}
-                workspaces={pickerWorkspaces}
-                chosen={pickerId(chosen)}
-                current={pickerId(snapshot.currentWorkspace)}
-                onPick={(id) => void pickWorkspace(id)}
-              />
-            </div>
+            <WorkspacePicker
+              provider={provider}
+              onProviderChange={(selection) => void selectApplications(selection)}
+              workspaces={pickerWorkspaces}
+              chosen={pickerId(chosen)}
+              current={pickerId(snapshot.currentWorkspace)}
+              onPick={(id) => void pickWorkspace(id)}
+            />
           )}
 
           {changesFor && !pickingWorkspace && (

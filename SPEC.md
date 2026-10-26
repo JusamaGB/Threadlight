@@ -43,6 +43,17 @@ Sessions listed setting (3–25). Changes save immediately and update Settings;
 settings changes update the header in turn. Minus/plus never change or pin the
 view. Active, Workspace and All keep their current count display.
 
+The workspace picker browses known thread folders, grouped by drive or UNC share;
+it does not scan unrelated files on disk. Its Claude/Codex/Both selector uses the
+same application setting as the main header. Both combines equivalent folder paths
+while retaining each provider's original selection ID. The picker opens beside the
+current selection, offers parent/child navigation and a drive selector, and searches
+workspace names and full paths throughout the chosen drive (or all drives).
+Search results show paths to distinguish repeated names. A workspace row selects
+that exact folder; a separate arrow browses its nested workspaces. Parent-only
+folders browse without selecting. Follow activity remains available. Controls stay
+visible while long folder lists scroll; short results use only the space they need.
+
 Workspace defaults to the full display work area with small edge margins and the
 taskbar left clear. Only Workspace lets the existing usage bars resize the panel,
 with no extra strip, button or icon. The whole bottom usage strip shows the resize cursor

@@ -2,7 +2,15 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import styles from './Panel.module.css'
 
 /** Overlay the outline so provider tints continue beneath the entire scrollbar. */
-export function ThreadScrollbar({ list }: { list: RefObject<HTMLDivElement | null> }) {
+export function ThreadScrollbar({
+  list,
+  label = 'Scroll threads',
+  controls = 'thread-list',
+}: {
+  list: RefObject<HTMLDivElement | null>
+  label?: string
+  controls?: string
+}) {
   const [bar, setBar] = useState({ top: 0, height: 0, thumb: 0, offset: 0, max: 0, value: 0 })
   const drag = useRef<{ y: number; value: number; ratio: number } | null>(null)
   useEffect(() => {
@@ -77,8 +85,8 @@ export function ThreadScrollbar({ list }: { list: RefObject<HTMLDivElement | nul
         style={{ height: bar.thumb, top: bar.offset }}
         role="scrollbar"
         tabIndex={0}
-        aria-label="Scroll threads"
-        aria-controls="thread-list"
+        aria-label={label}
+        aria-controls={controls}
         aria-orientation="vertical"
         aria-valuemin={0}
         aria-valuemax={Math.ceil(bar.max)}

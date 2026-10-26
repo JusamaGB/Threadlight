@@ -17,6 +17,7 @@ import { checkTips, checkLastActive } from './tips.smoke.mjs'
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar, checkRecentLimit } from './toolbar.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
+import { checkWorkspacePicker } from './workspace-picker.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
 import { checkThreadDiffs } from './thread-diffs.smoke.mjs'
 import { checkWorkspaceLinks } from './workspace-links.smoke.mjs'
@@ -115,14 +116,17 @@ let codexQuota = {
   week: { used: 0.27, resetsAt: Date.now() + 86400_000 },
 }
 let workspacePaths = null
+let workspaceFolders = null
 let workspaceViews = {}
 const source = (provider) => ({
   provider,
   codexUsage: provider === 'codex' ? codexQuota : undefined,
   sessions: [chats[provider]],
-  currentWorkspace: workspacePaths?.[provider] ?? folder,
+  currentWorkspace: workspaceFolders?.[provider]?.[0]?.id ?? workspacePaths?.[provider] ?? folder,
   currentThreadId: chats[provider].id,
-  allWorkspaces: [{ id: workspacePaths?.[provider] ?? folder, name: 'shared' }],
+  allWorkspaces: workspaceFolders?.[provider] ?? [
+    { id: workspacePaths?.[provider] ?? folder, name: 'shared' },
+  ],
   workspaces: [
     {
       id: workspacePaths?.[provider] ?? folder,
@@ -223,6 +227,10 @@ checks: try {
     }))
     for (const { provider, view } of views) workspaceViews[provider] = view
     return { views, snapshot: workspacePaths ? state().snapshot : null }
+  })
+  await page.exposeFunction('mockWorkspaceFolders', (folders) => {
+    workspaceFolders = folders
+    return state().snapshot
   })
   await page.addInitScript(
     ({ agent }) => {
@@ -414,6 +422,13 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'workspace-picker') {
+    await checkWorkspacePicker(page, capture)
+    await checkWorkspacePaths(page, capture)
+    await checkToolbar(page)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'workspace-height') {
     await checkWorkspaceHeight(page, capture)
     await checkPanelHeight(page)
