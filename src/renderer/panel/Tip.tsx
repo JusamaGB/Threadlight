@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { hasDockedHover, HoverInfo, type HoverPoint } from './HoverInfo'
 import styles from './Panel.module.css'
+import { useHelpMode } from './helpMode'
 
 type Point = {
   x: number
@@ -24,6 +25,9 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
   text: string
   /** A separate action available on the same hover target. */
   actionHint?: string
+  /** Additional help appears only in Tour, leaving Info's wording and timing unchanged. */
+  tourText?: string
+  tourOnly?: boolean
   /** Wait for the pointer to stay still this long. Other tips remain immediate. */
   restDelay?: number
   /** The anchor: what is hovered. */
@@ -35,19 +39,30 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
 /** Nested targets own their hint; HoverInfo chooses a short bubble or the shared footer. */
 export function Tip({
   as: Tag = 'span',
-  text,
+  text: infoText,
   actionHint,
+  tourText,
+  tourOnly = false,
   restDelay = 0,
   children,
   className,
   onClick,
   ...props
 }: TipProps) {
+  const mode = useHelpMode()
+  const text = mode === 'tour' ? (tourText ?? infoText) : tourOnly ? '' : infoText
+  const delay = mode === 'tour' ? 0 : restDelay
+  const enabled = mode !== 'off' && !!text
   const anchor = useRef<HTMLElement>(null)
   const setAnchor = useCallback((element: HTMLElement | null) => {
     anchor.current = element
   }, [])
   const [point, setPoint] = useState<Point | null>(null)
+  const [previousMode, setPreviousMode] = useState(mode)
+  if (previousMode !== mode) {
+    setPreviousMode(mode)
+    setPoint(null)
+  }
   const resting = useRef<Point | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastPointer = useRef<HoverPoint | null>(null)
@@ -59,6 +74,14 @@ export function Tip({
     if (hasDockedHover(anchor.current)) dismissedAt.current = lastPointer.current
     setPoint(null)
   }, [])
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = null
+      resting.current = null
+    },
+    [mode],
+  )
   useLayoutEffect(() => {
     // The footer may cover the original hit target without any pointer movement.
     if (hasDockedHover(anchor.current)) return
@@ -112,7 +135,7 @@ export function Tip({
     )
       return
     if (
-      !text ||
+      !enabled ||
       !(event.target instanceof Element) ||
       event.target.closest('[data-tip-anchor]') !== anchor.current
     ) {
@@ -133,7 +156,7 @@ export function Tip({
       card: { left: card?.left ?? 0, top: card?.top ?? 0 },
     }
     lastPointer.current = next.local
-    if (!restDelay) {
+    if (!delay) {
       setPoint(next)
       return
     }
@@ -146,7 +169,7 @@ export function Tip({
         document.elementFromPoint(next.x, next.y)?.closest('[data-tip-anchor]') === anchor.current
       )
         setPoint(next)
-    }, restDelay)
+    }, delay)
   }
   return (
     <Tag
@@ -154,8 +177,8 @@ export function Tip({
       ref={setAnchor}
       className={className}
       role={props.role ?? (onClick ? 'button' : undefined)}
-      aria-label={props['aria-label'] ?? (Tag === 'span' ? text || undefined : undefined)}
-      data-tip-anchor=""
+      aria-label={props['aria-label'] ?? (Tag === 'span' ? infoText || undefined : undefined)}
+      data-tip-anchor={!tourOnly || enabled ? '' : undefined}
       onMouseOver={(event) => {
         track(event)
         props.onMouseOver?.(event)
@@ -179,7 +202,7 @@ export function Tip({
       onClick={onClick}
     >
       {children}
-      {point && text && (
+      {point && enabled && (
         <HoverInfo anchor={anchor} point={point.local} onDismiss={dismiss}>
           {actionHint ? (
             <>

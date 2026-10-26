@@ -176,6 +176,17 @@ export function SettingsView({
       </Group>
 
       <Group label={en.settings.panel}>
+        <Row label="Hover help" error={errors.hoverHelp}>
+          <Segmented
+            value={settings.hoverHelp}
+            options={[
+              { value: 'tour', label: 'Tour', title: 'Show all available help immediately.' },
+              { value: 'info', label: 'Info', title: 'Show normal hover information.' },
+              { value: 'off', label: 'Off', title: 'Hide hover information and help.' },
+            ]}
+            onChange={(hoverHelp) => save({ hoverHelp })}
+          />
+        </Row>
         <Row label={en.settings.openOn}>
           <Segmented
             value={settings.openOn}

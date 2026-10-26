@@ -17,6 +17,21 @@ beforeEach(async () => (box = await sandbox()))
 afterEach(() => box.cleanup())
 
 describe('parseSettings', () => {
+  it('preserves the Info baseline, validates hover help modes and saves the choice', async () => {
+    expect(parseSettings({}).hoverHelp).toBe('info')
+    expect(parseSettings({ hoverHelp: 'invalid', maxSessions: 12 })).toMatchObject({
+      hoverHelp: 'info',
+      maxSessions: 12,
+    })
+    expect(validatePatch({ hoverHelp: 'always' }).ok).toBe(false)
+    const store = new SettingsStore(box.root)
+    await store.load()
+    for (const hoverHelp of ['tour', 'off', 'info'] as const) {
+      expect(validatePatch({ hoverHelp })).toEqual({ ok: true, patch: { hoverHelp } })
+      await store.update({ hoverHelp })
+      expect((await new SettingsStore(box.root).load()).hoverHelp).toBe(hoverHelp)
+    }
+  })
   it('migrates the previous effective engine and preserves explicit choices independently', () => {
     expect(
       parseSettings({ voiceTarget: 'agent', agentProvider: 'codex', talkMode: 'toggle' }).voiceMode,

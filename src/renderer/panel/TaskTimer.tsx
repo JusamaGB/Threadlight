@@ -6,6 +6,7 @@ import { en } from '../i18n/en'
 import { elapsedText } from '../../shared/elapsed'
 import styles from './Panel.module.css'
 import { hasDockedHover, HoverInfo, type HoverPoint } from './HoverInfo'
+import { useHelpMode } from './helpMode'
 
 interface TaskTimerProps {
   tasks: BackgroundTask[]
@@ -13,9 +14,15 @@ interface TaskTimerProps {
 
 /** A ticking task label; its hover chip lists each task without re-rendering the whole row. */
 export function TaskTimer({ tasks }: TaskTimerProps) {
+  const mode = useHelpMode()
   const now = useNow(1000)
   const anchor = useRef<HTMLSpanElement>(null)
   const [pointer, setPointer] = useState<HoverPoint | null>(null)
+  const [previousMode, setPreviousMode] = useState(mode)
+  if (previousMode !== mode) {
+    setPreviousMode(mode)
+    setPointer(null)
+  }
   const only = tasks.length === 1 ? tasks[0] : undefined
 
   return (
@@ -44,7 +51,7 @@ export function TaskTimer({ tasks }: TaskTimerProps) {
       ) : (
         en.tasks.many(tasks.length)
       )}
-      {pointer && (
+      {pointer && mode !== 'off' && (
         <HoverInfo
           anchor={anchor}
           point={pointer}

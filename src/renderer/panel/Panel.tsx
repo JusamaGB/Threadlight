@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type MouseEvent,
+  type ReactNode,
 } from 'react'
 
 import { matchThread, parseVoiceCommand } from '../../shared/match'
@@ -38,7 +39,9 @@ import { AgentView } from './AgentView'
 import { ChangesView } from './ChangesView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
-import { PanelRoomContext } from './room'
+import { PanelRoomContext, type PanelRoom } from './room'
+import { HoverHelp } from './HoverHelp'
+import type { HelpMode } from './helpMode'
 import { SessionRow } from './SessionRow'
 import { CodexUsageBar, UsageBar } from './UsageBar'
 import { WorkspacePicker } from './WorkspacePicker'
@@ -1037,7 +1040,7 @@ export function Panel() {
   )
 
   return (
-    <PanelRoomContext.Provider value={panelRoom}>
+    <PanelProviders room={panelRoom} helpMode={settings?.hoverHelp ?? 'info'}>
       <div className={styles.panelStage}>
         <WorkspaceLinks
           card={card}
@@ -1495,6 +1498,22 @@ export function Panel() {
           )}
         </div>
       </div>
+    </PanelProviders>
+  )
+}
+
+function PanelProviders({
+  room,
+  helpMode,
+  children,
+}: {
+  room: PanelRoom
+  helpMode: HelpMode
+  children: ReactNode
+}) {
+  return (
+    <PanelRoomContext.Provider value={room}>
+      <HoverHelp mode={helpMode}>{children}</HoverHelp>
     </PanelRoomContext.Provider>
   )
 }

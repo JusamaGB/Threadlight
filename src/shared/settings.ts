@@ -31,6 +31,8 @@ export const settingsSchema = z.object({
   voiceMode: z.enum(['local-stt', 'gpt-live']).default('local-stt'),
   /** Hover opens the panel straight away; click avoids opening it by accident in a game. */
   openOn: z.enum(['hover', 'click']).default('hover'),
+  /** Tour explains all available hover targets immediately; Info preserves normal hints. */
+  hoverHelp: z.enum(['tour', 'info', 'off']).default('info'),
   /** At Windows sign-in, start a quiet launcher that waits for Claude or Codex. */
   launchAtSignIn: z.boolean().default(false),
   /** The header's wire clip connects/disconnects workspace links. Opt in on first use. */

@@ -114,7 +114,8 @@ export function HoverInfo({
       const target = event.target
       if (
         target instanceof Element &&
-        (dock.contains(target) || target.closest('[data-tip-anchor]') === anchor.current)
+        (dock.contains(target) ||
+          target.closest('[data-tip-anchor], [data-native-help-anchor]') === anchor.current)
       )
         return
       dismiss()

@@ -213,6 +213,18 @@ When a hover target also offers an action, its action hint shares the same toolt
 separated from the information by a thin divider. Workspace usage bars show their
 quota information above the divider and the drag-to-resize hint below it; there is
 no separate native resize tooltip. Other views omit the resize hint.
+
+Settings → Panel → Hover help has three saved modes. Info is the default and its
+baseline is commit `a572284`: existing hint text, the one-second stationary wait
+for last-active information, immediate diff/context/task hints, native button
+titles, the shared footer and the usage/action divider are retained. Tour shows
+all available hints immediately, including last-active and native button titles,
+and adds explanations for thread diffs, Git branches and “Needs your input”. Off
+hides custom and native hover help, including structured task hints, and releases
+the footer space. Controls, hover menus, clicks, scrolling and resizing still work.
+New explanatory help can use the shared Tip's `tourText` or `tourOnly` options;
+adding Tour help does not change the Info baseline.
+
 The panel is 264px wide, with the existing 16px outside wire area. Scrollbars are
 hidden throughout the app. Wheel, trackpad and keyboard scrolling remain native;
 thread and workspace lists can receive keyboard focus. There is no scrollbar

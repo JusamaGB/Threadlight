@@ -38,6 +38,7 @@ function ThreadCount({ diff, onOpen }: { diff: ThreadDiffSummary; onOpen: () => 
     <Tip
       className={`${styles.diff} ${styles.diffLink}`}
       text={threadDiffSentence(diff)}
+      tourText={`${threadDiffSentence(diff)}. Changes recorded for this thread; click to view its files and diffs.`}
       onClick={(event) => {
         event.stopPropagation() // the row itself would expand
         onOpen()
@@ -91,6 +92,7 @@ export function SessionRow(props: SessionRowProps) {
                   ? 'Context unavailable'
                   : ''
             }
+            tourText={`${session.contextUsed !== null ? contextLabel(session.contextUsed) : 'Context unavailable'}. The ring shows the thread's context usage and animates while the thread is active.`}
           >
             {(session.contextUsed !== null || session.state === 'working') && (
               <ContextRing
@@ -122,7 +124,16 @@ export function SessionRow(props: SessionRowProps) {
             <ThreadCount diff={session.threadDiff} onOpen={props.onShowChanges} />
           )}
           {/* A long title fades out behind this, so it always shows. */}
-          {attention && <span className={styles.needsYou}>{en.attention.needsYou}</span>}
+          {attention && (
+            <Tip
+              className={styles.needsYou}
+              text=""
+              tourOnly
+              tourText="Needs your input: this thread is waiting for an answer or approval. Open the thread to respond."
+            >
+              {en.attention.needsYou}
+            </Tip>
+          )}
           {/* Keep space for Open ↗, drawn outside this button on expanded rows. */}
           {expanded && appId && <span className={styles.openSpace} aria-hidden="true" />}
         </span>
@@ -132,7 +143,12 @@ export function SessionRow(props: SessionRowProps) {
             {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
           </span>
           {session.git && (
-            <Tip data-git-tracker="" className={styles.diff} text={gitLine(session.git)}>
+            <Tip
+              data-git-tracker=""
+              className={styles.diff}
+              text={gitLine(session.git)}
+              tourText={`${gitLine(session.git)}. This is the thread's Git branch. ↑ counts commits to push; ↓ counts commits behind main.`}
+            >
               {!session.git.ahead && !session.git.behind && (
                 <span className={styles.branch}>{session.git.branch ?? en.git.noBranch}</span>
               )}
