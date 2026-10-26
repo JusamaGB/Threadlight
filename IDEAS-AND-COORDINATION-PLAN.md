@@ -18,6 +18,14 @@ a pinned plan and unsent assignments in Handoffs. The user reviews and authorise
 each task using the existing transport. Prepared plans remain frozen; dependencies
 are sequenced manually. No new provider chat is created by preparing a plan.
 
+Workspace setup is implemented before the tabs. Documents use the fixed
+`<workspace>/shared-spaces/{ideas,plans,handoffs,results}/` mapping, with no custom
+folder location. Workspace view follows the thread view; other views choose explicitly.
+Stable workspace ownership survives view switches and late replies. Main-process
+checks gate brainstorming and assignment execution. Existing material stays Unassigned
+until a previewed migration, while readable document snapshots preserve prior versions
+and report external edits without overwriting them. See [the setup and recovery details](SHARED-MEMORY.md#workspace-setup-and-document-mapping).
+
 This is a subset of M1–M3, reusing the existing assignment system. The larger workspace,
 dictation capture, workflow profiles, automatic decomposition, model-specific worker
 creation, dependency scheduling, PR relationships and automatic progression below

@@ -40,8 +40,11 @@ agent turns still use your provider account.
 
 ### Shared Spaces
 
-Open **Settings → Shared Spaces → Open**. The tabs are **Handoffs**, **Ideas** and
-**Brainstorm**. This is a collaboration and handoff layer between Claude and Codex;
+Open **Settings → Shared Spaces → Open** and set up the workspace. Workspace view
+follows the thread view's workspace; other views offer a workspace selector. Setup
+creates `shared-spaces/ideas/`, `plans/`, `handoffs/` and `results/` inside that workspace.
+The location is fixed, with no alternative folder picker. The tabs are **Handoffs**,
+**Ideas** and **Brainstorm**. This is a collaboration and handoff layer between Claude and Codex;
 each provider keeps its own memory. Share the context a collaborator needs, rather
 than maintaining another personal memory archive.
 
@@ -54,10 +57,16 @@ Prepared plans stay frozen so later discussion cannot change a recipient's brief
 This first version uses existing chats and their models; automatic task decomposition,
 new-chat creation, dependency scheduling and workflow profiles remain future work.
 
-In **Handoffs**, create a space, then named sectors/folders
+Setup creates the workspace's collaboration space. In **Handoffs**, add named sectors/folders
 for notes, decisions, scratchpads, images and documents. The map, folder, item and task
 views stay inside the existing 342-pixel panel. Map/List, search, Back and saved drafts
 let you browse without starting agent work.
+
+Existing material stays **Unassigned** until you explicitly preview and confirm its
+workspace assignment. Readable Markdown snapshots retain stable document IDs and
+earlier versions. External edits are preserved and reported as conflicts. Brainstorms,
+assignments and late results keep their original workspace even when you switch views.
+Setup and destination checks also run in the main process before work can be dispatched.
 
 **Claude and Codex plugins** include shared-memory tools and a common workflow skill.
 Ask an installed plugin to connect this chat to Threadlight. It shows a verification

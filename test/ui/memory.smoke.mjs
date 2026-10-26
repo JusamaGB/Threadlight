@@ -48,14 +48,14 @@ export async function setupMemory(page, MemoryStore, MemoryConnections) {
 export async function checkMemory(page, proof, capture) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await page
+    .getByLabel('Shared Spaces workspace', { exact: true })
+    .selectOption({ label: 'shared' })
+  assert.equal(await page.getByRole('tab', { name: 'Ideas', exact: true }).count(), 0)
+  await capture('shared-spaces-setup')
+  await page.getByRole('button', { name: 'Create Shared Spaces', exact: true }).click()
   const view = page.getByRole('region', { name: 'Handoffs', exact: true })
-  await view.getByRole('button', { name: 'Create shared space', exact: true }).click()
-  await view.getByLabel('Title', { exact: true }).fill('Threadlight design')
-  await view
-    .getByLabel('Description', { exact: true })
-    .fill('Shared evidence across Claude and Codex')
-  await view.getByRole('button', { name: 'Save', exact: true }).click()
-  await view.getByRole('button', { name: /Threadlight design Shared evidence/ }).click()
+  await view.getByRole('button', { name: /shared Workspace collaboration/ }).click()
   await view.getByRole('button', { name: 'New folder', exact: true }).click()
   await view.getByLabel('Title', { exact: true }).fill('Research')
   await view.getByLabel('Description', { exact: true }).fill('Verified sources and open questions')
@@ -75,6 +75,7 @@ export async function checkMemory(page, proof, capture) {
       description: 'Synthetic sector',
       reason: 'UI verification',
     })
+  await view.getByRole('button', { name: /More folders/ }).click()
   await view.getByRole('button', { name: /Open questions 0 items/ }).waitFor()
   assert.equal(Math.round((await page.locator('#root > div').boundingBox()).width), 342)
   await capture('memory-map')

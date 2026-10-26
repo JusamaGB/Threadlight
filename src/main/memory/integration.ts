@@ -21,6 +21,11 @@ export async function startMemory(
   let issue = ''
   try {
     store = new MemoryStore(join(directory, 'shared-memory', 'memory.sqlite'))
+    store.executionContext = () => {
+      throw new Error(
+        'Set up Shared Spaces for this workspace before preparing or dispatching assignments.',
+      )
+    }
     server = new MemoryServer(store)
     await server.start()
   } catch (error) {

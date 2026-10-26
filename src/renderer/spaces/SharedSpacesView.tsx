@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from 'react'
 import { IDLE_AGENT, agentBusy, type AgentItem } from '../../shared/agent'
-import type { SpaceIdea, SpacesInput, SpacesSnapshot } from '../../shared/spaces'
+import type { SpaceIdea, SpacesInput, SpacesSnapshot, MigrationPreview } from '../../shared/spaces'
 import type { MemorySnapshot } from '../../shared/memory'
+import { scopeMemory } from '../../shared/memory'
 import type { Session } from '../../shared/types'
 import { MemoryView } from '../memory/MemoryView'
 import { AgentRequestCard } from '../panel/AgentRequestCard'
@@ -12,26 +21,97 @@ export interface SpacesNavigation {
   back: () => void
 }
 type Area = 'handoffs' | 'ideas' | 'brainstorm'
-const empty: SpacesSnapshot = { ideas: [], activeId: null, agent: IDLE_AGENT }
+const empty: SpacesSnapshot = {
+  ideas: [],
+  activeId: null,
+  agent: IDLE_AGENT,
+  workspaces: [],
+  spaceOwners: {},
+  documents: [],
+}
+const rootKey = (root: string) => root.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()
 export function SharedSpacesView({
   visible,
   sessions,
   onClose,
   navigationRef,
+  workspaces,
+  focusedRoot,
 }: {
   visible: boolean
   sessions: Session[]
   onClose: () => void
   navigationRef: Ref<SpacesNavigation>
+  workspaces: { id: string; name: string }[]
+  focusedRoot: string | null
 }) {
   const [area, setArea] = useState<Area>('handoffs')
-  const [data, setData] = useState(empty)
-  const [memory, setMemory] = useState<MemorySnapshot | null>(null)
+  const [allData, setData] = useState(empty)
+  const [allMemory, setMemory] = useState<MemorySnapshot | null>(null)
+  const [chosenRoot, setChosenRoot] = useState('')
+  const [unassignedFor, setUnassignedFor] = useState<string | null>(null)
+  const unassigned = focusedRoot ? unassignedFor === focusedRoot : chosenRoot === '@unassigned'
+  const root = unassigned ? '' : (focusedRoot ?? chosenRoot)
+  const workspace = useMemo(
+    () =>
+      allData.workspaces.find((w) =>
+        [w.root, ...(w.aliases ?? [])].some((path) => rootKey(path) === rootKey(root || '.')),
+      ),
+    [allData.workspaces, root],
+  )
+  const workspaceReady = workspace?.ready ?? false
+  const workspaceSessions = sessions.filter(
+    (s) =>
+      workspace &&
+      [workspace.root, ...(workspace.aliases ?? [])].some(
+        (path) => rootKey(path) === rootKey(s.cwd),
+      ),
+  )
+  const spaceIds =
+    allMemory?.spaces
+      .filter((s) =>
+        unassigned
+          ? !allData.spaceOwners[s.id]
+          : workspace && allData.spaceOwners[s.id] === workspace.id,
+      )
+      .map((s) => s.id) ?? []
+  const data = {
+    ...allData,
+    ideas: allData.ideas.filter((i) =>
+      unassigned ? !i.workspaceId : workspace && i.workspaceId === workspace.id,
+    ),
+  }
+  const memory = allMemory ? scopeMemory(allMemory, spaceIds) : null
+  const viewKey = unassigned ? '@unassigned' : (workspace?.id ?? root)
+  const choices = [
+    ...new Map(
+      [
+        ...workspaces.filter(
+          (candidate) =>
+            !allData.workspaces.some((w) =>
+              [w.root, ...(w.aliases ?? [])].some(
+                (path) => rootKey(path) === rootKey(candidate.id),
+              ),
+            ),
+        ),
+        ...allData.workspaces.map((w) => ({ id: w.root, name: w.name })),
+      ].map((w) => [rootKey(w.id), w]),
+    ).values(),
+  ]
+  const [migrationOpen, setMigrationOpen] = useState(false)
+  const [migrationWorkspace, setMigrationWorkspace] = useState('')
+  const [ideaIds, setIdeaIds] = useState<string[]>([])
+  const [legacySpaceIds, setLegacySpaceIds] = useState<string[]>([])
+  const [migration, setMigration] = useState<MigrationPreview | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
-  const [text, setText] = useState('')
+  const [captureDrafts, setCaptureDrafts] = useState<Record<string, string>>({})
+  const text = captureDrafts[viewKey] ?? ''
+  const setText = (value: string) => setCaptureDrafts((old) => ({ ...old, [viewKey]: value }))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const captureId = useRef(crypto.randomUUID())
+  const captureIds = useRef<Record<string, string>>({})
+  const editorDrafts = useRef(new Map<string, SpaceIdea>())
+  const messageDrafts = useRef(new Map<string, string>())
   const handoffs = useRef<SpacesNavigation & { openTask: (id: string) => void }>(null)
   const idea = data.ideas.find((i) => i.id === selected)
   const request = useCallback(async (input: SpacesInput) => {
@@ -79,13 +159,22 @@ export function SharedSpacesView({
     }
   }, [])
   const back = useCallback(() => {
+    if (migrationOpen) {
+      setMigrationOpen(false)
+      return
+    }
+    if (!unassigned && !workspaceReady) {
+      onClose()
+      return
+    }
     if (area === 'handoffs') handoffs.current?.back()
     else if (selected) setSelected(null)
     else onClose()
-  }, [area, selected, onClose])
+  }, [area, selected, onClose, migrationOpen, unassigned, workspaceReady])
   useImperativeHandle(navigationRef, () => ({ back }), [back])
   useEffect(() => {
-    if (!visible || area === 'handoffs') return
+    if (!visible || (area === 'handoffs' && !migrationOpen && (unassigned || workspaceReady)))
+      return
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
@@ -95,7 +184,7 @@ export function SharedSpacesView({
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [visible, area, back])
+  }, [visible, area, back, migrationOpen, unassigned, workspaceReady])
   const move = async (item: SpaceIdea) => {
     const result = await request({
       action: 'save',
@@ -114,153 +203,395 @@ export function SharedSpacesView({
   }
   return (
     <section className={styles.view} hidden={!visible} aria-label="Shared Spaces">
-      <div className={styles.tabs} role="tablist" aria-label="Shared Spaces areas">
-        {(['handoffs', 'ideas', 'brainstorm'] as const).map((tab) => (
+      <div className={styles.workspace}>
+        {focusedRoot ? (
+          <strong>
+            {unassigned
+              ? 'Unassigned'
+              : (workspace?.name ??
+                choices.find((w) => rootKey(w.id) === rootKey(focusedRoot))?.name ??
+                focusedRoot)}
+          </strong>
+        ) : (
+          <label>
+            Workspace
+            <select
+              aria-label="Shared Spaces workspace"
+              value={unassigned ? '@unassigned' : (workspace?.root ?? root)}
+              onChange={(e) => {
+                setChosenRoot(e.target.value)
+                setUnassignedFor(e.target.value === '@unassigned' ? focusedRoot : null)
+                setSelected(null)
+                setError('')
+                setMigrationOpen(false)
+              }}
+            >
+              <option value="">Choose a workspace…</option>
+              {choices.map((w) => (
+                <option value={w.id} key={rootKey(w.id)}>
+                  {w.name}
+                </option>
+              ))}
+              <option value="@unassigned">Unassigned</option>
+            </select>
+          </label>
+        )}
+        {focusedRoot && (
           <button
-            key={tab}
-            id={`spaces-${tab}`}
-            type="button"
-            role="tab"
-            aria-selected={area === tab}
-            aria-controls={`spaces-${tab}-panel`}
             onClick={() => {
-              setArea(tab)
+              setUnassignedFor(unassigned ? null : focusedRoot)
               setSelected(null)
-              setError('')
-            }}
-            onDragOver={(e) => {
-              if (tab === 'brainstorm') e.preventDefault()
-            }}
-            onDrop={(e) => {
-              if (tab !== 'brainstorm' || busy) return
-              e.preventDefault()
-              const item = data.ideas.find(
-                (i) => i.id === e.dataTransfer.getData('application/x-threadlight-idea'),
-              )
-              if (item) void move(item)
+              setMigrationOpen(false)
             }}
           >
-            {tab === 'handoffs' ? 'Handoffs' : tab === 'ideas' ? 'Ideas' : 'Brainstorm'}
+            {unassigned ? 'Return to workspace' : 'Unassigned material'}
           </button>
-        ))}
+        )}
+        {root && (
+          <p className={styles.path}>
+            {(workspace?.root ?? root).replaceAll('\\', '/')}/shared-spaces/
+          </p>
+        )}
+        {(allData.ideas.some((i) => !i.workspaceId) ||
+          allMemory?.spaces.some((s) => !allData.spaceOwners[s.id])) && (
+          <button
+            onClick={() => {
+              setMigrationOpen(true)
+              setMigrationWorkspace(workspace?.id ?? '')
+              setMigration(null)
+              setIdeaIds([])
+              setLegacySpaceIds([])
+            }}
+          >
+            Assign existing material
+          </button>
+        )}
       </div>
       {error && (
         <p className={styles.error} role="alert">
           {error}
         </p>
       )}
-      <div
-        id="spaces-handoffs-panel"
-        role="tabpanel"
-        aria-labelledby="spaces-handoffs"
-        hidden={area !== 'handoffs'}
-        className={styles.handoffs}
-      >
-        <MemoryView
-          visible={visible && area === 'handoffs'}
-          sessions={sessions}
-          onClose={onClose}
-          navigationRef={handoffs}
-        />
-      </div>
-      <div
-        className={styles.body}
-        id={`spaces-${area === 'handoffs' ? 'inactive' : area}-panel`}
-        role="tabpanel"
-        aria-labelledby={`spaces-${area}`}
-        hidden={area === 'handoffs'}
-      >
-        {idea ? (
-          <IdeaEditor
-            key={idea.id}
-            idea={idea}
-            data={data}
-            memory={memory}
-            sessions={sessions}
-            busy={busy}
-            request={request}
-            onMove={() => void move(idea)}
-            onTask={(id) => {
-              handoffs.current?.openTask(id)
-              setArea('handoffs')
-              setSelected(null)
-            }}
-          />
-        ) : (
-          <>
-            {area === 'ideas' ? (
-              <form
-                className={styles.compose}
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  if (!text.trim() || busy) return
-                  const result = await request({
-                    action: 'create',
-                    id: captureId.current,
-                    title: (text.trim().split('\n')[0] ?? text.trim()).slice(0, 80),
-                    text: text.trim(),
-                  })
-                  if (result.ok) {
-                    setText('')
-                    captureId.current = crypto.randomUUID()
-                  }
+      {migrationOpen ? (
+        <div className={styles.body}>
+          <div className={styles.editor}>
+            <h3>Assign existing material</h3>
+            <p className={styles.hint}>
+              Original records and conversation links are retained. Review the destination files
+              before migration. Nothing is overwritten.
+            </p>
+            <label>
+              Destination workspace
+              <select
+                aria-label="Migration workspace"
+                value={migrationWorkspace}
+                onChange={(e) => {
+                  setMigrationWorkspace(e.target.value)
+                  setMigration(null)
                 }}
               >
-                <p>Capture a thought. Move it to Brainstorm when you’re ready to develop it.</p>
-                <textarea
-                  aria-label="New idea"
-                  placeholder="Leave a thought for later…"
-                  value={text}
-                  maxLength={8000}
-                  onChange={(e) => setText(e.target.value)}
-                />
-                <button className={styles.primary} disabled={busy || !text.trim()}>
-                  Save idea
-                </button>
-              </form>
-            ) : (
-              <p className={styles.hint}>
-                Develop an idea with your Agent, then review the plan and choose who does what.
+                <option value="">Choose a configured workspace…</option>
+                {allData.workspaces
+                  .filter((w) => w.ready)
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {migrationWorkspace && (
+              <p className={styles.path}>
+                {allData.workspaces
+                  .find((w) => w.id === migrationWorkspace)
+                  ?.root.replaceAll('\\', '/')}
+                /shared-spaces/
               </p>
             )}
-            {data.ideas
-              .filter((i) => i.stage === (area === 'ideas' ? 'idea' : 'brainstorm'))
-              .map((item) => (
-                <article
-                  className={styles.row}
-                  key={item.id}
-                  draggable={item.stage === 'idea'}
-                  onDragStart={(e) =>
-                    e.dataTransfer.setData('application/x-threadlight-idea', item.id)
-                  }
-                >
-                  <button className={styles.open} onClick={() => setSelected(item.id)}>
-                    <strong>{item.title}</strong>
-                    <span>
-                      {item.prepared
-                        ? 'Assignments prepared · follow in Handoffs'
-                        : item.stage === 'idea'
-                          ? 'Saved idea'
-                          : 'Plan and discussion'}
-                    </span>
-                  </button>
-                  {item.stage === 'idea' && (
-                    <button disabled={busy} onClick={() => void move(item)}>
-                      Move to Brainstorm
-                    </button>
-                  )}
-                </article>
+            {allData.ideas
+              .filter((i) => !i.workspaceId)
+              .map((i) => (
+                <label key={i.id} className={styles.check}>
+                  <input
+                    type="checkbox"
+                    checked={ideaIds.includes(i.id)}
+                    onChange={(e) => {
+                      setIdeaIds((old) =>
+                        e.target.checked ? [...old, i.id] : old.filter((id) => id !== i.id),
+                      )
+                      setMigration(null)
+                    }}
+                  />
+                  Idea: {i.title}
+                </label>
               ))}
-            {!data.ideas.some((i) => i.stage === (area === 'ideas' ? 'idea' : 'brainstorm')) && (
-              <p className={styles.hint}>
-                {area === 'ideas'
-                  ? 'Your saved ideas will appear here. Capturing an idea does not call an Agent.'
-                  : 'Move an idea here from Ideas to start a discussion.'}
+            {allMemory?.spaces
+              .filter((s) => !allData.spaceOwners[s.id])
+              .map((s) => (
+                <label key={s.id} className={styles.check}>
+                  <input
+                    type="checkbox"
+                    checked={legacySpaceIds.includes(s.id)}
+                    onChange={(e) => {
+                      setLegacySpaceIds((old) =>
+                        e.target.checked ? [...old, s.id] : old.filter((id) => id !== s.id),
+                      )
+                      setMigration(null)
+                    }}
+                  />
+                  Shared material: {s.title}
+                </label>
+              ))}
+            <button
+              disabled={busy || !migrationWorkspace || (!ideaIds.length && !legacySpaceIds.length)}
+              onClick={async () => {
+                const result = await request({
+                  action: 'migration_preview',
+                  workspaceId: migrationWorkspace,
+                  ideaIds,
+                  spaceIds: legacySpaceIds,
+                })
+                if (result.ok) setMigration(result.migration ?? null)
+              }}
+            >
+              Preview migration
+            </button>
+            {migration && (
+              <>
+                <p>
+                  {migration.files.length} document{' '}
+                  {migration.files.length === 1 ? 'snapshot' : 'snapshots'}
+                </p>
+                <details>
+                  <summary>Destination files</summary>
+                  {migration.files.map((file) => (
+                    <p className={styles.path} key={file}>
+                      {file}
+                    </p>
+                  ))}
+                </details>
+                {migration.conflicts.map((conflict) => (
+                  <p role="alert" className={styles.error} key={conflict}>
+                    {conflict}
+                  </p>
+                ))}
+                <button
+                  disabled={busy || !!migration.conflicts.length}
+                  onClick={async () => {
+                    const result = await request({
+                      action: 'migrate',
+                      workspaceId: migrationWorkspace,
+                      ideaIds,
+                      spaceIds: legacySpaceIds,
+                      token: migration.token,
+                    })
+                    if (result.ok) {
+                      setMigrationOpen(false)
+                      setMigration(null)
+                    }
+                  }}
+                >
+                  Confirm migration
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : !unassigned && !workspace?.ready ? (
+        <div className={styles.body}>
+          <div className={styles.editor}>
+            <h3>{root ? 'Set up Shared Spaces' : 'Choose a workspace'}</h3>
+            <p className={styles.hint}>
+              {root
+                ? 'Create the fixed folders for ideas, plans, handoffs and results in this workspace. Existing files will be preserved.'
+                : 'Select a workspace to create its Shared Spaces. Unassigned keeps existing material available until you choose where it belongs.'}
+            </p>
+            {workspace?.issue && (
+              <p className={styles.error} role="alert">
+                {workspace.issue}
               </p>
             )}
-          </>
-        )}
-      </div>
+            {root && (
+              <>
+                <p className={styles.path}>
+                  ideas/
+                  <br />
+                  plans/
+                  <br />
+                  handoffs/
+                  <br />
+                  results/
+                </p>
+                <button
+                  className={styles.primary}
+                  disabled={busy}
+                  onClick={() => void request({ action: 'setup', root })}
+                >
+                  {busy ? 'Setting up…' : 'Create Shared Spaces'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className={styles.tabs} role="tablist" aria-label="Shared Spaces areas">
+            {(['handoffs', 'ideas', 'brainstorm'] as const).map((tab) => (
+              <button
+                key={tab}
+                id={`spaces-${tab}`}
+                type="button"
+                role="tab"
+                aria-selected={area === tab}
+                aria-controls={`spaces-${tab}-panel`}
+                onClick={() => {
+                  setArea(tab)
+                  setSelected(null)
+                  setError('')
+                }}
+                onDragOver={(e) => {
+                  if (tab === 'brainstorm') e.preventDefault()
+                }}
+                onDrop={(e) => {
+                  if (tab !== 'brainstorm' || busy) return
+                  e.preventDefault()
+                  const item = data.ideas.find(
+                    (i) => i.id === e.dataTransfer.getData('application/x-threadlight-idea'),
+                  )
+                  if (item) void move(item)
+                }}
+              >
+                {tab === 'handoffs' ? 'Handoffs' : tab === 'ideas' ? 'Ideas' : 'Brainstorm'}
+              </button>
+            ))}
+          </div>
+          {unassigned && (
+            <p className={styles.hint}>
+              Unassigned material is preserved. Assign it to a configured workspace before starting
+              Agent work.
+            </p>
+          )}
+          <div
+            id="spaces-handoffs-panel"
+            role="tabpanel"
+            aria-labelledby="spaces-handoffs"
+            hidden={area !== 'handoffs'}
+            className={styles.handoffs}
+          >
+            <MemoryView
+              key={viewKey}
+              spaceIds={spaceIds}
+              visible={visible && area === 'handoffs'}
+              sessions={workspaceSessions}
+              onClose={onClose}
+              navigationRef={handoffs}
+            />
+          </div>
+          <div
+            className={styles.body}
+            id={`spaces-${area === 'handoffs' ? 'inactive' : area}-panel`}
+            role="tabpanel"
+            aria-labelledby={`spaces-${area}`}
+            hidden={area === 'handoffs'}
+          >
+            {idea ? (
+              <IdeaEditor
+                key={idea.id}
+                idea={idea}
+                data={data}
+                memory={memory}
+                sessions={workspaceSessions}
+                busy={busy}
+                request={request}
+                draftCache={editorDrafts}
+                messageCache={messageDrafts}
+                onMove={() => void move(idea)}
+                onTask={(id) => {
+                  handoffs.current?.openTask(id)
+                  setArea('handoffs')
+                  setSelected(null)
+                }}
+              />
+            ) : (
+              <>
+                {area === 'ideas' ? (
+                  <form
+                    className={styles.compose}
+                    onSubmit={async (e) => {
+                      e.preventDefault()
+                      if (!text.trim() || busy) return
+                      const result = await request({
+                        action: 'create',
+                        id: (captureIds.current[viewKey] ??= crypto.randomUUID()),
+                        workspaceId: workspace?.id ?? null,
+                        title: (text.trim().split('\n')[0] ?? text.trim()).slice(0, 80),
+                        text: text.trim(),
+                      })
+                      if (result.ok) {
+                        setText('')
+                        captureIds.current[viewKey] = crypto.randomUUID()
+                      }
+                    }}
+                  >
+                    <p>Capture a thought. Move it to Brainstorm when you’re ready to develop it.</p>
+                    <textarea
+                      aria-label="New idea"
+                      placeholder="Leave a thought for later…"
+                      value={text}
+                      maxLength={8000}
+                      onChange={(e) => setText(e.target.value)}
+                    />
+                    <button className={styles.primary} disabled={busy || !text.trim()}>
+                      Save idea
+                    </button>
+                  </form>
+                ) : (
+                  <p className={styles.hint}>
+                    Develop an idea with your Agent, then review the plan and choose who does what.
+                  </p>
+                )}
+                {data.ideas
+                  .filter((i) => i.stage === (area === 'ideas' ? 'idea' : 'brainstorm'))
+                  .map((item) => (
+                    <article
+                      className={styles.row}
+                      key={item.id}
+                      draggable={item.stage === 'idea'}
+                      onDragStart={(e) =>
+                        e.dataTransfer.setData('application/x-threadlight-idea', item.id)
+                      }
+                    >
+                      <button className={styles.open} onClick={() => setSelected(item.id)}>
+                        <strong>{item.title}</strong>
+                        <span>
+                          {item.prepared
+                            ? 'Assignments prepared · follow in Handoffs'
+                            : item.stage === 'idea'
+                              ? 'Saved idea'
+                              : 'Plan and discussion'}
+                        </span>
+                      </button>
+                      {item.stage === 'idea' && (
+                        <button disabled={busy} onClick={() => void move(item)}>
+                          Move to Brainstorm
+                        </button>
+                      )}
+                    </article>
+                  ))}
+                {!data.ideas.some(
+                  (i) => i.stage === (area === 'ideas' ? 'idea' : 'brainstorm'),
+                ) && (
+                  <p className={styles.hint}>
+                    {area === 'ideas'
+                      ? 'Your saved ideas will appear here. Capturing an idea does not call an Agent.'
+                      : 'Move an idea here from Ideas to start a discussion.'}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
     </section>
   )
 }
@@ -274,6 +605,8 @@ function IdeaEditor({
   request,
   onMove,
   onTask,
+  draftCache,
+  messageCache,
 }: {
   idea: SpaceIdea
   data: SpacesSnapshot
@@ -283,9 +616,19 @@ function IdeaEditor({
   request: (input: SpacesInput) => Promise<import('../../shared/spaces').SpacesReply>
   onMove: () => void
   onTask: (id: string) => void
+  draftCache: React.RefObject<Map<string, SpaceIdea>>
+  messageCache: React.RefObject<Map<string, string>>
 }) {
-  const [draft, setDraft] = useState(idea)
-  const [message, setMessage] = useState('')
+  const [localDraft, updateDraft] = useState(() => draftCache.current.get(idea.id) ?? idea)
+  const setDraft = (value: SpaceIdea) => {
+    draftCache.current.set(idea.id, value)
+    updateDraft(value)
+  }
+  const [message, updateMessage] = useState(() => messageCache.current.get(idea.id) ?? '')
+  const setMessage = (value: string) => {
+    messageCache.current.set(idea.id, value)
+    updateMessage(value)
+  }
   const [history, setHistory] = useState<AgentItem[]>([])
   const [historyError, setHistoryError] = useState('')
   const [folderId, setFolderId] = useState(idea.prepared?.folderId ?? '')
@@ -295,10 +638,12 @@ function IdeaEditor({
   const items = active ? agent.items : history
   const frozen = !!idea.prepared
   const dirty =
-    draft.title !== idea.title ||
-    draft.text !== idea.text ||
-    draft.plan !== idea.plan ||
-    JSON.stringify(draft.assignments) !== JSON.stringify(idea.assignments)
+    localDraft.title !== idea.title ||
+    localDraft.text !== idea.text ||
+    localDraft.plan !== idea.plan ||
+    JSON.stringify(localDraft.assignments) !== JSON.stringify(idea.assignments)
+  // Stage changes and migration advance the revision without editing these fields.
+  const draft = dirty ? localDraft : idea
   useEffect(() => {
     let live = true
     void window.threadlight
@@ -449,7 +794,7 @@ function IdeaEditor({
             <div className={styles.actions}>
               <button
                 className={styles.primary}
-                disabled={busy || dirty || agentBusy(agent) || !message.trim()}
+                disabled={busy || dirty || agentBusy(agent) || !message.trim() || !idea.workspaceId}
               >
                 Discuss with Agent
               </button>

@@ -1143,6 +1143,13 @@ export function Panel() {
         )}
 
         <SharedSpacesView
+          workspaces={pickerWorkspaces.map((w) => ({
+            id: w.id.replace(/^(claude|codex):/, ''),
+            name: w.name,
+          }))}
+          focusedRoot={
+            headerView === 'workspace' ? (focusId?.replace(/^(claude|codex):/, '') ?? null) : null
+          }
           navigationRef={spacesNavigation}
           visible={showMemory && !showAgent && !pickingWorkspace && changesFor === null}
           sessions={snapshot.lookupSessions ?? snapshot.sessions}

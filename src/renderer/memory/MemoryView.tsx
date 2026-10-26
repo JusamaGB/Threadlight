@@ -17,6 +17,7 @@ import type {
   MemoryTask,
 } from '../../shared/memory'
 import type { Session } from '../../shared/types'
+import { scopeMemory } from '../../shared/memory'
 import styles from './MemoryView.module.css'
 
 type Route = {
@@ -59,13 +60,16 @@ export function MemoryView({
   sessions,
   onClose,
   navigationRef,
+  spaceIds,
 }: {
   visible: boolean
   sessions: Session[]
   onClose: () => void
   navigationRef?: Ref<{ back: () => void; openTask: (id: string) => void }>
+  spaceIds?: string[]
 }) {
-  const [data, setData] = useState(empty)
+  const [rawData, setData] = useState(empty)
+  const data = spaceIds ? scopeMemory(rawData, spaceIds) : rawData
   const [routes, setRoutes] = useState<Route[]>([])
   const [mode, setMode] = useState<'map' | 'list'>('map')
   const [query, setQuery] = useState('')
@@ -508,9 +512,15 @@ export function MemoryView({
                 <span>{s.description || 'Collaboration space'}</span>
               </button>
             ))}
-            <button className={styles.action} onClick={() => setForm('space')}>
-              Create shared space
-            </button>
+            {!spaceIds && (
+              <button className={styles.action} onClick={() => setForm('space')}>
+                Create shared space
+              </button>
+            )}
+            <p className={styles.hint}>
+              Backups cover handoffs across all workspaces. Ideas, brainstorm histories and
+              workspace documents are separate.
+            </p>
             <button
               className={styles.action}
               onClick={() => void window.threadlight.memoryExport().then(acceptReply)}

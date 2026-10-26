@@ -18,6 +18,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Shared Spaces now requires workspace setup with fixed `ideas`, `plans`, `handoffs`
+  and `results` folders under the workspace's `shared-spaces` directory. Workspace
+  view follows the selected workspace. Stable ownership, readable versioned snapshots,
+  explicit migration previews and main-process execution checks keep work isolated
+  and preserve existing documents and older unassigned material.
+
 - Shared Spaces now has Handoffs, Ideas and Brainstorm tabs beneath one header and
   one Back button. Ideas persist locally; per-idea Agent discussions lead to editable
   mini plans and explicit Claude/Codex task choices. Preparation atomically saves a
