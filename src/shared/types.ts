@@ -163,10 +163,10 @@ export interface Changes {
   files: ChangedFile[]
 }
 
-/** A pull request the Claude app linked to a thread, shown as the branch icon in its sidebar. */
+/** A linked pull request; Codex attachments do not expose its current remote state. */
 export interface PullRequest {
   number: number
-  state: 'open' | 'draft' | 'merged' | 'closed'
+  state: 'open' | 'draft' | 'merged' | 'closed' | 'unknown'
 }
 
 /** One Claude Code session as Threadlight shows it. Plain data, safe to send over IPC. */

@@ -21,6 +21,7 @@ import { codexUsage } from './usage'
 import type { Usage } from '../../shared/usage'
 import { codexDisplayText, codexToolActivity, codexUserRequest } from './presentation'
 import { codexState } from './state'
+import { codexGitFolders, codexPullRequest } from './badges'
 
 type Row = Record<string, unknown>
 const json = (value: unknown): Row => {
@@ -322,6 +323,20 @@ export class CodexTracker {
         groups.set(cwd, [...(groups.get(cwd) || []), row])
       }
       const built = new Map<string, Session>()
+      // Optional on older Codex versions. Keep source databases read-only.
+      const attachments = new Map<string, Row[]>()
+      try {
+        for (const attachment of db
+          .prepare(
+            "SELECT thread_id,attachment_type,identity_key,payload FROM thread_attachments WHERE attachment_type IN ('pull_request','worktree') ORDER BY created_at,id",
+          )
+          .all() as Row[]) {
+          const id = String(attachment['thread_id'])
+          attachments.set(id, [...(attachments.get(id) || []), attachment])
+        }
+      } catch {
+        /* older schema */
+      }
       let usage: Usage | null = null
       const observeUsage = (records: Row[]) => {
         const found = codexUsage(records)
@@ -387,6 +402,30 @@ export class CodexTracker {
         const lastReply = summary.lastReply || tailSummary.lastReply
         const lastAction = summary.lastAction || tailSummary.lastAction
         const cwd = String(row['cwd'])
+        let folders = codexGitFolders(records)
+        // A quiet tail may contain no recent file/command activity. Use the latest native
+        // activity item without parsing every historical payload on each scan.
+        if (!folders.length && history) {
+          try {
+            const prior = history
+              .prepare(
+                `SELECT item_json FROM thread_items WHERE thread_id=? AND ${planType} IN ('commandExecution','fileChange') ORDER BY rollout_ordinal DESC LIMIT 1`,
+              )
+              .get(id) as Row | undefined
+            if (prior) folders = codexGitFolders([json(prior['item_json'])])
+          } catch {
+            /* legacy rollouts */
+          }
+        }
+        const linked = attachments.get(id) || []
+        const worktree = linked.findLast((a) => a['attachment_type'] === 'worktree')
+        const worktreePayload = json(worktree?.['payload'])
+        const worktreeFolder = str(worktreePayload['workspaceRoot']) || str(worktreePayload['root'])
+        const gitFolders = [...new Set([worktreeFolder, ...folders, ...codexGitFolders(tail), cwd])]
+        let git: GitState | null = null
+        for (const folder of gitFolders) {
+          if (folder && (git = this.gitFor(folder))) break
+        }
         const session: Session = {
           provider: 'codex',
           id: key,
@@ -416,12 +455,16 @@ export class CodexTracker {
           turnStartedAt: state === 'working' ? ms(turn['started_at']) || fresh?.at || null : null,
           backgroundTasks: [],
           live,
-          git: this.gitFor(cwd),
+          git,
           contextUsed: tailSummary.contextUsed,
           attention,
           permissionMode: str(row['approval_mode']),
           model: str(row['model']),
-          pullRequests: [],
+          pullRequests: linked.flatMap((attachment) => {
+            if (attachment['attachment_type'] !== 'pull_request') return []
+            const pr = codexPullRequest(json(attachment['payload']))
+            return pr ? [pr] : []
+          }),
         }
         built.set(key, session)
         return session

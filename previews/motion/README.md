@@ -10,6 +10,8 @@ design previews, not a desktop overlay or an application feature flag.
   liquid inside the wheel, pausing for 250 ms, releasing a drop and splashing on
   the simulated taskbar. Provider colours follow Codex blue and Claude orange.
   Opening the simulated app or clearing its input requirement stops the effect.
+- `/idle.html` compares the static resting waveform with a warm centre and blue
+  halo that gently breathes every 6.4 seconds. Reduced motion holds it steady.
 
 From the repository root, run `node previews/motion/serve.mjs`, then open the
 loopback URL it prints. The default port is 5179; `THREADLIGHT_PREVIEW_PORT` can
@@ -23,6 +25,7 @@ node previews/motion/verify.mjs
 node previews/motion/verify-drip.mjs
 node previews/motion/verify-smoothness.mjs
 node previews/motion/verify-provider-colours.mjs
+node previews/motion/verify-idle.mjs
 ```
 
 The scripts use local Playwright or `THREADLIGHT_PLAYWRIGHT`, matching the app's

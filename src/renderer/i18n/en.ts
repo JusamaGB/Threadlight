@@ -178,7 +178,13 @@ export const en = {
     heading: 'Background tasks',
   },
   pr: {
-    state: { open: 'open', draft: 'draft', merged: 'merged', closed: 'closed' },
+    state: {
+      open: 'open',
+      draft: 'draft',
+      merged: 'merged',
+      closed: 'closed',
+      unknown: 'linked; status unavailable',
+    },
     tooltip: (number: number, state: string, count: number) =>
       count > 1
         ? `${count} pull requests · latest #${number} ${state}`

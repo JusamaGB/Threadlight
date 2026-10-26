@@ -31,6 +31,8 @@ Opt-in authenticated tests are documented in `AGENT-CODEX-VALIDATION.md`.
 Recording checks generate an audio stream in the browser and replace `getUserMedia`;
 they never access a microphone or speakers. They verify full-width changing waveform
 pixels, reduced-motion behaviour, preserved drafts, transcription and stopped tracks.
+Voice routing waits for processed quiet audio before sending each opening test tone,
+so browser startup delays do not consume the microphone's calibration period.
 
 `node test/ui/motion.smoke.mjs` focuses on the electric voice surface. It uses the same
 Playwright and screenshot environment variables, exercises the built panel and dot,

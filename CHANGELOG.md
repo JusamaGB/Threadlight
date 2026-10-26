@@ -6,8 +6,20 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Codex chats discover Git badges from structured repository activity and attached
+  worktrees, and display linked PR badges when remote status is unavailable.
+
 - Both + Workspace interleaves Claude and Codex chats by latest activity, newest
   first, while keeping side threads beneath their parent.
+
+- Kept nested thread gradients flush with the panel edge at every depth while
+  preserving thread indentation and guide lines.
+
+- Removed the redundant microphone-on label; an inactive microphone now shows
+  "no active Mic" in the header.
+
+- Preserved the new resting-light idle design preview with a warm centre, blue
+  halo, gentle breathing and steady reduced-motion mode.
 
 - Fixed Both + Workspace matching across ordinary and extended Windows drive/UNC
   paths; Shared Spaces uses the same folder comparison and drive grouping.

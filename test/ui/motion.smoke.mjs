@@ -211,7 +211,7 @@ try {
   const activity = page.getByRole('region', { name: 'Voice activity' })
   assert.equal(await activity.locator('p').count(), 0, 'empty speech has no reserved caption')
   assert.ok((await activity.boundingBox()).height < 32, 'idle activity stays compact')
-  await page.locator('header').getByText('Microphone off', { exact: true }).waitFor()
+  await page.locator('header').getByText('no active Mic', { exact: true }).waitFor()
   assert.equal(await page.getByText(/^Ask it to do something\. Available tools/).count(), 0)
   await capture('agent-idle-header', page.locator('[data-card]'))
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
@@ -241,6 +241,7 @@ try {
   await page.waitForFunction(() => window.motionProof.telemetry.input.level > 0.2)
   assert.equal(await ribbon.locator('[data-renderer]').getAttribute('data-renderer'), 'webgl')
   await stage.getByRole('status').filter({ hasText: 'You speaking' }).waitFor()
+  assert.equal(await page.locator('header').getByText('no active Mic', { exact: true }).count(), 0)
   const first = await ribbon.locator('canvas').screenshot()
   await page.waitForTimeout(150)
   assert.notDeepEqual(await ribbon.locator('canvas').screenshot(), first)
@@ -261,6 +262,7 @@ try {
   const before = await stage.boundingBox()
   await page.evaluate(() => window.motionProof.emit('onTalkHold', 'up'))
   await stage.getByRole('status').filter({ hasText: 'Finishing transcription' }).waitFor()
+  await page.locator('header').getByText('no active Mic', { exact: true }).waitFor()
   await page.waitForFunction(() => typeof window.motionProof.transcribe === 'function')
   await page.evaluate(() =>
     window.motionProof.transcribe('Show me how the voice ribbon becomes a Catherine wheel.'),

@@ -5,6 +5,19 @@ import { checkVoiceTarget } from './voice-target.smoke.mjs'
 /** Uses the provider smoke test's generated audio stream; never opens a real microphone. */
 export async function checkVoiceRouting(page) {
   await page.evaluate(() => {
+    // Calibrate against processed quiet audio, rather than a wall-clock delay that can
+    // expire before Chromium delivers its first audio buffers on a busy machine.
+    const createProcessor = AudioContext.prototype.createScriptProcessor
+    window.proof.createProcessor = createProcessor
+    AudioContext.prototype.createScriptProcessor = function (...args) {
+      const processor = createProcessor.apply(this, args)
+      processor.addEventListener('audioprocess', (event) => {
+        const frame = event.inputBuffer.getChannelData(0)
+        if (frame.every((sample) => Math.abs(sample) < 0.001))
+          window.proof.quietAudioMs += (frame.length / this.sampleRate) * 1000
+      })
+      return processor
+    }
     window.proof.nativePeer = window.RTCPeerConnection
     window.proof.livePeers = []
     window.RTCPeerConnection = class {
@@ -59,9 +72,12 @@ export async function checkVoiceRouting(page) {
   const agentSends = () =>
     page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'agentSend'))
   const open = async () => {
-    await page.evaluate(() => window.proof.emit('onTalkToggle'))
+    await page.evaluate(() => {
+      window.proof.quietAudioMs = 0
+      window.proof.emit('onTalkToggle')
+    })
     await page.waitForFunction(() => document.documentElement.dataset.openMic === 'listening')
-    await page.waitForTimeout(650) // allow the real segmenter to learn the synthetic quiet room
+    await page.waitForFunction(() => window.proof.quietAudioMs >= 650)
   }
   const close = async () => {
     await page.evaluate(() => window.proof.emit('onTalkToggle'))
@@ -384,6 +400,7 @@ export async function checkVoiceRouting(page) {
   await checkVoiceTarget(page)
   await page.evaluate(() => {
     window.RTCPeerConnection = window.proof.nativePeer
+    AudioContext.prototype.createScriptProcessor = window.proof.createProcessor
   })
   await page.evaluate(() => window.proof.agent({ status: 'idle', provider: null, items: [] }))
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()

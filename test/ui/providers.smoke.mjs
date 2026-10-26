@@ -18,6 +18,7 @@ import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar } from './toolbar.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
+import { checkThreadBadges } from './thread-badges.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
 import { setupSpaces, checkSpaces, checkSpacesSetup } from './spaces.smoke.mjs'
@@ -410,7 +411,9 @@ checks: try {
   }
   const box = page.getByPlaceholder('Type a message…')
   await checkWorkspacePaths(page, capture)
+  await checkThreadBadges(page, capture)
   assert.deepEqual(errors, [])
+  if (process.env.THREADLIGHT_UI_FOCUS === 'badges') break checks
   if (process.env.THREADLIGHT_UI_FOCUS === 'workspace') {
     await checkToolbar(page)
     assert.deepEqual(errors, [])

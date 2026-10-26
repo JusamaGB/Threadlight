@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Threadlight · Quietly ready</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0c121c;
+        color: #e8edf5;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 980px;
+        margin: auto;
+        padding: 42px 28px;
+      }
+      small {
+        font-size: 11px;
+        letter-spacing: 0.15em;
+        color: #dfa87d;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-size: 34px;
+        font-weight: 500;
+        letter-spacing: -0.5px;
+        margin: 9px 0;
+      }
+      p {
+        max-width: 650px;
+        color: #93a2b7;
+        margin: 0;
+      }
+      nav {
+        display: flex;
+        gap: 22px;
+        margin: 22px 0 28px;
+      }
+      a {
+        color: #b3c8e2;
+        text-decoration: none;
+        font-size: 12px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      .card {
+        border: 1px solid #293649;
+        border-radius: 20px;
+        padding: 24px;
+        background: #111d2d;
+      }
+      .new {
+        border-color: #425979;
+        background: radial-gradient(ellipse at 50% 44%, #1a293a, #111d2d 72%);
+      }
+      h2 {
+        margin: 0;
+        font-weight: 500;
+        font-size: 15px;
+      }
+      .caption {
+        font-size: 12px;
+        color: #899bb3;
+        margin-top: 4px;
+      }
+      .large {
+        display: block;
+        width: 240px;
+        height: 240px;
+        margin: 20px auto;
+      }
+      .actual {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        border-top: 1px solid #ffffff0b;
+        padding-top: 18px;
+        color: #92a4ba;
+        font-size: 12px;
+      }
+      .small {
+        width: 22px;
+        height: 22px;
+      }
+      .badge {
+        font-size: 10px;
+        border: 1px solid #344b63;
+        border-radius: 20px;
+        padding: 3px 9px;
+        color: #b9cbdf;
+        margin-left: auto;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        align-items: center;
+        margin-top: 24px;
+      }
+      button {
+        font: inherit;
+        color: #dde6f3;
+        border: 1px solid #344254;
+        background: #172335;
+        border-radius: 8px;
+        padding: 9px 17px;
+        cursor: pointer;
+      }
+      label {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 12px;
+        color: #a2b3c9;
+      }
+      input {
+        accent-color: #79aee8;
+      }
+      .timeline {
+        display: flex;
+        gap: 15px;
+        margin-top: 20px;
+        align-items: center;
+      }
+      .timeline input {
+        flex: 1;
+      }
+      .timeline output {
+        width: 80px;
+        text-align: right;
+        font-size: 12px;
+        color: #9eb1ca;
+      }
+      .note {
+        font-size: 12px;
+        line-height: 1.6;
+        color: #7e91a9;
+        margin-top: 22px;
+        max-width: none;
+      }
+      #renderer {
+        font-size: 11px;
+        color: #7e91a9;
+      }
+      @media (max-width: 680px) {
+        main {
+          padding: 26px 18px;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .large {
+          width: 220px;
+          height: 220px;
+        }
+        h1 {
+          font-size: 29px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <small>Threadlight / Idle</small>
+        <h1>Quietly ready.</h1>
+        <p>
+          A warm centre held inside a soft blue halo. It gently brightens and opens with a slow
+          breath—small enough to sit quietly on the desktop, alive enough to feel ready.
+        </p>
+      </header>
+      <nav>
+        <a href="/">Active · orange wheel / blue shine</a
+        ><a href="/needs-input.html">Needs input · liquid drop</a>
+      </nav>
+      <div class="grid">
+        <section class="card">
+          <h2>Current idle</h2>
+          <div class="caption">Resting waveform</div>
+          <canvas
+            id="before"
+            class="large"
+            aria-label="Current static idle waveform enlarged"
+          ></canvas>
+          <div class="actual">
+            <canvas id="beforeDot" class="small" aria-label="Current idle at 22 pixels"></canvas
+            >Actual size · 22 px
+          </div>
+        </section>
+        <section class="card new">
+          <h2>Resting light</h2>
+          <div class="caption">Warm centre · blue halo · slow breath</div>
+          <canvas
+            id="after"
+            class="large"
+            aria-label="Proposed breathing idle light enlarged"
+          ></canvas>
+          <div class="actual">
+            <canvas
+              id="afterDot"
+              class="small"
+              aria-label="Breathing idle light at actual size"
+            ></canvas
+            >Actual size · 22 px<span class="badge">Ready</span>
+          </div>
+        </section>
+      </div>
+      <div class="controls">
+        <button id="pause">Pause</button
+        ><label><input type="checkbox" id="reduced" />Reduced motion</label
+        ><span id="renderer"></span>
+      </div>
+      <label class="timeline"
+        >Breath<input
+          id="position"
+          type="range"
+          min="0"
+          max="6.399"
+          step="0.001"
+          value="0"
+        /><output id="phase">Rest</output></label
+      >
+      <p class="note">
+        One gentle breath every 6.4 seconds. The halo stays in place; brightness and size shift
+        slightly. Reduced motion keeps a steady light. Both views use the same 22-pixel design,
+        enlarged above for inspection. Local preview only.
+      </p>
+    </main>
+    <script type="module" src="./idle-preview.ts"></script>
+  </body>
+</html>
