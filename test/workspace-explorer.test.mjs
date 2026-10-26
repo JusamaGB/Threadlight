@@ -34,7 +34,7 @@ describe('known workspace folder browser', () => {
     expect(folders.get('//server/team/app').parent).toBe('//server/team')
   })
 
-  it('searches nested names and paths across a drive, with disambiguating paths and no duplicate folders', () => {
+  it('searches nested names and paths across all drives, with disambiguating paths and no duplicate folders', () => {
     const { folders } = workspaceExplorer([
       { id: 'claude:C:/Projects/shared', name: 'shared' },
       { id: 'codex:C:/Archive/shared', name: 'shared' },
@@ -42,15 +42,16 @@ describe('known workspace folder browser', () => {
       { id: 'codex:C:/Projects/shared/lib', name: 'lib' },
     ])
     const entries = [...folders.values()]
-    expect(searchWorkspaces(entries, 'SHARED', 'c:').map((folder) => folder.path)).toEqual([
+    expect(searchWorkspaces(entries, 'SHARED').map((folder) => folder.path)).toEqual([
       'C:/Archive/shared',
       'C:/Projects/shared',
+      'Z:/Projects/shared',
       'C:/Projects/shared/lib',
     ])
-    expect(
-      searchWorkspaces(entries, 'Projects\\shared lib', '').map((folder) => folder.path),
-    ).toEqual(['C:/Projects/shared/lib'])
-    expect(searchWorkspaces(entries, 'missing', '')).toEqual([])
+    expect(searchWorkspaces(entries, 'Projects\\shared lib').map((folder) => folder.path)).toEqual([
+      'C:/Projects/shared/lib',
+    ])
+    expect(searchWorkspaces(entries, 'missing')).toEqual([])
   })
 
   it('keeps POSIX roots navigable without confusing them with the all-drives view', () => {

@@ -79,8 +79,8 @@ export function workspaceExplorer(workspaces: KnownWorkspace[]) {
   return { folders, roots }
 }
 
-/** Search all known locations in the selected drive, including nested workspaces. */
-export function searchWorkspaces(folders: WorkspaceFolder[], query: string, root: string) {
+/** Search every known location across all drives, including nested workspaces. */
+export function searchWorkspaces(folders: WorkspaceFolder[], query: string) {
   const terms = query.trim().toLowerCase().replace(/\\/g, '/').split(/\s+/).filter(Boolean)
   const rank = (folder: WorkspaceFolder) =>
     folder.name.toLowerCase().startsWith(terms[0] ?? '') ? 0 : 1
@@ -88,7 +88,6 @@ export function searchWorkspaces(folders: WorkspaceFolder[], query: string, root
     .filter(
       (folder) =>
         folder.workspace &&
-        (!root || folder.root === root) &&
         terms.every((term) =>
           `${folder.workspace!.name} ${folder.path}`.toLowerCase().includes(term),
         ),

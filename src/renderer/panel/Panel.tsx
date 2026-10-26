@@ -1211,7 +1211,6 @@ export function Panel() {
               onProviderChange={(selection) => void selectApplications(selection)}
               workspaces={pickerWorkspaces}
               chosen={pickerId(chosen)}
-              current={pickerId(snapshot.currentWorkspace)}
               onPick={(id) => void pickWorkspace(id)}
             />
           )}

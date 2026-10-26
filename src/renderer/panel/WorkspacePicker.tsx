@@ -14,35 +14,27 @@ interface WorkspacePickerProps {
   /** Every known workspace, including threads outside the recent time window. */
   workspaces: KnownWorkspace[]
   chosen: string | null
-  current: string | null
   onProviderChange: (provider: 'claude' | 'codex' | 'both') => void
-  onPick: (workspaceId: string | null) => void
+  onPick: (workspaceId: string) => void
 }
 
 /** A folder browser over known thread locations, rather than unrelated files on disk. */
 export function WorkspacePicker({
   workspaces,
   chosen,
-  current,
   onPick,
   provider,
   onProviderChange,
 }: WorkspacePickerProps) {
   const explorer = useMemo(() => workspaceExplorer(workspaces), [workspaces])
-  const [location, setLocation] = useState(
-    () => explorer.folders.get(workspaceFolder(chosen ?? current ?? ''))?.parent ?? '',
-  )
+  const [location, setLocation] = useState('')
   const [query, setQuery] = useState('')
   const list = useRef<HTMLDivElement>(null)
   const folder = explorer.folders.get(location)
-  const drive = folder?.root ?? ''
   const searching = query.trim().length > 0
   const rows = searching
-    ? searchWorkspaces([...explorer.folders.values()], query, drive)
+    ? searchWorkspaces([...explorer.folders.values()], query)
     : (folder?.children ?? explorer.roots)
-  const currentName = workspaces
-    .find((w) => current && workspaceFolder(w.id) === workspaceFolder(current))
-    ?.name.replace(/^(Claude|Codex) · /, '')
   const nameOf = (entry: WorkspaceFolder) =>
     entry.workspace?.name.replace(/^(Claude|Codex) · /, '') ?? entry.name
   const browse = (entry: WorkspaceFolder) => {
@@ -52,9 +44,6 @@ export function WorkspacePicker({
 
   return (
     <div className={styles.workspacePicker}>
-      <p className={styles.pickerPrompt}>
-        Choose which folder’s threads to show. Only known thread folders are listed.
-      </p>
       <div className={styles.pickerControls}>
         <label>
           Applications
@@ -76,27 +65,15 @@ export function WorkspacePicker({
           </select>
         </label>
         <label>
-          Drive
-          <select
-            aria-label="Workspace drive"
-            value={drive}
-            onChange={(event) => setLocation(event.target.value)}
-          >
-            <option value="">All drives</option>
-            {explorer.roots.map((root) => (
-              <option key={root.key} value={root.key}>
-                {root.path}
-              </option>
-            ))}
-          </select>
+          Search
+          <input
+            type="search"
+            aria-label="Search workspaces"
+            placeholder="Search workspaces…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
         </label>
-        <input
-          type="search"
-          aria-label="Search workspaces"
-          placeholder="Search workspace name or path…"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
       </div>
       <nav className={styles.pickerLocation} aria-label="Workspace folder navigation">
         <button
@@ -109,20 +86,6 @@ export function WorkspacePicker({
         </button>
         <span title={folder?.path}>{folder?.path ?? 'All drives'}</span>
       </nav>
-      <button
-        className={styles.workspaceHeader}
-        aria-pressed={chosen === null}
-        onClick={() => onPick(null)}
-      >
-        <span className={styles.workspaceName}>
-          {provider === 'both'
-            ? 'Follow recent activity'
-            : provider === 'codex'
-              ? 'Follow Codex activity'
-              : 'Follow Claude activity'}
-        </span>
-        {currentName && <span className={styles.workspaceCount}>{currentName}</span>}
-      </button>
       {folder?.workspace && !searching && (
         <button
           className={styles.workspaceHeader}
@@ -191,7 +154,6 @@ export function WorkspacePicker({
             {searching
               ? 'No workspaces match your search.'
               : 'No other known workspaces in this folder.'}
-            {drive && <button onClick={() => setLocation('')}>Look across all drives</button>}
           </p>
         )}
       </div>

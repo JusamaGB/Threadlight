@@ -46,13 +46,15 @@ view. Active, Workspace and All keep their current count display.
 The workspace picker browses known thread folders, grouped by drive or UNC share;
 it does not scan unrelated files on disk. Its Claude/Codex/Both selector uses the
 same application setting as the main header. Both combines equivalent folder paths
-while retaining each provider's original selection ID. The picker opens beside the
-current selection, offers parent/child navigation and a drive selector, and searches
-workspace names and full paths throughout the chosen drive (or all drives).
-Search results show paths to distinguish repeated names. A workspace row selects
+while retaining each provider's original selection ID. The picker opens at All
+drives and offers parent/child navigation. A narrow application selector sits beside
+search; search always matches workspace names and full paths across all drives,
+including when browsing inside a folder. There is no drive dropdown, introductory
+text or Follow activity option. Search results show paths to distinguish repeated
+names. A workspace row selects
 that exact folder; a separate arrow browses its nested workspaces. Parent-only
-folders browse without selecting. Follow activity remains available. Controls stay
-visible while long folder lists scroll; short results use only the space they need.
+folders browse without selecting. Controls stay visible while long folder lists
+scroll; short results use only the space they need.
 Drive/share rows always show their workspace totals and open their folders, even
 when threads have run at the drive/share root. That root workspace is selectable
 through the explicit "Use …" row inside.

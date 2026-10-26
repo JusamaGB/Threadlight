@@ -393,13 +393,6 @@
 }
 
 /* Choosing the Workspace list's workspace: the current choice is in the accent colour. */
-.pickerPrompt {
-  margin: 0;
-  padding: 8px 10px 2px;
-  font-size: 11px;
-  color: var(--faint);
-}
-
 .workspacePicker {
   position: relative;
   display: flex;
@@ -414,7 +407,7 @@
 
 .pickerControls {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 72px minmax(0, 1fr);
   gap: 7px 8px;
   padding: 8px 10px;
 }
@@ -441,10 +434,6 @@
   color: var(--fg);
   font: inherit;
   font-size: 11px;
-}
-
-.pickerControls input {
-  grid-column: 1 / -1;
 }
 
 .pickerLocation {
@@ -511,12 +500,6 @@
   color: var(--faint);
   font-size: 11px;
 }
-.pickerEmpty button {
-  display: block;
-  margin-top: 6px;
-  color: var(--muted);
-}
-
 .workspaceHeader[aria-pressed='true'],
 .workspaceHeader[aria-pressed='true'] .workspaceCount {
   color: var(--accent);

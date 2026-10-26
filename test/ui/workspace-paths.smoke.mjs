@@ -53,6 +53,7 @@ export async function checkWorkspacePaths(page, capture) {
       'both adapters receive their original path spelling for loading all threads',
     )
     await page.getByRole('button', { name: 'Choose workspace: shared', exact: true }).click()
+    await page.getByRole('searchbox', { name: 'Search workspaces' }).fill('shared')
     const shared = page.getByRole('button', { name: /^shared/ })
     assert.equal(await shared.count(), 1, 'equivalent Windows paths share one picker row')
     await shared.click()

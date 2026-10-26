@@ -97,6 +97,7 @@ export async function checkToolbar(page) {
     'no duplicate workspace heading',
   )
   await page.getByRole('button', { name: 'Choose workspace: shared', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Search workspaces' }).fill('shared')
   const shared = page.getByRole('button', { name: /^shared/ })
   assert.equal(await shared.count(), 1, 'the folder picker does not duplicate a shared folder')
   await shared.click()

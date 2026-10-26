@@ -4,7 +4,6 @@ import assert from 'node:assert/strict'
 export async function checkWorkspacePicker(page, capture) {
   const initial = await page.evaluate(() => window.threadlight.getSettings())
   const applications = page.getByLabel('Workspace applications', { exact: true })
-  const drive = page.getByLabel('Workspace drive', { exact: true })
   const search = page.getByRole('searchbox', { name: 'Search workspaces' })
   const results = page.locator('[class*="_pickerResults_"]')
   const choose = (name) => results.getByRole('button', { name, exact: true })
@@ -38,18 +37,17 @@ export async function checkWorkspacePicker(page, capture) {
     }, folders)
     await open()
     assert.equal(await applications.inputValue(), 'both')
-    assert.equal(await drive.inputValue(), 'c:')
-    assert.equal(await choose('shared').count(), 1)
-    await drive.selectOption('')
+    assert.equal(await page.getByLabel('Workspace drive', { exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: /^Follow .*activity/ }).count(), 0)
+    assert.equal(await page.getByText(/Choose which folder’s threads/).count(), 0)
+    const appBox = await applications.boundingBox()
+    const searchBox = await search.boundingBox()
+    assert.equal(appBox.y, searchBox.y, 'applications and search share one row')
+    assert.ok(appBox.width < searchBox.width / 2, 'applications leaves most of the row for search')
     const zDrive = results.getByRole('button', { name: /^Z: 4 workspaces/ })
     await capture('workspace-picker-drives')
     await zDrive.click()
     await applications.waitFor()
-    assert.equal(
-      await drive.inputValue(),
-      'z:',
-      'a drive with its own threads still opens its folders',
-    )
     await page.getByRole('button', { name: 'Use Z:', exact: true }).waitFor()
     assert.equal(
       await page.evaluate(
@@ -57,7 +55,7 @@ export async function checkWorkspacePicker(page, capture) {
       ),
       null,
     )
-    await drive.selectOption('c:')
+    // Searching from Z: must also find C: without any drive filter.
     await search.fill('other')
     await choose('other C:/Projects/other').waitFor()
     await applications.selectOption('claude')
@@ -69,7 +67,6 @@ export async function checkWorkspacePicker(page, capture) {
     await applications.selectOption('codex')
     await choose('other C:/Projects/other').waitFor()
     await applications.selectOption('both')
-    await drive.selectOption('')
     await search.fill('shared')
     assert.equal(
       await results.getByRole('button').count(),
@@ -80,7 +77,6 @@ export async function checkWorkspacePicker(page, capture) {
     assert.equal(await results.getByRole('button', { name: /Z:\/Archive\/shared/ }).count(), 1)
     await capture('workspace-picker-search')
     await search.fill('')
-    await drive.selectOption('z:')
     await results.getByRole('button', { name: 'Browse General', exact: true }).click()
     await page
       .getByRole('navigation', { name: 'Workspace folder navigation' })
@@ -99,20 +95,14 @@ export async function checkWorkspacePicker(page, capture) {
     )
     await page.getByRole('button', { name: 'Filter applications: Both', exact: true }).waitFor()
     await open()
-    await drive.selectOption('//server/team')
+    await results.getByRole('button', { name: /^\/\/server\/team 1 workspace/ }).click()
     await choose('app').waitFor()
     await search.fill('not-a-workspace')
     await page.getByRole('status').filter({ hasText: 'No workspaces match' }).waitFor()
-    await page.getByRole('button', { name: 'Look across all drives', exact: true }).click()
-    assert.equal(await drive.inputValue(), '')
     await search.fill('')
-    await page.getByRole('button', { name: 'Follow recent activity' }).click()
-    assert.equal(
-      await page.evaluate(
-        async () => (await window.threadlight.getSettings()).combinedFocusWorkspace,
-      ),
-      null,
-    )
+    await page.getByRole('button', { name: 'Parent folder', exact: true }).click()
+    await zDrive.waitFor()
+    await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
 
     // A busy drive scrolls its results, keeping the search/filter controls in reach.
     await page.evaluate(async (folders) => {
@@ -126,6 +116,8 @@ export async function checkWorkspacePicker(page, capture) {
       window.proof.emit('onPanelOpened', { maxHeight: 380, opensDown: true, fresh: false })
     }, folders)
     await open()
+    await results.getByRole('button', { name: /^C: 102 workspaces/ }).click()
+    await results.getByRole('button', { name: /^Projects 102 workspaces/ }).click()
     const before = await search.boundingBox()
     assert.ok(await results.evaluate((el) => el.scrollHeight > el.clientHeight))
     const scrollbar = page.getByRole('scrollbar', { name: 'Scroll workspaces', exact: true })
@@ -142,7 +134,7 @@ export async function checkWorkspacePicker(page, capture) {
     await capture('workspace-picker-scrolling')
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
     console.log(
-      'PASS: workspace picker provider settings, drive/UNC navigation, deduplication, nested folders, path search, selection/follow, and fixed controls over scrolling results.',
+      'PASS: compact workspace picker, all-drive start/search, provider settings, drive/UNC navigation, deduplication, nested folders, explicit selection and fixed controls over scrolling results.',
     )
   } finally {
     await page.evaluate(async (initial) => {
