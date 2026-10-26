@@ -1571,15 +1571,16 @@ span.planStep {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--border);
-  margin: 2px -10px 0;
-  padding: 4px 10px 0;
+  margin: 2px -10px -4px;
+  padding: 0 10px;
 }
 
 .agentEarlierHead {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 5px;
-  height: 22px;
+  height: 16px;
   padding: 0;
   border: 0;
   background: none;
@@ -1724,10 +1725,21 @@ span.planStep {
   opacity: 0.7;
 }
 .agentIdentity {
-  margin: 4px 10px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
   font-size: 11px;
   color: var(--muted);
-  overflow-wrap: anywhere;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agentFooter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 16px;
 }
 .agentQuestion {
   border: 0;

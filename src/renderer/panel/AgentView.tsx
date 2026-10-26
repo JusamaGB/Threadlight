@@ -33,7 +33,15 @@ function Lines({ items }: { items: AgentItem[] }) {
  * Past conversations under a collapsed "Earlier" row, newest first; the current one is left
  * out. Listed again each time it is opened, so a conversation just ended shows up.
  */
-function Earlier({ current, onOpen }: { current: string | null; onOpen: (id: string) => void }) {
+function Earlier({
+  current,
+  onOpen,
+  identity,
+}: {
+  current: string | null
+  onOpen: (id: string) => void
+  identity: string
+}) {
   const [open, setOpen] = useState(false)
   const [past, setPast] = useState<AgentConversation[] | null>(null)
   const now = useNow()
@@ -45,20 +53,27 @@ function Earlier({ current, onOpen }: { current: string | null; onOpen: (id: str
     }
   }, [open, current])
   const shown = (past ?? []).filter((conversation) => conversation.id !== current)
-  if (past && shown.length === 0) return null
+  const hasHistory = !past || shown.length > 0
   return (
     <div className={styles.agentEarlier}>
-      <button
-        className={styles.agentEarlierHead}
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <span className={styles.agentChevron} data-open={open || undefined}>
-          ›
-        </span>
-        {en.agent.earlier(shown.length)}
-      </button>
-      {open && (
+      <div className={styles.agentFooter}>
+        {hasHistory && (
+          <button
+            className={styles.agentEarlierHead}
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            <span className={styles.agentChevron} data-open={open || undefined}>
+              ›
+            </span>
+            {en.agent.earlier(shown.length)}
+          </button>
+        )}
+        <p className={styles.agentIdentity} title={identity}>
+          {identity}
+        </p>
+      </div>
+      {open && hasHistory && (
         <div className={styles.agentPast}>
           {shown.map((conversation) => (
             <button
@@ -118,6 +133,7 @@ export function AgentView() {
   const provider = hasConversation ? agent.provider : selectedProvider
   const model = hasConversation ? agent.model : selectedModel
   const reasoning = hasConversation ? agent.reasoning : selectedReasoning
+  const identity = `${provider === 'codex' ? 'Codex' : 'Claude'} · ${model ?? (hasConversation ? 'Model not recorded' : 'Runtime default')}${reasoning ? ` · ${reasoning}` : ''}`
 
   // Keep the newest line in view.
   useEffect(() => {
@@ -202,11 +218,6 @@ export function AgentView() {
 
   return (
     <div className={styles.agent}>
-      <p className={styles.agentIdentity}>
-        {provider === 'codex' ? 'Codex' : 'Claude'} ·{' '}
-        {model ?? (hasConversation ? 'Model not recorded' : 'Runtime default')}
-        {reasoning ? ` · ${reasoning}` : ''}
-      </p>
       {selectionChanged && (
         <div className={styles.agentSelection} role="status">
           <p>
@@ -312,7 +323,11 @@ export function AgentView() {
           </button>
         )}
       </div>
-      <Earlier current={agent.ended ? null : agent.conversationId} onOpen={(id) => void read(id)} />
+      <Earlier
+        current={agent.ended ? null : agent.conversationId}
+        onOpen={(id) => void read(id)}
+        identity={identity}
+      />
     </div>
   )
 }

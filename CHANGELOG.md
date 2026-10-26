@@ -6,6 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Moved the Agent provider, model and reasoning label to a compact bottom-right footer
+  alongside Earlier.
+
 - Moved the voice waveform onto the light strip beneath the header across Agent and
   thread views, replacing the original microphone glow and removing the large central
   animation area. The bottom usage bar remains visible.
