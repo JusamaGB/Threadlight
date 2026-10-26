@@ -6,8 +6,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Moved the Agent waveform into the panel's slim bottom bar, replacing its usage light
-  while the Agent page is open and removing the large central animation area.
+- Moved the Agent waveform onto the light strip beneath the header, replacing the
+  original microphone glow and removing the large central animation area. The bottom
+  usage bar remains visible.
 
 - Enlarged the resting floating waveform and slimmed the live microphone pill from
   32px to 18px tall, with a smaller stop control.

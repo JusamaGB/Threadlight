@@ -191,9 +191,9 @@ try {
   await page.locator('[class*="usageTrack"]').waitFor()
   await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
   await page.getByRole('region', { name: 'Agent activity', exact: true }).waitFor()
-  assert.equal(await page.locator('[class*="usageTrack"]').count(), 0)
+  assert.equal(await page.locator('[class*="usageTrack"]').count(), 1)
   await page.waitForTimeout(500)
-  await capture('agent-idle-footer', page.locator('[data-card]'))
+  await capture('agent-idle-header', page.locator('[data-card]'))
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.locator('[class*="usageTrack"]').waitFor()
   assert.equal(await page.getByRole('region', { name: 'Agent activity', exact: true }).count(), 0)
@@ -206,9 +206,19 @@ try {
   assert.equal(await stage.locator('canvas').count(), 0)
   const ribbonBounds = await ribbon.boundingBox()
   const cardBounds = await page.locator('[data-card]').boundingBox()
+  const headerBounds = await page.locator('[data-card] > header').boundingBox()
   assert.equal(ribbonBounds.height, 18)
   assert.equal(ribbonBounds.width, cardBounds.width - 2)
-  assert.equal(ribbonBounds.y + ribbonBounds.height, cardBounds.y + cardBounds.height - 1)
+  assert.equal(ribbonBounds.y + ribbonBounds.height / 2, headerBounds.y + headerBounds.height - 1)
+  assert.equal(
+    await page.locator('header').getByRole('region', { name: 'Agent activity' }).count(),
+    1,
+  )
+  assert.equal(
+    await page.getByRole('status', { name: 'Claude microphone listening', exact: true }).count(),
+    0,
+  )
+  assert.equal(await page.locator('[class*="usageTrack"]').count(), 1)
   await page.waitForFunction(() => window.motionProof.telemetry.input.level > 0.2)
   assert.equal(await ribbon.locator('[data-renderer]').getAttribute('data-renderer'), 'webgl')
   await stage.getByRole('status').filter({ hasText: 'You speaking' }).waitFor()

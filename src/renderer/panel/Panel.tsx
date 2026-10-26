@@ -929,16 +929,22 @@ export function Panel() {
         onMouseLeave={leave}
       >
         <header className={styles.header} onClick={onHeaderClick} {...drag.handlers}>
-          {(openMicListening || voice.state === 'listening') && (
-            <MicDivider
-              provider={
-                voice.state === 'listening'
-                  ? recordingProvider
-                  : (agent.provider ?? settings?.agentProvider ?? 'claude')
-              }
-              level={voice.level}
-              openMicLevel={voice.state === 'listening' ? undefined : openMicLevel}
-            />
+          {agentVisible ? (
+            <div className={styles.agentActivity} role="region" aria-label="Agent activity">
+              <ElectricMotion source={motion.source} label={motion.label} />
+            </div>
+          ) : (
+            (openMicListening || voice.state === 'listening') && (
+              <MicDivider
+                provider={
+                  voice.state === 'listening'
+                    ? recordingProvider
+                    : (agent.provider ?? settings?.agentProvider ?? 'claude')
+                }
+                level={voice.level}
+                openMicLevel={voice.state === 'listening' ? undefined : openMicLevel}
+              />
+            )
           )}
           {pickingWorkspace ? (
             <>
@@ -1249,23 +1255,17 @@ export function Panel() {
           )}
         </div>
 
-        {agentVisible ? (
-          <div className={styles.agentActivity} role="region" aria-label="Agent activity">
-            <ElectricMotion source={motion.source} label={motion.label} />
-          </div>
-        ) : (
-          <div className={styles.usageBars} data-parallel={provider === 'both' || undefined}>
-            {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
-            {usage && enabled.includes('claude') && (
-              <UsageBar
-                usage={usage}
-                weekly={view === 'all' && !listHidden}
-                source={provider === 'both' ? 'Claude' : undefined}
-              />
-            )}
-            {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
-          </div>
-        )}
+        <div className={styles.usageBars} data-parallel={provider === 'both' || undefined}>
+          {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
+          {usage && enabled.includes('claude') && (
+            <UsageBar
+              usage={usage}
+              weekly={view === 'all' && !listHidden}
+              source={provider === 'both' ? 'Claude' : undefined}
+            />
+          )}
+          {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
+        </div>
 
         {menu && (
           <ContextMenu
