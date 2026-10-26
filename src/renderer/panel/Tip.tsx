@@ -8,14 +8,14 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react'
-import { createPortal } from 'react-dom'
+import { HoverInfo } from './HoverInfo'
 
-import styles from './Panel.module.css'
-
-/** Keep the bubble clear of the cursor, including its visible arrow. */
-const GAP = 18
-const EDGE = 4
-type Point = { x: number; y: number }
+type Point = {
+  x: number
+  y: number
+  local: { x: number; y: number }
+  card: { left: number; top: number }
+}
 
 interface TipProps extends HTMLAttributes<HTMLElement> {
   as?: 'span' | 'button'
@@ -30,7 +30,7 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
 }
 
 /**
- * An immediate note beside the pointer. Nested targets take precedence over their parents.
+ * An immediate note above/below the pointer. Nested targets take precedence over their parents.
  * Portalled outside the anchor so row layout and scrolling cannot displace or clip the bubble.
  */
 export function Tip({
@@ -58,10 +58,18 @@ export function Tip({
   useLayoutEffect(() => {
     // A live snapshot can reorder rows without a mouse movement or scroll event.
     const candidate = resting.current ?? point
+    // An upward native resize can briefly lag behind the reserved card offset.
+    const card = anchor.current?.closest('[data-card]')?.getBoundingClientRect()
+    if (card && card.bottom > window.innerHeight + 1) return
     if (
       candidate &&
-      document.elementFromPoint(candidate.x, candidate.y)?.closest('[data-tip-anchor]') !==
-        anchor.current
+      anchor.current &&
+      document
+        .elementFromPoint(
+          candidate.x + (card?.left ?? 0) - candidate.card.left,
+          candidate.y + (card?.top ?? 0) - candidate.card.top,
+        )
+        ?.closest('[data-tip-anchor]') !== anchor.current
     )
       dismiss()
   })
@@ -69,11 +77,14 @@ export function Tip({
     // Scrolling can put a different thread beneath a stationary pointer.
     document.addEventListener('scroll', dismiss, true)
     window.addEventListener('blur', dismiss)
-    window.addEventListener('resize', dismiss)
+    const resize = () => {
+      if (timer.current) dismiss()
+    }
+    window.addEventListener('resize', resize)
     return () => {
       document.removeEventListener('scroll', dismiss, true)
       window.removeEventListener('blur', dismiss)
-      window.removeEventListener('resize', dismiss)
+      window.removeEventListener('resize', resize)
       if (timer.current) clearTimeout(timer.current)
     }
   }, [dismiss])
@@ -86,7 +97,14 @@ export function Tip({
       dismiss()
       return
     }
-    const next = { x: event.clientX, y: event.clientY }
+    const at = event.currentTarget.getBoundingClientRect()
+    const card = event.currentTarget.closest('[data-card]')?.getBoundingClientRect()
+    const next = {
+      x: event.clientX,
+      y: event.clientY,
+      local: { x: event.clientX - at.left, y: event.clientY - at.top },
+      card: { left: card?.left ?? 0, top: card?.top ?? 0 },
+    }
     if (!restDelay) {
       setPoint(next)
       return
@@ -129,40 +147,11 @@ export function Tip({
       onClick={onClick}
     >
       {children}
-      {point && text && createPortal(<TipBox text={text} point={point} />, document.body)}
+      {point && text && (
+        <HoverInfo anchor={anchor} point={point.local} onDismiss={dismiss}>
+          {text}
+        </HoverInfo>
+      )}
     </Tag>
-  )
-}
-
-function TipBox({ text, point }: { text: string; point: Point }) {
-  const box = useRef<HTMLSpanElement>(null)
-  const [place, setPlace] = useState<{ top: number; left: number; maxWidth: number } | null>(null)
-  useLayoutEffect(() => {
-    const el = box.current
-    if (!el) return
-    el.style.maxWidth = ''
-    el.style.left = '0px'
-    const naturalWidth = el.getBoundingClientRect().width
-    const right = window.innerWidth - point.x - GAP - EDGE
-    const left = point.x - GAP - EDGE
-    const useRight = naturalWidth <= right || (naturalWidth > left && right >= left)
-    const maxWidth = Math.max(1, useRight ? right : left)
-    el.style.maxWidth = `${maxWidth}px`
-    const { width, height } = el.getBoundingClientRect()
-    setPlace({
-      top: Math.max(EDGE, Math.min(point.y - height / 2, window.innerHeight - height - EDGE)),
-      left: useRight ? point.x + GAP : point.x - GAP - width,
-      maxWidth,
-    })
-  }, [point, text])
-  return (
-    <span
-      ref={box}
-      className={styles.tip}
-      role="tooltip"
-      style={place ?? { top: 0, left: 0, visibility: 'hidden' }}
-    >
-      {text}
-    </span>
   )
 }

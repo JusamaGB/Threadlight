@@ -14,11 +14,12 @@ export async function checkLastActive(page, row, capture) {
         ...snapshot,
         sessions: snapshot.sessions.map((session) => ({
           ...session,
+          state: 'waiting', // keep both dated rows visible throughout the clock advances
           lastActiveAt: Date.now() - (session.provider === 'codex' ? 25 : 6) * 3600000,
         })),
       })
     })
-    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
     const tip = page.getByRole('tooltip')
     const hover = async (provider) => {
       const box = await row(provider).boundingBox()
@@ -64,7 +65,7 @@ export async function checkLastActive(page, row, capture) {
   }
 }
 
-export async function checkTips(page, row) {
+export async function checkTips(page, row, capture = async () => {}) {
   await page.setViewportSize({ width: 316, height: 900 })
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
   const tip = page.getByRole('tooltip')
@@ -80,13 +81,18 @@ export async function checkTips(page, row) {
     await page.mouse.move(point.x, point.y)
     return point
   }
-  const beside = async (point, side = 'right') => {
+  const vertical = async (point) => {
     const box = await tip.boundingBox()
+    const card = await page.locator('[data-card]').boundingBox()
     assert.ok(box, 'the bubble is visible')
-    if (side === 'right') assert.ok(box.x >= point.x + 18)
-    else assert.ok(box.x + box.width <= point.x - 18)
-    assert.ok(box.y <= point.y && box.y + box.height >= point.y, 'same line as the pointer')
-    assert.ok(box.x >= 4 && box.x + box.width <= 312, 'inside the window')
+    assert.ok(
+      box.y >= point.y + 17.5 || box.y + box.height <= point.y - 17.5,
+      'above or below the pointer',
+    )
+    assert.ok(
+      box.x >= card.x + 3.5 && box.x + box.width <= card.x + card.width - 3.5,
+      'inside the app card',
+    )
     assert.equal(await tip.count(), 1, 'only the hovered target owns a bubble')
   }
   try {
@@ -96,7 +102,8 @@ export async function checkTips(page, row) {
       assert.equal(await tip.count(), 0, 'thread rows have no provider bubble')
       const at = await context(provider)
       await page.getByRole('tooltip', { name: 'Context 20%', exact: true }).waitFor()
-      await beside(at)
+      await vertical(at)
+      assert.ok((await tip.boundingBox()).width < 150, 'short text stays content-sized')
       await move(row(provider))
       assert.equal(await tip.count(), 0, 'moving away from the ring hides context immediately')
     }
@@ -120,7 +127,7 @@ export async function checkTips(page, row) {
     })
     await page.mouse.move(5, 5)
     assert.equal(await tip.count(), 0, 'leaving cannot reopen an old bubble')
-    await context('Claude')
+    const reorderPoint = await context('Claude')
     await page.getByRole('tooltip', { name: 'Context 20%', exact: true }).waitFor()
     await page.evaluate(async () => {
       const snapshot = await window.threadlight.getSnapshot()
@@ -128,12 +135,27 @@ export async function checkTips(page, row) {
         ...snapshot,
         sessions: [...snapshot.sessions]
           .reverse()
-          .map((session) => ({ ...session, contextUsed: 0.35 })),
+          .map((session) => ({
+            ...session,
+            contextUsed: session.provider === 'claude' ? 0.35 : 0.45,
+          })),
       })
     })
     await page
       .getByRole('tooltip', { name: 'Context 20%', exact: true })
       .waitFor({ state: 'detached' })
+    if (await tip.count()) {
+      const owner = await page.evaluate(
+        ({ x, y }) =>
+          document.elementFromPoint(x, y)?.closest('[data-tip-anchor]')?.getAttribute('aria-label'),
+        reorderPoint,
+      )
+      assert.equal(
+        await tip.innerText(),
+        owner,
+        'any replacement tip belongs to the target now under the pointer',
+      )
+    }
     await page.evaluate(async () =>
       window.proof.emit('onSnapshot', await window.threadlight.getSnapshot()),
     )
@@ -147,12 +169,72 @@ export async function checkTips(page, row) {
     // The clock is still paused: none of these bubbles may require a timer to appear.
     await page.getByLabel(/^Claude · 5-hour limit 20%/).hover()
     await page.getByRole('tooltip').filter({ hasText: 'Claude · 5-hour limit 20%' }).waitFor()
+    const usage = await page.getByLabel(/^Claude · 5-hour limit 20%/).boundingBox()
+    for (const x of [usage.x + 12, usage.x + usage.width / 2, usage.x + usage.width - 12]) {
+      const at = { x, y: usage.y + usage.height / 2 }
+      await page.mouse.move(at.x, at.y)
+      await vertical(at)
+      assert.ok(
+        (await tip.boundingBox()).width >= 280,
+        'long text may use the full app width at either edge or the centre',
+      )
+    }
+    await capture('hover-info-full-width')
     await page.getByLabel(/^Codex · Weekly limit 27%/).hover()
     await page.getByRole('tooltip').filter({ hasText: 'Codex · Weekly limit 27%' }).waitFor()
     await page.mouse.move(5, 5)
     await tip.waitFor({ state: 'detached' })
+    // Task details share the same placement and may wrap a long task label.
+    await page.evaluate(async () => {
+      const snapshot = await window.threadlight.getSnapshot()
+      window.proof.emit('onSnapshot', {
+        ...snapshot,
+        sessions: snapshot.sessions.map((session) =>
+          session.provider === 'claude'
+            ? {
+                ...session,
+                backgroundTasks: [
+                  {
+                    id: 'long-task',
+                    label:
+                      'Check the shared workspace implementation and run the complete focused verification for the current application changes',
+                    startedAt: Date.now() - 42000,
+                  },
+                  { id: 'short-task', label: 'Build', startedAt: Date.now() - 7000 },
+                ],
+              }
+            : session,
+        ),
+      })
+    })
+    const task = row('Claude').getByText('Tasks ×2', { exact: true })
+    const taskBox = await task.boundingBox()
+    const at = { x: taskBox.x + taskBox.width / 2, y: taskBox.y + taskBox.height / 2 }
+    await page.mouse.move(at.x, at.y)
+    await tip.waitFor()
+    await vertical(at)
+    assert.ok((await tip.boundingBox()).width >= 280)
+    const taskTip = await tip.boundingBox()
+    assert.ok(
+      await page.evaluate(
+        (bottom) => window.proof.resizes.at(-1) >= bottom + 3,
+        taskTip.y + taskTip.height,
+      ),
+      'compact windows reserve enough height for the popup',
+    )
+    await capture('hover-info-task-details')
+    await page.evaluate(() => document.dispatchEvent(new Event('scroll')))
+    await tip.waitFor({ state: 'detached' })
+    assert.equal(
+      await page.evaluate(() => window.proof.resizes.at(-1)),
+      await page.locator('[data-card]').evaluate((el) => el.getBoundingClientRect().height),
+      'popup room is released on dismissal',
+    )
+    await page.evaluate(async () =>
+      window.proof.emit('onSnapshot', await window.threadlight.getSnapshot()),
+    )
     console.log(
-      'PASS: instant context and usage tips with frozen timers; immediate leave, reorder and scroll.',
+      'PASS: content-sized tips above/below the pointer, full-width long usage/task text, and instant leave/click/reorder/scroll dismissal with frozen timers.',
     )
   } finally {
     await page.clock.resume()

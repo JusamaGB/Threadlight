@@ -418,7 +418,22 @@ checks: try {
     const dir = process.env['THREADLIGHT_SCREENSHOTS']
     if (dir) {
       mkdirSync(dir, { recursive: true })
-      await page.locator('#root > div').screenshot({ path: join(dir, `${name}.local.png`) })
+      const stage = await page.locator('#root > div').boundingBox()
+      const tips = await page
+        .getByRole('tooltip')
+        .evaluateAll((elements) => elements.map((el) => el.getBoundingClientRect().toJSON()))
+      const bounds = [stage, ...tips]
+      const x = Math.min(...bounds.map((box) => box.x))
+      const y = Math.min(...bounds.map((box) => box.y))
+      await page.screenshot({
+        path: join(dir, `${name}.local.png`),
+        clip: {
+          x,
+          y,
+          width: Math.max(...bounds.map((box) => box.x + box.width)) - x,
+          height: Math.max(...bounds.map((box) => box.y + box.height)) - y,
+        },
+      })
     }
   }
   const box = page.getByPlaceholder('Type a message…')
@@ -460,7 +475,7 @@ checks: try {
     await page.evaluate(() =>
       window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
     )
-    await checkTips(page, row)
+    await checkTips(page, row, capture)
     assert.deepEqual(errors, [])
     break checks
   }

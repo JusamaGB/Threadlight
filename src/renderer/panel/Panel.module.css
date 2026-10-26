@@ -768,6 +768,7 @@
   position: fixed;
   z-index: 13;
   box-sizing: border-box; /* so the cap below includes the padding and border */
+  width: max-content;
   max-width: calc(100vw - 8px);
   padding: 4px 8px;
   border: 1px solid var(--border);
@@ -1638,13 +1639,13 @@ span.planStep {
 .taskPopup {
   position: fixed;
   z-index: 12;
-  /* The width cap TaskTimer measures against includes the padding and border. */
+  /* Shared hover placement measures the intrinsic content against the card width. */
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 160px;
-  max-width: min(280px, calc(100vw - 8px));
+  width: max-content;
+  max-width: calc(100vw - 8px);
   padding: 5px 8px 6px;
   background: var(--raised);
   border: 1px solid var(--border);
@@ -1653,6 +1654,7 @@ span.planStep {
   color: var(--fg);
   font-size: 11px;
   text-align: left;
+  pointer-events: none;
 }
 
 .taskHeading {
@@ -1672,9 +1674,8 @@ span.planStep {
 .taskLabel {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .taskLine .taskTime {
