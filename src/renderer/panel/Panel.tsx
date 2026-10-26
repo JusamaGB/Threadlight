@@ -964,6 +964,20 @@ export function Panel() {
     }
   }
 
+  const usageBars = (
+    <>
+      {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
+      {usage && enabled.includes('claude') && (
+        <UsageBar
+          usage={usage}
+          weekly={view === 'all' && !listHidden}
+          source={provider === 'both' ? 'Claude' : undefined}
+        />
+      )}
+      {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
+    </>
+  )
+
   return (
     <PanelRoomContext.Provider value={panelRoom}>
       <div className={styles.panelStage}>
@@ -1356,23 +1370,18 @@ export function Panel() {
           </div>
 
           <div className={styles.usageBars} data-parallel={provider === 'both' || undefined}>
-            {/* Claude keeps its existing window choice; Codex always shows its weekly quota. */}
-            {usage && enabled.includes('claude') && (
-              <UsageBar
-                usage={usage}
-                weekly={view === 'all' && !listHidden}
-                source={provider === 'both' ? 'Claude' : undefined}
-              />
-            )}
-            {enabled.includes('codex') && <CodexUsageBar usage={snapshot.codexUsage} />}
-            {workspaceView && (
+            {workspaceView ? (
               <WorkspaceResize
                 height={workspaceHeight}
                 maxHeight={maxHeight}
                 saving={savingWorkspaceHeight}
                 onPreview={setWorkspaceDragHeight}
                 onCommit={(height) => void saveWorkspaceHeight(height)}
-              />
+              >
+                {usageBars}
+              </WorkspaceResize>
+            ) : (
+              usageBars
             )}
           </div>
 

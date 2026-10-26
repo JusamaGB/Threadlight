@@ -34,14 +34,29 @@ export async function checkWorkspaceHeight(page, capture) {
     await page.getByLabel(/^Claude · 5-hour limit/).hover()
     await page.getByRole('tooltip').filter({ hasText: 'Claude · 5-hour limit' }).waitFor()
     assert.equal(await grip.evaluate((el) => getComputedStyle(el).opacity), '1')
-    const box = await grip.boundingBox()
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    const strip = page.locator('[class*="_workspaceResizeArea_"]')
+    const box = await strip.boundingBox()
+    // The left, centre and right of the actual bottom strip must all be draggable;
+    // the old tiny grip above it passed keyboard/drag checks but was hard to find.
+    for (const x of [box.x + 12, box.x + box.width / 2, box.x + box.width - 12]) {
+      await page.mouse.move(x, box.y + box.height - 2)
+      assert.equal(
+        await page.evaluate(
+          ({ x, y }) => getComputedStyle(document.elementFromPoint(x, y)).cursor,
+          { x, y: box.y + box.height - 2 },
+        ),
+        'ns-resize',
+      )
+    }
+    const x = box.x + box.width - 12
+    const y = box.y + box.height - 2
+    await page.mouse.move(x, y)
     await capture('workspace-full-height-grip')
     const before = await page.evaluate(
       () => window.proof.calls.filter((c) => c[0] === 'leavePanel').length,
     )
     await page.mouse.down()
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 200)
+    await page.mouse.move(x, y - 200)
     await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
     assert.equal(
       await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'leavePanel').length),
@@ -88,7 +103,7 @@ export async function checkWorkspaceHeight(page, capture) {
       async () => (await window.threadlight.getSettings()).workspacePanelHeight === 900,
     )
     console.log(
-      'PASS: full-height Workspace, quota-bar hover grip, saved drag/keyboard height, reload, smaller-screen clamp and normal sizing in other views.',
+      'PASS: full-height Workspace, full-width bottom resize cursor/drag, quota tooltips, saved drag/keyboard height, reload, smaller-screen clamp and normal sizing in other views.',
     )
   } finally {
     await page.evaluate((settings) => window.threadlight.updateSettings(settings), initial)

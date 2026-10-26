@@ -1598,10 +1598,23 @@ span.planStep {
   z-index: 2;
 }
 
+.workspaceResizeArea {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-top: 10px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.workspaceResizeArea * {
+  cursor: inherit;
+}
+
 .workspaceResize {
   position: absolute;
   left: 50%;
-  bottom: 100%;
+  top: 0;
   transform: translateX(-50%);
   display: grid;
   place-items: center;
@@ -1612,7 +1625,6 @@ span.planStep {
   background: var(--bg);
   color: var(--faint);
   opacity: 0;
-  pointer-events: none;
   cursor: ns-resize;
   touch-action: none;
   z-index: 1;
@@ -1620,7 +1632,7 @@ span.planStep {
 
 .usageBars:hover .workspaceResize,
 .workspaceResize:focus-visible,
-.workspaceResize[data-workspace-resizing] {
+.workspaceResizeArea[data-workspace-resizing] .workspaceResize {
   opacity: 1;
   pointer-events: auto;
 }
