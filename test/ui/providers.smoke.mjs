@@ -12,7 +12,11 @@ import { checkVoiceRouting } from './voice-routing.smoke.mjs'
 import { setupVoiceInput } from './voice-input.fixture.mjs'
 import { checkMicPill } from './mic-pill.smoke.mjs'
 import { readMotionFrame } from './motion-pixels.mjs'
-import { checkAgentSelection } from './agent-selection.smoke.mjs'
+import {
+  checkAgentSelection,
+  checkAgentSettings,
+  checkFooterSettings,
+} from './agent-selection.smoke.mjs'
 import { checkThreadReading } from './thread-reading.smoke.mjs'
 import { checkPanelHeight, checkWorkspaceHeight } from './panel-height.smoke.mjs'
 import { checkTips, checkLastActive } from './tips.smoke.mjs'
@@ -481,9 +485,12 @@ checks: try {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const signIn = page.getByRole('switch', { name: 'Launch at sign-in', exact: true })
     assert.equal(await page.getByRole('switch', { name: /Launch/ }).count(), 1)
-    await page
-      .getByText('Wait quietly in the background until Claude or Codex opens, then show the dot.')
-      .waitFor()
+    assert.equal(
+      await page
+        .getByText('Wait quietly in the background until Claude or Codex opens, then show the dot.')
+        .count(),
+      0,
+    )
     assert.equal(await signIn.getAttribute('aria-checked'), 'false')
     await signIn.click()
     await page.waitForFunction(() => window.mockState().then((s) => s.settings.launchAtSignIn))
@@ -499,11 +506,20 @@ checks: try {
     assert.equal(await signIn.getAttribute('aria-checked'), 'false')
     assert.equal(await page.getByRole('switch', { name: /Launch/ }).count(), 1)
     assert.deepEqual(errors, [])
-    console.log('PASS: one sign-in switch, quiet startup explanation, enable/disable and reload.')
+    console.log('PASS: one sign-in switch, no helper text, enable/disable and reload.')
     break checks
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'conversation-events') {
     await checkConversationEvents(page, communicationProof, memoryProof.store, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'agent-settings') {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await checkAgentSettings(page, capture)
+    await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+    await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+    await checkFooterSettings(page, capture)
     assert.deepEqual(errors, [])
     break checks
   }
@@ -1117,26 +1133,7 @@ checks: try {
     window.threadlight.updateSettings({ enabledProviders: [], voiceTarget: 'thread' }),
   )
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByLabel('Agent provider', { exact: true }).selectOption('codex')
-  const modelPicker = page.getByLabel('Codex agent model', { exact: true })
-  await modelPicker.waitFor()
-  await page.waitForFunction(
-    () => !document.querySelector('[aria-label="Codex agent model"]').disabled,
-  )
-  assert.equal(await modelPicker.inputValue(), 'future-fast')
-  assert.equal(await modelPicker.locator('option').count(), 1)
-  assert.equal(await page.getByLabel('Search Codex models').count(), 0)
-  assert.equal(await page.getByRole('button', { name: 'Refresh models', exact: true }).count(), 0)
-  const providerReasoning = page.getByRole('group', { name: 'Provider / Reasoning', exact: true })
-  assert.equal(await providerReasoning.getByLabel('Agent provider', { exact: true }).count(), 1)
-  assert.equal(await providerReasoning.getByLabel('Agent reasoning', { exact: true }).count(), 1)
-  await page.getByLabel('Show additional models').check()
-  await modelPicker.selectOption('future-deep')
-  await page.waitForFunction(
-    () => document.querySelector('[aria-label="Agent reasoning"]').value === 'high',
-  )
-  assert.equal(await page.getByLabel('Agent reasoning', { exact: true }).inputValue(), 'high')
-  await page.getByLabel('Agent reasoning', { exact: true }).selectOption('ultra')
+  await checkAgentSettings(page, capture)
   assert.equal(settings.agentCodexModel, 'future-deep')
   assert.equal(settings.agentCodexReasoning, 'ultra')
   await capture('agent-codex-settings')

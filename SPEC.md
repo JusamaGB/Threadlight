@@ -216,11 +216,14 @@ Reduced motion holds the provider-coloured wheel and bead steady; hidden overlay
 schedule no animation. A dot too close to the bottom edge also uses the steady pose.
 The production renderer shares the preview's provider palettes and drop physics.
 
-### Agent footer settings
+### Agent settings
 
-The footer provider, model and Codex effort labels open their corresponding setting
-menus. They reuse Settings' model discovery and supported effort list; choosing a
-model resets effort to that model's default. Additional Codex models remain opt-in.
+Settings shows provider, model and Codex reasoning as one row of plain text;
+reasoning uses a muted colour. The Agent footer reuses these controls. Hover opens
+each label's corresponding menu without taking keyboard focus, with a short close
+delay for moving into the menu; click and keyboard opening remain supported.
+They share model discovery and the supported effort list; choosing a model resets
+effort to that model's default. All discovered Codex models are listed immediately.
 Claude exposes the existing Opus/Sonnet worker choice and no Codex effort control.
 Choices save immediately through the existing settings API. A running conversation
 keeps its recorded identity and the existing Use selected model flow; changing a

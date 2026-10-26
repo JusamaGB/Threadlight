@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { AgentProvider } from '../../shared/agent'
 import type { Settings, SettingsPatch } from '../../shared/settings'
 import { codexModelSettings, useAgentModels } from '../hooks/useAgentModels'
@@ -6,7 +6,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
 
 type Field = 'provider' | 'model' | 'effort'
-type Menu = { field: Field; anchor: HTMLButtonElement; x: number; y: number }
+type Menu = { field: Field; anchor: HTMLButtonElement; x: number; y: number; modal: boolean }
 
 /** The labels describe the current conversation; choices save settings for the next one. */
 export function AgentIdentity({
@@ -16,6 +16,8 @@ export function AgentIdentity({
   hasConversation,
   settings,
   onError,
+  appearance = 'footer',
+  saveSettings,
 }: {
   provider: AgentProvider | null
   model: string | null
@@ -23,9 +25,11 @@ export function AgentIdentity({
   hasConversation: boolean
   settings: Settings | null
   onError: (message: string | null) => void
+  appearance?: 'footer' | 'settings'
+  saveSettings?: (patch: SettingsPatch) => Promise<boolean>
 }) {
   const [menu, setMenu] = useState<Menu | null>(null)
-  const [additional, setAdditional] = useState(false)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [saving, setSaving] = useState(false)
   const activeProvider = provider ?? settings?.agentProvider ?? 'claude'
   const { models, error, loading, reload } = useAgentModels(activeProvider === 'codex')
@@ -38,22 +42,61 @@ export function AgentIdentity({
   const save = async (patch: SettingsPatch) => {
     setSaving(true)
     try {
-      const result = await window.threadlight.updateSettings(patch)
-      onError(result.ok ? null : result.reason)
+      if (saveSettings) {
+        onError((await saveSettings(patch)) ? null : 'Could not save Agent settings. Try again.')
+      } else {
+        const result = await window.threadlight.updateSettings(patch)
+        onError(result.ok ? null : result.reason)
+      }
     } catch {
       onError('Could not save Agent settings. Try again.')
     } finally {
       setSaving(false)
     }
   }
-  const open = (field: Field, event: MouseEvent<HTMLButtonElement>) => {
+  const cancelClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    closeTimer.current = null
+  }
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current)
+    },
+    [],
+  )
+  useEffect(() => {
+    if (!menu || menu.modal) return
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setMenu(null)
+    }
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [menu])
+  const open = (field: Field, event: MouseEvent<HTMLButtonElement>, modal = true) => {
+    cancelClose()
     const anchor = event.currentTarget
     const box = anchor.getBoundingClientRect()
-    setMenu({ field, anchor, x: box.left, y: box.bottom })
+    setMenu((current) =>
+      current?.field === field && current.modal && !modal
+        ? current
+        : { field, anchor, x: box.left, y: box.bottom, modal },
+    )
+  }
+  const closeSoon = () => {
+    if (menu?.modal) return
+    cancelClose()
+    closeTimer.current = setTimeout(
+      () => setMenu((current) => (current?.modal ? current : null)),
+      150,
+    )
   }
   const close = () => {
+    cancelClose()
     setMenu(null)
-    menu?.anchor.focus()
+    if (menu?.modal) menu.anchor.focus({ preventScroll: true })
   }
   const note = (label: string): MenuItem[] => [{ label, disabled: true, onSelect: () => {} }]
   let items: MenuItem[] = []
@@ -83,26 +126,12 @@ export function AgentIdentity({
         },
       ]
     else if (menu.field === 'model') {
-      items = models
-        .filter((candidate) => additional || !candidate.hidden || candidate.id === selected?.id)
-        .map((candidate) => ({
-          label: candidate.name + (candidate.hidden ? ' · additional' : ''),
-          disabled: settings?.agentProvider === 'codex' && configured?.id === candidate.id,
-          onSelect: () => void save({ agentProvider: 'codex', ...codexModelSettings(candidate) }),
-        }))
+      items = models.map((candidate) => ({
+        label: candidate.name,
+        disabled: settings?.agentProvider === 'codex' && configured?.id === candidate.id,
+        onSelect: () => void save({ agentProvider: 'codex', ...codexModelSettings(candidate) }),
+      }))
       if (!items.length) items = note('No Codex models available.')
-      if (
-        !additional &&
-        models.some((candidate) => candidate.hidden && candidate.id !== selected?.id)
-      ) {
-        items.push({
-          label: 'Show additional models',
-          onSelect: () => {
-            setAdditional(true)
-            setMenu(menu)
-          },
-        })
-      }
     } else if (selected?.efforts.length) {
       items = selected.efforts.map((effort) => ({
         label: effort,
@@ -119,10 +148,21 @@ export function AgentIdentity({
       }))
     } else items = note('No effort options available for this model.')
   }
+  const settingEffort = reasoning ?? selected?.defaultEffort ?? 'Effort'
   const labels = {
     provider: activeProvider === 'codex' ? 'Codex' : 'Claude',
-    model: model ?? (hasConversation ? 'Model not recorded' : 'Runtime default'),
-    effort: reasoning ?? 'Effort',
+    model:
+      appearance === 'settings'
+        ? activeProvider === 'codex'
+          ? (selected?.name ?? (model ? `${model} · unavailable` : 'Runtime default'))
+          : settings?.agentWorker === 'sonnet'
+            ? 'Sonnet'
+            : 'Opus'
+        : (model ?? (hasConversation ? 'Model not recorded' : 'Runtime default')),
+    effort:
+      appearance === 'settings'
+        ? settingEffort.charAt(0).toUpperCase() + settingEffort.slice(1)
+        : (reasoning ?? 'Effort'),
   }
   const control = (field: Field) => (
     <button
@@ -134,6 +174,8 @@ export function AgentIdentity({
       aria-expanded={menu?.field === field}
       disabled={!settings || saving}
       onClick={(event) => open(field, event)}
+      onMouseEnter={(event) => open(field, event, false)}
+      onMouseLeave={closeSoon}
     >
       {labels[field]}
     </button>
@@ -141,11 +183,11 @@ export function AgentIdentity({
   return (
     <>
       {control('provider')}
-      <span aria-hidden="true"> · </span>
+      {appearance === 'footer' && <span aria-hidden="true"> · </span>}
       {control('model')}
       {activeProvider === 'codex' && (
         <>
-          <span aria-hidden="true"> · </span>
+          {appearance === 'footer' && <span aria-hidden="true"> · </span>}
           {control('effort')}
         </>
       )}
@@ -158,6 +200,9 @@ export function AgentIdentity({
           anchor={menu.anchor}
           items={items}
           onClose={close}
+          modal={menu.modal}
+          onMouseEnter={cancelClose}
+          onMouseLeave={closeSoon}
         />
       )}
     </>

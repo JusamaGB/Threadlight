@@ -38,7 +38,7 @@ export async function checkAgentSelection(page, capture) {
   await checkFooterSettings(page, capture)
 }
 
-async function checkFooterSettings(page, capture) {
+export async function checkFooterSettings(page, capture) {
   const footer = page.getByRole('group', { name: 'Agent settings', exact: true })
   const control = (field) => footer.getByRole('button', { name: new RegExp(`^Agent ${field}:`) })
   const settings = () => page.evaluate(() => window.threadlight.getSettings())
@@ -59,6 +59,7 @@ async function checkFooterSettings(page, capture) {
       }),
     )
   const saved = await settings()
+  await page.evaluate(() => window.threadlight.updateSettings({ agentWorker: 'opus' }))
   await page.evaluate(() => {
     window.proof.footerOriginal = {
       updateSettings: window.threadlight.updateSettings,
@@ -105,10 +106,10 @@ async function checkFooterSettings(page, capture) {
       0,
       'Escape closes only the footer menu',
     )
-    await choose('model', 'Show additional models')
-    await page.getByRole('menuitem', { name: 'Future Deep · additional', exact: true }).waitFor()
+    await control('model').click()
+    await page.getByRole('menuitem', { name: 'Future Deep', exact: true }).waitFor()
     await capture('agent-footer-model-menu')
-    await page.getByRole('menuitem', { name: 'Future Deep · additional', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Future Deep', exact: true }).click()
     await footer.getByRole('button', { name: 'Agent effort: high', exact: true }).waitFor()
     assert.equal((await settings()).agentCodexReasoning, 'high')
     await page.evaluate(() =>
@@ -189,7 +190,7 @@ async function checkFooterSettings(page, capture) {
     await page.keyboard.press('Escape')
     await capture('agent-footer-settings')
     console.log(
-      'PASS: footer provider/model/effort, additional models, effort reset, current conversation retention, keyboard, both opening directions, failed save and discovery retry.',
+      'PASS: footer provider/model/effort, full model catalog, effort reset, current conversation retention, keyboard, both opening directions, failed save and discovery retry.',
     )
   } finally {
     await page.evaluate((saved) => {
@@ -206,4 +207,82 @@ async function checkFooterSettings(page, capture) {
       window.proof.emit('onPanelOpened', { maxHeight: 800, opensDown: true, fresh: false }),
     )
   }
+}
+
+export async function checkAgentSettings(page, capture) {
+  await page.evaluate(() =>
+    window.threadlight.updateSettings({
+      agentProvider: 'codex',
+      agentCodexModel: 'future-fast',
+      agentCodexReasoning: 'low',
+      agentWorker: 'opus',
+    }),
+  )
+  const group = page.getByRole('group', { name: 'Agent settings', exact: true })
+  const control = (field) => group.getByRole('button', { name: new RegExp(`^Agent ${field}:`) })
+  const choose = async (field, value) => {
+    await control(field).hover()
+    await page.getByRole('menuitem', { name: value, exact: true }).click()
+  }
+  await control('model').getByText('Future Fast', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('checkbox', { name: 'Show additional models' }).count(), 0)
+  assert.equal(await group.locator('select').count(), 0)
+  assert.equal(
+    await page
+      .getByText('Wait quietly in the background until Claude or Codex opens, then show the dot.')
+      .count(),
+    0,
+  )
+  const lifetime = page.getByLabel('Agent conversation lifetime', { exact: true })
+  await lifetime.focus()
+  await control('model').hover()
+  await page.getByRole('menuitem', { name: 'Future Deep', exact: true }).waitFor()
+  assert.equal(
+    await lifetime.evaluate((el) => el === document.activeElement),
+    true,
+    'hover leaves keyboard focus in place',
+  )
+  assert.equal(await page.getByRole('menuitem', { name: 'Show additional models' }).count(), 0)
+  await page.getByRole('menuitem', { name: 'Future Deep', exact: true }).click()
+  await control('effort').getByText('High', { exact: true }).waitFor()
+  assert.equal(
+    (await page.evaluate(() => window.threadlight.getSettings())).agentCodexReasoning,
+    'high',
+  )
+  await choose('effort', 'ultra')
+  await control('effort').getByText('Ultra', { exact: true }).waitFor()
+  await control('provider').hover()
+  await page.getByRole('menu', { name: 'Agent provider', exact: true }).waitFor()
+  await page.locator('header').hover()
+  await page.getByRole('menu').waitFor({ state: 'detached' })
+  assert.equal((await page.evaluate(() => window.threadlight.getSettings())).agentProvider, 'codex')
+  await choose('provider', 'Claude')
+  await control('model').getByText('Opus', { exact: true }).waitFor()
+  assert.equal(await control('effort').count(), 0)
+  await choose('model', 'Sonnet')
+  await control('model').getByText('Sonnet', { exact: true }).waitFor()
+  assert.equal((await page.evaluate(() => window.threadlight.getSettings())).agentWorker, 'sonnet')
+  await choose('provider', 'Codex')
+  await control('provider').focus()
+  await page.keyboard.press('Space')
+  await page.getByRole('menu', { name: 'Agent provider' }).waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('menu').waitFor({ state: 'detached' })
+  assert.equal(await control('provider').evaluate((el) => el === document.activeElement), true)
+  const bounds = await group
+    .locator('button')
+    .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().toJSON()))
+  assert.equal(
+    new Set(bounds.map((box) => box.top)).size,
+    1,
+    'provider, model and effort fit on one line',
+  )
+  await capture('agent-settings-text-controls')
+  await page.reload()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await control('model').getByText('Future Deep', { exact: true }).waitFor()
+  await control('effort').getByText('Ultra', { exact: true }).waitFor()
+  console.log(
+    'PASS: compact Settings identity, all models, hover menus without focus theft, menu crossing/dismissal, effort reset, both providers, keyboard and persisted choices; sign-in hint removed.',
+  )
 }

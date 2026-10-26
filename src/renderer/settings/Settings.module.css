@@ -17,16 +17,17 @@
   font-size: 11px;
   padding: 4px;
 }
-.agentModels {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+.agentSelection {
+  display: flex;
+  align-items: baseline;
   gap: 6px;
-  margin: 6px 0;
+  min-width: 0;
+  padding: 4px 0;
+  color: var(--fg);
+  font-size: 12px;
 }
-.agentModels select,
-.agentModels label {
-  grid-column: 1 / -1;
-  max-width: 100%;
+.agentSelection > button[data-field='effort'] {
+  color: var(--muted);
 }
 
 .group {
@@ -94,14 +95,6 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-}
-
-.agentProviderControls {
-  flex: none;
-}
-
-.agentProviderControls select {
-  max-width: 100px;
 }
 
 .small,
