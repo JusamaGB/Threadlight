@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import type { ChangedFile, Changes, DiffLine, FileDiff } from '../../shared/types'
+import type { ChangedFile, Changes, DiffLine, FileDiff, Provider } from '../../shared/types'
+import { sessionProvider } from '../../shared/providers'
 import { en } from '../i18n/en'
 import styles from './Panel.module.css'
 
@@ -9,14 +10,20 @@ interface ChangesViewProps {
   scope?: 'thread' | 'worktree'
   /** The selected scope's revision/counts, refreshed by the session scan. */
   stamp: string
+  /** Ownership can change without changing the worktree's aggregate Git totals. */
+  threadStamp?: string
 }
+
+const fileKey = (path: string) => path.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase()
 
 /**
  * The shared file list for recorded thread changes and the worktree's uncommitted diff.
  */
-export function ChangesView({ sessionId, stamp, scope = 'thread' }: ChangesViewProps) {
+export function ChangesView({ sessionId, stamp, threadStamp, scope = 'thread' }: ChangesViewProps) {
   const [changes, setChanges] = useState<Changes | null | undefined>(undefined)
   const [open, setOpen] = useState<string | null>(null)
+  const [ownership, setOwnership] = useState<{ key: string; files: Set<string> } | null>(null)
+  const ownershipKey = JSON.stringify([sessionId, stamp, threadStamp])
 
   useEffect(() => {
     let live = true
@@ -29,6 +36,27 @@ export function ChangesView({ sessionId, stamp, scope = 'thread' }: ChangesViewP
       live = false
     }
   }, [sessionId, stamp, scope])
+
+  useEffect(() => {
+    if (scope !== 'worktree') return
+    let live = true
+    // An unavailable or slow ownership read must not hide or delay the worktree diff.
+    void window.threadlight.getChanges(sessionId).then(
+      (found) => {
+        if (live)
+          setOwnership({
+            key: ownershipKey,
+            files: new Set(found?.files.map((file) => fileKey(file.path)) ?? []),
+          })
+      },
+      () => {
+        if (live) setOwnership({ key: ownershipKey, files: new Set() })
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [sessionId, scope, ownershipKey])
 
   if (changes === undefined) return <p className={styles.changesNote}>{en.changes.loading}</p>
   if (!changes)
@@ -52,6 +80,13 @@ export function ChangesView({ sessionId, stamp, scope = 'thread' }: ChangesViewP
           file={file}
           stamp={stamp}
           scope={scope}
+          provider={
+            scope === 'worktree' &&
+            ownership?.key === ownershipKey &&
+            ownership.files.has(fileKey(file.path))
+              ? sessionProvider(sessionId)
+              : undefined
+          }
           open={open === file.path}
           onToggle={() => setOpen(open === file.path ? null : file.path)}
         />
@@ -65,15 +100,19 @@ function FileRow(props: {
   file: ChangedFile
   stamp: string
   scope: 'thread' | 'worktree'
+  provider?: Provider
   open: boolean
   onToggle: () => void
 }) {
-  const { sessionId, file, stamp, scope, open, onToggle } = props
+  const { sessionId, file, stamp, scope, open, onToggle, provider } = props
   const slash = file.path.lastIndexOf('/')
   const name = file.path.slice(slash + 1)
   const folder = slash > 0 ? file.path.slice(0, slash) : ''
   return (
-    <div className={open ? `${styles.fileRow} ${styles.expanded}` : styles.fileRow}>
+    <div
+      className={open ? `${styles.fileRow} ${styles.expanded}` : styles.fileRow}
+      data-provider={provider}
+    >
       <button className={styles.fileHead} onClick={onToggle} aria-expanded={open} title={file.path}>
         <span className={styles.fileMark} data-status={file.status}>
           {en.changes.mark[file.status]}

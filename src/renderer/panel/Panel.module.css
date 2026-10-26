@@ -606,7 +606,9 @@
 
 /* Overlay the whole row so raised details and cards don't interrupt the narrow edge tint. */
 .row[data-provider]::before,
-.row[data-provider]::after {
+.row[data-provider]::after,
+.fileRow[data-provider]::before,
+.fileRow[data-provider]::after {
   content: '';
   position: absolute;
   top: 0;
@@ -626,15 +628,23 @@
   transform: scaleX(-1);
 }
 
-.row[data-provider]::after {
+.fileRow[data-provider]::before {
+  left: 0;
+  transform: scaleX(-1);
+}
+
+.row[data-provider]::after,
+.fileRow[data-provider]::after {
   right: 0;
 }
 
-.row[data-provider='codex'] {
+.row[data-provider='codex'],
+.fileRow[data-provider='codex'] {
   --provider-tint: var(--provider-codex);
 }
 
-.row[data-provider='claude'] {
+.row[data-provider='claude'],
+.fileRow[data-provider='claude'] {
   --provider-tint: var(--provider-claude);
 }
 
@@ -1419,6 +1429,10 @@ span.planStep {
   padding: 10px;
   color: var(--faint);
   font-size: 11px;
+}
+
+.fileRow {
+  position: relative;
 }
 
 .fileRow:nth-of-type(even) {

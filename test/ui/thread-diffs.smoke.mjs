@@ -1,4 +1,4 @@
-/* global window, getComputedStyle */
+/* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 import { checkPagePinning } from './toolbar.smoke.mjs'
 
@@ -33,20 +33,21 @@ export async function checkThreadDiffs(page, capture) {
     const proof = window.proof.threadDiff
     window.threadlight.getChanges = async (id) => {
       proof.calls.push(['files', id])
+      if (proof.ownershipError) throw new Error('Synthetic ownership unavailable')
       return proof.unavailable
         ? null
         : {
             branch: 'same-worktree',
             complete: !proof.partial,
-            files: [
-              {
-                path: 'src/shared.ts',
-                status: 'modified',
-                added: id.startsWith('codex:') ? proof.revision + 3 : 2,
-                removed: id.startsWith('codex:') ? 2 : 1,
-                binary: false,
-              },
-            ],
+            files: (
+              proof.ownedPaths?.[id.startsWith('codex:') ? 'codex' : 'claude'] ?? ['src/shared.ts']
+            ).map((path) => ({
+              path,
+              status: 'modified',
+              added: id.startsWith('codex:') ? proof.revision + 3 : 2,
+              removed: id.startsWith('codex:') ? 2 : 1,
+              binary: false,
+            })),
           }
     }
     window.threadlight.getFileDiff = async (id, path) => {
@@ -178,6 +179,7 @@ export async function checkThreadDiffs(page, capture) {
     await capture('thread-diff-independent-badges')
     await badge('Claude').click()
     await page.locator('header').getByText('Thread diff · 1 file', { exact: true }).waitFor()
+    assert.equal(await page.locator('[class*="_fileRow_"][data-provider]').count(), 0)
     await checkPagePinning(page, 'Thread diff · 1 file')
     await page.getByRole('button', { name: /edit shared.ts/ }).click()
     await page.getByText('Claude own patch', { exact: true }).waitFor()
@@ -312,10 +314,13 @@ export async function checkThreadDiffs(page, capture) {
     )
     await page.evaluate(() => {
       const proof = window.proof.threadDiff
-      window.proof.emit('onSnapshot', {
+      proof.unavailable = false
+      proof.ownedPaths = { claude: ['SRC\\SHARED.TS'], codex: ['other-writer.ts'] }
+      proof.worktreeSnapshot = {
         ...proof.current,
         sessions: proof.current.sessions.map((session) => ({ ...session, threadDiff: null })),
-      })
+      }
+      window.proof.emit('onSnapshot', proof.worktreeSnapshot)
     })
     assert.equal(await page.getByRole('button', { name: /^Thread diff/ }).count(), 0)
     assert.equal(await page.getByText('+10k', { exact: true }).count(), 0)
@@ -323,6 +328,33 @@ export async function checkThreadDiffs(page, capture) {
     assert.equal(await page.getByRole('menuitem', { name: 'Thread diff', exact: true }).count(), 0)
     await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).click()
     await page.locator('header').getByText('Worktree diff · 2 files', { exact: true }).waitFor()
+    const sharedRow = page.getByRole('button', { name: /edit shared.ts/ }).locator('..')
+    const otherRow = page.getByRole('button', { name: /new other-writer.ts/ }).locator('..')
+    const waitOwner = (path, provider) =>
+      page.waitForFunction(
+        ({ path, provider }) =>
+          document
+            .querySelector(`button[title="${path}"]`)
+            ?.parentElement.getAttribute('data-provider') === provider,
+        { path, provider },
+      )
+    await waitOwner('src/shared.ts', 'claude')
+    assert.equal(await otherRow.getAttribute('data-provider'), null)
+    const edges = await sharedRow.evaluate((row) => ({
+      before: getComputedStyle(row, '::before').backgroundImage,
+      after: getComputedStyle(row, '::after').backgroundImage,
+      left: getComputedStyle(row, '::before').left,
+      right: getComputedStyle(row, '::after').right,
+      events: getComputedStyle(row, '::before').pointerEvents,
+    }))
+    assert.equal(
+      edges.before,
+      await thread('Claude').evaluate((row) => getComputedStyle(row, '::before').backgroundImage),
+    )
+    assert.equal(edges.before, edges.after)
+    assert.equal(edges.left, '0px')
+    assert.equal(edges.right, '0px')
+    assert.equal(edges.events, 'none')
     await checkPagePinning(page, 'Worktree diff · 2 files')
     await page.getByRole('button', { name: /edit shared.ts/ }).click()
     await page.getByText('All worktree writers: src/shared.ts', { exact: true }).waitFor()
@@ -333,9 +365,64 @@ export async function checkThreadDiffs(page, capture) {
       'src/shared.ts',
     ])
     await capture('worktree-diff-shared-file')
+    // Attribution can change without any change to the worktree's counts or file list.
+    await page.evaluate(() => {
+      const proof = window.proof.threadDiff
+      proof.ownedPaths.claude = ['other-writer.ts']
+      window.proof.emit('onSnapshot', {
+        ...proof.worktreeSnapshot,
+        sessions: proof.worktreeSnapshot.sessions.map((session) => ({
+          ...session,
+          threadDiff: {
+            files: 1,
+            added: 1,
+            removed: 0,
+            complete: false,
+            revision: 'ownership-only',
+          },
+        })),
+      })
+    })
+    await waitOwner('other-writer.ts', 'claude')
+    assert.equal(await sharedRow.getAttribute('data-provider'), null)
+    assert.equal(
+      await page.getByText('All worktree writers: src/shared.ts', { exact: true }).count(),
+      1,
+    )
+    await page.evaluate(() => {
+      const proof = window.proof.threadDiff
+      proof.ownershipError = true
+      window.proof.emit('onSnapshot', {
+        ...proof.worktreeSnapshot,
+        sessions: proof.worktreeSnapshot.sessions.map((session) => ({
+          ...session,
+          threadDiff: {
+            files: 1,
+            added: 1,
+            removed: 0,
+            complete: false,
+            revision: 'ownership-error',
+          },
+        })),
+      })
+    })
+    await page.waitForFunction(
+      () => document.querySelectorAll('[class*="_fileRow_"][data-provider]').length === 0,
+    )
+    assert.equal(await page.getByRole('button', { name: /new other-writer.ts/ }).count(), 1)
+    await page.evaluate(() => {
+      window.proof.threadDiff.ownershipError = false
+    })
     await back()
     await thread('Codex').locator('button').first().click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).click()
+    await waitOwner('other-writer.ts', 'codex')
+    assert.equal(await sharedRow.getAttribute('data-provider'), null)
+    assert.notEqual(
+      await otherRow.evaluate((row) => getComputedStyle(row, '::before').backgroundImage),
+      edges.before,
+    )
+    await capture('worktree-diff-codex-ownership')
     await page.getByRole('button', { name: /new other-writer.ts/ }).click()
     await page.getByText('All worktree writers: other-writer.ts', { exact: true }).waitFor()
     await back()

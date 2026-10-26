@@ -1257,6 +1257,7 @@ export function Panel() {
               key={`${changesFor.scope}:${changesFor.sessionId}`}
               sessionId={changesFor.sessionId}
               scope={changesFor.scope}
+              threadStamp={changesThread?.threadDiff?.revision}
               stamp={JSON.stringify(
                 (worktreeDiff ? changesThread?.git : changesThread?.threadDiff) ?? null,
               )}
