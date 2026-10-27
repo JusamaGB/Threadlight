@@ -6,6 +6,14 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Settings explain themselves.** Every setting now has a short hover description, with
+  extra detail in Tour. Labels are shorter to match: Threads shown, List, Window, Count,
+  Open on, Dot and Countdown. The Panel group is merged into App, which stays at the bottom.
+  Choosing the highlighted **Window** time again removes the time limit (stored as 0, shown
+  as "Any time"). **Count** appears only for the Recent list instead of being greyed out.
+  The Shared Spaces group keeps its place for future settings; open Shared Spaces from the
+  brain icon in the panel header.
+
 - **Dual view.** Right-click a thread and choose **Dual view** (the last item, after Worktree
   diff, Compose and Open in Claude) to widen the panel and show Claude and Codex threads side
   by side. The window widens, the card grows, the Claude threads slide left and every thread

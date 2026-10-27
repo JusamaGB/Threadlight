@@ -107,8 +107,7 @@ export async function setupCommunication(
   return { service, feed, destinations, native, human, close: () => service.close() }
 }
 export async function checkCommunication(page, proof, memory, capture) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
   await page
     .getByLabel('Shared Spaces workspace', { exact: true })
     .selectOption({ label: 'shared' })
@@ -203,8 +202,7 @@ export async function checkCommunication(page, proof, memory, capture) {
   assert.equal(proof.native.length, 0)
   await capture('communication-workflow-and-history')
   await page.reload()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
   await page
     .getByLabel('Shared Spaces workspace', { exact: true })
     .selectOption({ label: 'shared' })

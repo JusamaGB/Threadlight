@@ -70,9 +70,9 @@ export class Tracker {
     this.now = options.now ?? Date.now
   }
 
-  /** Applies the list settings; takes effect on the next scan. */
+  /** Applies the list settings; takes effect on the next scan. No window (0) lists any age. */
   configure(windowHours: number, maxSessions: number): void {
-    this.windowMs = windowHours * 60 * 60 * 1000
+    this.windowMs = windowHours > 0 ? windowHours * 60 * 60 * 1000 : Infinity
     this.maxSessions = maxSessions
   }
 

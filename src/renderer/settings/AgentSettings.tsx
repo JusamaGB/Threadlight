@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Settings, SettingsPatch } from '../../shared/settings'
 import { AgentIdentity } from '../panel/AgentIdentity'
+import { Tip } from '../panel/Tip'
 import { en } from '../i18n/en'
 import styles from './Settings.module.css'
 
@@ -21,7 +22,11 @@ export function AgentSettings({
   }
   return (
     <section className={styles.group}>
-      <h3 className={styles.groupLabel}>{en.settings.agent}</h3>
+      <h3 className={styles.groupLabel}>
+        <Tip text={en.settings.help.agent.info} tourHelp={en.settings.help.agent.tour}>
+          {en.settings.agent}
+        </Tip>
+      </h3>
       {saveError && (
         <p role="alert" className={styles.error}>
           {saveError}
@@ -42,7 +47,15 @@ export function AgentSettings({
         />
       </div>
       <label className={styles.row}>
-        <span className={styles.text}>{en.settings.agentLifetime}</span>
+        <span className={styles.text}>
+          <Tip
+            className={styles.label}
+            text={en.settings.help.agentLifetime.info}
+            tourHelp={en.settings.help.agentLifetime.tour}
+          >
+            {en.settings.agentLifetime}
+          </Tip>
+        </span>
         <select
           aria-label="Agent conversation lifetime"
           value={settings.agentLifetimeMinutes}

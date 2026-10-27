@@ -73,7 +73,7 @@ mapping remains Unassigned until explicitly migrated.
 
 ## Human workflow
 
-1. Settings → Shared Spaces → Open → choose workspace → Create Shared Spaces → Handoffs.
+1. Shared Spaces (the brain icon in the panel header) → choose workspace → Create Shared Spaces → Handoffs.
 2. Create folders with descriptions. Choose Map or List; open a folder to publish a
    note, decision draft, scratchpad, reference or managed attachment.
 3. Open an item to inspect versions, author/source, discuss it, accept a version or

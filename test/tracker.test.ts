@@ -38,7 +38,7 @@ beforeEach(async () => {
 })
 afterEach(() => box.cleanup())
 
-function tracker(options: { maxSessions?: number } = {}) {
+function tracker(options: { maxSessions?: number; windowHours?: number } = {}) {
   return new Tracker({ paths: box.paths, hooks, now: () => NOW, ...options })
 }
 
@@ -318,6 +318,16 @@ describe('Tracker', () => {
     expect((await recent(tracker({ maxSessions: 2 }))).map((s) => s.id)).toEqual([
       'waiting',
       'working',
+    ])
+  })
+
+  it('lists threads of any age when the time window is off', async () => {
+    await addSession('fresh', [prompt('a'), textReply('done a')], 2 * MINUTE)
+    await addSession('ancient', [prompt('b'), textReply('done b')], 90 * 24 * 60 * MINUTE)
+    expect((await recent()).map((s) => s.id)).toEqual(['fresh'])
+    expect((await recent(tracker({ windowHours: 0 }))).map((s) => s.id)).toEqual([
+      'fresh',
+      'ancient',
     ])
   })
 

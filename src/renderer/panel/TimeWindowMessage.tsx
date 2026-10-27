@@ -23,6 +23,8 @@ export function TimeWindowMessage({ hours }: { hours: number }) {
     }
   }
   const at = anchor?.getBoundingClientRect()
+  // With no time limit nothing is hidden by it, so an empty list just has no threads yet.
+  if (hours === 0) return <>{en.nothingToShow}</>
   return (
     <>
       {en.nothingInWindow('')}
@@ -49,11 +51,14 @@ export function TimeWindowMessage({ hours }: { hours: number }) {
           x={at.left}
           y={at.bottom}
           onClose={() => setAnchor(null)}
-          items={SESSION_WINDOW_HOURS.map((value) => ({
-            label: windowLabel(value),
-            disabled: value === hours,
-            onSelect: () => void save(value),
-          }))}
+          items={[
+            ...SESSION_WINDOW_HOURS.map((value) => ({
+              label: windowLabel(value),
+              disabled: value === hours,
+              onSelect: () => void save(value),
+            })),
+            { label: windowLabel(0), onSelect: () => void save(0) },
+          ]}
         />
       )}
     </>
