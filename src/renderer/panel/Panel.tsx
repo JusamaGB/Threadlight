@@ -1489,16 +1489,11 @@ export function Panel() {
                     title={en.panel.header.sharedSpaces}
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-                      {/* The brain seen from the front: two mirrored halves, a central fissure and the stem. */}
-                      <g>
-                        <path d="M8 2.3C7 1.5 5 1.6 4.1 3 2.7 3.4 2 5 2.8 6.2 1.8 7.2 2 9 3.2 9.6c.1 1.4 1.5 2.2 2.7 1.8.5.9 1.4 1.2 2.1 1.1" />
-                        <path d="M4.1 3c1 .2 1.7 1.1 1.5 2.1M2.8 6.2c1.2-.3 2.3.3 2.8 1.3M3.2 9.6c1-.2 1.9.3 2.3 1.1" />
+                      {/* The brain from above. Each header icon is nudged so all three share one centre line. */}
+                      <g transform="translate(0 -.36)">
+                        <path d="M8 4a2.5 2.5 0 0 0-4.7-1.2A2.6 2.6 0 0 0 1.7 7a2.6 2.6 0 0 0 .7 4.7A2.7 2.7 0 0 0 8 13V4Zm0 0a2.5 2.5 0 0 1 4.7-1.2A2.6 2.6 0 0 1 14.3 7a2.6 2.6 0 0 1-.7 4.7A2.7 2.7 0 0 1 8 13" />
+                        <path d="M3.3 2.8c-.3 1.4.4 2.2 1.7 2.2M1.7 7c1.4-.6 2.8 0 2.8 1.5m-2.1 3.2c.9-1 2.3-1 3-.2m7.3-8.7c.3 1.4-.4 2.2-1.7 2.2m3.3 2c-1.4-.6-2.8 0-2.8 1.5m2.1 3.2c-.9-1-2.3-1-3-.2" />
                       </g>
-                      <g transform="matrix(-1 0 0 1 16 0)">
-                        <path d="M8 2.3C7 1.5 5 1.6 4.1 3 2.7 3.4 2 5 2.8 6.2 1.8 7.2 2 9 3.2 9.6c.1 1.4 1.5 2.2 2.7 1.8.5.9 1.4 1.2 2.1 1.1" />
-                        <path d="M4.1 3c1 .2 1.7 1.1 1.5 2.1M2.8 6.2c1.2-.3 2.3.3 2.8 1.3M3.2 9.6c1-.2 1.9.3 2.3 1.1" />
-                      </g>
-                      <path d="M8 2.3v10.2M6.9 12.6v1.6h2.2v-1.6" />
                     </svg>
                   </button>
                   {
