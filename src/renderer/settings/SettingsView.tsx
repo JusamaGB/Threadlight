@@ -7,6 +7,7 @@ import { PROVIDERS, providerName } from '../../shared/providers'
 import type { SttStatus } from '../../shared/stt'
 import { en } from '../i18n/en'
 import { Tip } from '../panel/Tip'
+import { HoverChoice } from './HoverChoice'
 import { windowLabel } from '../lib/format'
 import styles from './Settings.module.css'
 
@@ -76,35 +77,27 @@ export function SettingsView({
         </Row>
         {!settings.enabledProviders.length && <p className={styles.footer}>{en.sources.paused}</p>}
       </Group>
-      <Group label="Shared Spaces">
-        <Row label="Ideas, brainstorms and handoffs">
-          <button className={styles.small} onClick={onOpenMemory}>
-            Open
-          </button>
-        </Row>
-      </Group>
+      <AgentSettings key={settings.agentProvider} settings={settings} save={save} />
+
       <Group label={en.settings.voice}>
         <Row label={en.settings.voiceTarget} error={errors.voiceMode}>
-          <span className={styles.segmented} role="group" aria-label={en.settings.voiceTarget}>
-            {(['local-stt', 'gpt-live'] as const).map((mode) => (
-              <button
-                key={mode}
-                aria-pressed={settings.voiceMode === mode}
-                disabled={savingVoice}
-                className={settings.voiceMode === mode ? styles.on : undefined}
-                onClick={async () => {
-                  setSavingVoice(true)
-                  try {
-                    await save({ voiceMode: mode })
-                  } finally {
-                    setSavingVoice(false)
-                  }
-                }}
-              >
-                {mode === 'local-stt' ? en.settings.localStt : en.settings.gptLive}
-              </button>
-            ))}
-          </span>
+          <HoverChoice
+            label={en.settings.voiceTarget}
+            value={settings.voiceMode}
+            disabled={savingVoice}
+            options={[
+              { value: 'local-stt', label: en.settings.localStt },
+              { value: 'gpt-live', label: en.settings.gptLive },
+            ]}
+            onChange={async (voiceMode) => {
+              setSavingVoice(true)
+              try {
+                await save({ voiceMode })
+              } finally {
+                setSavingVoice(false)
+              }
+            }}
+          />
         </Row>
         {settings.voiceMode === 'local-stt' && (
           <p className={styles.footer}>{en.settings.localSttHint}</p>
@@ -115,16 +108,15 @@ export function SettingsView({
           )}
         {settings.voiceMode === 'local-stt' && (
           <Row label={en.settings.localDestination} error={errors.voiceTarget}>
-            <select
-              aria-label={en.settings.localDestination}
+            <HoverChoice
+              label={en.settings.localDestination}
               value={settings.voiceTarget}
-              onChange={(event) =>
-                save({ voiceTarget: event.target.value as Settings['voiceTarget'] })
-              }
-            >
-              <option value="agent">{en.settings.agentConversation}</option>
-              <option value="thread">{en.settings.threadMessage}</option>
-            </select>
+              options={[
+                { value: 'agent', label: en.settings.agentConversation },
+                { value: 'thread', label: en.settings.threadMessage },
+              ]}
+              onChange={(voiceTarget) => save({ voiceTarget })}
+            />
           </Row>
         )}
         <Row label={en.settings.talkHotkey} error={errors.talkHotkey}>
@@ -134,13 +126,13 @@ export function SettingsView({
               onChange={(talkHotkey) => save({ talkHotkey })}
             />
             {settings.voiceMode === 'local-stt' && (
-              <Segmented
+              <HoverChoice
+                label={en.settings.talkMode}
                 value={settings.talkMode}
                 options={[
-                  { value: 'toggle', label: en.settings.toggle, title: en.settings.toggleHint },
-                  { value: 'hold', label: en.settings.hold, title: en.settings.holdHint },
+                  { value: 'toggle', label: en.settings.toggle },
+                  { value: 'hold', label: en.settings.hold },
                 ]}
-                separator="/"
                 onChange={(talkMode) => save({ talkMode })}
               />
             )}
@@ -170,7 +162,7 @@ export function SettingsView({
           </Row>
         )}
         {settings.voiceMode === 'local-stt' && (
-          <Row label={en.settings.speechModel}>
+          <Row label={en.settings.speechModel} tight>
             <ModelStatus stt={stt} />
           </Row>
         )}
@@ -244,7 +236,13 @@ export function SettingsView({
         </Row>
       </Group>
 
-      <AgentSettings key={settings.agentProvider} settings={settings} save={save} />
+      <Group label="Shared Spaces">
+        <Row label="Ideas, brainstorms and handoffs">
+          <button className={styles.small} onClick={onOpenMemory}>
+            Open
+          </button>
+        </Row>
+      </Group>
 
       <Group label={en.settings.app}>
         <Row label={en.settings.launchAtSignIn} error={errors.launchAtSignIn}>
@@ -279,10 +277,15 @@ function Row(props: {
   hint?: string
   error?: string | undefined
   disabled?: boolean
+  /** Pulls the row up a little, closing the gap above it. */
+  tight?: boolean
   children: ReactNode
 }) {
   return (
-    <div className={styles.row} aria-disabled={props.disabled || undefined}>
+    <div
+      className={props.tight ? `${styles.row} ${styles.rowTight}` : styles.row}
+      aria-disabled={props.disabled || undefined}
+    >
       <div className={styles.text}>
         <span className={styles.label}>{props.label}</span>
         {props.error ? (

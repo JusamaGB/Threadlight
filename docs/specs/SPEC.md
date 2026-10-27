@@ -185,7 +185,7 @@ blocks the full worktree list or changes its totals and patches. See
 
 ### Workspace links and provider-coloured attention
 
-The panel uses a 264px card and adds a 16px transparent gutter on the left
+The panel uses a 238px card and adds a 16px transparent gutter on the left
 inside the native window. Wires link listed rows with the same normalized Git
 worktree root (or known working folder when no Git root is available), across
 Claude and Codex. Separate worktrees and unknown folders stay unlinked. Within each
@@ -247,7 +247,7 @@ changes cancel stale transitions and keep only the latest hint interactive. The
 bars follow the same content-sized and capped layout throughout the movement.
 Reduced-motion preferences skip these animations; Off clears help immediately.
 
-The panel is 264px wide, with the existing 16px outside wire area. Scrollbars are
+The panel is 238px wide, with the existing 16px outside wire area. Scrollbars are
 hidden throughout the app. Wheel, trackpad and keyboard scrolling remain native;
 thread and workspace lists can receive keyboard focus. There is no scrollbar
 overlay or reserved gutter, leaving the rows' full width available for content.

@@ -42,6 +42,12 @@ import { checkThreadBadges } from './thread-badges.smoke.mjs'
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
 import { setupSpaces, checkSpaces, checkSpacesSetup } from './spaces.smoke.mjs'
 
+// Voice choices open a hover menu; clicking the value button holds it open for the pick.
+const chooseSetting = async (page, setting, option) => {
+  await page.getByRole('button', { name: new RegExp(`^${setting}:`) }).click()
+  await page.getByRole('menuitem', { name: option, exact: true }).click()
+}
+
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
@@ -546,17 +552,12 @@ checks: try {
       }),
     )
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await page.getByRole('button', { name: 'GPT Live', exact: true }).click()
-    assert.equal(
-      await page
-        .getByRole('button', { name: 'GPT Live', exact: true })
-        .getAttribute('aria-pressed'),
-      'true',
-    )
-    await page.getByLabel('Send text to', { exact: true }).waitFor({ state: 'detached' })
+    await chooseSetting(page, 'Voice target', 'GPT Live')
+    await page.getByRole('button', { name: 'Voice target: GPT Live', exact: true }).waitFor()
+    await page.getByLabel(/^Send text to/).waitFor({ state: 'detached' })
     await capture('voice-target-gpt-live')
-    await page.getByRole('button', { name: 'Local STT', exact: true }).click()
-    await page.getByLabel('Send text to', { exact: true }).waitFor()
+    await chooseSetting(page, 'Voice target', 'Local STT')
+    await page.getByLabel(/^Send text to/).waitFor()
     await capture('voice-target-local-stt')
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
     await setupVoiceInput(page)
@@ -950,22 +951,19 @@ checks: try {
     'true',
   )
   // The merged open-mic control coexists with both provider switches; saving it never starts it.
-  await page.getByRole('button', { name: 'Local STT', exact: true }).click()
-  await page.getByLabel('Send text to', { exact: true }).selectOption('agent')
+  await chooseSetting(page, 'Voice target', 'Local STT')
+  await chooseSetting(page, 'Send text to', 'Agent conversation')
   await page.getByText('Send countdown', { exact: true }).waitFor({ state: 'detached' })
   assert.equal(await page.getByText('Send countdown', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('switch', { name: 'Open mic', exact: true }).count(), 0)
-  await page.getByLabel('Send text to', { exact: true }).selectOption('thread')
+  await chooseSetting(page, 'Send text to', 'Thread message')
   await page.getByText('Send countdown', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'GPT Live', exact: true }).click()
-  assert.equal(
-    await page.getByRole('button', { name: 'GPT Live', exact: true }).getAttribute('aria-pressed'),
-    'true',
-  )
-  await page.getByLabel('Send text to', { exact: true }).waitFor({ state: 'detached' })
+  await chooseSetting(page, 'Voice target', 'GPT Live')
+  await page.getByRole('button', { name: 'Voice target: GPT Live', exact: true }).waitFor()
+  await page.getByLabel(/^Send text to/).waitFor({ state: 'detached' })
   await capture('voice-target-gpt-live')
-  await page.getByRole('button', { name: 'Local STT', exact: true }).click()
-  await page.getByLabel('Send text to', { exact: true }).selectOption('agent')
+  await chooseSetting(page, 'Voice target', 'Local STT')
+  await chooseSetting(page, 'Send text to', 'Agent conversation')
   await capture('voice-target-local-stt')
   await page.getByText('Send countdown', { exact: true }).waitFor({ state: 'detached' })
   await capture('provider-toggles')
