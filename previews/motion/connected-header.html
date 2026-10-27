@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Threadlight · Connected header motion</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #0c121c;
+      color: #e8edf5;
+      font:
+        14px/1.5 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 620px;
+      margin: 0 auto;
+      padding: 40px 24px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      font-weight: 500;
+    }
+    .intro {
+      color: #9aa9bc;
+      margin: 0 0 28px;
+    }
+    .panel {
+      width: 300px;
+      max-width: 100%;
+      overflow: hidden;
+      border: 1px solid #363636;
+      border-radius: 12px;
+      background: #161616;
+      color: #eee;
+      font:
+        12px/1.4 'Segoe UI',
+        sans-serif;
+    }
+    .header {
+      position: relative;
+      height: 25px;
+      border-bottom: 1px solid #363636;
+      text-align: center;
+      font-weight: 600;
+      line-height: 24px;
+    }
+    .back {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 18px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      color: #eee;
+    }
+    .motion {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -27px;
+      height: 36px;
+      pointer-events: none;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .status {
+      margin: 0;
+      padding: 12px 10px 6px;
+      color: #aaa;
+      font-size: 11px;
+    }
+    .input {
+      margin: 6px 10px 8px;
+      padding: 6px 9px;
+      border: 1px solid #363636;
+      border-radius: 6px;
+      color: #777;
+      background: #1f1f1f;
+    }
+    .footer {
+      padding: 5px 10px;
+      text-align: right;
+      border-top: 1px solid #363636;
+      color: #999;
+      font-size: 11px;
+    }
+    .controls {
+      display: grid;
+      gap: 16px;
+      margin-top: 28px;
+    }
+    .modes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    button {
+      padding: 7px 11px;
+      background: #182330;
+      border: 1px solid #34465b;
+      color: inherit;
+      border-radius: 6px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button[aria-pressed='true'] {
+      border-color: #7db6e5;
+      background: #20394e;
+    }
+    label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #b7c5d5;
+    }
+    input[type='range'] {
+      flex: 1;
+      min-width: 0;
+      accent-color: #79b9ec;
+    }
+    .ends {
+      display: flex;
+      justify-content: space-between;
+      color: #8f9fb3;
+      font-size: 12px;
+    }
+    .note {
+      color: #8f9fb3;
+      font-size: 12px;
+    }
+  </style>
+  <main>
+    <nav aria-label="Motion previews" style="margin-bottom: 18px">
+      <a href="/">Orange/blue logo</a> · <a href="/needs-input.html">Provider-coloured drip</a> ·
+      <a href="/workspace-links.html">Outside workspace wires</a>
+    </nav>
+    <h1>One connected animation</h1>
+    <p class="intro">
+      The wheel starts against the left wall, in line with the divider, and stretches all the way to
+      the right. Speech gives the ribbon room to move; its colours keep evolving.
+    </p>
+    <div class="panel" aria-label="Agent motion preview">
+      <div class="header">
+        Agent
+        <span class="back" aria-hidden="true"
+          ><svg width="10" height="10" viewBox="0 0 10 10">
+            <path
+              d="M8 2 4 5 8 8"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            /></svg
+        ></span>
+        <div class="motion"><canvas aria-hidden="true"></canvas></div>
+      </div>
+      <p class="status" role="status">Thinking - No active Mic</p>
+      <div class="input">Ask your agent…</div>
+      <div class="footer">Codex · gpt-6-luna · medium</div>
+    </div>
+    <div class="controls">
+      <div class="modes" aria-label="Animation state">
+        <button data-mode="thinking" aria-pressed="true">Working wheel</button>
+        <button data-mode="listening" aria-pressed="false">Speaking waveform</button>
+        <button data-mode="idle" aria-pressed="false">Quiet waveform</button>
+      </div>
+      <label
+        >Voice energy <input id="energy" type="range" min="0" max="1" step="0.01" value="0.55"
+      /></label>
+      <div>
+        <label
+          >Transition <input id="transition" type="range" min="0" max="1" step="0.01" value="0"
+        /></label>
+        <div class="ends"><span>Left-hand wall</span><span>Full-width waveform</span></div>
+      </div>
+      <label><input id="reduced" type="checkbox" /> Reduced motion</label>
+      <div><button id="pause">Pause</button></div>
+    </div>
+    <p class="note">
+      Local visual preview using the production geometry. It does not open a microphone or control
+      the installed app.
+    </p>
+  </main>
+  <script type="module" src="./connected-header.ts"></script>
+</html>

@@ -1,0 +1,190 @@
+.card {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--raised);
+  padding: 9px 7px 8px;
+  color: var(--fg);
+  font-size: 11px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 3px;
+  color: var(--muted);
+}
+.icon {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  font-size: 10px;
+}
+.close {
+  margin-left: auto;
+  font-size: 16px;
+}
+.close,
+.pager button {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.pager + .close {
+  margin-left: 0;
+}
+.prompt {
+  margin: 10px 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.options {
+  display: grid;
+  gap: 4px;
+}
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 5px;
+  border-radius: 7px;
+  cursor: pointer;
+  position: relative;
+}
+.option:hover,
+.option[data-selected='true'] {
+  background: var(--hover);
+}
+.option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.option:focus-within {
+  outline: 1px solid var(--provider-codex);
+  outline-offset: -1px;
+}
+.number {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 20px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--muted);
+}
+.body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.label {
+  font-weight: 600;
+  padding-top: 2px;
+}
+.description {
+  color: var(--muted);
+  font-size: 10px;
+}
+.arrow {
+  flex: none;
+  width: 12px;
+  padding-top: 2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.response {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 12px 5px 8px;
+  color: var(--muted);
+}
+.response > svg {
+  margin-top: 6px;
+  flex: none;
+}
+.response textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  field-sizing: content;
+  min-height: 26px;
+  max-height: 110px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  line-height: 1.5;
+}
+.response textarea::placeholder {
+  color: var(--faint);
+}
+.response textarea:focus {
+  outline: none;
+  border-color: var(--provider-codex);
+  background: var(--bg);
+}
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  padding: 0 3px;
+}
+.note {
+  flex: 1;
+  min-width: 70px;
+  line-height: 1.4;
+  font-size: 10px;
+  color: var(--muted);
+}
+.open,
+.submit {
+  border-radius: 14px;
+  padding: 6px 9px;
+  font-size: 11px;
+}
+.open {
+  border: 1px solid var(--border);
+  color: var(--fg);
+}
+.submit {
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 600;
+}
+.open:hover,
+.close:hover,
+.pager button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.card button:focus-visible {
+  outline: 1px solid var(--provider-codex);
+  outline-offset: 2px;
+}
+.card button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

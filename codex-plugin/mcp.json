@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "threadlight": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/scripts/memory-bridge.mjs", "--provider", "codex"],
+      "cwd": "${PLUGIN_ROOT}"
+    }
+  }
+}

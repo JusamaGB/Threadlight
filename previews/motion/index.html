@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Threadlight · Outward shine</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #0c121c;
+      color: #e8edf5;
+      font:
+        15px/1.5 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 48px 28px;
+    }
+    header p {
+      color: #8c9caf;
+      max-width: 620px;
+    }
+    small {
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      color: #d9b67c;
+      text-transform: uppercase;
+    }
+    h1 {
+      font-size: 32px;
+      font-weight: 500;
+      margin: 8px 0;
+    }
+    h2 {
+      font-size: 15px;
+      font-weight: 500;
+      margin: 0;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 32px;
+    }
+    .card {
+      background: #111d2d;
+      border: 1px solid #253243;
+      border-radius: 20px;
+      padding: 24px;
+    }
+    .card.featured {
+      border-color: #725b3b;
+      background: radial-gradient(ellipse at center, #192333, #111d2d 70%);
+    }
+    .caption {
+      font-size: 12px;
+      color: #8c9caf;
+      margin-top: 4px;
+    }
+    .wheel {
+      display: block;
+      width: 240px;
+      height: 240px;
+      margin: 16px auto;
+    }
+    .actual {
+      border-top: 1px solid #ffffff0c;
+      padding-top: 20px;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      font-size: 12px;
+      color: #91a2b9;
+    }
+    .dot {
+      width: 22px;
+      height: 22px;
+      flex: none;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 20px;
+      margin: 24px 0 10px;
+    }
+    button,
+    select {
+      font: inherit;
+      color: #e8edf5;
+      border: 1px solid #344254;
+      background: #172335;
+      border-radius: 8px;
+      padding: 9px 14px;
+    }
+    button {
+      cursor: pointer;
+      min-width: 92px;
+    }
+    label {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: #a8b7c9;
+      font-size: 13px;
+    }
+    input {
+      accent-color: #e5bd73;
+    }
+    .timeline {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      margin: 18px 0;
+      font-size: 12px;
+      color: #a8b7c9;
+    }
+    .timeline input {
+      flex: 1;
+    }
+    .note {
+      color: #8190a3;
+      font-size: 12px;
+    }
+    .badge {
+      color: #d6bd91;
+      font-size: 12px;
+    }
+    @media (max-width: 680px) {
+      main {
+        padding: 28px 18px;
+      }
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .wheel {
+        width: 220px;
+        height: 220px;
+      }
+    }
+  </style>
+  <main>
+    <header>
+      <small>Threadlight / Active threads</small>
+      <h1>Orange in motion. A blue shine.</h1>
+      <p>
+        The spinning logo stays Claude orange. A glossy Codex-blue shine travels from the centre to
+        the tips, with a bright blue highlight and a soft trailing glow.
+      </p>
+    </header>
+    <p style="margin-top: 18px">
+      <a href="/idle.html" style="color: #9ac9ff; text-decoration: none; margin-right: 22px"
+        >Idle study: Resting light →</a
+      >
+      <a href="/needs-input.html" style="color: #e5bd73; text-decoration: none"
+        >Next study: Needs input · gold drip & splash →</a
+      >
+    </p>
+    <div class="grid">
+      <section class="card">
+        <h2>Previous gold shine</h2>
+        <div class="caption">Amber wheel · pale gold shimmer</div>
+        <canvas id="before" class="wheel" aria-label="Previous wheel with gold shine"></canvas>
+        <div class="actual">
+          <canvas id="beforeDot" class="dot" aria-label="Previous indicator at actual size"></canvas
+          >Actual indicator · 22 px
+        </div>
+      </section>
+      <section class="card featured">
+        <h2>Claude orange + Codex blue</h2>
+        <div class="caption">Orange strands · glossy blue outward shine</div>
+        <canvas
+          id="after"
+          class="wheel"
+          aria-label="Orange active wheel with blue outward shine"
+        ></canvas>
+        <div class="actual">
+          <canvas
+            id="afterDot"
+            class="dot"
+            aria-label="Orange active indicator with blue shine at actual size"
+          ></canvas
+          >Actual indicator · 22 px
+        </div>
+      </section>
+    </div>
+    <div class="controls">
+      <button id="pause" type="button">Pause</button
+      ><label
+        >Playback
+        <select id="speed">
+          <option value="1">Normal</option>
+          <option value="0.4">Slow · 0.4×</option>
+        </select></label
+      ><label><input id="reduced" type="checkbox" />Reduced motion</label
+      ><span class="badge" id="renderer"></span>
+    </div>
+    <label class="timeline"
+      >Sweep position<input
+        id="position"
+        type="range"
+        min="0"
+        max="2.099"
+        step="0.001"
+        value="0"
+      /><span id="phase">Centre</span></label
+    >
+    <p class="note">
+      Active spinning indicator · One outward sweep every 2.1 seconds. Drag the timeline to inspect
+      the blue shine; press Play to resume. The Needs input animation is unchanged.
+    </p>
+  </main>
+  <script type="module" src="./main.ts"></script>
+</html>

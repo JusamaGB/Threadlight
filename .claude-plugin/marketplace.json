@@ -1,0 +1,12 @@
+{
+  "name": "threadlight",
+  "description": "Threadlight: a status dot and mini composer for Claude Code sessions (unofficial).",
+  "owner": { "name": "Julius Deane" },
+  "plugins": [
+    {
+      "name": "threadlight",
+      "source": "./",
+      "description": "Local activity hooks and scoped shared-memory tools for Threadlight."
+    }
+  ]
+}

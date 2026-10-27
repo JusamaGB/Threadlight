@@ -1,0 +1,310 @@
+/* The settings list lives inside the panel's card: same tokens, same tight spacing. */
+
+.view {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 0 6px;
+}
+
+.group select {
+  min-width: 0;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px;
+}
+.agentSelection {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 0;
+  color: var(--fg);
+  font-size: 12px;
+}
+.agentSelection > button {
+  max-width: 100%;
+}
+.agentSelection > button[data-field='provider'] {
+  justify-self: start;
+}
+.agentSelection > button[data-field='model'] {
+  justify-self: center;
+  text-align: center;
+}
+.agentSelection > button[data-field='effort'] {
+  justify-self: end;
+  color: var(--muted);
+}
+
+.group {
+  padding: 5px 10px 2px;
+}
+
+.group + .group {
+  border-top: 1px solid var(--border);
+}
+
+.groupLabel {
+  margin: 0 0 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 26px;
+  padding: 2px 0;
+}
+
+/* A setting that does not apply right now (e.g. "Sessions listed" outside the Recent list). */
+.row[aria-disabled] {
+  opacity: 0.4;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  font-size: 12px;
+}
+
+.hint,
+.error {
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--faint);
+}
+
+.error {
+  color: var(--amber);
+}
+
+.control {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+/* ---------- controls ---------- */
+
+/* Two controls side by side in one row (the hotkey and its Toggle / Push to talk choice). */
+.pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.small,
+.key,
+.stepper,
+.segmented {
+  height: 22px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--raised);
+  font-size: 11px;
+}
+
+.small {
+  padding: 0 9px;
+  color: var(--muted);
+}
+
+.small:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+
+/* A small button that is switched on (Hold). */
+.small.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* A stepper that does not apply right now (the countdown while Hold is on). */
+.stepper.off {
+  opacity: 0.4;
+}
+
+/* A greyed-out row already dims everything in it. */
+.row[aria-disabled] .stepper.off {
+  opacity: 1;
+}
+
+.key {
+  min-width: 82px;
+  padding: 0 8px;
+  text-align: center;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--fg);
+}
+
+.key:hover {
+  background: var(--hover);
+}
+
+.capturing {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-family: inherit;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.stepper button {
+  width: 20px;
+  height: 100%;
+  text-align: center;
+  color: var(--muted);
+}
+
+.stepper button:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.stepper button:disabled {
+  color: var(--border);
+  cursor: default;
+}
+
+.value {
+  min-width: 26px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.stepper.compact {
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: inherit;
+  gap: 0;
+}
+
+.stepper.compact button {
+  width: 11px;
+}
+
+.stepper.compact .value {
+  min-width: 0;
+  padding: 0 1px;
+  font-weight: 600;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 1px;
+  gap: 1px;
+}
+
+.segmented button {
+  padding: 0 7px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+
+.segmented button:hover {
+  color: var(--fg);
+}
+
+.segmented button[aria-checked='true'],
+.segmented button[aria-pressed='true'] {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.providerCheck {
+  display: inline-block;
+  width: 12px;
+  color: var(--accent);
+}
+
+/* With a separator ("Toggle / Push to talk"), the words sit closer to it. */
+.separated {
+  gap: 0;
+}
+
+.separated button {
+  padding: 0 5px;
+}
+
+.separator {
+  align-self: center;
+  color: var(--faint);
+}
+
+/* A small switch: grey off, accent on. */
+.toggle {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--border);
+  transition: background-color 150ms ease;
+}
+
+.toggle span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition:
+    transform 150ms ease,
+    background-color 150ms ease;
+}
+
+.toggle[aria-checked='true'] {
+  background: var(--mic-bg);
+}
+
+.toggle[aria-checked='true'] span {
+  transform: translateX(12px);
+  background: var(--accent);
+}
+
+.status {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.footer {
+  margin: 6px 10px 0;
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.attribution {
+  margin-top: 0;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle,
+  .toggle span {
+    transition: none;
+  }
+}

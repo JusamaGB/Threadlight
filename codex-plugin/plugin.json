@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "threadlight-codex",
+  "version": "0.2.0",
+  "description": "Threadlight status, bounded card answers and scoped shared memory for Codex chats.",
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/hooks.json"
+    }
+  }
+}

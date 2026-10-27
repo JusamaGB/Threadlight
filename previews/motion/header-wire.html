@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Threadlight · Header wire</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0b111b;
+        color: #e3eaf4;
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1120px;
+        margin: auto;
+        padding: 36px 26px;
+      }
+      small {
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        color: #a9c7ce;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-weight: 500;
+        letter-spacing: -0.6px;
+        font-size: 30px;
+        margin: 8px 0;
+      }
+      p {
+        color: #93a6bf;
+        max-width: 740px;
+        margin: 0;
+      }
+      nav {
+        display: flex;
+        gap: 18px;
+        margin: 20px 0 28px;
+      }
+      a {
+        font-size: 12px;
+        color: #9fbedc;
+        text-decoration: none;
+      }
+      .comparisons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      .tile {
+        padding: 22px;
+        background: #111d2d;
+        border: 1px solid #29384c;
+        border-radius: 16px;
+      }
+      h2 {
+        font-size: 14px;
+        font-weight: 500;
+        margin: 0;
+      }
+      .caption {
+        font-size: 11px;
+        color: #869ab4;
+        margin: 5px 0 26px;
+      }
+      .candidate {
+        border-color: #45606e;
+      }
+      .panel-stage {
+        position: relative;
+        width: 316px;
+        padding-left: 16px;
+        margin: 0 auto 18px;
+      }
+      .panel {
+        width: 300px;
+        background: #10151f;
+        border: 1px solid #2a3545;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .header {
+        height: 24px;
+        border-bottom: 1px solid #2a3545;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        gap: 10px;
+        font-size: 11px;
+      }
+      .header strong {
+        font-weight: 600;
+      }
+      .header .folder {
+        font-size: 10px;
+        color: #8496b0;
+        border-left: 1px solid #293748;
+        padding-left: 8px;
+      }
+      .header .right {
+        margin-left: auto;
+        color: #8b9fb8;
+      }
+      .row {
+        height: 52px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 12px;
+        border-bottom: 1px solid #ffffff05;
+        font-size: 11px;
+      }
+      .row .name {
+        color: #ced9e9;
+      }
+      .row .detail {
+        font-size: 10px;
+        color: #7c91ad;
+      }
+      .row .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #da8a62;
+      }
+      .row:nth-child(3) .dot {
+        background: #68aaff;
+      }
+      .footer {
+        font-size: 10px;
+        color: #7890a8;
+        padding: 10px 12px;
+      }
+      .loop {
+        position: absolute;
+        left: 0;
+        top: 1px;
+        width: 16px;
+        height: 24px;
+        padding: 0;
+        border: 0;
+        background: none;
+        cursor: pointer;
+        color: #718a8e;
+        display: grid;
+        place-items: center;
+      }
+      .loop:focus-visible {
+        outline: 1px solid #7ebcff;
+        outline-offset: 1px;
+        border-radius: 3px;
+      }
+      .loop svg {
+        overflow: visible;
+        display: block;
+        fill: none;
+      }
+      .loop .base {
+        stroke: #718b8c;
+        stroke-width: 0.85;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        opacity: 0.54;
+      }
+      .loop:hover .base,
+      .loop:focus-visible .base {
+        opacity: 0.9;
+      }
+      .old .base {
+        stroke: #80c5b5;
+        stroke-width: 1.25;
+        opacity: 1;
+      }
+      .old[data-connected='false'] .base {
+        stroke: #91a0b5;
+      }
+      .old .old-spark {
+        stroke: #ffc777;
+        stroke-width: 1;
+        stroke-linecap: round;
+        fill: #fff1cb;
+        transform-origin: 9px 12px;
+        animation: oldSpark 4.8s ease-out infinite;
+      }
+      .old:hover .old-spark {
+        animation: none;
+        opacity: 1;
+      }
+      .rails {
+        position: absolute;
+        left: 0;
+        top: 25px;
+        pointer-events: none;
+      }
+      .links {
+        stroke: #80c5b5;
+        stroke-width: 1;
+        fill: none;
+        opacity: 0.35;
+      }
+      .tile-note {
+        font-size: 11px;
+        color: #8fa3bb;
+        line-height: 1.7;
+      }
+      .loop:disabled {
+        cursor: default;
+      }
+      .detail-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      .detail-grid .inspection {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 18px;
+      }
+      @media (max-width: 850px) {
+        .detail-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .inspection {
+        display: flex;
+        align-items: center;
+        gap: 32px;
+        background: #101a28;
+        border: 1px solid #29384c;
+        border-radius: 14px;
+        margin: 20px 0;
+        padding: 24px;
+      }
+      .magnifier {
+        position: relative;
+        width: 230px;
+        height: 192px;
+        flex: none;
+        overflow: visible;
+      }
+      .mini-card {
+        position: absolute;
+        left: 128px;
+        right: 0;
+        top: 0;
+        height: 192px;
+        background: #151f2d;
+        border-left: 1px solid #708393;
+        border-bottom: 1px solid #344558;
+        border-top: 1px solid #344558;
+        border-radius: 0 8px 8px 0;
+      }
+      .magnifier .loop {
+        transform: scale(8);
+        transform-origin: 0 0;
+        top: 0;
+      }
+      .inspection h2 {
+        font-size: 16px;
+        margin-bottom: 8px;
+      }
+      .inspection p {
+        font-size: 12px;
+        max-width: 440px;
+      }
+      .state {
+        display: inline-block;
+        font-size: 11px;
+        color: #bad9d4;
+        border: 1px solid #335756;
+        border-radius: 20px;
+        padding: 4px 10px;
+        margin-top: 14px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      button.control,
+      select {
+        font: inherit;
+        color: #dde7f5;
+        background: #172335;
+        border: 1px solid #35485e;
+        border-radius: 7px;
+        padding: 8px 13px;
+        cursor: pointer;
+      }
+      .controls label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #93a8c4;
+        font-size: 12px;
+      }
+      input {
+        accent-color: #b5d5e4;
+      }
+      .timeline {
+        display: flex;
+        gap: 16px;
+        margin-top: 20px;
+        align-items: center;
+        font-size: 12px;
+        color: #879ebc;
+      }
+      .timeline input {
+        flex: 1;
+      }
+      .timeline output {
+        min-width: 48px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .note {
+        max-width: none;
+        font-size: 11px;
+        color: #7890ac;
+        margin-top: 20px;
+        line-height: 1.7;
+      }
+      @keyframes oldSpark {
+        0%,
+        7% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        12% {
+          opacity: 0.25;
+          transform: scale(0.8);
+        }
+        18% {
+          opacity: 0.65;
+          transform: scale(0.95);
+        }
+        28%,
+        100% {
+          opacity: 0.3;
+          transform: scale(0.85);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .old .old-spark {
+          animation: none;
+          opacity: 0.7;
+        }
+      }
+      @media (max-width: 850px) {
+        .comparisons {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 440px) {
+        main {
+          padding: 24px 12px;
+        }
+        .tile {
+          padding: 14px 8px;
+        }
+        .inspection {
+          flex-direction: column;
+          align-items: flex-start;
+          padding: 20px;
+        }
+        .panel-stage {
+          margin-left: auto;
+          margin-right: auto;
+        }
+        h1 {
+          font-size: 26px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <small>Threadlight / Header wire</small>
+        <h1>A quiet current. A live cut.</h1>
+        <p>
+          A closer, finer loop carries irregular bursts of white current. Cut it and each arriving
+          pulse becomes a brief spark at the exposed ends. Reconnect it and the current continues.
+        </p>
+      </header>
+      <nav>
+        <a href="/">Active indicator</a><a href="/needs-input.html">Needs input</a
+        ><a href="/idle.html">Idle</a>
+      </nav>
+      <div class="comparisons">
+        <section class="tile">
+          <h2>Current control</h2>
+          <div class="caption">7 px projection · existing 4.8 s spark</div>
+          <div id="original-panel"></div>
+          <p class="tile-note">Existing shape and colour. Click the loop to show the cut state.</p>
+        </section>
+        <section class="tile candidate">
+          <h2>Refined control</h2>
+          <div class="caption">3.3 px projection · finer wire · white current</div>
+          <div id="refined-panel"></div>
+          <p class="tile-note">
+            Over half as close to the card. Same click area and workspace-wire toggle.
+          </p>
+        </section>
+      </div>
+      <div class="detail-grid">
+        <section class="inspection" id="connected-detail">
+          <div class="magnifier">
+            <div class="mini-card"></div>
+            <div id="detail-loop"></div>
+          </div>
+          <div>
+            <h2>Connected current &middot; 8&times;</h2>
+            <p>
+              A faint, continuous light keeps the wire alive. A fine white leading point carries a
+              tapered, flickering wake around both bends.
+            </p>
+          </div>
+        </section>
+        <section class="inspection" id="cut-detail">
+          <div class="magnifier">
+            <div class="mini-card"></div>
+            <div id="cut-detail-loop"></div>
+          </div>
+          <div>
+            <h2>Cut wire &amp; sparks &middot; 8&times;</h2>
+            <p>
+              Grey wire ends. Each arriving pulse discharges into a branching white arc, tiny flying
+              sparks and a quick, fading afterglow.
+            </p>
+          </div>
+        </section>
+      </div>
+      <p style="margin-bottom: 18px">
+        <span class="state" id="state" role="status"
+          >Connected &middot; workspace wires visible</span
+        >
+      </p>
+      <div class="controls">
+        <button id="toggle" class="control">Cut wire</button
+        ><button id="pause" class="control">Pause</button
+        ><button id="inspect-pulse" class="control">Inspect pulse</button
+        ><button id="inspect-spark" class="control">Inspect spark</button
+        ><button id="variation" class="control">New variation</button
+        ><label
+          >Playback<select id="speed">
+            <option value="1">Normal</option>
+            <option value="0.25">Slow · 0.25×</option>
+          </select></label
+        ><label><input id="reduced" type="checkbox" />Reduced motion</label>
+      </div>
+      <label class="timeline"
+        >Current burst<input
+          type="range"
+          id="position"
+          min="0"
+          max="2.599"
+          step="0.001"
+          value="0"
+        /><output id="time">0.00 s</output></label
+      >
+      <p class="note">
+        Fast 0.13–0.24-second sweeps, irregular pauses and occasional quick clusters. Every burst
+        has its own strength, flicker and spark shape. Cut-state sparks follow the arriving current,
+        even when toggled mid-burst. The retained 16 × 24 px button is easier to hit than the fine
+        wire. Preview only: clicking changes the sample workspace links, not your saved Threadlight
+        setting.
+      </p>
+    </main>
+    <script type="module" src="./header-wire.ts"></script>
+  </body>
+</html>
