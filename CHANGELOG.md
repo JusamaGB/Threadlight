@@ -6,6 +6,13 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Ignore** in a waiting thread's right-click menu. It sets the pending request aside in
+  Threadlight only: the thread stays listed, its "Needs your input" tag and amber dot are
+  toned down, it no longer stays pinned in Recent past the usual list, and it no longer
+  drips. Hovering the item explains that nothing changes in Claude or Codex. A new question
+  from the thread flags it again, and **Stop ignoring** undoes it. The choice lasts until
+  Threadlight restarts.
+
 - Dual view now steps aside for Shared Spaces, the Agent and Settings: the panel narrows
   smoothly to the normal thin card while one of them is open and widens back to the two
   columns when you return to the list. Your Dual view choice is kept.

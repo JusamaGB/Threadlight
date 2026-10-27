@@ -3,10 +3,13 @@ import { createPortal } from 'react-dom'
 
 import styles from './Panel.module.css'
 import { usePanelRoom } from './room'
+import { Tip } from './Tip'
 
 export interface MenuItem {
   label: string
   disabled?: boolean
+  /** Explains the item in the panel's usual hover info. */
+  help?: string
   /** The choice already in force. The control that opened the menu shows it, so it is not listed. */
   current?: boolean
   onSelect: () => void
@@ -130,20 +133,34 @@ export function ContextMenu({
           buttons[next]?.focus()
         }}
       >
-        {items.map((item) => (
-          <button
-            key={item.label}
-            className={styles.menuItem}
-            role="menuitem"
-            disabled={item.disabled}
-            onClick={() => {
-              onClose()
-              item.onSelect()
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
+        {items.map((item) => {
+          const choose = () => {
+            onClose()
+            item.onSelect()
+          }
+          return item.help ? (
+            <Tip
+              key={item.label}
+              as="button"
+              className={styles.menuItem}
+              role="menuitem"
+              text={item.help}
+              onClick={choose}
+            >
+              {item.label}
+            </Tip>
+          ) : (
+            <button
+              key={item.label}
+              className={styles.menuItem}
+              role="menuitem"
+              disabled={item.disabled}
+              onClick={choose}
+            >
+              {item.label}
+            </button>
+          )
+        })}
       </div>
     </>,
     document.body,

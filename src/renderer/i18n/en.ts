@@ -118,6 +118,11 @@ export const en = {
   nothingToShow: 'No threads to show yet.',
   attention: {
     needsYou: 'Needs your input',
+    ignore: 'Ignore',
+    ignoreHelp:
+      'Only Threadlight stops flagging this thread. It stays in your list, its tag is toned down and it no longer stays pinned in Recent or drips. Nothing changes in Claude or Codex, and a new question from it flags it again.',
+    stopIgnoring: 'Stop ignoring',
+    stopIgnoringHelp: 'Flag this thread as needing your input again.',
     approval: 'Waiting for your approval',
     recommended: 'Recommended',
     position: (n: number, total: number) => `${n} of ${total}`,

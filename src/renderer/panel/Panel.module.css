@@ -1318,6 +1318,11 @@ span.planStep {
   font-size: 11px;
 }
 
+/* Set aside in Threadlight: still there, but plainly dealt with. */
+.needsYou[data-ignored] {
+  color: var(--faint);
+}
+
 /* Waiting on the user: Claude's amber double circle, still and slightly larger. */
 /* Even sizes throughout, so the circle and its context ring land on whole pixels. */
 .stateDot[data-attention] {
@@ -1332,6 +1337,11 @@ span.planStep {
     transparent 5.5px
   );
   animation: none;
+}
+
+.stateDot[data-attention][data-ignored] {
+  opacity: 0.35;
+  filter: grayscale(1);
 }
 
 /* The question card, as the Claude app draws it. */

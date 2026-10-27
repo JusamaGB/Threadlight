@@ -94,6 +94,7 @@ export const IPC = {
   panelStayOpen: 'panel:stay-open',
   workspaceWireControl: 'panel:wire-control',
   openInClaude: 'claude:open-thread',
+  ignoreNeedsInput: 'session:ignore-needs-input',
   answerQuestion: 'hold:answer-question',
   answerNextStep: 'hold:answer-next-step',
   answerApproval: 'hold:answer-approval',
@@ -204,6 +205,8 @@ export interface ThreadlightApi {
    * keeps the gutter from passing clicks through while the card and rows move. */
   setPanelLayout(layout: 'single' | 'dual', animating?: boolean): Promise<{ cardWidth: number }>
   openInClaude(appId: string): void
+  /** Sets a thread's pending request aside (or back) in Threadlight only; nothing reaches the app. */
+  ignoreNeedsInput(sessionId: string, ignore: boolean): void
 
   /** Relays `text` to a session in the background. Resolves once accepted, not when replied. */
   sendMessage(

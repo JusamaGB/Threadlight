@@ -39,6 +39,7 @@ import { codexProcesses } from './codex/live'
 import { SessionService } from './sessions/service'
 import { PLAN_CONTEXT, readStepActivity } from './sessions/stepActivity'
 import { ThreadChanges } from './sessions/threadChanges'
+import { IgnoredInput } from './ignoredInput'
 import { GitStates } from './sessions/gitDiff'
 import { inside, listChanges, readFileDiff } from './sessions/gitChanges'
 import { Tracker } from './sessions/tracker'
@@ -99,9 +100,13 @@ async function start(): Promise<void> {
     if (invalidated) threadChanges.invalidate(root)
     publish()
   })
+  // Requests the user has set aside in Threadlight: they stop holding a place in Recent.
+  const ignoredInput = new IgnoredInput()
+  const pinned = (session: Session) => session.state !== 'idle' && !ignoredInput.isIgnored(session)
   const tracker = new Tracker({
     paths,
     hooks,
+    pinned,
     windowHours: initial.listWindowHours,
     maxSessions: initial.maxSessions,
     held: (id) => holds.held(id),
@@ -136,6 +141,7 @@ async function start(): Promise<void> {
       agentSessionIds.has(id) ||
       win32.normalize(cwd.replace(/^\\\\\?\\/, '')).toLowerCase() ===
         win32.normalize(agentWorkspace.replace(/^\\\\\?\\/, '')).toLowerCase(),
+    pinned,
   )
   codexTracker.configure(initial.listWindowHours, initial.maxSessions)
   const codexSessions = new SessionService(codexTracker, () => {
@@ -167,15 +173,18 @@ async function start(): Promise<void> {
   }
   const sessions = {
     get snapshot() {
-      return threadChanges.annotate(
-        gitStates.annotate(
-          combinedSnapshot(
-            settings.settings.enabledProviders,
-            {
-              claude: excludeAgentChats(claudeSessions.snapshot, agentSessionIds),
-              codex: excludeAgentChats(codexSessions.snapshot, agentSessionIds),
-            },
-            settings.settings.maxSessions,
+      return ignoredInput.annotate(
+        threadChanges.annotate(
+          gitStates.annotate(
+            combinedSnapshot(
+              settings.settings.enabledProviders,
+              {
+                claude: excludeAgentChats(claudeSessions.snapshot, agentSessionIds),
+                codex: excludeAgentChats(codexSessions.snapshot, agentSessionIds),
+              },
+              settings.settings.maxSessions,
+              pinned,
+            ),
           ),
         ),
       )
@@ -349,6 +358,16 @@ async function start(): Promise<void> {
       ? windows.setWorkspacePanel(on)
       : null,
   )
+  ipcMain.on(IPC.ignoreNeedsInput, (event, id: unknown, ignore: unknown) => {
+    if (event.sender !== windows.panel.webContents) return
+    if (typeof id !== 'string' || typeof ignore !== 'boolean') return
+    const session = sessions.find(id)
+    if (!session) return
+    ignoredInput.set(session, ignore)
+    // The lists pick their pinned places again, then everything is republished.
+    publish()
+    void sessions.refresh()
+  })
   ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
     if (typeof appId !== 'string') return
     if (appId.startsWith('codex:')) {

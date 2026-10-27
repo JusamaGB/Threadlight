@@ -312,6 +312,12 @@ Answering a thread changes the pace without disturbing drops already falling. A
 narrow transparent, non-focusable, click-through native window follows
 the dot's display down to the bottom work-area/taskbar edge. Opening Threadlight,
 starting voice capture, disabling the provider or clearing pending input hides it.
+A thread waiting on the user offers **Ignore** in its right-click menu (**Stop ignoring**
+once set). Ignoring is local to Threadlight and nothing is sent to the app: the thread
+stays listed with its tag and amber dot toned down, it no longer holds a place in Recent
+beyond the normal list and it no longer drips. The mark belongs to the pending request, so
+a new question, or the thread leaving the waiting state, clears it; it is kept in memory
+only. Hovering the item explains this in a note inside the menu.
 The dot keeps its existing hover/click target under the decorative overlay.
 Reduced motion holds the wheel and one bead, in the first waiting thread's colour,
 steady; hidden overlays
