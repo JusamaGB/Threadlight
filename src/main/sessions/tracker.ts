@@ -55,10 +55,19 @@ export interface TrackerOptions {
    * "Show more" is chosen for it.
    */
   treeBudget?: number
+  /**
+   * How many transcripts a scan may read for the first time, and for how long it keeps starting
+   * new ones. A first read parses the whole file, so a long history read in one go would hold
+   * every row back; the newest are read first and the rest follow on the next scans.
+   */
+  coldBuilds?: number
+  coldMs?: number
 }
 
 /** Plenty for the Workspace list, and what a scan can build in well under a second. */
 const DEFAULT_TREE_BUDGET = 300
+const DEFAULT_COLD_BUILDS = 25
+const DEFAULT_COLD_MS = 500
 /** The recent list is cut to a few dozen, so only the newest transcripts are ever read for it. */
 const RECENT_CANDIDATES = 120
 
@@ -98,6 +107,21 @@ export class Tracker {
     ])
     const hooks = new Map(this.options.hooks.all(now).map((h) => [h.sessionId, h]))
     const built = new Map<string, Session>() // full sessions, built once per scan
+    // A thread whose transcript has never been read is dear to build, so those are rationed per
+    // scan. Everything already read (or without a transcript) costs next to nothing.
+    const started = performance.now()
+    let cold = 0
+    const affordable = (id: string): boolean => {
+      if (built.has(id) || this.readers.has(id)) return true
+      if (!(files.get(id)?.path ?? hooks.get(id)?.transcriptPath)) return true
+      if (
+        cold >= (this.options.coldBuilds ?? DEFAULT_COLD_BUILDS) ||
+        performance.now() - started > (this.options.coldMs ?? DEFAULT_COLD_MS)
+      )
+        return false
+      cold += 1
+      return true
+    }
     const build = async (id: string) => {
       let session = built.get(id)
       if (!session) {
@@ -119,6 +143,8 @@ export class Tracker {
     const hidden = this.options.hiddenFolder?.()?.toLowerCase() ?? null
     for (const id of recentIds) {
       if (apps.get(id)?.archived) continue
+      // Threads Threadlight is tracking live are always shown; the rest wait their turn.
+      if (!hooks.has(id) && !affordable(id)) continue
       const session = await build(id)
       if (hidden && session.cwd.toLowerCase() === hidden) continue
       recent.push(session)
@@ -229,12 +255,15 @@ export class Tracker {
           const kids = (childrenOf.get(app.appId) ?? [])
             .filter((kid) => !seen.has(kid.appId)) // guards against a loop in bad data
             .sort((a, b) => orderedAt(b) - orderedAt(a) || a.appId.localeCompare(b.appId))
+            .filter((kid) => affordable(kid.cliSessionId))
           return {
             session: await build(app.cliSessionId),
             children: await Promise.all(kids.map(node)),
           }
         }
-        for (const app of shown) workspace.threads.push(await node(app))
+        for (const app of shown) {
+          if (affordable(app.cliSessionId)) workspace.threads.push(await node(app))
+        }
         workspace.worktrees = countWorktrees(workspace.threads)
       } else if (expanded.has(key)) {
         // Over budget: listed, but its threads load only when asked for.

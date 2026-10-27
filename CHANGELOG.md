@@ -6,6 +6,16 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Claude threads appear straight away after a start or a change of view.** A thread's
+  transcript is read in full the first time, so reading a long history in one scan held every
+  Claude row back (Codex reads from a database and was not affected). A scan now reads at most
+  25 new transcripts, newest first and stopping after half a second, and the rest follow on the
+  next scans; threads Threadlight is tracking live are always shown at once. Scans that still
+  take over 0.75 s are noted in `scan-timing.log` in Threadlight's data folder.
+- The explanation for **Ignore** now opens in the info area at the bottom of the panel, as
+  other hints do. A hint on a menu item used to float beside the cursor because a menu is
+  drawn outside the card.
+
 - **The time window always applies.** Window can no longer be turned off, because a long
   history made the panel slow to fill (a start could take ten seconds to show your Claude
   threads). A saved "no limit" setting falls back to 24 hours. Each scan also builds only the

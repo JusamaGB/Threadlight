@@ -194,6 +194,24 @@ describe('workspace tree', () => {
     expect(titles(byName(asked.workspaces, 'w7').threads)).toEqual(['W7a', 'W7b'])
   })
 
+  it('fills a workspace over a few scans when its transcripts are read a few at a time', async () => {
+    for (let i = 0; i < 6; i++)
+      await thread('C:\\demo\\big', `Thread ${i}`, { agoMs: (i + 1) * HOUR })
+    const rationed = new Tracker({
+      paths: box.paths,
+      hooks,
+      now: () => NOW,
+      maxSessions: 10,
+      windowHours: 24,
+      coldBuilds: 2,
+    })
+    const view = { expanded: ['C:\\demo\\big'], showAll: [] as string[] }
+    const loaded = async () => byName((await rationed.snapshot(view)).workspaces, 'big').threads
+    expect(titles(await loaded())).toEqual(['Thread 0', 'Thread 1'])
+    expect(titles(await loaded())).toHaveLength(4)
+    expect(titles(await loaded())).toHaveLength(6)
+  })
+
   it('still offers every workspace for choosing one, whatever the window', async () => {
     await thread('C:\\demo\\fresh', 'Today', { agoMs: 2 * HOUR })
     await thread('C:\\demo\\stale', 'Old only', { agoMs: 5 * 24 * HOUR })

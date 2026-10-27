@@ -43,7 +43,11 @@ export function HoverInfo({
     const measure = () => {
       const element = box.current
       const target = anchor.current
-      const cardElement = target?.closest<HTMLElement>('[data-card]')
+      // A menu is drawn outside the card, so an item in one has no card around it: the hint
+      // still belongs to the panel's one card and its info area.
+      const cardElement =
+        target?.closest<HTMLElement>('[data-card]') ??
+        document.querySelector<HTMLElement>('[data-card]')
       const card = cardElement?.getBoundingClientRect()
       if (!element || !target) return
       const at = target.getBoundingClientRect()

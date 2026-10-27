@@ -2,7 +2,7 @@ import { OwnedRequests } from './communication/ownedRequests'
 import { codexCommunicationAdmitted } from './communication/admission'
 import { codexHeld } from './codex/live'
 import { CommunicationCatalog } from './communication/catalog'
-import { mkdir, realpath } from 'node:fs/promises'
+import { appendFile, mkdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { join, win32 } from 'node:path'
 
@@ -127,10 +127,25 @@ async function start(): Promise<void> {
     gitFor: (folder) => gitStates.peek(folder),
     hiddenFolder: () => agentWorkspace,
   })
-  const claudeSessions = new SessionService(tracker, (snapshot) => {
-    letHeldCardsGo(holds, snapshot)
-    if (enabled('claude')) publish()
-  })
+  // A scan that takes long is noted in scan-timing.log (in Threadlight's data folder), so a slow
+  // history shows up as numbers rather than as a feeling. The file is kept small.
+  const scanLog = join(app.getPath('userData'), 'scan-timing.log')
+  const reportSlowScan = (label: string) => (ms: number, snapshot: Snapshot) => {
+    const line = `${new Date().toISOString()} ${label} scan ${Math.round(ms)} ms (${snapshot.sessions.length} recent, ${snapshot.workspaces.length} workspaces)\n`
+    void stat(scanLog)
+      .then((info) => info.size)
+      .catch(() => 0)
+      .then((size) => (size > 100_000 ? writeFile(scanLog, line) : appendFile(scanLog, line)))
+      .catch(() => {})
+  }
+  const claudeSessions = new SessionService(
+    tracker,
+    (snapshot) => {
+      letHeldCardsGo(holds, snapshot)
+      if (enabled('claude')) publish()
+    },
+    reportSlowScan('Claude'),
+  )
   const codex = codexPaths()
   const messageStore = new MessageStore(messagingPaths(app.getPath('userData')).store)
   await messageStore.load().catch(() => {
@@ -158,9 +173,13 @@ async function start(): Promise<void> {
     pinned,
   )
   codexTracker.configure(initial.listWindowHours, initial.maxSessions)
-  const codexSessions = new SessionService(codexTracker, () => {
-    if (enabled('codex')) publish()
-  })
+  const codexSessions = new SessionService(
+    codexTracker,
+    () => {
+      if (enabled('codex')) publish()
+    },
+    reportSlowScan('Codex'),
+  )
   const threadChanges = new ThreadChanges({
     history: codex.history,
     transcript: (id) => tracker.transcriptPath(id),

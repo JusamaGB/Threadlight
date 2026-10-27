@@ -321,6 +321,31 @@ describe('Tracker', () => {
     ])
   })
 
+  it('reads a long history a few transcripts at a time, newest first', async () => {
+    for (let i = 0; i < 12; i++)
+      await addSession(`s${i}`, [prompt(`p${i}`), textReply(`r${i}`)], (i + 1) * MINUTE)
+    const rationed = new Tracker({
+      paths: box.paths,
+      hooks,
+      now: () => NOW,
+      maxSessions: 12,
+      coldBuilds: 5,
+    })
+    const ids = async () => (await rationed.snapshot()).sessions.map((s) => s.id)
+    // The first scan reads the newest five; each later one reads five more.
+    expect(await ids()).toEqual(['s0', 's1', 's2', 's3', 's4'])
+    expect(await ids()).toHaveLength(10)
+    expect(await ids()).toHaveLength(12)
+  })
+
+  it('always shows a thread being tracked live, even when reads are rationed', async () => {
+    await addSession('quiet', [prompt('a'), textReply('done a')], 2 * MINUTE)
+    await addSession('live', [prompt('b')], 5 * MINUTE)
+    hooks.apply({ session_id: 'live', hook_event_name: 'UserPromptSubmit' }, NOW)
+    const none = new Tracker({ paths: box.paths, hooks, now: () => NOW, coldBuilds: 0 })
+    expect((await none.snapshot()).sessions.map((s) => s.id)).toEqual(['live'])
+  })
+
   it('shows the last result for idle sessions', async () => {
     await addSession('cli-1', [prompt('go'), textReply('All   tests pass.')], 5 * MINUTE)
     const [session] = await recent()

@@ -4,6 +4,9 @@ import { findInSnapshot } from '../../shared/snapshot'
 import type { Session, Snapshot, TreeView } from '../../shared/types'
 import type { Tracker } from './tracker'
 
+/** A scan is expected to take well under this; longer ones are reported. */
+const SLOW_SCAN_MS = 750
+
 export class SessionService {
   private latest: Snapshot = {
     sessions: [],
@@ -22,6 +25,8 @@ export class SessionService {
   constructor(
     private readonly tracker: Pick<Tracker, 'snapshot'>,
     private readonly onChange: (snapshot: Snapshot) => void,
+    /** Told when a scan took long enough to matter, so a slow history can be seen and measured. */
+    private readonly onSlow?: (ms: number, snapshot: Snapshot) => void,
   ) {}
 
   get sessions(): Session[] {
@@ -74,7 +79,10 @@ export class SessionService {
 
   private async scan(): Promise<void> {
     try {
+      const started = performance.now()
       const snapshot = await this.tracker.snapshot(this.view)
+      const took = performance.now() - started
+      if (took > SLOW_SCAN_MS) this.onSlow?.(took, snapshot)
       const json = JSON.stringify(snapshot)
       if (json !== this.latestJson) {
         this.latest = snapshot

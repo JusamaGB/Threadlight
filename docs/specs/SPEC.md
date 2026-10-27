@@ -314,6 +314,11 @@ Answering a thread changes the pace without disturbing drops already falling. A
 narrow transparent, non-focusable, click-through native window follows
 the dot's display down to the bottom work-area/taskbar edge. Opening Threadlight,
 starting voice capture, disabling the provider or clearing pending input hides it.
+Reading a thread's transcript the first time parses the whole file, so one scan reads at most
+25 new transcripts (newest first, no new ones after half a second); the rest follow on the
+next scans, and threads under live tracking are always built. Slow scans (over 0.75 s) are
+appended to `scan-timing.log` beside the settings file, which is kept under 100 KB.
+
 A thread waiting on the user offers **Ignore** in its right-click menu (**Stop ignoring**
 once set). Ignoring is local to Threadlight and nothing is sent to the app: the thread
 stays listed with its tag and amber dot toned down, it no longer holds a place in Recent
