@@ -43,7 +43,9 @@ export const en = {
     nothingWorking: 'Nothing working right now',
     showList: 'Show the full list',
     hideList: 'Show only active sessions',
-    unpin: 'Pinned open. Click to unpin, or double-click the bar',
+    pinnedHint:
+      'Pinned open. Double-click the header, or focus it and press Enter or Space to unpin.',
+    pinHint: 'Double-click the header, or focus it and press Enter or Space to pin this view open.',
   },
   state: {
     working: 'Working',

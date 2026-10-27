@@ -117,9 +117,7 @@ export async function checkVoiceRouting(page) {
   await open()
   await say('Open.', 0.049) // quiet speech must reach transcription, not just loud test tones
   await page.locator('[data-mic-mode="commands"]').waitFor()
-  await page
-    .getByTitle('Pinned open. Click to unpin, or double-click the bar', { exact: true })
-    .waitFor()
+  await page.locator('[data-card][data-pinned]').waitFor()
   await say('Please check the build')
   await page
     .getByText(

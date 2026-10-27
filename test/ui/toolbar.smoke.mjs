@@ -1,4 +1,4 @@
-/* global window, document */
+/* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 
 export async function checkRecentLimit(page, capture) {
@@ -175,10 +175,7 @@ export async function checkToolbar(page) {
 export async function checkPagePinning(page, title) {
   const header = page.locator('header')
   const heading = header.getByText(title, { exact: true })
-  const pin = header.getByRole('button', {
-    name: 'Pinned open. Click to unpin, or double-click the bar',
-    exact: true,
-  })
+  const pin = page.locator('[data-card][data-pinned]')
   const leaveCalls = () =>
     page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'leavePanel').length)
   await heading.dblclick()
@@ -193,9 +190,9 @@ export async function checkPagePinning(page, title) {
   assert.equal(await leaveCalls(), before + 1, 'unpinned subpages allow pointer leave')
   await heading.click({ clickCount: 3 })
   await pin.waitFor()
-  await pin.click()
+  await header.press('Enter')
   await pin.waitFor({ state: 'detached' })
-  assert.equal(await heading.count(), 1, 'the third click and pin control preserve the page')
+  assert.equal(await heading.count(), 1, 'the third click and keyboard unpin preserve the page')
 }
 
 export async function checkSubpagePinning(page) {
@@ -211,12 +208,9 @@ export async function checkSubpagePinning(page) {
   await header.getByText('Settings', { exact: true }).dblclick()
   await page.getByRole('button', { name: 'Open', exact: true }).click()
   await header.getByText('Shared Spaces', { exact: true }).waitFor()
-  const pin = header.getByRole('button', {
-    name: 'Pinned open. Click to unpin, or double-click the bar',
-    exact: true,
-  })
+  const pin = page.locator('[data-card][data-pinned]')
   await pin.waitFor()
-  await pin.click()
+  await header.press('Enter')
   await checkPagePinning(page, 'Shared Spaces')
   await header.getByRole('button', { name: 'Back in Shared Spaces', exact: true }).click()
   await header.getByText('Settings', { exact: true }).waitFor()
@@ -229,10 +223,7 @@ export async function checkSubpagePinning(page) {
 async function checkPinning(page) {
   const header = page.locator('header')
   const view = header.locator('[data-thread-view]')
-  const pin = page.getByRole('button', {
-    name: 'Pinned open. Click to unpin, or double-click the bar',
-    exact: true,
-  })
+  const pin = page.locator('[data-card][data-pinned]')
   const bare = () =>
     header.evaluate((element) => {
       const bounds = element.getBoundingClientRect()
@@ -257,6 +248,25 @@ async function checkPinning(page) {
     await header.locator(`[data-thread-view="${mode}"]`).waitFor()
     await header.dblclick({ position: await bare() })
     await pin.waitFor()
+    assert.equal(
+      await header.locator('button[aria-label^="Pinned open"]').count(),
+      0,
+      'pinning uses no header icon',
+    )
+    await page.evaluate(
+      (value) => window.threadlight.updateSettings({ workspaceWires: value }),
+      mode === 'recent' || mode === 'workspace',
+    )
+    await page.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector('[data-card]')).borderTopColor ===
+        getComputedStyle(document.querySelector('[data-header-wire] .conductor')).stroke,
+    )
+    assert.notEqual(
+      await pin.evaluate((e) => getComputedStyle(e).boxShadow),
+      'none',
+      'the perimeter glows in the clip colour',
+    )
     assert.equal(await view.getAttribute('data-thread-view'), mode, 'pinning keeps the chosen view')
     const before = await leaveCalls()
     await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
@@ -278,13 +288,19 @@ async function checkPinning(page) {
     await view.click()
     await header.locator(`[data-thread-view="${next}"]`).waitFor()
     assert.equal(await pin.count(), 1, 'the view control changes lists without unpinning')
-    await pin.click()
+    await header.press('Enter')
     await pin.waitFor({ state: 'detached' })
     assert.equal(
       await view.getAttribute('data-thread-view'),
       next,
-      'the pin icon also preserves the view',
+      'keyboard unpin also preserves the view',
     )
+    if (mode === 'active') {
+      await header.press('Space')
+      await pin.waitFor()
+      await header.press('Space')
+      await pin.waitFor({ state: 'detached' })
+    }
   }
   console.log(
     'PASS: immediate double-click pin/unpin in all four views, ignored third click, pinned view switching and pointer leave.',

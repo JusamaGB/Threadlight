@@ -264,7 +264,7 @@ export async function checkPanelHeight(page) {
       .querySelector('header')
       .dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
   })
-  await page.getByTitle(/Pinned open/).waitFor()
+  await page.locator('[data-card][data-pinned]').waitFor()
   await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
   assert.equal(await leaves(), before + 2, 'double-click pins immediately, even with frozen timers')
   assert.equal(await expandedList.getAttribute('data-thread-view'), 'recent')
@@ -273,17 +273,21 @@ export async function checkPanelHeight(page) {
       .querySelector('header')
       .dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 3 }))
   })
-  assert.equal(await page.getByTitle(/Pinned open/).count(), 1, 'the third click has no action')
+  assert.equal(
+    await page.locator('[data-card][data-pinned]').count(),
+    1,
+    'the third click has no action',
+  )
   await page.evaluate(() => {
     document
       .querySelector('header')
       .dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
   })
-  await page.getByTitle(/Pinned open/).waitFor({ state: 'detached' })
+  await page.locator('[data-card][data-pinned]').waitFor({ state: 'detached' })
   await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
   await page.clock.runFor(300)
   assert.equal(
-    await page.getByTitle(/Pinned open/).count(),
+    await page.locator('[data-card][data-pinned]').count(),
     0,
     'unpinning leaves no delayed toggle',
   )

@@ -1,5 +1,8 @@
 import { WORKSPACE_GUTTER } from './attentionMotion'
 
+/** Shared by the header clip and the pinned panel's perimeter. */
+export const headerWireColour = (connected: boolean) => (connected ? '#aacfd6' : '#737b86')
+
 interface Span {
   key: string
   first: number

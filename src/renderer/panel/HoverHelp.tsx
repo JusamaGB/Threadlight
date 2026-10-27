@@ -65,7 +65,7 @@ function NativeHints({ mode }: { mode: HelpMode }) {
           !element.hasAttribute('data-native-help-anchor')
         )
           break
-        if (element instanceof HTMLElement && titles.has(element)) {
+        if (element instanceof HTMLElement && (titles.has(element) || element.dataset.tourHelp)) {
           target = element
           break
         }
@@ -90,7 +90,7 @@ function NativeHints({ mode }: { mode: HelpMode }) {
         screenY: event.screenY,
       }
       lastPointer.current = point
-      setHint({ text: titles.get(target)!, point })
+      setHint({ text: titles.get(target) ?? target.dataset.tourHelp!, point })
     }
     const click = (event: MouseEvent) => {
       if (!(event.target instanceof Element) || !event.target.closest('[role="tooltip"]')) clear()

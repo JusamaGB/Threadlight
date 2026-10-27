@@ -7,9 +7,11 @@ import {
   useState,
   type MouseEvent,
   type ReactNode,
+  type CSSProperties,
 } from 'react'
 
 import { matchThread, parseVoiceCommand } from '../../shared/match'
+import { headerWireColour } from '../../shared/workspaceWires'
 import {
   DEFAULT_ENABLED_PROVIDERS,
   isWorkspaceRoot,
@@ -77,15 +79,6 @@ const VOICE_CLOSE_AFTER_MS = 4000
 const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
 /** A thread that has just gone idle stays in the Active list this long, so its reply can be read. */
 const LINGER_MS = 30_000
-
-/** Pinning is independent of the view/count control beside this icon. */
-function PinIcon() {
-  return (
-    <svg className={styles.pin} width="10" height="10" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M10.5 1.5 14.5 5.5 12 6.5 9.5 9l.5 3.5-1.5 1.5-3-3-3.5 3.5-.5-.5L5.5 10.5l-3-3L4 6l3.5.5L10 4z" />
-    </svg>
-  )
-}
 
 interface MenuState {
   x: number
@@ -1061,19 +1054,33 @@ export function Panel() {
         <div
           ref={card}
           data-card=""
+          data-pinned={hold === 'pinned' || undefined}
           className={styles.card}
           data-workspace-height={workspaceView || undefined}
           // Room above the card, when opening upwards, keeps the card in place on screen.
-          style={{
-            maxHeight: workspaceView ? workspaceHeight : maxHeight,
-            marginTop: opensDown ? 0 : room,
-          }}
+          style={
+            {
+              '--pin-colour': headerWireColour(settings?.workspaceWires ?? false),
+              maxHeight: workspaceView ? workspaceHeight : maxHeight,
+              marginTop: opensDown ? 0 : room,
+            } as CSSProperties
+          }
           onMouseLeave={leave}
         >
           <header
             className={styles.header}
             data-voice={showVoiceActivity || undefined}
+            tabIndex={0}
+            aria-label="Panel header"
+            aria-description={hold === 'pinned' ? en.panel.pinnedHint : en.panel.pinHint}
+            data-tour-help={hold === 'pinned' ? en.panel.pinnedHint : en.panel.pinHint}
             onClick={onHeaderClick}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key))
+                return
+              event.preventDefault()
+              changeHold(hold === 'normal' ? 'pinned' : 'normal')
+            }}
             {...drag.handlers}
           >
             {showVoiceActivity && (
@@ -1083,16 +1090,6 @@ export function Panel() {
             )}
             {showVoiceActivity && inactiveMicrophone && !agentVisible && (
               <span className={styles.microphoneStatus}>no active Mic</span>
-            )}
-            {listHidden && hold !== 'normal' && (
-              <button
-                className={styles.unpin}
-                aria-label={en.panel.unpin}
-                title={en.panel.unpin}
-                onClick={() => changeHold('normal')}
-              >
-                <PinIcon />
-              </button>
             )}
             {pickingWorkspace ? (
               <>
@@ -1161,16 +1158,6 @@ export function Panel() {
               </>
             ) : (
               <>
-                {hold !== 'normal' && (
-                  <button
-                    className={styles.unpin}
-                    aria-label={en.panel.unpin}
-                    title={en.panel.unpin}
-                    onClick={() => changeHold('normal')}
-                  >
-                    <PinIcon />
-                  </button>
-                )}
                 <button
                   className={styles.viewControl}
                   data-thread-view={headerView}

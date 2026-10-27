@@ -1,3 +1,5 @@
+import { headerWireColour } from '../../shared/workspaceWires'
+
 export type ElectricalEvent = {
   interval: number
   travel: number
@@ -139,7 +141,7 @@ export function renderElectricity(
   if (state.connected !== connected) {
     const shape = connected ? JOINED : UPPER + LOWER
     state.conductor.setAttribute('d', shape)
-    state.conductor.setAttribute('stroke', connected ? '#aacfd6' : '#737b86')
+    state.conductor.setAttribute('stroke', headerWireColour(connected))
     state.conductor.setAttribute('opacity', connected ? '.72' : '.83')
     state.live.setAttribute('d', shape)
     state.live.setAttribute('opacity', connected ? '.22' : '0')
