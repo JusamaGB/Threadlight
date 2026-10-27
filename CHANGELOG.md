@@ -6,6 +6,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- The Shared Spaces icon is now a brain seen from the front, and the three header icons (brain, agent, cog) share one centre line.
+
 - Mouse-wheel scrolling is finer everywhere in the app: one notch now moves a quarter as far (25 px instead of 100 px). Touchpads are unchanged.
 
 - Centre wires in dual view are tidier: three slots (Claude side, middle, Codex side) with a group sitting on the side its threads are on, short spikes that stay clear of row text, and rounded joins. Wires are grey until their group is lit, then show their colour. While a wire is lit, the text of every thread outside it dims a little.
