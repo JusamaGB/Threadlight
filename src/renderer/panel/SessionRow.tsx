@@ -89,6 +89,13 @@ export function SessionRow(props: SessionRowProps) {
       data-workspace-folder={workspaceFolder(session.git?.root || session.cwd) || undefined}
       data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
     >
+      {/* Provider-tinted top and bottom edges frame the open chat between its neighbours. */}
+      {expanded && props.showProvider && (
+        <>
+          <span className={styles.edgeTop} aria-hidden="true" />
+          <span className={styles.edgeBottom} aria-hidden="true" />
+        </>
+      )}
       <Tip
         as="button"
         text={lastActiveText(session.lastActiveAt, now)}

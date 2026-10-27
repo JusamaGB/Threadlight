@@ -87,8 +87,7 @@ Workspace lets the existing usage bars resize the panel,
 with no extra strip, button or icon. The whole bottom usage strip shows the resize cursor
 and accepts dragging, including its left and right edges. Dragging previews height
 and saves the maximum on release. A drag starts at the visible panel height, even
-when the saved maximum is larger. Arrow keys adjust the maximum by 10px, Home
-selects the minimum and End the available height. The last pick becomes Workspace's
+when the saved maximum is larger. The last pick becomes Workspace's
 maximum across restarts. Changing content never overwrites it. Smaller displays clamp the
 shown height without overwriting the saved preference. Other views and pages keep
 content-sized layout. Drag capture protects an unpinned panel and quota tooltips
@@ -113,8 +112,7 @@ header-only glow ends 6px above the header divider. The colour uses the header w
 clip's connected or disconnected conductor colour at 75%, mixed with 25% panel
 background. There is no pin icon taking header space, on either the list or
 subpages. Double-clicking the header still
-toggles pinning; the header can also receive keyboard focus and Enter or Space
-toggles it. Tour explains this gesture. The count-to-divider gap is 2px and the
+toggles pinning; it is the only way to pin. Tour explains this gesture. The count-to-divider gap is 2px and the
 provider begins 3px after the divider's border; icon spacing on the right is retained.
 
 | Behavior                    | Existing implementation reused                                              |
@@ -187,7 +185,7 @@ blocks the full worktree list or changes its totals and patches. See
 
 ### Workspace links and provider-coloured attention
 
-The panel uses a 264px card and adds a 16px transparent gutter on the left
+The panel uses a 238px card and adds a 16px transparent gutter on the left
 inside the native window. Wires link listed rows with the same normalized Git
 worktree root (or known working folder when no Git root is available), across
 Claude and Codex. Separate worktrees and unknown folders stay unlinked. Within each
@@ -249,7 +247,7 @@ changes cancel stale transitions and keep only the latest hint interactive. The
 bars follow the same content-sized and capped layout throughout the movement.
 Reduced-motion preferences skip these animations; Off clears help immediately.
 
-The panel is 264px wide, with the existing 16px outside wire area. Scrollbars are
+The panel is 238px wide, with the existing 16px outside wire area. Scrollbars are
 hidden throughout the app. Wheel, trackpad and keyboard scrolling remain native;
 thread and workspace lists can receive keyboard focus. There is no scrollbar
 overlay or reserved gutter, leaving the rows' full width available for content.

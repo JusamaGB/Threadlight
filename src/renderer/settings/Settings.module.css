@@ -3,7 +3,7 @@
 .view {
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 0 6px;
+  padding: 2px 0 3px;
 }
 
 .group select {
@@ -67,6 +67,17 @@
   padding: 2px 0;
 }
 
+/* A single-line row only as tall as its control. */
+.rowSlim {
+  min-height: 22px;
+  padding: 0;
+}
+
+/* Closes a little of the gap above a row. */
+.rowTight {
+  margin-top: -3px;
+}
+
 /* A setting that does not apply right now (e.g. "Sessions listed" outside the Recent list). */
 .row[aria-disabled] {
   opacity: 0.4;
@@ -119,6 +130,17 @@
   border-radius: 6px;
   background: var(--raised);
   font-size: 11px;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chevron {
+  font-size: 8px;
+  color: var(--faint);
 }
 
 .small {
@@ -298,7 +320,7 @@
 }
 
 .attribution {
-  margin-top: 0;
+  margin-top: -1px;
   text-align: center;
 }
 

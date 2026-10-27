@@ -2,20 +2,45 @@
 .panelStage {
   position: relative;
   width: 280px;
-  padding-left: 16px;
   box-sizing: border-box;
 }
+
+/* Dual view: the stage is as wide as the window and the card stays against its right edge,
+   so it grows leftwards from the dot's corner instead of jumping. */
+.panelStage[data-wide] {
+  display: flex;
+  justify-content: flex-end;
+  width: calc(var(--dual-card-width, 480px) + 16px);
+}
+
+/* The 16px wire gutter sits against the card's left edge, wherever that edge is. */
+.cardFrame {
+  position: relative;
+  box-sizing: border-box;
+  padding-left: 16px;
+}
+
 .card {
   position: relative;
   box-sizing: border-box;
-  width: 264px;
+  width: 238px;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  transition: border-color 120ms ease;
+  transition:
+    border-color 120ms ease,
+    width 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.panelStage[data-dual] .card {
+  width: var(--dual-card-width, 480px);
+}
+
+.panelStage[data-instant] .card {
+  transition: none;
 }
 
 .card[data-pinned] {
@@ -632,6 +657,36 @@
   right: 0;
 }
 
+/* An open chat is boxed by its provider colour: the top and bottom edges fade inward like the
+   side tint, with the same tree inset. */
+.edgeTop,
+.edgeBottom {
+  position: absolute;
+  left: calc(0px - var(--thread-inset, 0px));
+  right: 0;
+  height: 12px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.edgeTop {
+  top: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--provider-tint) 30%, transparent),
+    transparent
+  );
+}
+
+.edgeBottom {
+  bottom: 0;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--provider-tint) 30%, transparent),
+    transparent
+  );
+}
+
 .row[data-provider='codex'],
 .fileRow[data-provider='codex'] {
   --provider-tint: var(--provider-codex);
@@ -736,7 +791,9 @@
   overflow: hidden;
   white-space: nowrap;
   /* A long title fades out before whatever sits beside it, rather than ending in "…". */
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+  /* Closes part of the row's gap, so the fade ends close to the label beside it. */
+  margin-right: -3px;
 }
 
 .composing {
@@ -946,7 +1003,8 @@
   font-size: 11px;
   overflow: hidden;
   white-space: nowrap;
-  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  margin-right: -3px;
 }
 
 /* The badge already fills the gutter. */
@@ -1904,11 +1962,6 @@ span.planStep {
 
 .workspaceResizeArea * {
   cursor: inherit;
-}
-
-.workspaceResizeArea:focus-visible {
-  outline: 1px solid var(--faint);
-  outline-offset: -1px;
 }
 
 .usage {
