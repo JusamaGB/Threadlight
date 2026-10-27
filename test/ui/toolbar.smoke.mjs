@@ -259,14 +259,23 @@ async function checkPinning(page) {
     )
     await page.waitForFunction(
       () =>
-        getComputedStyle(document.querySelector('[data-card]')).borderTopColor ===
-        getComputedStyle(document.querySelector('[data-header-wire] .conductor')).stroke,
+        getComputedStyle(document.querySelector('[data-card]'))
+          .getPropertyValue('--pin-colour')
+          .trim() ===
+        document.querySelector('[data-header-wire] .conductor').getAttribute('stroke'),
     )
-    assert.notEqual(
+    assert.equal(
       await pin.evaluate((e) => getComputedStyle(e).boxShadow),
       'none',
-      'the perimeter glows in the clip colour',
+      'there is no full-card glow',
     )
+    const glow = await header.evaluate((e) => {
+      const s = getComputedStyle(e, '::after')
+      return { shadow: s.boxShadow, bottom: s.bottom, mask: s.maskImage }
+    })
+    assert.notEqual(glow.shadow, 'none', 'the muted glow is confined to the header')
+    assert.equal(glow.bottom, '6px', 'the glow ends above the header divider')
+    assert.notEqual(glow.mask, 'none', 'the glow fades out toward the divider')
     assert.equal(await view.getAttribute('data-thread-view'), mode, 'pinning keeps the chosen view')
     const before = await leaveCalls()
     await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))

@@ -37,7 +37,7 @@ or non-interactive title immediately toggles pinned/unpinned on every page,
 including Settings, Agent, the workspace picker, both diff scopes and Shared Spaces.
 It preserves Active, Recent, Workspace or All, the selected workspace and expanded rows. A third click has no
 additional action; there is no triple-click gesture or delay waiting for one.
-Every pinned page shows a glowing perimeter matching the header wire clip. The
+Every pinned page shows a muted top-edge pinstripe matching the header wire clip. The
 header's double-click gesture or focused Enter/Space action unpins without resetting the view.
 
 Recent shows a compact `−count+` control in place of its bullet/count, using the
@@ -107,9 +107,12 @@ While pinned, pointer leave keeps the panel open. Unpinning restores the existin
 pointer-leave behavior on every page, including Shared Spaces, without changing the selected view. The existing fresh-open
 reset to Active remains separate from pinning. Voice Open commands still choose
 the full list explicitly before pinning it.
-Pinned state is shown by a glowing one-pixel perimeter using the header wire
-clip's connected or disconnected conductor colour. There is no pin icon taking
-header space, on either the list or subpages. Double-clicking the header still
+Pinned state is shown by a muted one-pixel pinstripe along the header's top edge
+and rounded top corners, fading back to the ordinary border within 18px. A soft
+header-only glow ends 6px above the header divider. The colour uses the header wire
+clip's connected or disconnected conductor colour at 75%, mixed with 25% panel
+background. There is no pin icon taking header space, on either the list or
+subpages. Double-clicking the header still
 toggles pinning; the header can also receive keyboard focus and Enter or Space
 toggles it. Tour explains this gesture. The count-to-divider gap is 2px and the
 provider begins 3px after the divider's border; icon spacing on the right is retained.
