@@ -47,7 +47,10 @@ import { setupSpaces, checkSpaces, checkSpacesSetup } from './spaces.smoke.mjs'
 // Voice choices open a hover menu; clicking the value button holds it open for the pick.
 const chooseSetting = async (page, setting, option) => {
   await page.getByRole('button', { name: new RegExp(`^${setting}:`) }).click()
-  await page.getByRole('menuitem', { name: option, exact: true }).click()
+  // The value already chosen is not listed in its own menu.
+  const item = page.getByRole('menuitem', { name: option, exact: true })
+  if ((await item.count()) === 0) return page.keyboard.press('Escape')
+  await item.click()
 }
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -163,6 +166,7 @@ const source = (provider) => ({
             anyWorking: false,
             threads:
               !workspacePaths ||
+              workspaceViews[provider]?.everything ||
               workspaceViews[provider]?.expanded?.includes(workspacePaths[provider])
                 ? Array.from({ length: workspaceRows ?? 1 }, (_, i) => ({
                     session:

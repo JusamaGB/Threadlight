@@ -59,6 +59,8 @@ export async function checkHoverMotion(page, capture) {
     )
     await choose('Recent')
     await page.locator('header').hover({ position: { x: 2, y: 2 } })
+    await tip.waitFor({ state: 'detached' }) // a press no longer closes it; leaving does
+    await page.waitForTimeout(400)
     const baseline = await page.locator('[data-card]').boundingBox()
     await page.getByLabel(/^Claude · 5-hour limit/).hover()
     const opening = await sample()

@@ -133,6 +133,8 @@ export function Tip({
     }
   }, [dismiss])
   const track = (event: MouseEvent<HTMLElement>) => {
+    // While a menu is open it has the pointer's attention, not this target.
+    if (document.querySelector('[role="menu"]') && !anchor.current?.closest('[role="menu"]')) return
     if (
       dismissedAt.current?.screenX === event.screenX &&
       dismissedAt.current?.screenY === event.screenY
@@ -195,14 +197,9 @@ export function Tip({
         if (!hasDockedHover(anchor.current)) dismiss()
         props.onMouseLeave?.(event)
       }}
-      onMouseDown={(event) => {
-        if (
-          !hasDockedHover(anchor.current) ||
-          !anchor.current?.closest('[data-workspace-resizing]')
-        )
-          dismiss()
-        props.onMouseDown?.(event)
-      }}
+      // A press leaves the hint as it is: it goes when the pointer leaves, or when what is
+      // under the pointer moves or changes (checked after every render).
+      onMouseDown={props.onMouseDown}
       onClick={onClick}
     >
       {children}

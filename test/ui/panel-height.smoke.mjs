@@ -218,6 +218,8 @@ export async function checkPanelHeight(page) {
   const expandedList = page.locator('header button[data-thread-view]')
   await expandedList.click()
   await page.locator('[data-session-id="synthetic-height-18"]').waitFor()
+  await page.mouse.move(2, 2) // a press keeps its hint open; measure the card without one
+  await page.waitForTimeout(400)
   const measure = () =>
     page.evaluate(() => {
       const card = document.querySelector('[data-card]')

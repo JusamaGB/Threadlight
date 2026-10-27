@@ -178,8 +178,9 @@ export async function checkTips(page, row, capture = async () => {}) {
     const pointer = await context('Claude')
     await page.getByRole('tooltip', { name: 'Context 20%', exact: true }).waitFor()
     await page.mouse.down()
-    assert.equal(await tip.count(), 0, 'clicking dismisses the bubble')
-    await page.mouse.move(pointer.x, 5)
+    assert.equal(await tip.count(), 1, 'pressing on the target keeps the bubble')
+    await page.mouse.move(5, 5)
+    await tip.waitFor({ state: 'detached' }) // it goes when the pointer leaves
     await page.mouse.up()
     // The clock is still paused: none of these bubbles may require a timer to appear.
     await page.getByLabel(/^Claude · 5-hour limit 20%/).hover()
@@ -257,7 +258,7 @@ export async function checkTips(page, row, capture = async () => {}) {
       window.proof.emit('onSnapshot', await window.threadlight.getSnapshot()),
     )
     console.log(
-      'PASS: short pointer tips, long usage/task hints between bars, single owner, and leave/click/reorder/scroll dismissal with frozen timers.',
+      'PASS: short pointer tips, long usage/task hints between bars, single owner, and leave/reorder/scroll dismissal (a press keeps it) with frozen timers.',
     )
   } finally {
     await page.clock.resume()
