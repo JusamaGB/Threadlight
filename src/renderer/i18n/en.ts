@@ -278,7 +278,6 @@ export const en = {
     localStt: 'Local STT',
     gptLive: 'GPT Live',
     localDestination: 'Send text to',
-    localSttHint: 'Transcribe on this PC, then send text to the selected destination.',
     gptLiveNeedsCodex:
       'GPT Live requires a Codex Agent conversation. Choose Codex in Agent settings; end an existing Claude conversation first.',
     agentConversation: 'Agent conversation',

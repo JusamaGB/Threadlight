@@ -99,9 +99,6 @@ export function SettingsView({
             }}
           />
         </Row>
-        {settings.voiceMode === 'local-stt' && (
-          <p className={styles.footer}>{en.settings.localSttHint}</p>
-        )}
         {settings.voiceMode === 'gpt-live' &&
           (currentAgentProvider ?? settings.agentProvider) !== 'codex' && (
             <p className={styles.error}>{en.settings.gptLiveNeedsCodex}</p>
@@ -245,7 +242,7 @@ export function SettingsView({
       </Group>
 
       <Group label={en.settings.app}>
-        <Row label={en.settings.launchAtSignIn} error={errors.launchAtSignIn}>
+        <Row label={en.settings.launchAtSignIn} error={errors.launchAtSignIn} slim>
           <Toggle
             on={settings.launchAtSignIn}
             label={en.settings.launchAtSignIn}
@@ -279,11 +276,15 @@ function Row(props: {
   disabled?: boolean
   /** Pulls the row up a little, closing the gap above it. */
   tight?: boolean
+  /** A single-line row only as tall as its control, so a group's label sits close above it. */
+  slim?: boolean
   children: ReactNode
 }) {
   return (
     <div
-      className={props.tight ? `${styles.row} ${styles.rowTight}` : styles.row}
+      className={[styles.row, props.tight && styles.rowTight, props.slim && styles.rowSlim]
+        .filter(Boolean)
+        .join(' ')}
       aria-disabled={props.disabled || undefined}
     >
       <div className={styles.text}>
