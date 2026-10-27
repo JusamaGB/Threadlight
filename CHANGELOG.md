@@ -6,6 +6,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Centre wires in dual view are tidier: three slots (Claude side, middle, Codex side) with a group sitting on the side its threads are on, short spikes that stay clear of row text, and rounded joins. Wires are grey until their group is lit, then show their colour. While a wire is lit, the text of every thread outside it dims a little.
+
 - The swirling dot is larger: 32 px instead of 22 px, about the size of a taskbar icon, so it is easier to see. The needs-input drips scale with it.
 
 - Workspace wires now work in dual view: the same rail runs down the divider between the columns, joining threads of one repo across Claude and Codex. The longest group sits dead centre with a spike to each thread, and overlapping shorter groups step to alternate sides and reach further, layered as before. No extra width.

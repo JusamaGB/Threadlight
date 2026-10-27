@@ -38,23 +38,24 @@ export function layoutWorkspaceWires(spans: Span[]) {
 }
 
 /**
- * Beside two columns the rail runs down the divider instead of the card's edge. The lanes
- * are the same ones layoutWorkspaceWires gives (longest first, overlapping ones one further
- * out), but "further out" has no single direction there: lane 0 is dead centre and the rest
- * step to either side of it, alternating, with spikes that reach further into the rows.
+ * Beside two columns the rail runs down the divider instead of the card's edge, in three
+ * slots 3 px apart: the Claude side, the middle and the Codex side. A group sits on the side
+ * its threads are on (the middle when it has both), longer groups choose first, and a group
+ * that overlaps one already in its slot takes the next preferred one. When all are taken it
+ * shares, drawn on top; only one group is lit at a time, so the overlap does not matter.
  */
 export const CENTRE_HALF = 16
-const CENTRE_STEP = 4
-const CENTRE_REACH = 5
-const CENTRE_REACH_STEP = 3
-
-export const centreOffset = (lane: number) =>
-  lane === 0
-    ? 0
-    : Math.min(CENTRE_HALF - 6, Math.ceil(lane / 2) * CENTRE_STEP) * (lane % 2 ? -1 : 1)
-
-export const centreReach = (lane: number) =>
-  Math.min(CENTRE_HALF - 1, CENTRE_REACH + CENTRE_REACH_STEP * lane)
+const SLOT_STEP = 3
+export const CENTRE_SLOTS = [-1, 0, 1] as const
+const PREFERRED: Record<'left' | 'both' | 'right', number[]> = {
+  both: [0, -1, 1],
+  right: [1, 0, -1],
+  left: [-1, 0, 1],
+}
+/** Spikes stay short: a few pixels past the rail on a row's side, never far into its text. */
+const SPIKE = 3
+const SPIKE_MIN = 4
+const SPIKE_MAX = 9
 
 /** One member of a wire: where its row's anchor sits, and which column the row is in. */
 export interface CentreMember {
@@ -63,21 +64,67 @@ export interface CentreMember {
   side: -1 | 1
 }
 
-/** The path for one wire, in a box CENTRE_HALF * 2 wide whose middle is the divider. */
+export interface CentreSpan {
+  key: string
+  members: CentreMember[]
+}
+
+/** Which slot (an offset from the divider, in px) each group's rail takes. */
+export function placeCentreWires(spans: CentreSpan[]): { key: string; offset: number }[] {
+  const ranged = spans
+    .map((span) => {
+      const ys = span.members.map((m) => m.y)
+      const sides = new Set(span.members.map((m) => m.side))
+      return {
+        key: span.key,
+        first: Math.min(...ys),
+        last: Math.max(...ys),
+        zone:
+          sides.size > 1
+            ? ('both' as const)
+            : sides.has(1)
+              ? ('right' as const)
+              : ('left' as const),
+      }
+    })
+    .filter((s) => Number.isFinite(s.first) && s.last > s.first)
+    .sort((a, b) => b.last - b.first - (a.last - a.first) || a.key.localeCompare(b.key))
+  const used = new Map<number, typeof ranged>()
+  return ranged.map((span) => {
+    const clashes = (slot: number) =>
+      (used.get(slot) ?? []).filter((o) => span.first <= o.last && span.last >= o.first).length
+    const order = PREFERRED[span.zone]
+    const slot =
+      order.find((o) => clashes(o) === 0) ?? [...order].sort((a, b) => clashes(a) - clashes(b))[0]!
+    used.set(slot, [...(used.get(slot) ?? []), span])
+    return { key: span.key, offset: slot * SLOT_STEP }
+  })
+}
+
+/** How far from the divider a member's spike ends: just past the rail on its own side. */
+const spikeEnd = (offset: number, side: number) =>
+  side *
+  Math.min(SPIKE_MAX, offset * side > 0 ? Math.abs(offset) + SPIKE : SPIKE_MIN + Math.abs(offset))
+
+/**
+ * The path for one wire, in a box CENTRE_HALF * 2 wide whose middle is the divider. The two
+ * ends of the rail curve into their spikes; the spikes between branch off it with a fillet.
+ */
 export function centreWirePath(
   members: CentreMember[],
-  lane: number,
-  radius = 3,
-): { first: number; last: number; path: string } {
+  offset: number,
+  radius = 4,
+  fillet = 3,
+): string {
   const sorted = [...members].sort((a, b) => a.y - b.y)
-  const x = CENTRE_HALF + centreOffset(lane)
-  const reach = centreReach(lane)
-  const start = (member: CentreMember) => CENTRE_HALF + member.side * reach
+  const x = CENTRE_HALF + offset
+  const end = (member: CentreMember) => CENTRE_HALF + spikeEnd(offset, member.side)
+  const toward = (member: CentreMember) => Math.sign(end(member) - x) || 1
   const head = sorted[0]!
   const tail = sorted.at(-1)!
   const r = Math.min(radius, (tail.y - head.y) / 2)
-  const toward = (member: CentreMember) => Math.sign(start(member) - x)
-  let path = `M ${start(head)} ${head.y} H ${x + toward(head) * r} Q ${x} ${head.y} ${x} ${head.y + r} V ${tail.y - r} Q ${x} ${tail.y} ${x + toward(tail) * r} ${tail.y} H ${start(tail)}`
-  for (const member of sorted.slice(1, -1)) path += ` M ${x} ${member.y} H ${start(member)}`
-  return { first: head.y, last: tail.y, path }
+  let path = `M ${end(head)} ${head.y} H ${x + toward(head) * r} Q ${x} ${head.y} ${x} ${head.y + r} V ${tail.y - r} Q ${x} ${tail.y} ${x + toward(tail) * r} ${tail.y} H ${end(tail)}`
+  for (const member of sorted.slice(1, -1))
+    path += ` M ${x} ${member.y - fillet} Q ${x} ${member.y} ${x + toward(member) * fillet} ${member.y} H ${end(member)}`
+  return path
 }

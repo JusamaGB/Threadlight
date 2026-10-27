@@ -639,10 +639,16 @@
   box-shadow: calc(0px - var(--thread-inset, 0px)) 0 0 rgb(255 255 255 / 4.3%);
 }
 
+/* A lit wire: every thread outside it dims its text a little. */
+[data-wire-trace] .row:not([data-wire-linked], .expanded) .rowButton {
+  opacity: 0.6;
+}
+
 .rowButton {
   display: block;
   width: 100%;
   padding: 1.5px 6px 1.5px 10px;
+  transition: opacity 120ms ease;
 }
 
 /* Overlay the whole row so raised details and cards don't interrupt the narrow edge tint. */

@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   CENTRE_HALF,
-  centreOffset,
-  centreReach,
   centreWirePath,
   layoutWorkspaceWires,
+  placeCentreWires,
 } from '../src/shared/workspaceWires'
 
 const span = (key: string, first: number, last: number) => ({ key, first, last })
@@ -68,31 +67,56 @@ describe('workspace wire lanes', () => {
 })
 
 describe('workspace wires down the centre', () => {
-  it('puts the longest lane dead centre and alternates the rest either side', () => {
-    expect([0, 1, 2, 3, 4].map(centreOffset)).toEqual([0, -4, 4, -8, 8])
+  const m = (y: number, side: -1 | 1) => ({ y, side })
+  const slots = (spans: Parameters<typeof placeCentreWires>[0]) =>
+    Object.fromEntries(placeCentreWires(spans).map((p) => [p.key, p.offset]))
+
+  it('keeps a group on the side its threads are on, and a mixed one in the middle', () => {
+    expect(
+      slots([
+        { key: 'mixed', members: [m(0, -1), m(100, 1)] },
+        { key: 'codex', members: [m(10, 1), m(90, 1)] },
+        { key: 'claude', members: [m(20, -1), m(80, -1)] },
+      ]),
+    ).toEqual({ mixed: 0, codex: 3, claude: -3 })
   })
 
-  it('keeps every lane inside the strip, with spikes reaching further as lanes step out', () => {
-    for (let lane = 0; lane < 12; lane++) {
-      expect(Math.abs(centreOffset(lane))).toBeLessThan(CENTRE_HALF)
-      expect(centreReach(lane)).toBeLessThan(CENTRE_HALF)
-    }
-    expect(centreReach(1)).toBeGreaterThan(centreReach(0))
-    expect(centreReach(2)).toBeGreaterThan(centreReach(1))
+  it('puts a longer group first, so a shorter overlapping one takes the next preferred slot', () => {
+    expect(
+      slots([
+        { key: 'long', members: [m(0, 1), m(200, 1)] },
+        { key: 'short', members: [m(50, 1), m(100, 1)] },
+        { key: 'shortest', members: [m(60, 1), m(70, 1)] },
+      ]),
+    ).toEqual({ long: 3, short: 0, shortest: -3 })
   })
 
-  it('draws a spike from each thread, either side of the divider, to the rail', () => {
-    const { first, last, path } = centreWirePath(
-      [
-        { y: 100, side: 1 },
-        { y: 20, side: -1 },
-        { y: 60, side: 1 },
-      ],
-      0,
+  it('resets for groups that do not overlap, and shares a slot when all three are taken', () => {
+    expect(
+      slots([
+        { key: 'a', members: [m(0, 1), m(40, 1)] },
+        { key: 'b', members: [m(100, 1), m(140, 1)] },
+      ]),
+    ).toEqual({ a: 3, b: 3 })
+    const crowded = slots(
+      ['a', 'b', 'c', 'd'].map((key, i) => ({ key, members: [m(i, 1), m(100 - i, 1)] })),
     )
-    expect([first, last]).toEqual([20, 100])
+    expect(Object.values(crowded).every((offset) => Math.abs(offset) <= 3)).toBe(true)
+  })
+
+  it('draws short spikes, with a rounded end and a filleted branch', () => {
+    const path = centreWirePath([m(100, 1), m(20, -1), m(60, 1)], 0)
     expect(path).toBe(
-      `M ${CENTRE_HALF - 5} 20 H ${CENTRE_HALF - 3} Q ${CENTRE_HALF} 20 ${CENTRE_HALF} 23 V 97 Q ${CENTRE_HALF} 100 ${CENTRE_HALF + 3} 100 H ${CENTRE_HALF + 5} M ${CENTRE_HALF} 60 H ${CENTRE_HALF + 5}`,
+      `M ${CENTRE_HALF - 4} 20 H ${CENTRE_HALF - 4} Q ${CENTRE_HALF} 20 ${CENTRE_HALF} 24 V 96 Q ${CENTRE_HALF} 100 ${CENTRE_HALF + 4} 100 H ${CENTRE_HALF + 4} M ${CENTRE_HALF} 57 Q ${CENTRE_HALF} 60 ${CENTRE_HALF + 3} 60 H ${CENTRE_HALF + 4}`,
     )
+  })
+
+  it('never lets a spike run more than 9 px from the divider', () => {
+    for (const offset of [-3, 0, 3])
+      for (const side of [-1, 1] as const) {
+        const ends = centreWirePath([m(0, side), m(50, side)], offset).match(/H (-?[\d.]+)/g)!
+        for (const end of ends)
+          expect(Math.abs(Number(end.slice(2)) - CENTRE_HALF)).toBeLessThanOrEqual(9)
+      }
   })
 })
