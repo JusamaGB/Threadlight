@@ -19,7 +19,7 @@ import {
   workspaceFolder,
   workspaceInScope,
 } from '../../shared/providers'
-import type { Session, ThreadNode } from '../../shared/types'
+import type { Provider, Session, ThreadNode, Workspace } from '../../shared/types'
 import { Composer } from '../composer/Composer'
 import { useDotDrag } from '../hooks/useDotDrag'
 import { useAgent } from '../hooks/useAgent'
@@ -1060,6 +1060,20 @@ export function Panel() {
     event.preventDefault()
     setMenu({ x: event.clientX, y: event.clientY, session })
   }
+  // Dual view splits the workspace tree the same way as the recent list: each column keeps the
+  // workspace headers and shows only that provider's threads. A workspace with no threads loaded
+  // yet (collapsed) stays in both columns so either header can open it.
+  const workspacesOf = (provider: Provider): Workspace[] => {
+    const only = (nodes: ThreadNode[]): ThreadNode[] =>
+      nodes
+        .filter((node) => sessionProvider(node.session.id) === provider)
+        .map((node) => ({ ...node, children: only(node.children) }))
+    return snapshot.workspaces.flatMap((workspace) => {
+      if (workspace.threads.length === 0) return [workspace]
+      const threads = only(workspace.threads)
+      return threads.length > 0 ? [{ ...workspace, threads }] : []
+    })
+  }
   // Dual view puts Claude and Codex side by side, so it needs both, and it is offered in the
   // Recent and Workspace lists. Single view stays reachable from anywhere while dual is on.
   const layoutMenuItems: MenuItem[] = wantDual
@@ -1099,6 +1113,15 @@ export function Panel() {
       onShowChanges={() => setChangesFor({ sessionId: session.id, scope: 'thread' })}
     />
   )
+
+  const treeProps = {
+    only: listMode === 'workspace' ? treeFocus : null,
+    isOpen,
+    onToggle: toggleWorkspace,
+    onShowMore: (id: string) => setMoreWorkspaces((list) => [...list, id]),
+    emptyMessage: emptyWindow,
+    renderRow,
+  }
 
   const onRowClick = (session: Session) => {
     if (picking) {
@@ -1563,15 +1586,23 @@ export function Panel() {
                 data-workspace-thread-list=""
               >
                 {tree ? (
-                  <WorkspaceTree
-                    workspaces={snapshot.workspaces}
-                    only={listMode === 'workspace' ? treeFocus : null}
-                    isOpen={isOpen}
-                    onToggle={toggleWorkspace}
-                    onShowMore={(id) => setMoreWorkspaces((list) => [...list, id])}
-                    emptyMessage={emptyWindow}
-                    renderRow={renderRow}
-                  />
+                  layout.wide ? (
+                    <div className={styles.dualList}>
+                      <div className={styles.dualLeft} data-split={layout.split || undefined}>
+                        {layout.split && (
+                          <WorkspaceTree {...treeProps} workspaces={workspacesOf('claude')} />
+                        )}
+                      </div>
+                      <div className={styles.dualRight}>
+                        <WorkspaceTree
+                          {...treeProps}
+                          workspaces={layout.split ? workspacesOf('codex') : snapshot.workspaces}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <WorkspaceTree {...treeProps} workspaces={snapshot.workspaces} />
+                  )
                 ) : (
                   <>
                     {shown.length === 0 && (

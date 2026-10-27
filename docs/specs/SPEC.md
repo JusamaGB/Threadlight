@@ -274,7 +274,9 @@ an answer stays inside its own column; the other column does not move.
 Dual applies to the Recent and Workspace lists. Active (short, and usually one or two
 threads) and All stay one column. Switching to one of those narrows the panel back to a
 single column without changing the saved choice, and returning to Recent or Workspace
-restores it. Workspace keeps a single column at the wider card width. The workspace wires
+restores it. In Workspace each column repeats the workspace headers and lists only that
+provider's threads (Claude left, Codex right); a workspace that is collapsed keeps its
+header in both columns, and either one opens it. The workspace wires
 hang off the card's left edge, so they are not drawn while the columns are split; the clip
 remains.
 

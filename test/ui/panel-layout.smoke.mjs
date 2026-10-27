@@ -168,16 +168,28 @@ async function withSixThreads(page) {
         lastActiveAt: Date.now() - minutes * 60000,
       })
       const codexId = (n) => `codex:aaaaaaaa-0000-4000-8000-00000000000${n}`
+      const sessions = [
+        make(claude, 'claude-1', 'Live Voice Timer Fix', 2),
+        make(codex, codexId(1), 'Handle UI changes and hotfixes', 4),
+        make(claude, 'claude-2', 'Check sign-in launch integrations', 6),
+        make(codex, codexId(2), 'Review and merge all work', 8),
+        make(claude, 'claude-3', 'Add Threadlight to Hale.dev', 10),
+        make(codex, codexId(3), 'Set up E2E monitoring', 12),
+      ]
+      // The same threads, grouped into the one workspace they share, for the Workspace list.
+      const workspace = snap.workspaces?.[0]
       return {
         ...snap,
-        sessions: [
-          make(claude, 'claude-1', 'Live Voice Timer Fix', 2),
-          make(codex, codexId(1), 'Handle UI changes and hotfixes', 4),
-          make(claude, 'claude-2', 'Check sign-in launch integrations', 6),
-          make(codex, codexId(2), 'Review and merge all work', 8),
-          make(claude, 'claude-3', 'Add Threadlight to Hale.dev', 10),
-          make(codex, codexId(3), 'Set up E2E monitoring', 12),
-        ],
+        sessions,
+        workspaces: workspace
+          ? [
+              {
+                ...workspace,
+                threadCount: sessions.length,
+                threads: sessions.map((session) => ({ session, children: [] })),
+              },
+            ]
+          : snap.workspaces,
       }
     }
     window.threadlight = new Proxy(real, {
@@ -255,8 +267,26 @@ export async function checkDualDetails(page, capture) {
 
     await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'single' }))
     await page.waitForFunction(() => document.querySelectorAll('[data-wire-key]').length === 1)
+
+    // The Workspace list splits the same way: Claude's threads left, Codex's right.
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({ listMode: 'workspace', panelLayout: 'dual' }),
+    )
+    await page.waitForFunction(() => {
+      const left = document.querySelector('[data-session-id="claude-1"]')
+      const right = document.querySelector('[data-session-id^="codex:"]')
+      return (
+        left &&
+        right &&
+        left.getBoundingClientRect().left < right.getBoundingClientRect().left &&
+        Math.abs(left.getBoundingClientRect().top - right.getBoundingClientRect().top) < 1
+      )
+    })
+    await settled(page)
+    assert.equal(await page.locator('[data-session-id]').count(), 6, 'every thread is listed once')
+    await capture('panel-layout-dual-workspace')
     console.log(
-      'PASS: dual view hides the wires but keeps the clip, an open thread moves only its own column, and the wire returns in single view.',
+      'PASS: dual view hides the wires but keeps the clip, an open thread moves only its own column, the Workspace list splits by provider, and the wire returns in single view.',
     )
   } finally {
     await page.evaluate((settings) => window.threadlight.updateSettings(settings), {
