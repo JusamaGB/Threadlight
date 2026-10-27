@@ -109,7 +109,8 @@ export async function checkChecklistDiff(page, row, capture) {
     assert.equal(await link('src/a.ts').getAttribute('aria-expanded'), 'true')
     assert.equal(await step.getAttribute('aria-expanded'), 'true')
     assert.equal(await row('Claude').getAttribute('aria-expanded'), 'true')
-    assert.equal(await tooltip.count(), 0)
+    await page.mouse.move(2, 2) // a press keeps the tip; moving away closes it
+    await tooltip.waitFor({ state: 'detached' })
     assert.ok(
       (await calls()).some((call) => call[0] === 'diff' && call[2] === 'shared/src/a.ts'),
       'Git casing and nested cwd resolve to its canonical path',
@@ -183,7 +184,7 @@ export async function checkChecklistDiff(page, row, capture) {
       .hover()
     const worktreeTip = page.getByRole('tooltip')
     await worktreeTip.waitFor()
-    assert.match(await worktreeTip.innerText(), /Thread diff · 2 files changed/)
+    assert.match(await worktreeTip.innerText(), /Thread diff\s+2 files changed/)
     assert.doesNotMatch(await worktreeTip.innerText(), /Worktree total/)
     await capture('thread-diff-tooltip')
     await row('Claude')

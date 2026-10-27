@@ -219,7 +219,7 @@ async function checkAllDrivesWorkspace(page, capture) {
     await page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'views').at(-1)[1]),
     ['claude', 'codex'].map((provider) => ({
       provider,
-      view: { expanded: [paths[provider]], showAll: [paths[provider]] },
+      view: { expanded: [], showAll: [], everything: true }, // every workspace, however many
     })),
   )
   await capture('workspace-all-drives')

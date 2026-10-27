@@ -129,7 +129,7 @@ export function HoverInfo({
     const intent = (event: Event) => {
       if (!dock) return
       if (event instanceof KeyboardEvent) {
-        if (event.key === 'Escape') {
+        if (event.key === 'Escape' && !document.querySelector('[role="menu"]')) {
           event.preventDefault()
           event.stopPropagation()
           dismiss()
@@ -141,6 +141,17 @@ export function HoverInfo({
       if (event.target instanceof Node && dock.contains(event.target)) return
       dismiss()
     }
+    // A menu opened from the pointer's target takes over: the hint steps aside for it.
+    const menus = new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (
+            node instanceof Element &&
+            (node.matches('[role="menu"]') || node.querySelector('[role="menu"]'))
+          )
+            return dismiss()
+    })
+    menus.observe(document.body, { childList: true, subtree: true })
     document.addEventListener('scroll', scroll, true)
     document.addEventListener('mousemove', movement, true)
     document.addEventListener('wheel', intent, true)
@@ -148,6 +159,7 @@ export function HoverInfo({
     document.addEventListener('keydown', intent, true)
     document.addEventListener('mouseleave', dismiss)
     return () => {
+      menus.disconnect()
       window.removeEventListener('blur', dismiss)
       document.removeEventListener('scroll', scroll, true)
       document.removeEventListener('mousemove', movement, true)
