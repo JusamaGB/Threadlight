@@ -61,6 +61,8 @@ const api: ThreadlightApi = {
   onPanelPointerOutside: (listener) => subscribe<void>(IPC.panelPointerOutside, listener),
   setStayOpen: (on) => ipcRenderer.send(IPC.panelStayOpen, on),
   setWorkspaceWireControl: (bounds) => ipcRenderer.send(IPC.workspaceWireControl, bounds),
+  setWorkspaceWireRegions: (regions) => ipcRenderer.send(IPC.workspaceWireRegions, regions),
+  setPanelLayout: (layout) => ipcRenderer.invoke(IPC.panelLayout, layout),
   openInClaude: (appId) => ipcRenderer.send(IPC.openInClaude, appId),
 
   sendMessage: (sessionId, text) => ipcRenderer.invoke(IPC.sendMessage, sessionId, text),
