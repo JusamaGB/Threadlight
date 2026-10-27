@@ -22,7 +22,8 @@
     "test:watch": "vitest",
     "check": "npm run plugins:check && npm run lint && npm run typecheck && npm run test && npm run format:check",
     "plugins:package": "node scripts/package-memory-plugins.mjs",
-    "plugins:check": "node scripts/package-memory-plugins.mjs --check"
+    "plugins:check": "node scripts/package-memory-plugins.mjs --check",
+    "storybook": "node storybook/run.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",
