@@ -243,7 +243,12 @@ describe('panel movement and available height', () => {
     windows.setAttention([thread])
     expect(windows.attentionMotion.active).toBe(false)
     windows.setClaudeRunning(true)
-    expect(windows.attentionMotion).toMatchObject({ active: true, provider: 'codex', floor: 840 })
+    expect(windows.attentionMotion).toMatchObject({
+      active: true,
+      provider: 'codex',
+      providers: ['codex'],
+      floor: 840,
+    })
     windows.openPanel()
     expect(windows.attentionMotion.active).toBe(false)
     expect(state.nativeWindows.at(-1)?.visible).toBe(false)
@@ -261,7 +266,7 @@ describe('panel movement and available height', () => {
     expect(windows.attentionMotion.active).toBe(false)
   })
 
-  it('keeps one waiting provider stable, then switches when that thread is answered', () => {
+  it('drips once per waiting thread in the order the panel lists them, as threads are answered', () => {
     const windows = new WindowManager()
     windows.setClaudeRunning(true)
     const claude = {
@@ -272,10 +277,25 @@ describe('panel movement and available height', () => {
     } as Session
     const codex = { ...claude, id: 'codex:waiting', lastActiveAt: 20 } as Session
     windows.setAttention([claude])
+    expect(windows.attentionMotion.providers).toEqual(['claude'])
+    // Newest first, like the Active list: the Codex thread is listed above the Claude one.
     windows.setAttention([claude, codex])
-    expect(windows.attentionMotion.provider).toBe('claude')
-    windows.setAttention([{ ...claude, state: 'idle' }, codex])
+    expect(windows.attentionMotion.providers).toEqual(['codex', 'claude'])
     expect(windows.attentionMotion.provider).toBe('codex')
+    windows.setAttention([{ ...claude, state: 'idle' }, codex])
+    expect(windows.attentionMotion.providers).toEqual(['codex'])
+    windows.setAttention([
+      { ...claude, state: 'idle' },
+      { ...codex, state: 'idle' },
+    ])
+    expect(windows.attentionMotion.active).toBe(false)
+    // Ten drips at most, however many threads are waiting.
+    const crowd = Array.from(
+      { length: 14 },
+      (_, i) => ({ ...claude, id: `claude-${i}`, lastActiveAt: i }) as Session,
+    )
+    windows.setAttention(crowd)
+    expect(windows.attentionMotion.providers).toHaveLength(10)
     windows.setClaudeRunning(false)
     expect(windows.attentionMotion.active).toBe(false)
   })

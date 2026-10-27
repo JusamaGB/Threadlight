@@ -295,13 +295,21 @@ dashed activity track with no percentage arc. Reduced motion keeps the ring stil
 Active spinning indicators use vibrant Claude-orange strands and a glossy
 Codex-blue outward sweep. The voice ribbon retains its own evolving palette.
 While minimised, pending input in the listed Active/Recent threads instead shows
-the approved pool/hold/drop/splash in that thread's provider colour. The pending
-thread remains selected until answered, so unrelated activity does not switch its
-colour. A narrow transparent, non-focusable, click-through native window follows
+the approved pool/hold/drop/splash. There is one drip for each waiting thread, up to
+ten, in the order the Active list shows them (newest first), and each drop takes its
+own thread's provider colour. The wheel itself keeps its designed look for every
+provider: Claude-orange strands with the Codex-blue shimmer travelling outwards.
+With N threads waiting a drip leaves every 6 / N seconds, taking the threads in turn
+and starting again from the first, so more waiting threads means a faster drip. A
+drop forms at one wheel, so its forming (pool, pause and release) speeds up as drips
+get closer, finishing before the next begins, while the fall obeys real gravity.
+Answering a thread changes the pace without disturbing drops already falling. A
+narrow transparent, non-focusable, click-through native window follows
 the dot's display down to the bottom work-area/taskbar edge. Opening Threadlight,
 starting voice capture, disabling the provider or clearing pending input hides it.
 The dot keeps its existing hover/click target under the decorative overlay.
-Reduced motion holds the provider-coloured wheel and bead steady; hidden overlays
+Reduced motion holds the wheel and one bead, in the first waiting thread's colour,
+steady; hidden overlays
 schedule no animation. A dot too close to the bottom edge also uses the steady pose.
 The production renderer shares the preview's provider palettes and drop physics.
 

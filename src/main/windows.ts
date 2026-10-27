@@ -8,7 +8,7 @@ import { IPC, type PanelOpened } from '../shared/ipc'
 import { loadDotPosition, saveDotPosition, type Point } from './windowState'
 import { DOT_SIZE, micIndicatorBounds } from '../shared/micIndicator'
 import {
-  attentionThread,
+  attentionThreads,
   attentionProvider,
   NO_ATTENTION,
   WORKSPACE_GUTTER,
@@ -98,7 +98,7 @@ export class WindowManager {
   private openMicLive = false
   private pointerWatch: ReturnType<typeof setInterval> | null = null
   private attentionWindow: BrowserWindow | null = null
-  private attentionSession: Session | undefined
+  private attentionSessions: Session[] = []
   private attentionState: AttentionMotion = NO_ATTENTION
   private talking = false
   private gutterIgnored = false
@@ -362,7 +362,7 @@ export class WindowManager {
     return this.attentionState
   }
   setAttention(sessions: Session[]): void {
-    this.attentionSession = attentionThread(sessions, this.attentionSession?.id)
+    this.attentionSessions = attentionThreads(sessions)
     this.syncAttention()
   }
   setTalking(on: boolean): void {
@@ -376,8 +376,14 @@ export class WindowManager {
     this.attentionWindow?.webContents.send(IPC.attentionMotion, state)
   }
   private syncAttention(panelVisible = this.panel.isVisible()): void {
-    const selected = this.attentionSession
-    if (!selected || !this.claudeRunning || panelVisible || this.openMicLive || this.talking) {
+    const waiting = this.attentionSessions
+    if (
+      waiting.length === 0 ||
+      !this.claudeRunning ||
+      panelVisible ||
+      this.openMicLive ||
+      this.talking
+    ) {
       this.attentionWindow?.hide()
       this.broadcastAttention({ ...this.attentionState, active: false })
       return
@@ -398,9 +404,11 @@ export class WindowManager {
     }
     if (JSON.stringify(this.attentionWindow.getBounds()) !== JSON.stringify(bounds))
       this.attentionWindow.setBounds(bounds)
+    const providers = waiting.map(attentionProvider)
     this.broadcastAttention({
       active: true,
-      provider: attentionProvider(selected),
+      provider: providers[0]!,
+      providers,
       width,
       height,
       x: this.dotPosition.x + DOT_SIZE / 2 - x,

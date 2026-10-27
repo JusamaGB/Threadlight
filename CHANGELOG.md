@@ -6,6 +6,14 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **One drip for every thread that needs input.** While Threadlight is minimised, each
+  waiting thread (up to ten) now has its own drip, in the order the Active list shows
+  them, in its own provider's colour, instead of one drip for one chosen thread. With N
+  waiting a drip leaves every 6 / N seconds and the forming of each drop speeds up as
+  they get closer, so a crowd of waiting threads becomes a steady run of drops. The
+  wheel keeps its Claude-orange design with the Codex-blue shimmer for every provider;
+  only the drop takes a provider colour.
+
 - **Settings explain themselves.** Every setting now has a short hover description, with
   extra detail in Tour. Labels are shorter to match: Threads shown, List, Window, Count,
   Open on, Dot and Countdown. The Panel group is merged into App, which stays at the bottom.
