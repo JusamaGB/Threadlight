@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { useHelpMode } from './helpMode'
 import { usePanelRoom } from './room'
 import styles from './Panel.module.css'
 
-/** Short hints follow the cursor; longer messages open inside the usage-bar footer. */
+/** Short hints follow the cursor; longer messages, and every hint in Tour, open in the footer. */
 const GAP = 18
 const EDGE = 4
 export interface HoverPoint {
@@ -34,6 +35,7 @@ export function HoverInfo({
   const [dock, setDock] = useState<HTMLElement | null>(null)
   const [dockLimit, setDockLimit] = useState(180)
   const { opensDown, extra, reserve } = usePanelRoom()
+  const tour = useHelpMode() === 'tour'
   const [position, setPosition] = useState<{ top: number; left: number; maxWidth: number } | null>(
     null,
   )
@@ -62,7 +64,7 @@ export function HoverInfo({
       const long =
         measured.width > maxWidth / 2 || (probe.textContent?.trim().split(/\s+/).length ?? 0) > 5
       probe.remove()
-      if (slot && long) {
+      if (slot && (long || tour)) {
         target.setAttribute('data-hover-docked', '')
         const limit =
           Number.parseFloat(getComputedStyle(cardElement!).maxHeight) || window.innerHeight
@@ -100,7 +102,7 @@ export function HoverInfo({
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
-  }, [anchor, point, opensDown, extra, reserve, children, className])
+  }, [anchor, point, opensDown, extra, reserve, children, className, tour])
   useEffect(() => {
     // Own this subscription: the anchor may also listen with the same dismissal callback.
     const dismiss = () => onDismiss()
