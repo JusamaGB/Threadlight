@@ -76,6 +76,20 @@ if (setup) {
   app.on('window-all-closed', () => {})
 }
 
+/**
+ * Closes Threadlight and starts it again. The normal quit runs first (held cards are released,
+ * the Agent is retired); if that ever hangs, the process is forced out after a few seconds so
+ * the restart still happens. Settings and threads live on disk and are untouched.
+ */
+let restarting = false
+function restart(): void {
+  if (restarting) return
+  restarting = true
+  app.relaunch()
+  setTimeout(() => app.exit(0), 6000).unref()
+  app.quit()
+}
+
 async function start(): Promise<void> {
   const paths = defaultPaths()
   const settings = new SettingsStore(app.getPath('userData'))
@@ -358,6 +372,9 @@ async function start(): Promise<void> {
       ? windows.setWorkspacePanel(on)
       : null,
   )
+  ipcMain.on(IPC.restartApp, (event) => {
+    if (event.sender === windows.panel.webContents) restart()
+  })
   ipcMain.on(IPC.ignoreNeedsInput, (event, id: unknown, ignore: unknown) => {
     if (event.sender !== windows.panel.webContents) return
     if (typeof id !== 'string' || typeof ignore !== 'boolean') return
@@ -975,6 +992,7 @@ async function start(): Promise<void> {
       reportHotkey()
     },
     isPaused: () => trayPaused,
+    restart,
     quit: () => app.quit(),
   })
 

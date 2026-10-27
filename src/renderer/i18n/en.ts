@@ -304,6 +304,8 @@ export const en = {
     listCount: 'Count',
     hoverHelp: 'Hover help',
     launchAtSignIn: 'Launch at sign-in',
+    restart: 'Restart',
+    restartButton: 'Restart now',
     agent: 'Agent',
     lifetime: (minutes: number) =>
       minutes === 0 ? 'Until ended' : minutes < 60 ? `${minutes} min` : `${minutes / 60} h`,
@@ -370,6 +372,10 @@ export const en = {
       dot: {
         info: 'Puts the dot back in its default corner.',
         tour: 'You can drag the dot anywhere; this undoes that.',
+      },
+      restart: {
+        info: 'Closes Threadlight and starts it again.',
+        tour: 'Your settings and threads are untouched. Use it if the panel feels slow or stuck. The tray menu has the same Restart if the panel will not open.',
       },
       launch: {
         info: 'Starts a quiet launcher when you sign in to Windows.',

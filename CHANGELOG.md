@@ -6,6 +6,16 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Restart** in Settings → App, and in the tray menu, closes Threadlight and starts it again
+  (settings and threads are untouched). The tray item works even if the panel will not open;
+  if the normal quit ever hangs, the process is forced out after six seconds so the restart
+  still happens.
+- Fixed a slowdown with very long lists, such as Workspace across all drives. Moving rows
+  into dual view's columns read and animated each row in turn, so the browser redid layout
+  for every row again and again; positions are now read first and animated together, and past
+  120 rows the columns change without the glide. The "Last active" text is also much cheaper
+  to build for each row.
+
 - **Ignore** in a waiting thread's right-click menu. It sets the pending request aside in
   Threadlight only: the thread stays listed, its "Needs your input" tag and amber dot are
   toned down, it no longer stays pinned in Recent past the usual list, and it no longer

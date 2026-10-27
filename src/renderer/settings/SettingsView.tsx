@@ -260,6 +260,11 @@ export function SettingsView({
             {en.settings.reset}
           </button>
         </Row>
+        <Row label={en.settings.restart} help={en.settings.help.restart}>
+          <button className={styles.small} onClick={() => window.threadlight.restartApp()}>
+            {en.settings.restartButton}
+          </button>
+        </Row>
         <Row
           label={en.settings.launchAtSignIn}
           help={en.settings.help.launch}

@@ -25,7 +25,7 @@ import { checkHoverMotion } from './hover-motion.smoke.mjs'
 
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar, checkRecentLimit, checkSubpagePinning } from './toolbar.smoke.mjs'
-import { checkDualDetails, checkPanelLayout } from './panel-layout.smoke.mjs'
+import { checkDualDetails, checkDualLong, checkPanelLayout } from './panel-layout.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkWorkspacePicker } from './workspace-picker.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
@@ -444,6 +444,7 @@ checks: try {
           copyText: (...args) => window.proof.calls.push(['copy', ...args]),
           openInClaude: (...args) => window.proof.calls.push(['open', ...args]),
           ignoreNeedsInput: (...args) => window.proof.calls.push(['ignore', ...args]),
+          restartApp: () => window.proof.calls.push(['restart']),
         },
         {
           get(target, name) {
@@ -523,8 +524,29 @@ checks: try {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     assert.equal(await signIn.getAttribute('aria-checked'), 'false')
     assert.equal(await page.getByRole('switch', { name: /Launch/ }).count(), 1)
+    // A way out if the app ever feels stuck: Restart sits in App, explains itself, and asks the
+    // main process to relaunch.
+    const restart = page.getByRole('button', { name: 'Restart now', exact: true })
+    assert.equal(await restart.count(), 1)
+    await page.getByText('Restart', { exact: true }).hover()
+    assert.match(
+      await page.getByRole('tooltip').innerText(),
+      /Closes Threadlight and starts it again/,
+    )
+    assert.equal(
+      await page.evaluate(() => window.proof.calls.filter(([name]) => name === 'restart').length),
+      0,
+      'hovering does not restart',
+    )
+    await restart.click()
+    assert.equal(
+      await page.evaluate(() => window.proof.calls.filter(([name]) => name === 'restart').length),
+      1,
+    )
     assert.deepEqual(errors, [])
-    console.log('PASS: one sign-in switch, no helper text, enable/disable and reload.')
+    console.log(
+      'PASS: one sign-in switch, no helper text, enable/disable and reload; Restart explains itself and relaunches.',
+    )
     break checks
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'conversation-events') {
@@ -609,6 +631,7 @@ checks: try {
   if (process.env.THREADLIGHT_UI_FOCUS === 'panel-layout') {
     await checkPanelLayout(page, capture)
     await checkDualDetails(page, capture)
+    await checkDualLong(page)
     assert.deepEqual(errors, [])
     break checks
   }

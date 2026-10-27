@@ -85,6 +85,8 @@ const LINGER_MS = 30_000
 const LAYOUT_CARD_MS = 320
 /** Rows slide between the columns, then close up the gaps (or the reverse when collapsing). */
 const ROW_FLIP_MS = 560
+/** Past this many rows the columns change without the gliding animation. */
+const FLIP_MAX_ROWS = 120
 
 interface MenuState {
   x: number
@@ -178,16 +180,29 @@ export function Panel() {
    */
   const flipRows = (update: () => void, order: 'sideways-first' | 'vertical-first') => {
     const list = listElement.current
-    const before = new Map<string, DOMRect>()
-    list?.querySelectorAll<HTMLElement>('[data-session-id]').forEach((row) => {
-      before.set(row.dataset.sessionId!, row.getBoundingClientRect())
-    })
-    const heightBefore = list?.getBoundingClientRect().height ?? 0
+    const rowsBefore = list ? [...list.querySelectorAll<HTMLElement>('[data-session-id]')] : []
+    // A very long list is moved without the glide: hundreds of rows cannot be followed by eye
+    // and animating them all makes the panel stall.
+    if (!list || rowsBefore.length > FLIP_MAX_ROWS) return flushSync(update)
+    // Every position is read before anything is changed, so layout is worked out once.
+    const before = new Map(
+      rowsBefore.map((row) => [row.dataset.sessionId!, row.getBoundingClientRect()]),
+    )
+    const heightBefore = list.getBoundingClientRect().height
     flushSync(update)
-    if (!list || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    // The list keeps its old height while rows slide sideways, so none are clipped, and takes
-    // its new height while they close up (or open out).
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const heightAfter = list.getBoundingClientRect().height
+    const moves: { row: HTMLElement; dx: number; dy: number }[] = []
+    for (const row of list.querySelectorAll<HTMLElement>('[data-session-id]')) {
+      const from = before.get(row.dataset.sessionId!)
+      if (!from) continue
+      const to = row.getBoundingClientRect()
+      const dx = from.left - to.left
+      const dy = from.top - to.top
+      if (dx || dy) moves.push({ row, dx, dy })
+    }
+    // Then everything is animated. The list keeps its old height while rows slide sideways, so
+    // none are clipped, and takes its new height while they close up (or open out).
     if (Math.abs(heightBefore - heightAfter) > 1) {
       const held = order === 'sideways-first' ? heightBefore : heightAfter
       list.animate(
@@ -199,13 +214,7 @@ export function Panel() {
         { duration: ROW_FLIP_MS },
       )
     }
-    list.querySelectorAll<HTMLElement>('[data-session-id]').forEach((row) => {
-      const from = before.get(row.dataset.sessionId!)
-      if (!from) return
-      const to = row.getBoundingClientRect()
-      const dx = from.left - to.left
-      const dy = from.top - to.top
-      if (!dx && !dy) return
+    for (const { row, dx, dy } of moves)
       row.animate(
         [
           { transform: `translate(${dx}px, ${dy}px)`, easing: 'ease-in-out' },
@@ -219,7 +228,6 @@ export function Panel() {
         ],
         { duration: ROW_FLIP_MS },
       )
-    })
   }
   useEffect(() => {
     if (!settings) return
