@@ -263,6 +263,10 @@ export async function checkAgentSettings(page, capture) {
   await control('model').getByText('Sonnet', { exact: true }).waitFor()
   assert.equal((await page.evaluate(() => window.threadlight.getSettings())).agentWorker, 'sonnet')
   await choose('provider', 'Codex')
+  // The Agent block is rebuilt when the saved provider arrives; wait for that before focusing.
+  await page.waitForFunction(
+    async () => (await window.threadlight.getSettings()).agentProvider === 'codex',
+  )
   await control('provider').focus()
   await page.keyboard.press('Space')
   await page.getByRole('menu', { name: 'Agent provider' }).waitFor()
