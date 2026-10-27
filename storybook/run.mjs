@@ -28,7 +28,9 @@ const { IDLE_AGENT } = require(join(root, 'src/shared/agent.ts'))
 const { chromium } = require(process.env['THREADLIGHT_PLAYWRIGHT'] || 'playwright')
 
 const only = process.argv.slice(2)
-const frames = join(root, 'storybook/frames')
+// STORYBOOK_FRAMES picks another output folder; STORYBOOK_INIT names a script run in every page
+// before the app (for trying a layout idea without touching the app).
+const frames = process.env['STORYBOOK_FRAMES'] ?? join(root, 'storybook/frames')
 const SCALE = Number(process.env['STORYBOOK_SCALE'] ?? 2)
 
 // ----- the invented world, as the main process would report it -----
@@ -214,6 +216,8 @@ try {
     },
     { agent: IDLE_AGENT },
   )
+  if (process.env['STORYBOOK_INIT'])
+    await page.addInitScript({ path: process.env['STORYBOOK_INIT'] })
   const base = `http://127.0.0.1:${server.address().port}/`
   await page.goto(base + '?view=panel')
   await page.locator('[data-card]').waitFor()
@@ -233,7 +237,10 @@ try {
     await wait(450)
   }
   const row = (title) => page.locator('[data-session-id]').filter({ hasText: title }).first()
-  const frame = async (id, clipTo) => {
+  // The pointer is parked off the card unless a scene is about the hover (`keep`), so a stray
+  // hint never lands on a frame.
+  const frame = async (id, { clipTo, keep } = {}) => {
+    if (!keep) await page.mouse.move(630, 990)
     await wait(350)
     const stage = await page
       .locator(clipTo ?? '#root > div')

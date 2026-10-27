@@ -334,8 +334,17 @@ export function makeSessions(now = Date.now()) {
         ...t,
         startedAt: now + t.startedAt,
       })),
+      // The hooks are set up, so Threadlight holds the turn's end and a card can be answered
+      // from the panel: a hold id and a deadline, as the main process reports them.
       ...(extras.attention
-        ? { attention: { ...extras.attention, answerableUntil: extras.attention.answerableUntil } }
+        ? {
+            live: true,
+            attention: {
+              ...extras.attention,
+              holdId: `hold-${key}`,
+              answerableUntil: now + 5 * MIN,
+            },
+          }
         : {}),
     }
   })

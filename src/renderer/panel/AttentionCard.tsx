@@ -231,7 +231,6 @@ function NextStepCard({
         {(error ?? failed) && <p className={styles.qError}>{error ?? failed}</p>}
         {done === 'copied' && <p className={styles.qNote}>{en.attention.copied}</p>}
         {copyAndOpen && !done && <p className={styles.qNote}>{en.attention.openInClaudeNote}</p>}
-        {answerable && !locked && <p className={styles.qNote}>{en.attention.heldNote}</p>}
       </Buttons>
     </div>
   )
@@ -399,7 +398,6 @@ function QuestionCard({
           onClick={() => forward()}
         />
         {error && <p className={styles.qError}>{error}</p>}
-        {answerable && !submitted && <p className={styles.qNote}>{en.attention.heldNote}</p>}
       </Buttons>
     </div>
   )
@@ -499,7 +497,6 @@ function ApprovalCard({
           />
         )}
         {error && <p className={styles.qError}>{error}</p>}
-        {answerable && !done && <p className={styles.qNote}>{en.attention.heldNote}</p>}
       </Buttons>
     </div>
   )
@@ -545,7 +542,6 @@ function OfferCard({ session, title }: { session: Session; title: string }) {
           onClick={() => void answer('new-session')}
         />
         {error && <p className={styles.qError}>{error}</p>}
-        {!done && <p className={styles.qNote}>{en.attention.heldNote}</p>}
       </Buttons>
     </div>
   )
