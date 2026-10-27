@@ -49,8 +49,8 @@ export const settingsSchema = z.object({
   focusWorkspace: z.string().min(1).max(1000).nullable().default(null),
   /** Workspace view combines all known folders from the enabled applications. */
   workspaceAllDrives: z.boolean().default(false),
-  /** Sessions active within this many hours are listed. */
-  listWindowHours: z.number().int().min(1).max(168).default(24),
+  /** Sessions active within this many hours are listed; 0 lists threads of any age. */
+  listWindowHours: z.number().int().min(0).max(168).default(24),
   /** At most this many sessions are listed. */
   maxSessions: z.number().int().min(3).max(50).default(10),
   /** Workspace's picked maximum height in logical pixels; null uses the available work area. */

@@ -218,7 +218,7 @@ export class CodexTracker {
     private readonly hidden: (id: string, cwd: string) => boolean = () => false,
   ) {}
   configure(hours: number, max: number): void {
-    this.windowHours = hours
+    this.windowHours = hours > 0 ? hours : Infinity
     this.maxSessions = max
   }
   private async tail(path: string): Promise<Row[]> {

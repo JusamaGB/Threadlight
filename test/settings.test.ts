@@ -24,6 +24,9 @@ describe('parseSettings', () => {
       maxSessions: 12,
     })
     expect(validatePatch({ hoverHelp: 'always' }).ok).toBe(false)
+    // 0 hours is "no time limit"; anything beyond a week is still refused.
+    expect(validatePatch({ listWindowHours: 0 }).ok).toBe(true)
+    expect(validatePatch({ listWindowHours: 169 }).ok).toBe(false)
     const store = new SettingsStore(box.root)
     await store.load()
     for (const hoverHelp of ['tour', 'off', 'info'] as const) {

@@ -29,9 +29,35 @@ export async function checkRecentLimit(page, capture) {
     assert.equal(await page.getByRole('button', { name: 'Unpin' }).count(), 0)
     await capture('recent-count-compact')
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    const row = page.getByText('Sessions listed', { exact: true }).locator('../..')
+    const row = page.getByText('Count', { exact: true }).locator('../..')
     assert.equal(await row.locator('[class*="_value_"]').innerText(), '9')
     await row.getByRole('button', { name: 'More', exact: true }).click()
+
+    // Choosing the highlighted time again removes the limit; choosing another brings it back.
+    const windowRow = page.getByText('Window', { exact: true }).locator('../..')
+    const checked = windowRow.locator('[role="radio"][aria-checked="true"]')
+    assert.equal(await checked.innerText(), '24h')
+    await checked.click()
+    await checked.waitFor({ state: 'detached' })
+    const hours = () =>
+      page.evaluate(async () => (await window.threadlight.getSettings()).listWindowHours)
+    assert.equal(await hours(), 0, 'the same time again means no limit')
+    await windowRow.getByRole('radio', { name: '3d', exact: true }).click()
+    await checked.waitFor()
+    assert.equal(await hours(), 72)
+
+    // Each row explains itself on hover; the short wording is the Info help.
+    const tip = page.getByRole('tooltip')
+    await windowRow.getByText('Window', { exact: true }).hover()
+    await tip.waitFor()
+    assert.match(await tip.innerText(), /Click the chosen time again to remove the limit/)
+    await capture('settings-help')
+
+    // Only the Recent list has a count, so the row is absent for the others.
+    await page.evaluate(() => window.threadlight.updateSettings({ listMode: 'all' }))
+    await page.getByText('Count', { exact: true }).waitFor({ state: 'detached' })
+    await page.evaluate(() => window.threadlight.updateSettings({ listMode: 'recent' }))
+    await page.getByText('Count', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
     await value.getByText('10', { exact: true }).waitFor()
     await page.evaluate(() => window.threadlight.updateSettings({ maxSessions: 3 }))
@@ -211,15 +237,15 @@ export async function checkSubpagePinning(page) {
   await header.getByRole('button', { name: 'Settings', exact: true }).click()
   await checkPagePinning(page, 'Settings')
   await header.getByText('Settings', { exact: true }).dblclick()
-  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await header.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  await header.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
   await header.getByText('Shared Spaces', { exact: true }).waitFor()
   const pin = page.locator('[data-card][data-pinned]')
   await pin.waitFor()
   await header.getByText('Shared Spaces', { exact: true }).dblclick()
   await checkPagePinning(page, 'Shared Spaces')
   await header.getByRole('button', { name: 'Back in Shared Spaces', exact: true }).click()
-  await header.getByText('Settings', { exact: true }).waitFor()
-  await header.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  await header.locator('[data-thread-view]').waitFor()
   console.log(
     'PASS: title double-click pin/unpin on Agent, workspace picker, Settings and Shared Spaces; pin indication, pointer leave, triple-click and navigation state.',
   )

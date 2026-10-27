@@ -19,7 +19,6 @@ interface SettingsViewProps {
   version: string
   /** "Workspace" chosen (or tapped again): open the picker to choose which workspace. */
   onPickWorkspace: () => void
-  onOpenMemory: () => void
 }
 
 /** Every setting in one compact list, inside the panel's own card. Changes save immediately. */
@@ -28,7 +27,6 @@ export function SettingsView({
   stt,
   version,
   onPickWorkspace,
-  onOpenMemory,
   providerLocked,
   currentAgentProvider,
 }: SettingsViewProps) {
@@ -46,7 +44,11 @@ export function SettingsView({
   return (
     <div className={styles.view}>
       <Group label={en.sources.title}>
-        <Row label="Threads from" error={errors.enabledProviders}>
+        <Row
+          label={en.settings.threadsShown}
+          help={en.settings.help.threadsShown}
+          error={errors.enabledProviders}
+        >
           <span className={styles.segmented} role="group" aria-label={en.sources.title}>
             {PROVIDERS.map((provider) => (
               <button
@@ -80,7 +82,11 @@ export function SettingsView({
       <AgentSettings key={settings.agentProvider} settings={settings} save={save} />
 
       <Group label={en.settings.voice}>
-        <Row label={en.settings.voiceTarget} error={errors.voiceMode}>
+        <Row
+          label={en.settings.voiceTarget}
+          help={en.settings.help.voiceTarget}
+          error={errors.voiceMode}
+        >
           <HoverChoice
             label={en.settings.voiceTarget}
             value={settings.voiceMode}
@@ -104,7 +110,11 @@ export function SettingsView({
             <p className={styles.error}>{en.settings.gptLiveNeedsCodex}</p>
           )}
         {settings.voiceMode === 'local-stt' && (
-          <Row label={en.settings.localDestination} error={errors.voiceTarget}>
+          <Row
+            label={en.settings.localDestination}
+            help={en.settings.help.localDestination}
+            error={errors.voiceTarget}
+          >
             <HoverChoice
               label={en.settings.localDestination}
               value={settings.voiceTarget}
@@ -116,7 +126,11 @@ export function SettingsView({
             />
           </Row>
         )}
-        <Row label={en.settings.talkHotkey} error={errors.talkHotkey}>
+        <Row
+          label={en.settings.talkHotkey}
+          help={en.settings.help.talkHotkey}
+          error={errors.talkHotkey}
+        >
           <span className={styles.pair}>
             <HotkeyField
               value={settings.talkHotkey}
@@ -136,7 +150,7 @@ export function SettingsView({
           </span>
         </Row>
         {settings.voiceMode === 'local-stt' && settings.voiceTarget === 'thread' && (
-          <Row label={en.settings.countdown}>
+          <Row label={en.settings.countdown} help={en.settings.help.countdown}>
             <span className={styles.pair}>
               {/* Hold switches the countdown off: the seconds grey out until it is let go. */}
               <button
@@ -159,43 +173,14 @@ export function SettingsView({
           </Row>
         )}
         {settings.voiceMode === 'local-stt' && (
-          <Row label={en.settings.speechModel} tight>
+          <Row label={en.settings.speechModel} help={en.settings.help.speechModel} tight>
             <ModelStatus stt={stt} />
           </Row>
         )}
       </Group>
 
-      <Group label={en.settings.panel}>
-        <Row label="Hover help" error={errors.hoverHelp}>
-          <Segmented
-            value={settings.hoverHelp}
-            options={[
-              { value: 'tour', label: 'Tour', title: 'Show all available help immediately.' },
-              { value: 'info', label: 'Info', title: 'Show normal hover information.' },
-              { value: 'off', label: 'Off', title: 'Hide hover information and help.' },
-            ]}
-            onChange={(hoverHelp) => save({ hoverHelp })}
-          />
-        </Row>
-        <Row label={en.settings.openOn}>
-          <Segmented
-            value={settings.openOn}
-            options={[
-              { value: 'hover', label: en.settings.hover },
-              { value: 'click', label: en.settings.click },
-            ]}
-            onChange={(openOn) => save({ openOn })}
-          />
-        </Row>
-        <Row label={en.settings.dotPosition}>
-          <button className={styles.small} onClick={() => window.threadlight.resetDotPosition()}>
-            {en.settings.reset}
-          </button>
-        </Row>
-      </Group>
-
       <Group label={en.settings.sessions}>
-        <Row label={en.settings.listMode}>
+        <Row label={en.settings.listMode} help={en.settings.help.list}>
           <Segmented
             value={settings.listMode}
             options={[
@@ -210,7 +195,8 @@ export function SettingsView({
             onReselect={(listMode) => listMode === 'workspace' && onPickWorkspace()}
           />
         </Row>
-        <Row label={en.settings.listWindow}>
+        <Row label={en.settings.listWindow} help={en.settings.help.window}>
+          {/* Choosing the highlighted time again removes the limit (0 hours). */}
           <Segmented
             value={settings.listWindowHours}
             options={SESSION_WINDOW_HOURS.map((hours) => ({
@@ -218,31 +204,64 @@ export function SettingsView({
               label: windowLabel(hours),
             }))}
             onChange={(listWindowHours) => save({ listWindowHours })}
+            onReselect={() => void save({ listWindowHours: 0 })}
           />
         </Row>
-        {/* Only the Recent list has a length to choose; greyed out for Workspace and All. */}
-        <Row label={en.settings.maxSessions} disabled={settings.listMode !== 'recent'}>
-          <Stepper
-            value={settings.maxSessions}
-            min={3}
-            max={50}
-            format={String}
-            disabled={settings.listMode !== 'recent'}
-            onChange={(maxSessions) => save({ maxSessions })}
-          />
-        </Row>
+        {/* Only the Recent list has a length to choose, so the row is not shown for the others. */}
+        {settings.listMode === 'recent' && (
+          <Row label={en.settings.listCount} help={en.settings.help.count}>
+            <Stepper
+              value={settings.maxSessions}
+              min={3}
+              max={50}
+              format={String}
+              onChange={(maxSessions) => save({ maxSessions })}
+            />
+          </Row>
+        )}
       </Group>
 
       <Group label="Shared Spaces">
-        <Row label="Ideas, brainstorms and handoffs">
-          <button className={styles.small} onClick={onOpenMemory}>
-            Open
-          </button>
-        </Row>
+        <p className={styles.footer}>{en.settings.sharedSpacesNote}</p>
       </Group>
 
       <Group label={en.settings.app}>
-        <Row label={en.settings.launchAtSignIn} error={errors.launchAtSignIn} slim>
+        <Row
+          label={en.settings.hoverHelp}
+          help={en.settings.help.hoverHelp}
+          error={errors.hoverHelp}
+        >
+          <Segmented
+            value={settings.hoverHelp}
+            options={[
+              { value: 'tour', label: 'Tour', title: 'Show all available help immediately.' },
+              { value: 'info', label: 'Info', title: 'Show normal hover information.' },
+              { value: 'off', label: 'Off', title: 'Hide hover information and help.' },
+            ]}
+            onChange={(hoverHelp) => save({ hoverHelp })}
+          />
+        </Row>
+        <Row label={en.settings.openOn} help={en.settings.help.openOn}>
+          <Segmented
+            value={settings.openOn}
+            options={[
+              { value: 'hover', label: en.settings.hover },
+              { value: 'click', label: en.settings.click },
+            ]}
+            onChange={(openOn) => save({ openOn })}
+          />
+        </Row>
+        <Row label={en.settings.dotPosition} help={en.settings.help.dot}>
+          <button className={styles.small} onClick={() => window.threadlight.resetDotPosition()}>
+            {en.settings.reset}
+          </button>
+        </Row>
+        <Row
+          label={en.settings.launchAtSignIn}
+          help={en.settings.help.launch}
+          error={errors.launchAtSignIn}
+          slim
+        >
           <Toggle
             on={settings.launchAtSignIn}
             label={en.settings.launchAtSignIn}
@@ -271,6 +290,8 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 
 function Row(props: {
   label: string
+  /** Hover help: `info` always, `tour` only in Tour mode. */
+  help?: { info: string; tour?: string }
   hint?: string
   error?: string | undefined
   disabled?: boolean
@@ -288,7 +309,13 @@ function Row(props: {
       aria-disabled={props.disabled || undefined}
     >
       <div className={styles.text}>
-        <span className={styles.label}>{props.label}</span>
+        {props.help ? (
+          <Tip className={styles.label} text={props.help.info} tourHelp={props.help.tour}>
+            {props.label}
+          </Tip>
+        ) : (
+          <span className={styles.label}>{props.label}</span>
+        )}
         {props.error ? (
           <span className={styles.error}>{props.error}</span>
         ) : (

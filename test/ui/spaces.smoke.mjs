@@ -128,8 +128,7 @@ export async function checkSpacesSetup(page, proof, capture) {
     },
     { snapshot, otherRoot, networkRoot },
   )
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
   const view = page.getByRole('region', { name: 'Shared Spaces', exact: true })
   const drive = view.getByLabel('Shared Spaces drive', { exact: true })
   const workspace = view.getByLabel('Shared Spaces workspace', { exact: true })
@@ -190,7 +189,6 @@ export async function checkSpacesSetup(page, proof, capture) {
   await workspace.selectOption('')
   await page.evaluate((snapshot) => window.proof.emit('onSnapshot', snapshot), snapshot)
   await page.getByRole('button', { name: 'Back in Shared Spaces', exact: true }).click()
-  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   console.log(
     'PASS: content-sized workspace setup, purpose copy, current drive, cross-drive/network filters, destination path and no implicit setup.',
   )
@@ -200,8 +198,7 @@ export async function checkSpaces(page, proof, memory, capture) {
   await page.evaluate(() =>
     window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
   )
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
   const view = page.getByRole('region', { name: 'Shared Spaces', exact: true })
   await view
     .getByLabel('Shared Spaces workspace', { exact: true })
@@ -215,8 +212,7 @@ export async function checkSpaces(page, proof, memory, capture) {
   assert.equal(proof.calls.length, 0)
   await capture('shared-spaces-ideas')
   await page.reload()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
   await view
     .getByLabel('Shared Spaces workspace', { exact: true })
     .selectOption({ label: 'shared' })
@@ -336,11 +332,9 @@ export async function checkSpaces(page, proof, memory, capture) {
   assert.equal(proof.calls.length, 2)
   // Follow the same workspace as the parent thread view, without a competing picker.
   await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
-  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.locator('header [data-thread-view]').click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Workspace', exact: true }).click()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
   assert.equal(await view.getByLabel('Shared Spaces workspace', { exact: true }).count(), 0)
   await page.evaluate(async (root) => {
     const snapshot = await window.threadlight.getSnapshot()
@@ -355,7 +349,6 @@ export async function checkSpaces(page, proof, memory, capture) {
   await view.getByRole('button', { name: /Only in the second workspace/ }).waitFor()
   assert.equal(await view.getByRole('button', { name: /Older unassigned idea/ }).count(), 0)
   await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
-  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.evaluate(() =>
     window.threadlight.updateSettings({
       listMode: 'recent',

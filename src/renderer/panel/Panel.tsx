@@ -1545,7 +1545,6 @@ export function Panel() {
                 stt={stt}
                 version={version}
                 onPickWorkspace={() => setPickingWorkspace(true)}
-                onOpenMemory={openSharedSpaces}
               />
             )}
 

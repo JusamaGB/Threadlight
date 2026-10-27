@@ -46,8 +46,7 @@ export async function setupMemory(page, MemoryStore, MemoryConnections) {
 }
 
 export async function checkMemory(page, proof, capture) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
   await page
     .getByLabel('Shared Spaces workspace', { exact: true })
     .selectOption({ label: 'shared' })
@@ -182,7 +181,6 @@ export async function checkMemory(page, proof, capture) {
   )
   for (let n = 0; n < 4; n++)
     await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
-  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   console.log(
     'PASS: real memory store through compact UI; folders, map, notes, persistent drafts, stale-edit rejection, tasks, short panel and no provider sends.',
   )

@@ -78,7 +78,7 @@ agent turns still use your provider account.
 
 ### Shared Spaces
 
-Open **Settings → Shared Spaces → Open** and set up the workspace. Workspace view
+Open **Shared Spaces** (the brain icon in the panel header) and set up the workspace. Workspace view
 follows the thread view's workspace; other views offer a workspace selector. Setup
 creates `shared-spaces/ideas/`, `plans/`, `handoffs/` and `results/` inside that workspace.
 The location is fixed, with no alternative folder picker. The tabs are **Handoffs**,
