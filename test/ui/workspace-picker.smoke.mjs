@@ -64,11 +64,8 @@ export async function checkWorkspacePicker(page, capture) {
     )
     await capture('workspace-picker-links')
     await applications.hover()
-    assert.deepEqual(await appsMenu.getByRole('menuitem').allTextContents(), [
-      'Claude',
-      'Codex',
-      'Both',
-    ])
+    // Both is the current choice, so the menu offers only the others.
+    assert.deepEqual(await appsMenu.getByRole('menuitem').allTextContents(), ['Claude', 'Codex'])
     await appsMenu.hover()
     await capture('workspace-picker-apps-hover')
     await page.locator('header').hover()

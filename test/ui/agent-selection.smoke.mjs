@@ -225,6 +225,15 @@ export async function checkAgentSettings(page, capture) {
     await page.getByRole('menuitem', { name: value, exact: true }).click()
   }
   await control('model').getByText('Future Fast', { exact: true }).waitFor()
+  // A menu never offers the option already chosen: Codex and Future Fast are on the buttons.
+  await control('provider').hover()
+  await page.getByRole('menuitem', { name: 'Claude', exact: true }).waitFor()
+  assert.equal(await page.getByRole('menuitem', { name: 'Codex', exact: true }).count(), 0)
+  await control('model').hover()
+  await page.getByRole('menuitem', { name: 'Future Deep', exact: true }).waitFor()
+  assert.equal(await page.getByRole('menuitem', { name: 'Future Fast', exact: true }).count(), 0)
+  await page.keyboard.press('Escape')
+  await page.mouse.move(0, 0)
   assert.equal(await page.getByRole('checkbox', { name: 'Show additional models' }).count(), 0)
   assert.equal(await group.locator('select').count(), 0)
   assert.equal(

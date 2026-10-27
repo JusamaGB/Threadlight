@@ -7,7 +7,7 @@ import { usePanelRoom } from './room'
 export interface MenuItem {
   label: string
   disabled?: boolean
-  /** The choice already in force: drawn as selected (a tick), not greyed out like a blocked item. */
+  /** The choice already in force. The control that opened the menu shows it, so it is not listed. */
   current?: boolean
   onSelect: () => void
 }
@@ -30,7 +30,7 @@ export function ContextMenu({
   x,
   y,
   anchor,
-  items,
+  items: allItems,
   onClose,
   label,
   modal = true,
@@ -38,6 +38,8 @@ export function ContextMenu({
   onMouseLeave,
 }: ContextMenuProps) {
   const menu = useRef<HTMLDivElement>(null)
+  // The option already chosen is on the control that opened the menu, so it is not offered again.
+  const items = allItems.filter((item) => !item.current)
   const { opensDown, extra, reserve } = usePanelRoom()
   const [position, setPosition] = useState({
     left: x,
@@ -84,6 +86,7 @@ export function ContextMenu({
       )?.focus()
   }, [modal])
 
+  if (items.length === 0) return null
   return createPortal(
     <>
       {modal && (
@@ -133,8 +136,6 @@ export function ContextMenu({
             className={styles.menuItem}
             role="menuitem"
             disabled={item.disabled}
-            data-current={item.current || undefined}
-            aria-current={item.current || undefined}
             onClick={() => {
               onClose()
               item.onSelect()

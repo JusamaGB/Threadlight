@@ -92,17 +92,10 @@ export async function checkWorkspaceHeight(page, capture) {
     assert.ok(centered < 1, 'the message and its clickable time frame are centred together')
     await page.getByRole('button', { name: 'Time frame: 24h', exact: true }).click()
     const timeMenu = page.getByRole('menu', { name: 'Time frame', exact: true })
-    assert.deepEqual(await timeMenu.getByRole('menuitem').allTextContents(), [
-      '6h',
-      '12h',
-      '24h',
-      '3d',
-      '7d',
-      'Any time',
-    ])
-    assert.equal(
-      await timeMenu.getByRole('menuitem', { name: '24h', exact: true }).isDisabled(),
-      true,
+    assert.deepEqual(
+      await timeMenu.getByRole('menuitem').allTextContents(),
+      ['6h', '12h', '3d', '7d', 'Any time'],
+      'the current 24h is not offered again',
     )
     await capture('workspace-empty-time-frame-menu')
     await page.keyboard.press('Escape')
