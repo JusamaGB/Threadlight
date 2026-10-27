@@ -330,3 +330,81 @@ export async function checkDualDetails(page, capture) {
     })
   }
 }
+
+/** A very long list still splits into its two columns, just without the gliding animation. */
+export async function checkDualLong(page) {
+  const initial = await page.evaluate(() => window.threadlight.getSettings())
+  try {
+    // Every snapshot the panel receives carries 140 idle threads, however settings change.
+    await page.addInitScript(() => {
+      const real = window.threadlight
+      const decorate = (snap) => {
+        if (!snap?.sessions?.length || snap.sessions.length > 6) return snap
+        const base = snap.sessions[0]
+        const sessions = Array.from({ length: 140 }, (_, i) => ({
+          ...base,
+          id: `${i % 2 ? 'codex:' : ''}long-${i}`,
+          appId: `long-${i}`,
+          title: `Long ${i}`,
+          state: 'idle',
+          attention: null,
+          provider: i % 2 ? 'codex' : 'claude',
+          lastActiveAt: Date.now() - i * 60000,
+        }))
+        return { ...snap, sessions, workspaces: [] }
+      }
+      window.threadlight = new Proxy(real, {
+        get(target, name) {
+          if (name === 'onSnapshot') return (fn) => real.onSnapshot((snap) => fn(decorate(snap)))
+          if (name === 'getSnapshot') return async (...a) => decorate(await real.getSnapshot(...a))
+          return real[name]
+        },
+      })
+    })
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({
+        enabledProviders: ['claude', 'codex'],
+        listMode: 'recent',
+        maxSessions: 50,
+        panelLayout: 'single',
+      }),
+    )
+    await page.reload()
+    const view = page.locator('[data-thread-view]')
+    await view.waitFor()
+    if ((await view.getAttribute('data-thread-view')) !== 'recent') {
+      await view.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+    }
+    await page.waitForFunction(() => document.querySelectorAll('[data-session-id]').length === 140)
+    await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'dual' }))
+    await page.waitForFunction(() => {
+      const left = document.querySelector('[data-session-id="long-0"]')
+      const right = document.querySelector('[data-session-id="codex:long-1"]')
+      return (
+        left &&
+        right &&
+        left.getBoundingClientRect().left < right.getBoundingClientRect().left &&
+        Math.abs(left.getBoundingClientRect().top - right.getBoundingClientRect().top) < 1
+      )
+    })
+    assert.equal(
+      await page.evaluate(
+        () =>
+          [...document.querySelectorAll('[data-session-id]')].filter(
+            (row) => row.getAnimations().length > 0,
+          ).length,
+      ),
+      0,
+      'a long list is rearranged without animating every row',
+    )
+    console.log('PASS: a list of 140 threads splits into its columns without per-row animation.')
+  } finally {
+    await page.evaluate((settings) => window.threadlight.updateSettings(settings), {
+      enabledProviders: initial.enabledProviders,
+      panelLayout: initial.panelLayout,
+      listMode: initial.listMode,
+      maxSessions: initial.maxSessions,
+    })
+  }
+}

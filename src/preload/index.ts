@@ -64,6 +64,7 @@ const api: ThreadlightApi = {
   setWorkspaceWireRegions: (regions) => ipcRenderer.send(IPC.workspaceWireRegions, regions),
   setPanelLayout: (layout, animating) => ipcRenderer.invoke(IPC.panelLayout, layout, animating),
   openInClaude: (appId) => ipcRenderer.send(IPC.openInClaude, appId),
+  restartApp: () => ipcRenderer.send(IPC.restartApp),
   ignoreNeedsInput: (sessionId, ignore) =>
     ipcRenderer.send(IPC.ignoreNeedsInput, sessionId, ignore),
 

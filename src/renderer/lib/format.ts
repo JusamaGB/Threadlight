@@ -10,11 +10,14 @@ export function ageText(sinceMs: number, nowMs: number): string {
 }
 
 /** An exact local time for recent activity, or its date after 24 hours. */
+// Building a formatter is far dearer than using one, and every row asks on every render.
+const timeFormat = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' })
+const dateFormat = new Intl.DateTimeFormat([], { day: 'numeric', month: 'short', year: 'numeric' })
 export function lastActiveText(sinceMs: number, nowMs: number): string {
   const date = new Date(sinceMs)
   return nowMs - sinceMs < 86_400_000
-    ? `Last active at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    : `Last active on ${date.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}`
+    ? `Last active at ${timeFormat.format(date)}`
+    : `Last active on ${dateFormat.format(date)}`
 }
 
 /** A "Show sessions from the last" window as the settings show it: "6h", "24h", "3d", "7d". */

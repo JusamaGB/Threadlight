@@ -9,6 +9,7 @@ export interface TrayActions {
   openSettings: () => void
   setPaused: (paused: boolean) => void
   isPaused: () => boolean
+  restart: () => void
   quit: () => void
 }
 
@@ -40,6 +41,7 @@ export function createTray(actions: TrayActions): Tray {
           },
         },
         { type: 'separator' },
+        { label: 'Restart Threadlight', click: actions.restart },
         { label: 'Quit Threadlight', click: actions.quit },
       ]),
     )

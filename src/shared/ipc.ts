@@ -95,6 +95,7 @@ export const IPC = {
   workspaceWireControl: 'panel:wire-control',
   openInClaude: 'claude:open-thread',
   ignoreNeedsInput: 'session:ignore-needs-input',
+  restartApp: 'app:restart',
   answerQuestion: 'hold:answer-question',
   answerNextStep: 'hold:answer-next-step',
   answerApproval: 'hold:answer-approval',
@@ -207,6 +208,8 @@ export interface ThreadlightApi {
   openInClaude(appId: string): void
   /** Sets a thread's pending request aside (or back) in Threadlight only; nothing reaches the app. */
   ignoreNeedsInput(sessionId: string, ignore: boolean): void
+  /** Closes Threadlight and starts it again: settings and threads are untouched. */
+  restartApp(): void
 
   /** Relays `text` to a session in the background. Resolves once accepted, not when replied. */
   sendMessage(
