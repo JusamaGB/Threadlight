@@ -153,11 +153,13 @@ export function Panel() {
     y: number
     anchor: HTMLElement
   } | null>(null)
-  /** The wire clip's and wires' right-click menu: switch between the single and dual layouts. */
-  const [layoutMenu, setLayoutMenu] = useState<{ x: number; y: number } | null>(null)
-  // Dual shows Claude and Codex side by side, so it needs both; otherwise the column stays single.
+  // Dual shows Claude and Codex side by side, so it needs both. It belongs to the Recent and
+  // Workspace lists: Active is short and the All list is a tree, so those stay in one column.
+  // The saved choice is kept, and comes back when the view does.
   const bothProviders = enabled.includes('claude') && enabled.includes('codex')
-  const wantDual = settings?.panelLayout === 'dual' && bothProviders
+  const dualView =
+    view === 'all' && (settings?.listMode === 'recent' || settings?.listMode === 'workspace')
+  const wantDual = settings?.panelLayout === 'dual' && bothProviders && dualView
   const [layout, setLayout] = useState({
     wide: false,
     dual: false,
@@ -454,14 +456,13 @@ export function Panel() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       if (sourceMenu) setSourceMenu(null)
-      else if (layoutMenu) setLayoutMenu(null)
       else if (listMenu) setListMenu(null)
       else if (menu) setMenu(null)
       else window.threadlight.closePanel()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [menu, listMenu, sourceMenu, layoutMenu])
+  }, [menu, listMenu, sourceMenu])
 
   /** Turns finished speech into a composer for the right thread, or asks which thread. */
   const finishTalk = useCallback(async () => {
@@ -1059,6 +1060,13 @@ export function Panel() {
     event.preventDefault()
     setMenu({ x: event.clientX, y: event.clientY, session })
   }
+  // Dual view puts Claude and Codex side by side, so it needs both, and it is offered in the
+  // Recent and Workspace lists. Single view stays reachable from anywhere while dual is on.
+  const layoutMenuItems: MenuItem[] = wantDual
+    ? [{ label: 'Single view', onSelect: () => void setPanelLayoutSetting('single') }]
+    : bothProviders && dualView
+      ? [{ label: 'Dual view', onSelect: () => void setPanelLayoutSetting('dual') }]
+      : []
   const menuItems = (session: Session): MenuItem[] => [
     {
       label: en.changes.worktreeTitle,
@@ -1071,6 +1079,7 @@ export function Panel() {
       disabled: !session.appId,
       onSelect: () => session.appId && window.threadlight.openInClaude(session.appId),
     },
+    ...layoutMenuItems,
   ]
 
   /** One thread row, the same in the recent list and inside a workspace. */
@@ -1184,9 +1193,6 @@ export function Panel() {
             // The wires hang off the card's left edge, so beside two columns they would point
             // at the wrong rows.
             hidden={layout.split}
-            onMenu={(point) => {
-              if (bothProviders) setLayoutMenu(point)
-            }}
             onToggle={async () => {
               try {
                 const result = await window.threadlight.updateSettings({
@@ -1323,7 +1329,7 @@ export function Panel() {
                       valueTip={en.panel.header.sessionsListed}
                       value={settings?.maxSessions ?? 10}
                       min={3}
-                      max={25}
+                      max={50}
                       format={String}
                       disabled={!settings || savingSessionLimit}
                       onChange={async (maxSessions) => {
@@ -1644,19 +1650,6 @@ export function Panel() {
                 y={menu.y}
                 items={menuItems(menu.session)}
                 onClose={() => setMenu(null)}
-              />
-            )}
-            {layoutMenu && (
-              <ContextMenu
-                x={layoutMenu.x}
-                y={layoutMenu.y}
-                label="Panel layout"
-                items={[
-                  settings?.panelLayout === 'dual'
-                    ? { label: 'Single view', onSelect: () => void setPanelLayoutSetting('single') }
-                    : { label: 'Dual view', onSelect: () => void setPanelLayoutSetting('dual') },
-                ]}
-                onClose={() => setLayoutMenu(null)}
               />
             )}
             {listMenu && (
