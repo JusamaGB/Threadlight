@@ -6,7 +6,7 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- The Shared Spaces icon is now a brain seen from the front, and the three header icons (brain, agent, cog) share one centre line.
+- The three header icons (brain, agent, cog) share one centre line; the agent star sat about a pixel too high.
 
 - Mouse-wheel scrolling is finer everywhere in the app: one notch now moves a quarter as far (25 px instead of 100 px). Touchpads are unchanged.
 
