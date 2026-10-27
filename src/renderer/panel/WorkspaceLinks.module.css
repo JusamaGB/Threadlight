@@ -14,6 +14,10 @@
   stroke-width: 1;
   opacity: 0.35;
 }
+/* Every wire is a grey ghost until its group is lit, then it shows its colour. */
+.links g:not([data-highlight]) .wire {
+  stroke: #8a8f9c;
+}
 .back {
   stroke: #0e1118;
   stroke-width: 3;

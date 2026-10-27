@@ -4,6 +4,7 @@ import {
   CENTRE_HALF,
   centreWirePath,
   layoutWorkspaceWires,
+  placeCentreWires,
   type CentreMember,
 } from '../../shared/workspaceWires'
 import { HeaderWire } from '../motion/HeaderWire'
@@ -56,6 +57,15 @@ export function WorkspaceLinks({
         (wire) => wire.dataset.wireKey === active,
       )
       if (selected) selected.parentElement?.append(selected)
+      trace(active)
+    }
+    // While a wire is lit, the threads on it are marked and every other thread's text dims.
+    const trace = (active: string | null) => {
+      const list = panel.querySelector<HTMLElement>('[data-workspace-thread-list]')
+      if (!list) return
+      list.toggleAttribute('data-wire-trace', !!active)
+      for (const row of list.querySelectorAll<HTMLElement>('[data-workspace-folder]'))
+        row.toggleAttribute('data-wire-linked', !!active && row.dataset.workspaceFolder === active)
     }
     const draw = () => {
       const header = panel.querySelector('header')
@@ -71,7 +81,7 @@ export function WorkspaceLinks({
       }
       const list = panel.querySelector<HTMLElement>('[data-workspace-thread-list]')
       overlay.replaceChildren()
-      if (!enabled || !list || !list.clientHeight) return
+      if (!enabled || !list || !list.clientHeight) return trace(null)
       const top = list.getBoundingClientRect().top
       overlay.style.top = `${top - overlay.parentElement!.getBoundingClientRect().top}px`
       overlay.style.height = `${list.clientHeight}px`
@@ -108,20 +118,32 @@ export function WorkspaceLinks({
       svg.setAttribute('width', String(width))
       svg.setAttribute('height', String(list.clientHeight))
       const linked = [...groups].filter(([, members]) => members.length > 1)
-      const routes = layoutWorkspaceWires(
-        linked.map(([key, members]) => ({ key, first: members[0]!.y, last: members.at(-1)!.y })),
-      )
       if (held && !linked.some(([key]) => key === held)) held = null
-      for (const { key, first, last, lane, x } of routes) {
+      // Each wire: its key, path and where its rail sits (a lane in the gutter, a slot at the divider).
+      const routes =
+        divider === undefined
+          ? layoutWorkspaceWires(
+              linked.map(([key, members]) => ({
+                key,
+                first: members[0]!.y,
+                last: members.at(-1)!.y,
+              })),
+            ).map(({ key, first, last, lane, x }) => {
+              const r = Math.min(3, WORKSPACE_GUTTER - x, (last - first) / 2)
+              let path = `M 16 ${first} H ${x + r} Q ${x} ${first} ${x} ${first + r} V ${last - r} Q ${x} ${last} ${x + r} ${last} H 16`
+              for (const { y } of groups.get(key)!.slice(1, -1)) path += ` M ${x} ${y} H 16`
+              return { key, path, lane, x }
+            })
+          : placeCentreWires(linked.map(([key, members]) => ({ key, members }))).map(
+              ({ key, offset }) => ({
+                key,
+                path: centreWirePath(groups.get(key)!, offset),
+                lane: offset,
+                x: CENTRE_HALF + offset,
+              }),
+            )
+      for (const { key, path, lane, x } of routes) {
         const members = groups.get(key)!
-        let path: string
-        if (divider === undefined) {
-          const r = Math.min(3, WORKSPACE_GUTTER - x, (last - first) / 2)
-          path = `M 16 ${first} H ${x + r} Q ${x} ${first} ${x} ${first + r} V ${last - r} Q ${x} ${last} ${x + r} ${last} H 16`
-          for (const { y } of members.slice(1, -1)) path += ` M ${x} ${y} H 16`
-        } else {
-          path = centreWirePath(members, lane).path
-        }
         const group = document.createElementNS(svg.namespaceURI, 'g')
         group.setAttribute('data-wire-key', key)
         group.setAttribute('data-members', String(members.length))
@@ -211,6 +233,7 @@ export function WorkspaceLinks({
       document.removeEventListener('keydown', escape)
       panel.removeEventListener('scroll', scroll, true)
       window.removeEventListener('resize', schedule)
+      trace(null)
       window.threadlight.setWorkspaceWireControl(null)
     }
   }, [card, enabled, centre])

@@ -148,6 +148,18 @@ export async function checkWorkspaceLinks(page, capture) {
     const row = page.locator('[data-session-id="wire-claude"]')
     await row.hover()
     await page.locator('[data-wire-key][data-highlight]').waitFor()
+    // A lit wire dims the text of every thread outside it and leaves its own threads alone.
+    await page.waitForFunction(() => {
+      const opacity = (row) => getComputedStyle(row.querySelector('button')).opacity
+      const rows = [...document.querySelectorAll('[data-workspace-folder]')]
+      const linked = rows.filter((r) => r.hasAttribute('data-wire-linked'))
+      const others = rows.filter((r) => !r.hasAttribute('data-wire-linked'))
+      return (
+        linked.length > 1 &&
+        linked.every((r) => opacity(r) === '1') &&
+        others.every((r) => Number(opacity(r)) < 1)
+      )
+    })
     const before = await page.locator('[data-wire-key] path').first().getAttribute('d')
     await row.locator('button[aria-expanded]').first().click()
     await page.waitForFunction(
@@ -183,6 +195,7 @@ export async function checkWorkspaceLinks(page, capture) {
     })
     await page.keyboard.press('Escape')
     assert.equal(await page.locator('[data-wire-key][data-highlight]').count(), 0)
+    assert.equal(await page.locator('[data-wire-linked]').count(), 0, 'nothing dims once unlit')
     await page.getByRole('button', { name: 'Hide workspace wires', exact: true }).click()
     await page.waitForFunction(() => !document.querySelector('[data-wire-key]'))
     assert.equal(
