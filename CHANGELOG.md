@@ -6,6 +6,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Very long Claude threads (hundreds of MB of pasted images and tool output) no longer hold the list up: the first read takes a thread's opening lines and the last 8 MB, so every row loads at once.
+
 - **Claude threads appear straight away after a start or a change of view.** A thread's
   transcript is read in full the first time, so reading a long history in one scan held every
   Claude row back (Codex reads from a database and was not affected). A scan now reads at most

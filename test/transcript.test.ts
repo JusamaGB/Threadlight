@@ -352,6 +352,22 @@ describe('incremental reading', () => {
     expect(reader.summary().lastReply).toBeNull()
   })
 
+  it('reads a huge file from its opening lines and its end, not all of it', async () => {
+    const filler = { ...toolResult('t', 'x'.repeat(1_000_000)) }
+    await writeTranscript(file, [
+      prompt('opening request'),
+      ...Array.from({ length: 12 }, () => filler),
+      textReply('the latest reply'),
+    ])
+    const reader = new TranscriptReader(file)
+    await reader.update()
+    expect(reader.summary().title).toBe('opening request')
+    expect(reader.summary().lastReply).toBe('the latest reply')
+    await appendTranscript(file, [textReply('after')])
+    await reader.update()
+    expect(reader.summary().lastReply).toBe('after')
+  })
+
   it('skips damaged lines', async () => {
     await writeTranscript(file, [prompt('ok')])
     await appendFile(file, '{not json\n')
