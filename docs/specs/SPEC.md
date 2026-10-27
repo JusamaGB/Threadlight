@@ -87,8 +87,7 @@ Workspace lets the existing usage bars resize the panel,
 with no extra strip, button or icon. The whole bottom usage strip shows the resize cursor
 and accepts dragging, including its left and right edges. Dragging previews height
 and saves the maximum on release. A drag starts at the visible panel height, even
-when the saved maximum is larger. Arrow keys adjust the maximum by 10px, Home
-selects the minimum and End the available height. The last pick becomes Workspace's
+when the saved maximum is larger. The last pick becomes Workspace's
 maximum across restarts. Changing content never overwrites it. Smaller displays clamp the
 shown height without overwriting the saved preference. Other views and pages keep
 content-sized layout. Drag capture protects an unpinned panel and quota tooltips

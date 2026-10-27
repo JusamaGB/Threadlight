@@ -407,10 +407,6 @@ export async function checkFooterExpansion(page, row, capture) {
     )
     await page.keyboard.press('Escape')
     await tip.waitFor({ state: 'detached' })
-    await page.getByRole('separator', { name: 'Resize Workspace height' }).press('ArrowUp')
-    await page.waitForFunction(
-      async () => (await window.threadlight.getSettings()).workspacePanelHeight === 290,
-    )
     await page.evaluate(() => window.threadlight.updateSettings({ enabledProviders: ['codex'] }))
     await page.getByLabel(/^Codex · Weekly limit/).hover()
     await tip.waitFor()

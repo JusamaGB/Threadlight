@@ -4,16 +4,14 @@ import styles from './Panel.module.css'
 export const WORKSPACE_MIN_HEIGHT = 120
 export const WORKSPACE_RESIZE_HINT = 'Drag to set Workspace maximum height'
 
-/** The whole quota strip resizes Workspace; saves once the pointer is released. */
+/** The whole quota strip resizes Workspace with the mouse; saves once the pointer is released. */
 export function WorkspaceResize({
-  height,
   maxHeight,
   saving,
   onPreview,
   onCommit,
   children,
 }: {
-  height: number
   maxHeight: number
   saving: boolean
   onPreview: (height: number | null) => void
@@ -28,22 +26,17 @@ export function WorkspaceResize({
     <div
       className={styles.workspaceResizeArea}
       role="separator"
-      tabIndex={0}
       aria-label="Resize Workspace height"
       aria-orientation="horizontal"
-      aria-valuemin={Math.min(WORKSPACE_MIN_HEIGHT, maxHeight)}
-      aria-valuemax={Math.round(maxHeight)}
-      aria-valuenow={Math.round(height)}
       aria-disabled={saving || undefined}
       aria-description={WORKSPACE_RESIZE_HINT}
       onPointerDown={(event) => {
         if (event.button !== 0 || saving) return
         event.preventDefault()
-        event.currentTarget.focus({ preventScroll: true })
         event.currentTarget.setPointerCapture(event.pointerId)
         event.currentTarget.setAttribute('data-workspace-resizing', '')
         const actualHeight =
-          event.currentTarget.closest('[data-card]')?.getBoundingClientRect().height ?? height
+          event.currentTarget.closest('[data-card]')?.getBoundingClientRect().height ?? maxHeight
         drag.current = { y: event.screenY, start: actualHeight, value: actualHeight }
       }}
       onPointerMove={(event) => {
@@ -70,22 +63,6 @@ export function WorkspaceResize({
         drag.current = null
         event.currentTarget.removeAttribute('data-workspace-resizing')
         onPreview(null)
-      }}
-      onKeyDown={(event) => {
-        if (saving) return
-        const next =
-          event.key === 'ArrowUp'
-            ? height - 10
-            : event.key === 'ArrowDown'
-              ? height + 10
-              : event.key === 'Home'
-                ? WORKSPACE_MIN_HEIGHT
-                : event.key === 'End'
-                  ? maxHeight
-                  : null
-        if (next === null) return
-        event.preventDefault()
-        onCommit(clamp(next))
       }}
     >
       {children}

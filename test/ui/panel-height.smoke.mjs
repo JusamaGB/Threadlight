@@ -191,16 +191,6 @@ export async function checkWorkspaceHeight(page, capture) {
       window.proof.emit('onPanelOpened', { maxHeight: 900, opensDown: true, fresh: false }),
     )
     await heightIs(700)
-    await grip.press('Home')
-    await heightIs(120)
-    await page.waitForFunction(
-      async () => (await window.threadlight.getSettings()).workspacePanelHeight === 120,
-    )
-    await grip.press('End')
-    await heightIs(900)
-    await page.waitForFunction(
-      async () => (await window.threadlight.getSettings()).workspacePanelHeight === 900,
-    )
     console.log(
       'PASS: Workspace shrinks to empty/sparse content, grows to its saved maximum, drags from its visible height, persists limits, clamps on smaller screens and keeps other views content-sized.',
     )
