@@ -161,14 +161,14 @@ describe('workspace tree', () => {
     expect(wide.map((w) => w.name)).toEqual(['fresh', 'stale'])
   })
 
-  it('never builds more than its budget of threads when the time window is off', async () => {
-    // Eight workspaces of two threads each, the newest first, none of them recent.
+  it('never builds more than its budget of threads, however many workspaces are open', async () => {
+    // Eight workspaces of two threads each, the newest first, all within the widest window.
     const names: string[] = []
     for (let w = 0; w < 8; w++) {
       const folder = `C:\\demo\\w${w}`
       names.push(`w${w}`)
-      await thread(folder, `W${w}a`, { agoMs: (100 + w * 10) * 24 * HOUR })
-      await thread(folder, `W${w}b`, { agoMs: (101 + w * 10) * 24 * HOUR })
+      await thread(folder, `W${w}a`, { agoMs: (2 + w * 3) * HOUR })
+      await thread(folder, `W${w}b`, { agoMs: (3 + w * 3) * HOUR })
     }
     const view = {
       expanded: names.map((name) => `C:\\demo\\${name}`),
@@ -179,7 +179,7 @@ describe('workspace tree', () => {
       hooks,
       now: () => NOW,
       maxSessions: 10,
-      windowHours: 0,
+      windowHours: 168,
       treeBudget: 6,
     })
     const { workspaces } = await limited.snapshot(view)

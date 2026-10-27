@@ -195,12 +195,7 @@ export function SettingsView({
             onReselect={(listMode) => listMode === 'workspace' && onPickWorkspace()}
           />
         </Row>
-        <Row
-          label={en.settings.listWindow}
-          help={en.settings.help.window}
-          off={settings.listWindowHours === 0}
-        >
-          {/* Choosing the highlighted time again removes the limit (0 hours). */}
+        <Row label={en.settings.listWindow} help={en.settings.help.window}>
           <Segmented
             value={settings.listWindowHours}
             options={SESSION_WINDOW_HOURS.map((hours) => ({
@@ -208,7 +203,6 @@ export function SettingsView({
               label: windowLabel(hours),
             }))}
             onChange={(listWindowHours) => save({ listWindowHours })}
-            onReselect={() => void save({ listWindowHours: 0 })}
           />
         </Row>
         {/* Only the Recent list has a length to choose, so the row is not shown for the others. */}
@@ -301,8 +295,6 @@ function Row(props: {
   label: string
   /** Hover help: `info` always, `tour` only in Tour mode. */
   help?: { info: string; tour?: string }
-  /** The setting is switched off: its name greys out, the control stays usable. */
-  off?: boolean
   hint?: string
   error?: string | undefined
   disabled?: boolean
@@ -321,17 +313,11 @@ function Row(props: {
     >
       <div className={styles.text}>
         {props.help ? (
-          <Tip
-            className={props.off ? `${styles.label} ${styles.labelOff}` : styles.label}
-            text={props.help.info}
-            tourHelp={props.help.tour}
-          >
+          <Tip className={styles.label} text={props.help.info} tourHelp={props.help.tour}>
             {props.label}
           </Tip>
         ) : (
-          <span className={props.off ? `${styles.label} ${styles.labelOff}` : styles.label}>
-            {props.label}
-          </span>
+          <span className={styles.label}>{props.label}</span>
         )}
         {props.error ? (
           <span className={styles.error}>{props.error}</span>

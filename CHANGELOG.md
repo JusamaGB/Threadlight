@@ -6,12 +6,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Turning **Window** off no longer makes Threadlight read every Claude thread you have ever
-  had. A scan builds only the newest threads for Recent and at most 300 for the Workspace list
-  (the newest workspaces first); the rest stay listed with their counts and load when you
-  choose "Show more" for one. Before, a long history could take ten seconds to appear after a
-  start and keep the app busy on every scan.
-
+- **The time window always applies.** Window can no longer be turned off, because a long
+  history made the panel slow to fill (a start could take ten seconds to show your Claude
+  threads). A saved "no limit" setting falls back to 24 hours. Each scan also builds only the
+  newest threads for Recent and at most 300 for the Workspace list, newest workspaces first;
+  the rest stay listed with their counts and load on "Show more". Older threads are found
+  through your files.
 - Dual view no longer shows a half-built layout when you move between lists. Going from Active
   to Recent used to grow the card with all ten threads crammed in the right column for about a
   second before splitting them. The columns now open and close with the card; the rows glide
@@ -49,8 +49,7 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Settings explain themselves.** Every setting now has a short hover description, with
   extra detail in Tour. Labels are shorter to match: Threads shown, List, Window, Count,
   Open on, Dot and Countdown. The Panel group is merged into App, which stays at the bottom.
-  Choosing the highlighted **Window** time again removes the time limit (stored as 0, shown
-  as "Any time"). **Count** appears only for the Recent list instead of being greyed out.
+  **Count** appears only for the Recent list instead of being greyed out.
   The Shared Spaces group keeps its place for future settings; open Shared Spaces from the
   brain icon in the panel header.
 

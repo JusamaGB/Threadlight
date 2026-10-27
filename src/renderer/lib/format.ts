@@ -22,7 +22,6 @@ export function lastActiveText(sinceMs: number, nowMs: number): string {
 
 /** A "Show sessions from the last" window as the settings show it: "6h", "24h", "3d", "7d". */
 export function windowLabel(hours: number): string {
-  if (hours === 0) return 'Any time'
   return hours % 24 === 0 && hours > 24 ? `${hours / 24}d` : `${hours}h`
 }
 

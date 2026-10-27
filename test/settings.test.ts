@@ -24,9 +24,16 @@ describe('parseSettings', () => {
       maxSessions: 12,
     })
     expect(validatePatch({ hoverHelp: 'always' }).ok).toBe(false)
-    // 0 hours is "no time limit"; anything beyond a week is still refused.
-    expect(validatePatch({ listWindowHours: 0 }).ok).toBe(true)
+    // There is always a time limit, and never more than a week.
+    expect(validatePatch({ listWindowHours: 0 }).ok).toBe(false)
     expect(validatePatch({ listWindowHours: 169 }).ok).toBe(false)
+    expect(validatePatch({ listWindowHours: 168 }).ok).toBe(true)
+    // A settings file saved when the limit could be turned off falls back to the default for
+    // that one field and keeps the rest.
+    expect(parseSettings({ listWindowHours: 0, maxSessions: 12 })).toMatchObject({
+      listWindowHours: 24,
+      maxSessions: 12,
+    })
     const store = new SettingsStore(box.root)
     await store.load()
     for (const hoverHelp of ['tour', 'off', 'info'] as const) {

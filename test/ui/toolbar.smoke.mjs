@@ -42,29 +42,25 @@ export async function checkRecentLimit(page, capture) {
     assert.equal(await row.locator('[class*="_value_"]').innerText(), '9')
     await row.getByRole('button', { name: 'More', exact: true }).click()
 
-    // Choosing the highlighted time again removes the limit; choosing another brings it back.
+    // There is always a time limit: choosing the highlighted time again changes nothing, and
+    // choosing another one moves it.
     const windowRow = page.getByText('Window', { exact: true }).locator('../..')
     const checked = windowRow.locator('[role="radio"][aria-checked="true"]')
-    const name = windowRow.getByText('Window', { exact: true })
-    const nameColour = () => name.evaluate((el) => getComputedStyle(el).color)
-    const lit = await nameColour()
-    assert.equal(await checked.innerText(), '24h')
-    await checked.click()
-    await checked.waitFor({ state: 'detached' })
-    assert.notEqual(await nameColour(), lit, 'with no limit the word Window greys out')
     const hours = () =>
       page.evaluate(async () => (await window.threadlight.getSettings()).listWindowHours)
-    assert.equal(await hours(), 0, 'the same time again means no limit')
+    assert.equal(await checked.innerText(), '24h')
+    await checked.click()
+    assert.equal(await checked.innerText(), '24h', 'the highlighted time stays highlighted')
+    assert.equal(await hours(), 24)
     await windowRow.getByRole('radio', { name: '3d', exact: true }).click()
-    await checked.waitFor()
-    assert.equal(await nameColour(), lit, 'and lights up again with a limit')
+    await windowRow.locator('[role="radio"][aria-checked="true"]', { hasText: '3d' }).waitFor()
     assert.equal(await hours(), 72)
 
     // Each row explains itself on hover; the short wording is the Info help.
     const tip = page.getByRole('tooltip')
     await windowRow.getByText('Window', { exact: true }).hover()
     await tip.waitFor()
-    assert.match(await tip.innerText(), /Click the chosen time again to remove the limit/)
+    assert.match(await tip.innerText(), /Hides threads with no activity in this time/)
     await capture('settings-help')
 
     // Only the Recent list has a count, so the row is absent for the others.
