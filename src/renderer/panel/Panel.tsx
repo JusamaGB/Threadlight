@@ -1181,6 +1181,9 @@ export function Panel() {
           <WorkspaceLinks
             card={card}
             enabled={settings?.workspaceWires ?? false}
+            // The wires hang off the card's left edge, so beside two columns they would point
+            // at the wrong rows.
+            hidden={layout.split}
             onMenu={(point) => {
               if (bothProviders) setLayoutMenu(point)
             }}

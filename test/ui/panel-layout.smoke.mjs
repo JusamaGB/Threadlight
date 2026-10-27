@@ -111,3 +111,121 @@ export async function checkPanelLayout(page, capture) {
     })
   }
 }
+
+/** Six interleaved threads (three each), so the columns have something to stack. */
+async function withSixThreads(page) {
+  await page.addInitScript(() => {
+    const real = window.threadlight
+    const decorate = (snap) => {
+      if (!snap?.sessions || snap.sessions.length !== 2) return snap
+      const claude = snap.sessions.find((s) => s.provider === 'claude')
+      const codex = snap.sessions.find((s) => s.provider === 'codex')
+      if (!claude || !codex) return snap
+      const make = (source, id, title, minutes) => ({
+        ...source,
+        id,
+        appId: id,
+        title,
+        attention: null,
+        plan: [],
+        stage: 'Idle',
+        lastActiveAt: Date.now() - minutes * 60000,
+      })
+      const codexId = (n) => `codex:aaaaaaaa-0000-4000-8000-00000000000${n}`
+      return {
+        ...snap,
+        sessions: [
+          make(claude, 'claude-1', 'Live Voice Timer Fix', 2),
+          make(codex, codexId(1), 'Handle UI changes and hotfixes', 4),
+          make(claude, 'claude-2', 'Check sign-in launch integrations', 6),
+          make(codex, codexId(2), 'Review and merge all work', 8),
+          make(claude, 'claude-3', 'Add Threadlight to Hale.dev', 10),
+          make(codex, codexId(3), 'Set up E2E monitoring', 12),
+        ],
+      }
+    }
+    window.threadlight = new Proxy(real, {
+      get(target, name) {
+        if (name === 'onSnapshot') return (fn) => real.onSnapshot((snap) => fn(decorate(snap)))
+        if (name === 'getSnapshot') return async (...a) => decorate(await real.getSnapshot(...a))
+        return real[name]
+      },
+    })
+  })
+  await page.reload()
+  await page.waitForFunction(() => document.querySelectorAll('[data-session-id]').length === 6)
+}
+
+const rowTops = (page) =>
+  page.evaluate(() =>
+    Object.fromEntries(
+      [...document.querySelectorAll('[data-session-id]')].map((row) => [
+        row.dataset.sessionId,
+        Math.round(row.getBoundingClientRect().top),
+      ]),
+    ),
+  )
+
+/** Wires are hidden beside two columns, and an open thread only moves its own column. */
+export async function checkDualDetails(page, capture) {
+  const initial = await page.evaluate(() => window.threadlight.getSettings())
+  try {
+    await page.evaluate(() =>
+      window.threadlight.updateSettings({
+        enabledProviders: ['claude', 'codex'],
+        workspaceWires: true,
+        panelLayout: 'single',
+        listMode: 'recent',
+        maxSessions: 10,
+      }),
+    )
+    await withSixThreads(page)
+    await page.waitForFunction(() => document.querySelectorAll('[data-wire-key]').length === 1)
+
+    await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'dual' }))
+    await page.waitForFunction(() => {
+      const left = document.querySelector('[data-session-id="claude-1"]')
+      const right = document.querySelector('[data-session-id^="codex:"]')
+      return (
+        left &&
+        right &&
+        left.getBoundingClientRect().left < right.getBoundingClientRect().left &&
+        Math.abs(left.getBoundingClientRect().top - right.getBoundingClientRect().top) < 1
+      )
+    })
+    await settled(page)
+    assert.equal(await page.locator('[data-wire-key]').count(), 0, 'no wires beside two columns')
+    assert.equal(
+      await page.getByRole('button', { name: /workspace wires$/ }).count(),
+      1,
+      'the clip, and so its menu, stays',
+    )
+
+    const before = await rowTops(page)
+    await page
+      .getByRole('button', { name: /Check sign-in launch integrations/ })
+      .first()
+      .click()
+    await settled(page)
+    const after = await rowTops(page)
+    for (const id of Object.keys(before).filter((key) => key.startsWith('codex:')))
+      assert.equal(after[id], before[id], 'the other column does not move')
+    assert.equal(after['claude-1'], before['claude-1'], 'rows above the open thread stay put')
+    assert.ok(after['claude-3'] > before['claude-3'], 'rows below it make room')
+    await capture('panel-layout-dual-expanded')
+
+    await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'single' }))
+    await page.waitForFunction(() => document.querySelectorAll('[data-wire-key]').length === 1)
+    console.log(
+      'PASS: dual view hides the wires but keeps the clip, an open thread moves only its own column, and the wire returns in single view.',
+    )
+  } finally {
+    await page.evaluate((settings) => window.threadlight.updateSettings(settings), {
+      enabledProviders: initial.enabledProviders,
+      panelLayout: initial.panelLayout,
+      workspaceWires: initial.workspaceWires,
+      listMode: initial.listMode,
+      maxSessions: initial.maxSessions,
+    })
+  }
+}

@@ -13,11 +13,14 @@ const colourOf = (key: string) =>
 export function WorkspaceLinks({
   card,
   enabled,
+  hidden = false,
   onToggle,
   onMenu,
 }: {
   card: RefObject<HTMLDivElement | null>
   enabled: boolean
+  /** Wires are not drawn (the clip and its menu stay), e.g. while threads sit in two columns. */
+  hidden?: boolean
   onToggle: () => Promise<void>
   /** Right-click on the clip or on any wire. */
   onMenu: (point: { x: number; y: number }) => void
@@ -78,7 +81,7 @@ export function WorkspaceLinks({
       }
       const list = panel.querySelector<HTMLElement>('[data-workspace-thread-list]')
       overlay.replaceChildren()
-      if (!enabled || !list || !list.clientHeight) {
+      if (!enabled || hidden || !list || !list.clientHeight) {
         reportRegions([])
         return
       }
@@ -210,7 +213,7 @@ export function WorkspaceLinks({
       window.threadlight.setWorkspaceWireControl(null)
       window.threadlight.setWorkspaceWireRegions([])
     }
-  }, [card, enabled])
+  }, [card, enabled, hidden])
   const label = enabled ? 'Hide workspace wires' : 'Show workspace wires'
   return (
     <>
