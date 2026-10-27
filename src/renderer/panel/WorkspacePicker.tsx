@@ -128,6 +128,7 @@ export function WorkspacePicker({
                   items={(['claude', 'codex', 'both'] as const).map((value) => ({
                     label: value === 'both' ? 'Both' : value === 'claude' ? 'Claude' : 'Codex',
                     disabled: provider === value,
+                    current: provider === value,
                     onSelect: () => onProviderChange(value),
                   }))}
                 />

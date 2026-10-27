@@ -7,6 +7,8 @@ import { usePanelRoom } from './room'
 export interface MenuItem {
   label: string
   disabled?: boolean
+  /** The choice already in force: drawn as selected (a tick), not greyed out like a blocked item. */
+  current?: boolean
   onSelect: () => void
 }
 
@@ -131,6 +133,8 @@ export function ContextMenu({
             className={styles.menuItem}
             role="menuitem"
             disabled={item.disabled}
+            data-current={item.current || undefined}
+            aria-current={item.current || undefined}
             onClick={() => {
               onClose()
               item.onSelect()

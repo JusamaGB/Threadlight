@@ -13,6 +13,16 @@ export async function checkRecentLimit(page, capture) {
     await view.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
     assert.equal(await view.innerText(), 'Recent')
+    // The chosen option is shown as selected (a tick, full colour), not greyed out like a
+    // blocked one, though choosing it again does nothing.
+    await view.click({ button: 'right' })
+    const chosen = page.getByRole('menuitem', { name: 'Recent', exact: true })
+    const other = page.getByRole('menuitem', { name: 'Workspace', exact: true })
+    assert.equal(await chosen.getAttribute('data-current'), 'true')
+    assert.equal(await chosen.isDisabled(), true)
+    const colour = (item) => item.evaluate((el) => getComputedStyle(el).color)
+    assert.equal(await colour(chosen), await colour(other), 'the chosen option is not dimmed')
+    await page.keyboard.press('Escape')
     assert.equal((await control.innerText()).replace(/\s/g, ''), '−10+')
     await control.getByRole('button', { name: 'Decrease Sessions listed', exact: true }).click()
     await page.waitForFunction(
@@ -36,14 +46,19 @@ export async function checkRecentLimit(page, capture) {
     // Choosing the highlighted time again removes the limit; choosing another brings it back.
     const windowRow = page.getByText('Window', { exact: true }).locator('../..')
     const checked = windowRow.locator('[role="radio"][aria-checked="true"]')
+    const name = windowRow.getByText('Window', { exact: true })
+    const nameColour = () => name.evaluate((el) => getComputedStyle(el).color)
+    const lit = await nameColour()
     assert.equal(await checked.innerText(), '24h')
     await checked.click()
     await checked.waitFor({ state: 'detached' })
+    assert.notEqual(await nameColour(), lit, 'with no limit the word Window greys out')
     const hours = () =>
       page.evaluate(async () => (await window.threadlight.getSettings()).listWindowHours)
     assert.equal(await hours(), 0, 'the same time again means no limit')
     await windowRow.getByRole('radio', { name: '3d', exact: true }).click()
     await checked.waitFor()
+    assert.equal(await nameColour(), lit, 'and lights up again with a limit')
     assert.equal(await hours(), 72)
 
     // Each row explains itself on hover; the short wording is the Info help.

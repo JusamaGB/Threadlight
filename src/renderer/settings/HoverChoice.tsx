@@ -59,6 +59,7 @@ export function HoverChoice<T extends string>({
   const items: MenuItem[] = options.map((option) => ({
     label: option.label,
     disabled: option.value === value,
+    current: option.value === value,
     onSelect: () => void onChange(option.value),
   }))
   return (

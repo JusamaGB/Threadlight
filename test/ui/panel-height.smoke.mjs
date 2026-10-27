@@ -98,6 +98,7 @@ export async function checkWorkspaceHeight(page, capture) {
       '24h',
       '3d',
       '7d',
+      'Any time',
     ])
     assert.equal(
       await timeMenu.getByRole('menuitem', { name: '24h', exact: true }).isDisabled(),
