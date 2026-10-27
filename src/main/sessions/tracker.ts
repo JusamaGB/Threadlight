@@ -49,7 +49,18 @@ export interface TrackerOptions {
   held?: (sessionId: string) => HeldPart | null
   /** Which threads keep their place in the recent list however old (default: any not idle). */
   pinned?: (session: Session) => boolean
+  /**
+   * The most threads one scan builds for the workspace tree. Turning the time window off must not
+   * mean building every thread there has ever been; a workspace beyond this stays closed until
+   * "Show more" is chosen for it.
+   */
+  treeBudget?: number
 }
+
+/** Plenty for the Workspace list, and what a scan can build in well under a second. */
+const DEFAULT_TREE_BUDGET = 300
+/** The recent list is cut to a few dozen, so only the newest transcripts are ever read for it. */
+const RECENT_CANDIDATES = 120
 
 interface TranscriptFile {
   path: string
@@ -99,7 +110,11 @@ export class Tracker {
     // Time-window membership follows live activity; order follows task completion.
     const cutoff = now - this.windowMs
     const recentIds = new Set(hooks.keys())
-    for (const [id, file] of files) if (file.mtimeMs > cutoff) recentIds.add(id)
+    const newest = [...files]
+      .filter(([, file]) => file.mtimeMs > cutoff)
+      .sort(([, a], [, b]) => b.mtimeMs - a.mtimeMs)
+      .slice(0, Math.max(RECENT_CANDIDATES, this.maxSessions * 3))
+    for (const [id] of newest) recentIds.add(id)
     const recent: Session[] = []
     const hidden = this.options.hiddenFolder?.()?.toLowerCase() ?? null
     for (const id of recentIds) {
@@ -170,7 +185,12 @@ export class Tracker {
     }
 
     const workspaces: Workspace[] = []
-    for (const [key, members] of groups) {
+    // The most recently active workspaces are built first, so a budget runs out on the oldest.
+    let budget = this.options.treeBudget ?? DEFAULT_TREE_BUDGET
+    const newestFirst = [...groups].sort(
+      ([, a], [, b]) => Math.max(...b.map(activity)) - Math.max(...a.map(activity)),
+    )
+    for (const [key, members] of newestFirst) {
       const path = homeOf(members[0]!)
       const states = members.map((app) =>
         lightState(hooks.get(app.cliSessionId), files.get(app.cliSessionId), now),
@@ -185,7 +205,7 @@ export class Tracker {
         hiddenCount: 0,
         worktrees: 0,
       }
-      if (expanded.has(key)) {
+      if (expanded.has(key) && (budget > 0 || showAll.has(key))) {
         // Side threads nest under the thread that started them, when it is in the same workspace.
         const byAppId = new Map(members.map((app) => [app.appId, app]))
         const childrenOf = new Map<string, AppRecord[]>()
@@ -202,6 +222,7 @@ export class Tracker {
         roots.sort((a, b) => orderedAt(b) - orderedAt(a) || a.appId.localeCompare(b.appId))
         const shown = showAll.has(key) ? roots : roots.slice(0, this.maxSessions)
         workspace.hiddenCount = roots.length - shown.length
+        budget -= shown.length
         const seen = new Set<string>()
         const node = async (app: AppRecord): Promise<ThreadNode> => {
           seen.add(app.appId)
@@ -215,6 +236,9 @@ export class Tracker {
         }
         for (const app of shown) workspace.threads.push(await node(app))
         workspace.worktrees = countWorktrees(workspace.threads)
+      } else if (expanded.has(key)) {
+        // Over budget: listed, but its threads load only when asked for.
+        workspace.hiddenCount = members.filter((app) => !app.parentAppId).length
       }
       workspaces.push(workspace)
     }

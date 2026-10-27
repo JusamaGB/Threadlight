@@ -6,6 +6,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Turning **Window** off no longer makes Threadlight read every Claude thread you have ever
+  had. A scan builds only the newest threads for Recent and at most 300 for the Workspace list
+  (the newest workspaces first); the rest stay listed with their counts and load when you
+  choose "Show more" for one. Before, a long history could take ten seconds to appear after a
+  start and keep the app busy on every scan.
+
 - Dual view no longer shows a half-built layout when you move between lists. Going from Active
   to Recent used to grow the card with all ten threads crammed in the right column for about a
   second before splitting them. The columns now open and close with the card; the rows glide

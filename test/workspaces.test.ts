@@ -161,6 +161,39 @@ describe('workspace tree', () => {
     expect(wide.map((w) => w.name)).toEqual(['fresh', 'stale'])
   })
 
+  it('never builds more than its budget of threads when the time window is off', async () => {
+    // Eight workspaces of two threads each, the newest first, none of them recent.
+    const names: string[] = []
+    for (let w = 0; w < 8; w++) {
+      const folder = `C:\\demo\\w${w}`
+      names.push(`w${w}`)
+      await thread(folder, `W${w}a`, { agoMs: (100 + w * 10) * 24 * HOUR })
+      await thread(folder, `W${w}b`, { agoMs: (101 + w * 10) * 24 * HOUR })
+    }
+    const view = {
+      expanded: names.map((name) => `C:\\demo\\${name}`),
+      showAll: [] as string[],
+    }
+    const limited = new Tracker({
+      paths: box.paths,
+      hooks,
+      now: () => NOW,
+      maxSessions: 10,
+      windowHours: 0,
+      treeBudget: 6,
+    })
+    const { workspaces } = await limited.snapshot(view)
+    // Every workspace is still listed with its count, but only the newest three are built.
+    expect(workspaces).toHaveLength(8)
+    expect(workspaces.every((w) => w.threadCount === 2)).toBe(true)
+    const loaded = workspaces.filter((w) => w.threads.length > 0).map((w) => w.name)
+    expect(loaded).toEqual(['w0', 'w1', 'w2'])
+    // The rest wait to be asked for, and asking for one loads it despite the budget.
+    expect(byName(workspaces, 'w7')).toMatchObject({ threads: [], hiddenCount: 2 })
+    const asked = await limited.snapshot({ ...view, showAll: ['C:\\demo\\w7'] })
+    expect(titles(byName(asked.workspaces, 'w7').threads)).toEqual(['W7a', 'W7b'])
+  })
+
   it('still offers every workspace for choosing one, whatever the window', async () => {
     await thread('C:\\demo\\fresh', 'Today', { agoMs: 2 * HOUR })
     await thread('C:\\demo\\stale', 'Old only', { agoMs: 5 * 24 * HOUR })

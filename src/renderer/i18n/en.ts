@@ -355,7 +355,7 @@ export const en = {
       },
       window: {
         info: 'Hides threads with no activity in this time. Click the chosen time again to remove the limit.',
-        tour: 'With no limit, threads of any age are listed.',
+        tour: 'With no limit, threads of any age are listed. A long history means a lot more to read, so the panel can be slower to fill.',
       },
       count: {
         info: 'How many threads the Recent list shows (3–50).',
