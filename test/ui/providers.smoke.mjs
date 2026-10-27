@@ -25,6 +25,7 @@ import { checkHoverMotion } from './hover-motion.smoke.mjs'
 
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar, checkRecentLimit, checkSubpagePinning } from './toolbar.smoke.mjs'
+import { checkPanelLayout } from './panel-layout.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkWorkspacePicker } from './workspace-picker.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
@@ -350,6 +351,13 @@ checks: try {
           dotClick: () => window.proof.calls.push(['dotClick']),
           leavePanel: () => window.proof.calls.push(['leavePanel']),
           resizePanel: (height) => window.proof.resizes.push(height),
+          setPanelLayout: async (layout) => {
+            window.proof.layouts = [...(window.proof.layouts ?? []), layout]
+            return { cardWidth: layout === 'dual' ? 480 : 238 }
+          },
+          setWorkspaceWireRegions: (regions) => {
+            window.proof.wireRegions = regions
+          },
           stopOpenMic: () => window.proof.calls.push(['stopOpenMic']),
           getAgent: async () => agent,
           getUsage: async () => ({
@@ -593,6 +601,11 @@ checks: try {
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'activity-rings') {
     await checkActivityRings(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'panel-layout') {
+    await checkPanelLayout(page, capture)
     assert.deepEqual(errors, [])
     break checks
   }

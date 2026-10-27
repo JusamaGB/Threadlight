@@ -14,10 +14,15 @@ import {
   WORKSPACE_GUTTER,
   type AttentionMotion,
 } from '../shared/attentionMotion'
+import { inGutterRegion, parseGutterRegions, type GutterRegion } from '../shared/gutterRegions'
 import type { Session } from '../shared/types'
 
 export { DOT_SIZE }
 export const PANEL_WIDTH = 238 // 236 of content plus a 1 px border each side
+/** Two columns wide: Claude and Codex threads side by side. */
+export const PANEL_WIDTH_DUAL = 480
+/** The widening and narrowing animation; the gutter stays interactive-safe while it runs. */
+const LAYOUT_ANIMATION_MS = 500
 const MARGIN = 8
 
 export const CORNERS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'] as const
@@ -98,6 +103,9 @@ export class WindowManager {
   private talking = false
   private gutterIgnored = false
   private wireControl: { top: number; height: number } | null = null
+  private wireRegions: GutterRegion[] = []
+  private panelLayout: 'single' | 'dual' = 'single'
+  private layoutAnimation: ReturnType<typeof setTimeout> | null = null
   private workspacePanel = false
   private workspaceTop: number | null = null
   private workspaceDragTop: number | null = null
@@ -250,7 +258,10 @@ export class WindowManager {
           this.wireControl &&
           point.y >= bounds.y + this.wireControl.top &&
           point.y < bounds.y + this.wireControl.top + this.wireControl.height
-        )
+        ) &&
+        !inGutterRegion(this.wireRegions, { x: point.x - bounds.x, y: point.y - bounds.y }) &&
+        // The card is moving while the layout changes, so nothing is click-through then.
+        !this.layoutAnimation
       if (gutter !== this.gutterIgnored) {
         this.gutterIgnored = gutter
         this.panel.setIgnoreMouseEvents(gutter, { forward: true })
@@ -287,6 +298,36 @@ export class WindowManager {
       height <= 32
     )
       this.wireControl = { top, height }
+  }
+
+  /** The thin clickable strips along each wire; everything else in the gutter passes clicks through. */
+  setWorkspaceWireRegions(value: unknown): void {
+    this.wireRegions = parseGutterRegions(value)
+  }
+
+  /** The card's width in the current layout, kept inside the work area. */
+  private cardWidth(): number {
+    if (this.panelLayout === 'single') return PANEL_WIDTH
+    const area = this.workArea()
+    return Math.max(
+      PANEL_WIDTH,
+      Math.min(PANEL_WIDTH_DUAL, area.width - 2 * MARGIN - WORKSPACE_GUTTER),
+    )
+  }
+
+  /** Single is the narrow column; dual widens the window leftwards from the dot's corner. */
+  setPanelLayout(value: unknown): { cardWidth: number } | null {
+    if (value !== 'single' && value !== 'dual') return null
+    if (value !== this.panelLayout) {
+      this.panelLayout = value
+      if (this.layoutAnimation) clearTimeout(this.layoutAnimation)
+      this.layoutAnimation = setTimeout(() => {
+        this.layoutAnimation = null
+      }, LAYOUT_ANIMATION_MS)
+      this.layoutAnimation.unref?.()
+      this.placePanel(this.panel.getBounds().height)
+    }
+    return { cardWidth: this.cardWidth() }
   }
 
   resizePanel(height: number): void {
@@ -453,7 +494,7 @@ export class WindowManager {
   private placePanel(height: number): void {
     const dot = this.dotBounds()
     const area = this.workArea()
-    const width = PANEL_WIDTH + WORKSPACE_GUTTER
+    const width = this.cardWidth() + WORKSPACE_GUTTER
     const x = clamp(dot.x + DOT_SIZE - width, area.x, area.x + area.width - width)
     const y = this.workspacePanel
       ? clamp(this.workspaceTop ?? dot.y, area.y + MARGIN, area.y + area.height - MARGIN - height)

@@ -59,7 +59,8 @@ vi.mock('electron', () => {
     },
   }
 })
-import { WindowManager } from '../src/main/windows'
+import { PANEL_WIDTH, PANEL_WIDTH_DUAL, WindowManager } from '../src/main/windows'
+import { WORKSPACE_GUTTER } from '../src/shared/attentionMotion'
 
 describe('panel movement and available height', () => {
   it('uses the full work area for Workspace, keeps its top fixed on resize, and restores normal layout', () => {
@@ -110,7 +111,7 @@ describe('panel movement and available height', () => {
     const windows = new WindowManager()
     windows.openPanel()
     const bounds = windows.panel.getBounds()
-    expect(bounds.width).toBe(280)
+    expect(bounds.width).toBe(PANEL_WIDTH + WORKSPACE_GUTTER)
     state.cursor = { x: bounds.x + 8, y: bounds.y + 30 }
     vi.advanceTimersByTime(16)
     expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
@@ -139,6 +140,78 @@ describe('panel movement and available height', () => {
     expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
     windows.setWorkspaceWireControl(null)
     vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+  })
+
+  it('accepts clicks on each wire but leaves the gaps between wires click-through', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.resizePanel(600)
+    const bounds = windows.panel.getBounds()
+    windows.setWorkspaceWireRegions([{ x: 8, y: 100, width: 8, height: 200 }])
+    state.cursor = { x: bounds.x + 12, y: bounds.y + 40 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor = { x: bounds.x + 12, y: bounds.y + 150 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    state.cursor.y = bounds.y + 320
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor = { x: bounds.x + 2, y: bounds.y + 150 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    // Malformed regions from the page are ignored, not trusted.
+    state.cursor = { x: bounds.x + 12, y: bounds.y + 150 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    windows.setWorkspaceWireRegions([{ x: -5, y: 0, width: 8, height: 8 }, 'bad', null])
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+  })
+
+  it('widens the panel leftwards for dual view, keeps its right edge, and narrows it again', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    const single = windows.panel.getBounds()
+    expect(windows.setPanelLayout('dual')).toEqual({ cardWidth: PANEL_WIDTH_DUAL })
+    const dual = windows.panel.getBounds()
+    expect(dual.width).toBe(PANEL_WIDTH_DUAL + WORKSPACE_GUTTER)
+    expect(dual.x + dual.width).toBe(single.x + single.width)
+    expect(dual.y).toBe(single.y)
+    expect(windows.setPanelLayout('single')).toEqual({ cardWidth: PANEL_WIDTH })
+    expect(windows.panel.getBounds()).toMatchObject({ x: single.x, width: single.width })
+    // Anything else is refused and changes nothing.
+    expect(windows.setPanelLayout('triple')).toBeNull()
+    expect(windows.panel.getBounds().width).toBe(single.width)
+  })
+
+  it('keeps dual view inside a narrow work area', () => {
+    state.saved = { x: -300, y: 100 }
+    state.secondary = { x: -1280, y: 0, width: 400, height: 720 }
+    const windows = new WindowManager()
+    windows.openPanel()
+    const { cardWidth } = windows.setPanelLayout('dual')!
+    expect(cardWidth).toBe(400 - 16 - WORKSPACE_GUTTER)
+    const bounds = windows.panel.getBounds()
+    expect(bounds.x).toBeGreaterThanOrEqual(-1280)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(-880)
+    state.secondary = { x: -1280, y: 0, width: 1280, height: 720 }
+  })
+
+  it('takes the gutter out of click-through only while the layout animates', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    const bounds = windows.panel.getBounds()
+    state.cursor = { x: bounds.x + 8, y: bounds.y + 80 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    windows.setPanelLayout('dual')
+    const moved = windows.panel.getBounds()
+    state.cursor = { x: moved.x + 8, y: moved.y + 80 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    vi.advanceTimersByTime(600)
     expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
   })
 
@@ -297,7 +370,7 @@ describe('panel movement and available height', () => {
       opensDown: false,
       fresh: false,
     })
-    expect(windows.panel.getBounds()).toMatchObject({ x: -558, y: 8, height: 614 })
+    expect(windows.panel.getBounds()).toMatchObject({ x: -532, y: 8, height: 614 })
     windows.endDrag()
     windows.dragDot(0, 98)
     expect(windows.panel.webContents.send).toHaveBeenLastCalledWith(IPC.panelOpened, {
