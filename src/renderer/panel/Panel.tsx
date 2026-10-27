@@ -1456,7 +1456,6 @@ export function Panel() {
           <div className={styles.usageBars} data-parallel={provider === 'both' || undefined}>
             {workspaceView ? (
               <WorkspaceResize
-                height={workspaceHeight}
                 maxHeight={maxHeight}
                 saving={savingWorkspaceHeight}
                 onPreview={setWorkspaceDragHeight}

@@ -1936,11 +1936,6 @@ span.planStep {
   cursor: inherit;
 }
 
-.workspaceResizeArea:focus-visible {
-  outline: 1px solid var(--faint);
-  outline-offset: -1px;
-}
-
 .usage {
   height: 6px;
   display: flex;
