@@ -45,29 +45,26 @@ export function AgentSettings({
           appearance="settings"
           saveSettings={persist}
         />
-      </div>
-      <label className={styles.row}>
-        <span className={styles.text}>
-          <Tip
-            className={styles.label}
-            text={en.settings.help.agentLifetime.info}
-            tourHelp={en.settings.help.agentLifetime.tour}
-          >
-            {en.settings.agentLifetime}
-          </Tip>
-        </span>
-        <select
-          aria-label="Agent conversation lifetime"
-          value={settings.agentLifetimeMinutes}
-          onChange={(e) => void save({ agentLifetimeMinutes: Number(e.target.value) })}
+        {/* How long the conversation lasts sits in the same row as provider, model and effort;
+            hovering it says what it is for. */}
+        <Tip
+          className={styles.agentLifetime}
+          text={en.settings.help.agentLifetime.info}
+          tourHelp={en.settings.help.agentLifetime.tour}
         >
-          {[...new Set([10, 60, 240, 0, settings.agentLifetimeMinutes])].map((n) => (
-            <option key={n} value={n}>
-              {en.settings.lifetime(n)}
-            </option>
-          ))}
-        </select>
-      </label>
+          <select
+            aria-label="Agent conversation lifetime"
+            value={settings.agentLifetimeMinutes}
+            onChange={(e) => void save({ agentLifetimeMinutes: Number(e.target.value) })}
+          >
+            {[...new Set([10, 60, 240, 0, settings.agentLifetimeMinutes])].map((n) => (
+              <option key={n} value={n}>
+                {en.settings.lifetime(n)}
+              </option>
+            ))}
+          </select>
+        </Tip>
+      </div>
     </section>
   )
 }
