@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Settings, SettingsPatch } from '../../shared/settings'
 import { AgentIdentity } from '../panel/AgentIdentity'
 import { Tip } from '../panel/Tip'
+import { HoverChoice } from './HoverChoice'
 import { en } from '../i18n/en'
 import styles from './Settings.module.css'
 
@@ -45,25 +46,19 @@ export function AgentSettings({
           appearance="settings"
           saveSettings={persist}
         />
-        {/* How long the conversation lasts sits in the same row as provider, model and effort;
-            hovering it says what it is for. */}
-        <Tip
-          className={styles.agentLifetime}
-          text={en.settings.help.agentLifetime.info}
-          tourHelp={en.settings.help.agentLifetime.tour}
-        >
-          <select
-            aria-label="Agent conversation lifetime"
-            value={settings.agentLifetimeMinutes}
-            onChange={(e) => void save({ agentLifetimeMinutes: Number(e.target.value) })}
-          >
-            {[...new Set([10, 60, 240, 0, settings.agentLifetimeMinutes])].map((n) => (
-              <option key={n} value={n}>
-                {en.settings.lifetime(n)}
-              </option>
-            ))}
-          </select>
-        </Tip>
+        {/* How long the conversation lasts sits in the same row as provider, model and effort and
+            works like them: hover to list the other choices, click to hold the menu open. */}
+        <HoverChoice
+          label="Agent conversation lifetime"
+          title={en.settings.help.agentLifetime.info}
+          appearance="text"
+          value={String(settings.agentLifetimeMinutes)}
+          options={[...new Set([10, 60, 240, 0, settings.agentLifetimeMinutes])].map((n) => ({
+            value: String(n),
+            label: en.settings.lifetime(n),
+          }))}
+          onChange={(minutes) => save({ agentLifetimeMinutes: Number(minutes) })}
+        />
       </div>
     </section>
   )
