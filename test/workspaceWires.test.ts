@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { layoutWorkspaceWires } from '../src/shared/workspaceWires'
+import {
+  CENTRE_HALF,
+  centreOffset,
+  centreReach,
+  centreWirePath,
+  layoutWorkspaceWires,
+} from '../src/shared/workspaceWires'
 
 const span = (key: string, first: number, last: number) => ({ key, first, last })
 const byKey = (input: ReturnType<typeof layoutWorkspaceWires>) =>
@@ -58,5 +64,35 @@ describe('workspace wire lanes', () => {
     expect(byKey(layoutWorkspaceWires(input)).b!.x).toBe(12)
     expect(byKey(layoutWorkspaceWires([input[0]!, span('a', -30, 50)])).a!.x).toBe(12)
     expect(input).toEqual([span('b', -40, 10), span('a', -30, 20)])
+  })
+})
+
+describe('workspace wires down the centre', () => {
+  it('puts the longest lane dead centre and alternates the rest either side', () => {
+    expect([0, 1, 2, 3, 4].map(centreOffset)).toEqual([0, -4, 4, -8, 8])
+  })
+
+  it('keeps every lane inside the strip, with spikes reaching further as lanes step out', () => {
+    for (let lane = 0; lane < 12; lane++) {
+      expect(Math.abs(centreOffset(lane))).toBeLessThan(CENTRE_HALF)
+      expect(centreReach(lane)).toBeLessThan(CENTRE_HALF)
+    }
+    expect(centreReach(1)).toBeGreaterThan(centreReach(0))
+    expect(centreReach(2)).toBeGreaterThan(centreReach(1))
+  })
+
+  it('draws a spike from each thread, either side of the divider, to the rail', () => {
+    const { first, last, path } = centreWirePath(
+      [
+        { y: 100, side: 1 },
+        { y: 20, side: -1 },
+        { y: 60, side: 1 },
+      ],
+      0,
+    )
+    expect([first, last]).toEqual([20, 100])
+    expect(path).toBe(
+      `M ${CENTRE_HALF - 5} 20 H ${CENTRE_HALF - 3} Q ${CENTRE_HALF} 20 ${CENTRE_HALF} 23 V 97 Q ${CENTRE_HALF} 100 ${CENTRE_HALF + 3} 100 H ${CENTRE_HALF + 5} M ${CENTRE_HALF} 60 H ${CENTRE_HALF + 5}`,
+    )
   })
 })

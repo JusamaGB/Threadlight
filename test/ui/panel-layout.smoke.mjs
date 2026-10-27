@@ -277,7 +277,7 @@ const rowTops = (page) =>
     ),
   )
 
-/** Wires are hidden beside two columns, and an open thread only moves its own column. */
+/** The wire runs down the divider beside two columns, and an open thread only moves its own column. */
 export async function checkDualDetails(page, capture) {
   const initial = await page.evaluate(() => window.threadlight.getSettings())
   try {
@@ -308,7 +308,19 @@ export async function checkDualDetails(page, capture) {
       )
     })
     await settled(page)
-    assert.equal(await page.locator('[data-wire-key]').count(), 0, 'no wires beside two columns')
+    await page.waitForFunction(() => document.querySelectorAll('[data-wire-key]').length === 1)
+    const centred = await page.evaluate(() => {
+      const strip = document.querySelector('[data-workspace-links]').getBoundingClientRect()
+      const right = document.querySelector('[data-dual-right]').getBoundingClientRect()
+      const wire = document.querySelector('[data-wire-key]')
+      return {
+        offset: strip.left + strip.width / 2 - right.left,
+        lane: wire.dataset.lane,
+        members: wire.dataset.members,
+      }
+    })
+    assert.ok(Math.abs(centred.offset) <= 1, 'the strip is centred on the divider')
+    assert.equal(centred.lane, '0', 'the one group is the longest, so it is dead centre')
     assert.equal(
       await page.getByRole('button', { name: /workspace wires$/ }).count(),
       1,
@@ -349,7 +361,7 @@ export async function checkDualDetails(page, capture) {
     assert.equal(await page.locator('[data-session-id]').count(), 6, 'every thread is listed once')
     await capture('panel-layout-dual-workspace')
     console.log(
-      'PASS: dual view hides the wires but keeps the clip, an open thread moves only its own column, the Workspace list splits by provider, and the wire returns in single view.',
+      'PASS: dual view runs the wire down the divider and keeps the clip, an open thread moves only its own column, the Workspace list splits by provider, and the wire returns in single view.',
     )
   } finally {
     await page.evaluate((settings) => window.threadlight.updateSettings(settings), {

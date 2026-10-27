@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { WORKSPACE_GUTTER } from '../../shared/attentionMotion'
-import { layoutWorkspaceWires } from '../../shared/workspaceWires'
+import {
+  CENTRE_HALF,
+  centreWirePath,
+  layoutWorkspaceWires,
+  type CentreMember,
+} from '../../shared/workspaceWires'
 import { HeaderWire } from '../motion/HeaderWire'
 import styles from './WorkspaceLinks.module.css'
 
@@ -12,13 +17,13 @@ const colourOf = (key: string) =>
 export function WorkspaceLinks({
   card,
   enabled,
-  hidden = false,
+  centre = false,
   onToggle,
 }: {
   card: RefObject<HTMLDivElement | null>
   enabled: boolean
-  /** Wires are not drawn (the clip and its menu stay), e.g. while threads sit in two columns. */
-  hidden?: boolean
+  /** Threads sit in two columns: the rail runs down the divider between them. */
+  centre?: boolean
   onToggle: () => Promise<void>
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -66,36 +71,60 @@ export function WorkspaceLinks({
       }
       const list = panel.querySelector<HTMLElement>('[data-workspace-thread-list]')
       overlay.replaceChildren()
-      if (!enabled || hidden || !list || !list.clientHeight) return
+      if (!enabled || !list || !list.clientHeight) return
       const top = list.getBoundingClientRect().top
       overlay.style.top = `${top - overlay.parentElement!.getBoundingClientRect().top}px`
       overlay.style.height = `${list.clientHeight}px`
-      const groups = new Map<string, number[]>()
+      // Beside two columns the overlay is a strip over the divider; otherwise the card's gutter.
+      const divider = centre
+        ? list.querySelector<HTMLElement>('[data-dual-right]')?.getBoundingClientRect().left
+        : undefined
+      const width = divider === undefined ? WORKSPACE_GUTTER : CENTRE_HALF * 2
+      overlay.style.left =
+        divider === undefined
+          ? ''
+          : `${divider - CENTRE_HALF - overlay.parentElement!.getBoundingClientRect().left}px`
+      overlay.style.width = `${width}px`
+      // Over the card, not beside it: the divider is inside the card's own background.
+      overlay.style.zIndex = divider === undefined ? '' : '1'
+      const groups = new Map<string, CentreMember[]>()
       for (const row of list.querySelectorAll<HTMLElement>('[data-workspace-folder]')) {
         const key = row.dataset.workspaceFolder
         if (!key) continue
         const anchor = row.querySelector<HTMLElement>('[data-workspace-anchor]')
         if (!anchor) continue
         const box = anchor.getBoundingClientRect()
-        groups.set(key, [...(groups.get(key) ?? []), box.top + box.height / 2 - top])
+        groups.set(key, [
+          ...(groups.get(key) ?? []),
+          {
+            y: box.top + box.height / 2 - top,
+            side: divider !== undefined && box.left > divider ? 1 : -1,
+          },
+        ])
       }
+      for (const members of groups.values()) members.sort((a, b) => a.y - b.y)
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-      svg.setAttribute('viewBox', `0 0 ${WORKSPACE_GUTTER} ${list.clientHeight}`)
-      svg.setAttribute('width', String(WORKSPACE_GUTTER))
+      svg.setAttribute('viewBox', `0 0 ${width} ${list.clientHeight}`)
+      svg.setAttribute('width', String(width))
       svg.setAttribute('height', String(list.clientHeight))
-      const linked = [...groups].filter(([, ys]) => ys.length > 1)
+      const linked = [...groups].filter(([, members]) => members.length > 1)
       const routes = layoutWorkspaceWires(
-        linked.map(([key, ys]) => ({ key, first: ys[0]!, last: ys.at(-1)! })),
+        linked.map(([key, members]) => ({ key, first: members[0]!.y, last: members.at(-1)!.y })),
       )
       if (held && !linked.some(([key]) => key === held)) held = null
       for (const { key, first, last, lane, x } of routes) {
-        const ys = groups.get(key)!
-        const r = Math.min(3, WORKSPACE_GUTTER - x, (last - first) / 2)
-        let path = `M 16 ${first} H ${x + r} Q ${x} ${first} ${x} ${first + r} V ${last - r} Q ${x} ${last} ${x + r} ${last} H 16`
-        for (const y of ys.slice(1, -1)) path += ` M ${x} ${y} H 16`
+        const members = groups.get(key)!
+        let path: string
+        if (divider === undefined) {
+          const r = Math.min(3, WORKSPACE_GUTTER - x, (last - first) / 2)
+          path = `M 16 ${first} H ${x + r} Q ${x} ${first} ${x} ${first + r} V ${last - r} Q ${x} ${last} ${x + r} ${last} H 16`
+          for (const { y } of members.slice(1, -1)) path += ` M ${x} ${y} H 16`
+        } else {
+          path = centreWirePath(members, lane).path
+        }
         const group = document.createElementNS(svg.namespaceURI, 'g')
         group.setAttribute('data-wire-key', key)
-        group.setAttribute('data-members', String(ys.length))
+        group.setAttribute('data-members', String(members.length))
         group.setAttribute('data-lane', String(lane))
         group.setAttribute('data-rail-x', String(x))
         group.setAttribute('stroke', colourOf(key))
@@ -184,7 +213,7 @@ export function WorkspaceLinks({
       window.removeEventListener('resize', schedule)
       window.threadlight.setWorkspaceWireControl(null)
     }
-  }, [card, enabled, hidden])
+  }, [card, enabled, centre])
   const label = enabled ? 'Hide workspace wires' : 'Show workspace wires'
   return (
     <>
