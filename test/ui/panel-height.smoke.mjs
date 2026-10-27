@@ -40,7 +40,7 @@ export async function checkWorkspaceHeight(page, capture) {
     assert.equal(await grip.locator('button, svg').count(), 0, 'no visible resize control')
     await page.getByLabel(/^Claude · 5-hour limit/).hover()
     await page.getByRole('tooltip').filter({ hasText: 'Claude · 5-hour limit' }).waitFor()
-    await page.locator('header').hover()
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     await page.getByRole('tooltip').waitFor({ state: 'detached' })
     const strip = page.locator('[class*="_workspaceResizeArea_"]')
     const box = await strip.boundingBox()
@@ -162,7 +162,7 @@ export async function checkWorkspaceHeight(page, capture) {
       1,
       'resize keeps the revealed footer stable',
     )
-    await page.locator('header').hover()
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     await page.getByRole('tooltip').waitFor({ state: 'detached' })
     await page.evaluate(() => window.threadlight.updateSettings({ workspacePanelHeight: 700 }))
     await setRows(40)

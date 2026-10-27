@@ -38,7 +38,8 @@ export async function checkLastActive(page, row, capture) {
     await capture('last-active-time-hover')
     await page.mouse.move(box.x + 67, box.y + 8)
     assert.equal(await tip.count(), 0, 'movement dismisses the shown time')
-    await page.locator('header').hover()
+    // The header's far edge has no control of its own, so it has no hint of its own.
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     await page.clock.runFor(1100)
     assert.equal(await tip.count(), 0, 'leaving cancels the pending time')
     await hover('Codex')
@@ -343,14 +344,14 @@ export async function checkFooterExpansion(page, row, capture) {
       'recent',
       'clicking the message does not open the source diff',
     )
-    await page.locator('header').hover()
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     await tip.waitFor({ state: 'detached' })
     assert.equal((await card.boundingBox()).height, before.card.height)
     await page.getByLabel(/^Claude · 5-hour limit/).hover()
     await tip.waitFor()
     assert.equal(await tip.getByRole('separator').count(), 0, 'Recent usage has no resize action')
     assert.doesNotMatch(await tip.innerText(), /Drag to set Workspace maximum height/)
-    await page.locator('header').hover()
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     await tip.waitFor({ state: 'detached' })
 
     await page.evaluate(async () => {
@@ -418,7 +419,7 @@ export async function checkFooterExpansion(page, row, capture) {
       bottom = await bars.first().boundingBox()
     assert.ok(message.y + message.height <= bottom.y + 0.5)
     await capture('footer-hint-single-provider')
-    await page.locator('header').hover()
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     await tip.waitFor({ state: 'detached' })
     console.log(
       'PASS: Recent opens downward; capped Workspace opens upward, remains stable and resizable; readable footer text and single-provider fallback.',
