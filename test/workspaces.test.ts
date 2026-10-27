@@ -240,4 +240,10 @@ describe('workspace tree', () => {
     expect(byName(workspaces, 'loud')).toMatchObject({ anyWorking: true, activeCount: 1 })
     expect(byName(workspaces, 'quiet')).toMatchObject({ anyWorking: false, activeCount: 0 })
   })
+
+  it('lists every workspace in full for All drives, however many there are', async () => {
+    for (let k = 0; k < 40; k++) await thread(`C:\\demo\\w${k}`, `Thread ${k}`, { agoMs: HOUR + k })
+    const { workspaces } = await tracker().snapshot({ expanded: [], showAll: [], everything: true })
+    expect(workspaces.flatMap((w) => w.threads)).toHaveLength(40)
+  })
 })

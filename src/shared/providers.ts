@@ -39,7 +39,7 @@ export function workspaceInScope(id: string, selected: string): boolean {
 
 /** Workspace folders can be identical across apps; their tree state must stay separate. */
 export function providerView(enabled: Provider[], provider: Provider, view: TreeView): TreeView {
-  if (enabled.length < 2) return view
+  if (enabled.length < 2 || view.everything) return view
   const prefix = `${provider}:`
   const own = (ids: string[]) =>
     ids.filter((id) => id.startsWith(prefix)).map((id) => id.slice(prefix.length))

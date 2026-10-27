@@ -21,9 +21,8 @@ interface WorkspaceTreeProps {
 /** The recent list's rows, wrapped in workspace groups like the Claude sidebar. */
 export function WorkspaceTree(props: WorkspaceTreeProps) {
   const { workspaces, only, isOpen, onToggle, onShowMore, renderRow } = props
-  const shown = only
-    ? workspaces.filter((w) => (only.ids ?? [only.id]).some((id) => sameFolder(w.id, id)))
-    : workspaces
+  const wanted = only ? new Set((only.ids ?? [only.id]).map(folderKey)) : null
+  const shown = wanted ? workspaces.filter((w) => wanted.has(folderKey(w.id))) : workspaces
 
   if (shown.length === 0) {
     return props.emptyMessage ? (
@@ -129,9 +128,10 @@ function Nodes({
   )
 }
 
+const folderKey = (path: string) => path.replace(/[\\/]+$/, '').toLowerCase()
+
 export function sameFolder(a: string, b: string): boolean {
-  const key = (path: string) => path.replace(/[\\/]+$/, '').toLowerCase()
-  return key(a) === key(b)
+  return folderKey(a) === folderKey(b)
 }
 
 /** A workspace's worktrees, once there is more than the main checkout. */
