@@ -41,7 +41,7 @@ Every pinned page shows a muted top-edge pinstripe matching the header wire clip
 header's double-click gesture or focused Enter/Space action unpins without resetting the view.
 
 Recent shows a compact `−count+` control in place of its bullet/count, using the
-Sessions listed setting (3–25). Changes save immediately and update Settings;
+Sessions listed setting (3–50). Changes save immediately and update Settings;
 settings changes update the header in turn. Minus/plus never change or pin the
 view. Active, Workspace and All keep their current count display.
 
@@ -254,11 +254,11 @@ overlay or reserved gutter, leaving the rows' full width available for content.
 
 ### Dual view
 
-Right-clicking the header wire clip, or any workspace wire, opens a menu with one item:
-**Dual view**, or **Single view** when the panel is already dual. The choice is saved
+A thread's right-click menu ends with **Dual view**, or **Single view** when the panel is
+already dual (after Worktree diff, Compose and Open in Claude). The choice is saved
 (`panelLayout`) and restored when the panel opens. Dual view needs both Claude and Codex
-switched on; otherwise the column stays single and the menu does not open. There is no
-drag handle and no keyboard shortcut.
+switched on and the Recent or Workspace list; otherwise the column stays single and the
+item is not offered. There is no drag handle and no keyboard shortcut.
 
 Dual widens the native window leftwards from the dot's corner (inside the work area) to a
 475px card: two 236px columns and a 1px divider, so a row is the same width as in the
@@ -271,14 +271,15 @@ height while rows slide so none are clipped, and takes the new height as they cl
 Reduced-motion preferences switch layouts instantly. A thread that is open or waiting on
 an answer stays inside its own column; the other column does not move.
 
-Dual applies to the Active and Recent lists. Workspace and All keep a single column at the
-wider card width. The workspace wires hang off the card's left edge, so they are not drawn
-while the columns are split; the clip and its menu remain.
+Dual applies to the Recent and Workspace lists. Active (short, and usually one or two
+threads) and All stay one column. Switching to one of those narrows the panel back to a
+single column without changing the saved choice, and returning to Recent or Workspace
+restores it. Workspace keeps a single column at the wider card width. The workspace wires
+hang off the card's left edge, so they are not drawn while the columns are split; the clip
+remains.
 
-The 16px gutter beside the card is otherwise click-through. Each wire has a thin (about
-8px) clickable strip along its rail, reported to the main process as a list of regions;
-the rest of the gutter passes clicks to the app behind. While the layout animates the
-gutter is not click-through, because the card is moving.
+The 16px gutter beside the card is click-through. While the layout animates it is not,
+because the card is moving.
 
 Context circles spin for the full `working` state, including thinking, tools and
 replies. Whenever thinking resumes, including mid-task with known context, the

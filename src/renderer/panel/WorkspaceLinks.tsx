@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { WORKSPACE_GUTTER } from '../../shared/attentionMotion'
-import { wireRegion, type GutterRegion } from '../../shared/gutterRegions'
 import { layoutWorkspaceWires } from '../../shared/workspaceWires'
 import { HeaderWire } from '../motion/HeaderWire'
 import styles from './WorkspaceLinks.module.css'
@@ -15,20 +14,13 @@ export function WorkspaceLinks({
   enabled,
   hidden = false,
   onToggle,
-  onMenu,
 }: {
   card: RefObject<HTMLDivElement | null>
   enabled: boolean
   /** Wires are not drawn (the clip and its menu stay), e.g. while threads sit in two columns. */
   hidden?: boolean
   onToggle: () => Promise<void>
-  /** Right-click on the clip or on any wire. */
-  onMenu: (point: { x: number; y: number }) => void
 }) {
-  const latestMenu = useRef(onMenu)
-  useEffect(() => {
-    latestMenu.current = onMenu
-  }, [onMenu])
   const host = useRef<HTMLDivElement>(null)
   const control = useRef<HTMLButtonElement>(null)
   const [saving, setSaving] = useState(false)
@@ -41,13 +33,6 @@ export function WorkspaceLinks({
       hovered: string | null = null,
       focused: string | null = null
     let previousControl = ''
-    let previousRegions = ''
-    const reportRegions = (regions: GutterRegion[]) => {
-      const key = JSON.stringify(regions)
-      if (key === previousRegions) return
-      previousRegions = key
-      window.threadlight.setWorkspaceWireRegions(regions)
-    }
     const keyOf = (target: EventTarget | null) =>
       target instanceof Element
         ? target.closest<HTMLElement>('[data-workspace-folder]')?.dataset.workspaceFolder || null
@@ -81,10 +66,7 @@ export function WorkspaceLinks({
       }
       const list = panel.querySelector<HTMLElement>('[data-workspace-thread-list]')
       overlay.replaceChildren()
-      if (!enabled || hidden || !list || !list.clientHeight) {
-        reportRegions([])
-        return
-      }
+      if (!enabled || hidden || !list || !list.clientHeight) return
       const top = list.getBoundingClientRect().top
       overlay.style.top = `${top - overlay.parentElement!.getBoundingClientRect().top}px`
       overlay.style.height = `${list.clientHeight}px`
@@ -97,8 +79,6 @@ export function WorkspaceLinks({
         const box = anchor.getBoundingClientRect()
         groups.set(key, [...(groups.get(key) ?? []), box.top + box.height / 2 - top])
       }
-      const gutterLeft = overlay.getBoundingClientRect().left
-      const regions: GutterRegion[] = []
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
       svg.setAttribute('viewBox', `0 0 ${WORKSPACE_GUTTER} ${list.clientHeight}`)
       svg.setAttribute('width', String(WORKSPACE_GUTTER))
@@ -119,8 +99,7 @@ export function WorkspaceLinks({
         group.setAttribute('data-lane', String(lane))
         group.setAttribute('data-rail-x', String(x))
         group.setAttribute('stroke', colourOf(key))
-        regions.push(wireRegion(gutterLeft, x, top, first, last))
-        for (const className of ['hit', 'back', 'wire']) {
+        for (const className of ['back', 'wire']) {
           const line = document.createElementNS(svg.namespaceURI, 'path')
           line.setAttribute('d', path)
           line.setAttribute('class', styles[className]!)
@@ -129,7 +108,6 @@ export function WorkspaceLinks({
         svg.append(group)
       }
       overlay.append(svg)
-      reportRegions(regions)
       highlight()
     }
     const schedule = () => {
@@ -183,11 +161,6 @@ export function WorkspaceLinks({
       hovered = null
       schedule()
     }
-    const menu = (event: MouseEvent) => {
-      event.preventDefault()
-      latestMenu.current({ x: event.clientX, y: event.clientY })
-    }
-    overlay.addEventListener('contextmenu', menu)
     panel.addEventListener('pointerover', over)
     panel.addEventListener('pointerout', out)
     panel.addEventListener('focusin', focus)
@@ -209,9 +182,7 @@ export function WorkspaceLinks({
       document.removeEventListener('keydown', escape)
       panel.removeEventListener('scroll', scroll, true)
       window.removeEventListener('resize', schedule)
-      overlay.removeEventListener('contextmenu', menu)
       window.threadlight.setWorkspaceWireControl(null)
-      window.threadlight.setWorkspaceWireRegions([])
     }
   }, [card, enabled, hidden])
   const label = enabled ? 'Hide workspace wires' : 'Show workspace wires'
@@ -226,10 +197,6 @@ export function WorkspaceLinks({
         title={label}
         aria-pressed={enabled}
         disabled={saving}
-        onContextMenu={(event) => {
-          event.preventDefault()
-          onMenu({ x: event.clientX, y: event.clientY })
-        }}
         onClick={async () => {
           setSaving(true)
           try {

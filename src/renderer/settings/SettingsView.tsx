@@ -225,7 +225,7 @@ export function SettingsView({
           <Stepper
             value={settings.maxSessions}
             min={3}
-            max={25}
+            max={50}
             format={String}
             disabled={settings.listMode !== 'recent'}
             onChange={(maxSessions) => save({ maxSessions })}

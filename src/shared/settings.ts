@@ -52,7 +52,7 @@ export const settingsSchema = z.object({
   /** Sessions active within this many hours are listed. */
   listWindowHours: z.number().int().min(1).max(168).default(24),
   /** At most this many sessions are listed. */
-  maxSessions: z.number().int().min(3).max(25).default(10),
+  maxSessions: z.number().int().min(3).max(50).default(10),
   /** Workspace's picked maximum height in logical pixels; null uses the available work area. */
   workspacePanelHeight: z.number().int().min(120).max(16384).nullable().default(null),
   /**

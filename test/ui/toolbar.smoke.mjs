@@ -40,8 +40,8 @@ export async function checkRecentLimit(page, capture) {
       await control.getByRole('button', { name: 'Decrease Sessions listed' }).isDisabled(),
       true,
     )
-    await page.evaluate(() => window.threadlight.updateSettings({ maxSessions: 25 }))
-    await value.getByText('25', { exact: true }).waitFor()
+    await page.evaluate(() => window.threadlight.updateSettings({ maxSessions: 50 }))
+    await value.getByText('50', { exact: true }).waitFor()
     assert.equal(
       await control.getByRole('button', { name: 'Increase Sessions listed' }).isDisabled(),
       true,
