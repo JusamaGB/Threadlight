@@ -250,7 +250,7 @@ footer p{max-width:70ch}
         <a class="btn primary" href="#install">Get started</a>
         <a class="btn" href="https://github.com/JusamaGB/Threadlight">View on GitHub →</a>
       </div>
-      <div class="meta"><span>Runs locally</span><span>No telemetry</span><span>Under 300px wide</span></div>
+      <div class="meta"><span>Runs locally</span><span>No telemetry</span><span>Under 250px wide</span></div>
     </div>
 
     <div class="stage reveal">
@@ -280,7 +280,7 @@ footer p{max-width:70ch}
 <div class="strip">
   <div class="wrap">
     <div class="stat"><b>2</b><span>providers in one list: Claude and Codex</span></div>
-    <div class="stat"><b>1</b><span>always-on-top panel, 300px wide</span></div>
+    <div class="stat"><b>238</b><span>pixels wide: the whole always-on-top panel</span></div>
     <div class="stat"><b>0</b><span>telemetry or Threadlight servers</span></div>
     <div class="stat"><b>∞</b><span>worktrees, grouped by wires</span></div>
   </div>
@@ -323,7 +323,7 @@ footer p{max-width:70ch}
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M5 4v8a4 4 0 004 4h6"/><path d="M5 20V4"/><circle cx="18" cy="16" r="2.5"/><circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="20" r="1.5"/></svg></div>
         <h3>Worktree wires</h3>
         <p>Threads in the same folder or worktree are connected by wires in a thin gutter beside the panel. Longest routes hug the card, shorter ones step out. Hover or click a workspace to light up its route.</p>
-        <ul><li>See which threads can collide at a glance</li><li>Git ahead/behind and per-thread diffs on each row</li><li>Wires are off by default, one toggle turns them on</li></ul>
+        <ul><li>See which threads can collide at a glance</li><li>Git ahead/behind and per-thread diffs on each row</li><li>Right-click a wire to switch to Dual view and widen the window</li><li>Wires are off by default, one toggle turns them on</li></ul>
       </div>
       <div class="cell c3 reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></div>
@@ -361,7 +361,7 @@ footer p{max-width:70ch}
     <div class="pipe">
       <div class="step reveal"><div class="n">01</div><h3>Hook</h3><p>A small plugin reports Claude Code session activity to Threadlight on 127.0.0.1. Codex chats are read from the local Codex runtime.</p></div>
       <div class="step reveal"><div class="n">02</div><h3>Read</h3><p>Transcripts and thread lists are read-only. Plans, steps, diffs, questions and usage are derived from what's already recorded.</p></div>
-      <div class="step reveal"><div class="n">03</div><h3>Show</h3><p>A 300px panel with worktree wires, provider tints and live status. It appears only while Claude or Codex is running.</p></div>
+      <div class="step reveal"><div class="n">03</div><h3>Show</h3><p>A compact panel with worktree wires, provider tints and live status. It appears only while Claude or Codex is running.</p></div>
       <div class="step reveal"><div class="n">04</div><h3>Send</h3><p>Messages go through your own signed-in <code style="font-family:var(--mono);font-size:13px;color:var(--wire)">claude</code> or Codex CLI, with that thread's own permissions.</p></div>
     </div>
   </div>
@@ -400,6 +400,7 @@ footer p{max-width:70ch}
         <ul>
           <li><span><b>Unified thread view</b> for Claude and Codex with plans, steps, diffs and usage</span></li>
           <li><span><b>Worktree wires</b> and Git badges</span></li>
+          <li><span><b>Dual view, phase one:</b> right-click a wire to widen the panel to 480px (needs Claude and Codex both on)</span></li>
           <li><span><b>Voice and text compose</b> into any thread, with countdown and receipts</span></li>
           <li><span><b>Hosted Agent</b> on Codex or Claude, with GPT Live voice</span></li>
           <li><span><b>Shared Spaces:</b> ideas, plans, handoffs, results and Brainstorm</span></li>
@@ -413,6 +414,7 @@ footer p{max-width:70ch}
         <ul>
           <li><span><b>Workflow builder.</b> Design an n8n-style flow of agents and modules, right inside Threadlight.</span></li>
           <li><span><b>Orchestrated delegation.</b> Approve a Brainstorm plan and have it routed to the right threads by your workflow.</span></li>
+          <li><span><b>Side-by-side columns.</b> Dual view will put Claude and Codex threads next to each other.</span></li>
           <li><span><b>Automatic task decomposition</b> from a single request</span></li>
           <li><span><b>New-thread creation</b> by the orchestrator, as Claude and Codex chats</span></li>
           <li><span><b>Swarm status on demand.</b> Ask where everything stands and get each thread's position.</span></li>
