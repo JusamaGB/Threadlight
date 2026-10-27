@@ -139,7 +139,7 @@ export async function checkWorkspaceLinks(page, capture) {
     )
     const card = await page.locator('[data-card]').boundingBox(),
       wires = await page.locator('[data-workspace-links]').boundingBox()
-    assert.equal(card.width, 264)
+    assert.equal(card.width, 238)
     assert.equal(card.x - wires.x, 16)
     const list = page.getByRole('region', { name: 'Threads', exact: true })
     assert.equal(await page.getByRole('scrollbar').count(), 0)

@@ -17,7 +17,7 @@ import {
 import type { Session } from '../shared/types'
 
 export { DOT_SIZE }
-export const PANEL_WIDTH = 264 // 262 of content plus a 1 px border each side
+export const PANEL_WIDTH = 238 // 236 of content plus a 1 px border each side
 const MARGIN = 8
 
 export const CORNERS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'] as const

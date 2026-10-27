@@ -259,6 +259,7 @@ export const en = {
     sessions: 'Sessions',
     app: 'App',
     talkHotkey: 'Talk hotkey',
+    talkMode: 'Talk mode',
     toggle: 'Toggle',
     toggleHint: 'Press to open the microphone, press again to close it',
     hold: 'Push to talk',
