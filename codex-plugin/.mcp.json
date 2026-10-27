@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "threadlight": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/scripts/memory-bridge.mjs", "--provider", "codex"]
+    }
+  }
+}

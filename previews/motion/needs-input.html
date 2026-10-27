@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Threadlight · Needs input</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0b1019;
+        color: #e5eaf2;
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1180px;
+        margin: auto;
+        padding: 32px 30px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 24px;
+      }
+      h1 {
+        font-size: 30px;
+        font-weight: 500;
+        letter-spacing: -0.7px;
+        margin: 6px 0 8px;
+      }
+      p {
+        color: #96a3b6;
+        margin: 0;
+        max-width: 660px;
+      }
+      small {
+        font-size: 10px;
+        letter-spacing: 0.17em;
+        color: #dfb779;
+        text-transform: uppercase;
+      }
+      a {
+        color: #b3bfd0;
+        text-decoration: none;
+      }
+      .link {
+        border: 1px solid #29374a;
+        padding: 9px 13px;
+        border-radius: 8px;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      .desktop {
+        height: 530px;
+        position: relative;
+        overflow: hidden;
+        border: 1px solid #2b3749;
+        border-radius: 16px;
+        margin-top: 26px;
+        background:
+          radial-gradient(ellipse at 32% 85%, #203145 0, transparent 55%),
+          radial-gradient(ellipse at 85% 12%, #252838 0, transparent 65%), #101b2a;
+      }
+      .desktop:before {
+        content: '';
+        position: absolute;
+        width: 750px;
+        height: 750px;
+        left: -280px;
+        top: 30px;
+        border: 1px solid #ffffff04;
+        border-radius: 50%;
+        box-shadow:
+          0 0 0 70px #ffffff02,
+          0 0 0 140px #ffffff02;
+      }
+      .stage-label {
+        position: absolute;
+        left: 24px;
+        top: 20px;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: #8d9aad;
+        text-transform: uppercase;
+      }
+      .panel {
+        position: absolute;
+        right: 42px;
+        top: 54px;
+        width: 300px;
+        background: #101824f5;
+        border: 1px solid #344054;
+        border-radius: 14px;
+        box-shadow: 0 15px 60px #0004;
+      }
+      .panel-head {
+        display: flex;
+        justify-content: space-between;
+        padding: 15px 18px;
+        font-size: 12px;
+        color: #dce3ec;
+        border-bottom: 1px solid #ffffff0a;
+      }
+      .panel-head span:last-child {
+        color: #7c8ca5;
+      }
+      .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 12px 14px 5px;
+      }
+      .tabs button {
+        padding: 5px 12px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: #8c9bb0;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .tabs button[aria-selected='true'] {
+        background: #ffffff0b;
+        color: #edf1f8;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        padding: 14px 18px;
+        border-top: 1px solid #ffffff06;
+      }
+      .anchor {
+        width: 44px;
+        height: 44px;
+        flex: none;
+        position: relative;
+      }
+      .anchor.actual {
+        width: 22px;
+        height: 22px;
+        margin: 11px;
+      }
+      .row-copy {
+        flex: 1;
+        min-width: 0;
+      }
+      .row-title {
+        font-size: 12px;
+        color: #d7e0ed;
+      }
+      .row-detail {
+        font-size: 11px;
+        color: #90a0b7;
+        margin-top: 3px;
+      }
+      .state {
+        color: #eac27f;
+      }
+      .mini {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #7997b5;
+        margin: 0 18px;
+        flex: none;
+        box-shadow: 0 0 8px #789acb22;
+      }
+      .mini.done {
+        background: #72a08c;
+      }
+      .panel-foot {
+        font-size: 10px;
+        color: #74839a;
+        border-top: 1px solid #ffffff08;
+        padding: 11px 18px;
+      }
+      .taskbar {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 48px;
+        background: #111a29d9;
+        border-top: 1px solid #b5cbe028;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        backdrop-filter: blur(18px);
+      }
+      .app-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        border: 1px solid #ffffff15;
+        background: #27374c;
+        display: grid;
+        place-items: center;
+        color: #97b5d5;
+        font-size: 12px;
+      }
+      .app-icon.start {
+        background: linear-gradient(135deg, #75bbff, #3480c1);
+        color: #dcefff;
+      }
+      .clock {
+        position: absolute;
+        right: 16px;
+        text-align: right;
+        font-size: 10px;
+        color: #acb7c8;
+      }
+      .taskbar-label {
+        position: absolute;
+        bottom: 62px;
+        left: 24px;
+        color: #6d7f97;
+        font-size: 10px;
+      }
+      .physics {
+        position: absolute;
+        left: 24px;
+        bottom: 100px;
+        width: 210px;
+        color: #7f93ac;
+        font-size: 11px;
+      }
+      .physics strong {
+        display: block;
+        font-size: 20px;
+        color: #e6bd7b;
+        font-weight: 400;
+        margin-bottom: 5px;
+      }
+      .physics p {
+        font-size: 11px;
+        line-height: 1.7;
+      }
+      .render-layer {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      .wheel-layer {
+        position: absolute;
+        pointer-events: none;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        margin-top: 18px;
+      }
+      button,
+      select {
+        font: inherit;
+        color: #dfe7f2;
+        border: 1px solid #344254;
+        background: #172335;
+        border-radius: 7px;
+        padding: 8px 12px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: #a58b60;
+      }
+      .controls label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #9dacc0;
+        font-size: 12px;
+      }
+      input {
+        accent-color: #dcb477;
+      }
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 18px 0 12px;
+        font-size: 11px;
+        color: #8ea0b8;
+      }
+      .timeline input {
+        flex: 1;
+      }
+      .timeline output {
+        font-variant-numeric: tabular-nums;
+        width: 50px;
+        text-align: right;
+      }
+      .phases {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .phase {
+        font-size: 10px;
+        padding: 4px 9px;
+        border: 1px solid #293548;
+        border-radius: 20px;
+        color: #7c8da4;
+      }
+      .phase.active {
+        color: #f5ce92;
+        border-color: #8e713f;
+        background: #b9812510;
+      }
+      .note {
+        font-size: 11px;
+        color: #73859e;
+        margin-top: 16px;
+        max-width: none;
+      }
+      .badge {
+        font-size: 10px;
+        color: #b49e7b;
+        margin-left: auto;
+      }
+      .anchor,
+      .anchor.actual {
+        position: absolute;
+        right: 92px;
+        top: 92px;
+        width: 44px;
+        height: 44px;
+        margin: 0;
+      }
+      .desktop-status {
+        position: absolute;
+        left: 24px;
+        top: 48px;
+        color: #b6c2d4;
+        font-size: 12px;
+      }
+      @media (max-width: 700px) {
+        main {
+          padding: 22px 14px;
+        }
+        header {
+          display: block;
+        }
+        .link {
+          display: inline-block;
+          margin-top: 12px;
+        }
+        .panel {
+          right: 16px;
+          width: 290px;
+          top: 46px;
+        }
+        .desktop {
+          height: 620px;
+        }
+        .physics {
+          bottom: 100px;
+          left: 16px;
+          width: 150px;
+        }
+        .stage-label {
+          left: 16px;
+          top: 14px;
+        }
+        h1 {
+          font-size: 26px;
+        }
+        .badge {
+          margin-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <small>Threadlight / Needs input</small>
+          <h1>A pause. A drop. A gentle splash.</h1>
+          <p>
+            An attention signal from the floating wheel while Threadlight is minimised. When an
+            Active or Recent thread needs input, the shine fills the logo with liquid light: Codex
+            blue or Claude orange. The liquid pools inside the spiral, sags through its lower rim
+            and releases as the shine reaches the outer edge.
+          </p>
+        </div>
+        <a class="link" href="/">← Outward shine</a>
+      </header>
+      <div
+        class="desktop"
+        id="desktop"
+        aria-label="Local desktop simulation showing the needs-input animation"
+      >
+        <span class="stage-label">Desktop simulation</span>
+        <span class="desktop-status" id="desktop-status"
+          >Threadlight minimised · Active thread needs input</span
+        >
+        <div class="anchor" id="anchor"></div>
+        <div class="physics">
+          <strong id="phase-title">Gathering light</strong>
+          <p id="phase-description">The outward sweep feeds a bead at the lowest edge.</p>
+        </div>
+        <span class="taskbar-label">Taskbar collision surface</span>
+        <div class="taskbar" id="taskbar">
+          <span class="app-icon start">⊞</span><span class="app-icon">⌕</span
+          ><span class="app-icon">▰</span><span class="app-icon">◎</span
+          ><span class="app-icon">✳</span><span class="clock">09:41<br />26/10/2026</span>
+        </div>
+        <canvas id="wheel" class="wheel-layer" aria-label="Needs-input wheel"></canvas
+        ><canvas
+          id="liquid"
+          class="render-layer"
+          aria-label="Gold bead falling and splashing on the simulated taskbar"
+        ></canvas>
+      </div>
+      <div class="controls">
+        <label
+          >Provider<select id="provider">
+            <option value="claude">Claude · Orange</option>
+            <option value="codex">Codex · Blue</option>
+          </select></label
+        >
+        <label
+          >Scenario<select id="scenario">
+            <option value="active">Minimised · Active needs input</option>
+            <option value="recent">Minimised · Recent needs input</option>
+            <option value="clear">Minimised · No input needed</option>
+            <option value="open">Application open · Effect off</option>
+          </select></label
+        >
+        <button id="play">Pause</button><button id="pool">Inspect pool</button
+        ><button id="release">Inspect release</button><button id="impact">Inspect splash</button
+        ><label
+          >Playback<select id="speed">
+            <option value="1">Normal</option>
+            <option value="0.25">Slow · 0.25×</option>
+          </select></label
+        ><label
+          >Indicator<select id="size">
+            <option value="44">Detail · 44 px</option>
+            <option value="22">Actual · 22 px</option>
+          </select></label
+        ><label><input type="checkbox" id="reduced" />Reduced motion</label
+        ><span class="badge" id="backend"></span>
+      </div>
+      <label class="timeline"
+        >Cycle<input type="range" id="timeline" min="0" max="4.199" step="0.001" value="0" /><output
+          id="time"
+          >0.00 s</output
+        ></label
+      >
+      <div class="phases">
+        <span class="phase" data-phase="gather">01 Shine fills the logo</span
+        ><span class="phase" data-phase="hold">02 Hold · 250 ms</span
+        ><span class="phase" data-phase="fall">03 Release at the rim</span
+        ><span class="phase" data-phase="splash">04 Splash & settle</span
+        ><span class="phase" data-phase="rest">05 Rest</span>
+      </div>
+      <p class="note">
+        Local desktop-only motion study · The floating indicator drips while minimised if any Active
+        or Recent thread needs input. Opening Threadlight or clearing that status stops the effect.
+        This page simulates the taskbar; the app build uses the same colours and physics in a
+        click-through desktop overlay.
+      </p>
+    </main>
+    <script type="module" src="./needs-input.ts"></script>
+  </body>
+</html>

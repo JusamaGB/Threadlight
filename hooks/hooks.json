@@ -1,0 +1,126 @@
+{
+  "description": "Report session activity to Threadlight on 127.0.0.1. Each hook pipes the event JSON to the local app and always exits 0, so a closed Threadlight never disturbs a session. The question-card hook, the session-offer hook, the PermissionRequest hook and the second Stop hook (when a turn ends on a question) wait for an answer given in Threadlight and pass it on, until it is answered or let go (opening the thread in Claude lets it go); with Threadlight closed, nothing asked, or the card let go, they return nothing at once and Claude carries on as usual. A second SessionStart hook asks Threadlight what a starting session should be told (that each plan step should name its files and why); with Threadlight closed it adds nothing. Written to run unchanged in both Git Bash and PowerShell, the two shells Claude Code uses on Windows.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/SessionStart; exit 0",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 2 --data-binary '@-' http://127.0.0.1:47615/context; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/UserPromptSubmit; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/PreToolUse; exit 0",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/ask; exit 0",
+            "timeout": 43260
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__ccd_session__start_session",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/offer; exit 0",
+            "timeout": 43260
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/permission; exit 0",
+            "timeout": 43260
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/PostToolUse; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/Notification; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/Stop; exit 0",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/stop; exit 0",
+            "timeout": 43260
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/SessionEnd; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

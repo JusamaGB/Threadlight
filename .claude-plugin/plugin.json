@@ -1,0 +1,11 @@
+{
+  "name": "threadlight",
+  "displayName": "Threadlight",
+  "version": "0.1.0",
+  "description": "Threadlight status, composer and scoped shared memory for Claude Code chats.",
+  "author": {
+    "name": "Julius Deane"
+  },
+  "license": "MIT",
+  "keywords": ["status", "overlay", "sessions", "hooks", "windows", "voice"]
+}

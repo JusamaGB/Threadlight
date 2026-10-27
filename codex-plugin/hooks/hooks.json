@@ -1,0 +1,101 @@
+{
+  "description": "Threadlight Codex lifecycle events and bounded question/approval holds. Closed or unavailable Threadlight returns control to Codex.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command_windows": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/SessionStart; exit 0",
+            "timeout": 3,
+            "type": "command",
+            "command": "curl -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/SessionStart; exit 0"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command_windows": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/SessionEnd; exit 0",
+            "timeout": 3,
+            "type": "command",
+            "command": "curl -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/SessionEnd; exit 0"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command_windows": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/UserPromptSubmit; exit 0",
+            "timeout": 3,
+            "type": "command",
+            "command": "curl -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/UserPromptSubmit; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command_windows": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/PreToolUse; exit 0",
+            "timeout": 3,
+            "type": "command",
+            "command": "curl -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/PreToolUse; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command_windows": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/PostToolUse; exit 0",
+            "timeout": 3,
+            "type": "command",
+            "command": "curl -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/PostToolUse; exit 0"
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "command_windows": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/Interrupt; exit 0",
+            "timeout": 3,
+            "type": "command",
+            "command": "curl -s -m 1 --data-binary '@-' http://127.0.0.1:47616/hook/Interrupt; exit 0"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "command_windows": "curl.exe -s -m 65 --data-binary '@-' http://127.0.0.1:47616/ask; exit 0",
+            "timeout": 75,
+            "type": "command",
+            "command": "curl -s -m 65 --data-binary '@-' http://127.0.0.1:47616/ask; exit 0"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command_windows": "curl.exe -s -m 65 --data-binary '@-' http://127.0.0.1:47616/stop; exit 0",
+            "timeout": 75,
+            "type": "command",
+            "command": "curl -s -m 65 --data-binary '@-' http://127.0.0.1:47616/stop; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
