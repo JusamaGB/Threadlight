@@ -79,6 +79,11 @@ export async function checkHelpModes(page, row, capture) {
     await row('Claude').locator('[data-git-tracker]').hover()
     await tip.waitFor()
     assert.equal(await tip.innerText(), 'main', 'Info keeps the original Git hint')
+    assert.equal(
+      await page.locator('[data-hover-message] [role="tooltip"]').count(),
+      0,
+      'Info keeps short hints beside the cursor',
+    )
     await mode('Tour')
     await hoverRow()
     await tip.waitFor()
@@ -103,6 +108,11 @@ export async function checkHelpModes(page, row, capture) {
     await settingsButton().hover()
     await tip.waitFor()
     assert.equal(await tip.innerText(), 'Settings', 'Tour makes native title help immediate')
+    assert.equal(
+      await page.locator('[data-hover-message] [role="tooltip"]').count(),
+      1,
+      'Tour shows even a short hint in the footer',
+    )
     assert.equal(await tip.count(), 1)
     assert.equal(await settingsButton().getAttribute('title'), '')
     await page.evaluate(() => window.threadlight.updateSettings({ hoverHelp: 'off' }))
