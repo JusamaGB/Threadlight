@@ -60,6 +60,10 @@ export async function checkIgnoreInput(page, capture) {
     await tip.waitFor()
     assert.match(await tip.innerText(), /Only Threadlight stops flagging this thread/)
     assert.match(await tip.innerText(), /Nothing changes in Claude or Codex/)
+    // The explanation opens in the panel's info area, not beside the cursor.
+    const info = page.locator('[data-hover-message] [role="tooltip"]')
+    assert.equal(await info.count(), 1, 'the hint is in the info area')
+    assert.equal(await tip.getAttribute('data-docked'), '')
     await capture('ignore-needs-input-menu')
     await listed('Ignore').click()
     assert.deepEqual(await calls(), [['ignore', codexId, true]])
