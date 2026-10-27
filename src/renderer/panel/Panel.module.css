@@ -10,7 +10,7 @@
 .panelStage[data-wide] {
   display: flex;
   justify-content: flex-end;
-  width: calc(var(--dual-card-width, 480px) + 16px);
+  width: calc(var(--dual-card-width, 475px) + 16px);
 }
 
 /* The 16px wire gutter sits against the card's left edge, wherever that edge is. */
@@ -36,7 +36,7 @@
 }
 
 .panelStage[data-dual] .card {
-  width: var(--dual-card-width, 480px);
+  width: var(--dual-card-width, 475px);
 }
 
 .panelStage[data-instant] .card {
@@ -314,6 +314,28 @@
 .list {
   overflow-y: auto;
   overflow-anchor: none;
+}
+
+/* Dual view: Claude threads in the left column, Codex threads in the right. Each column is as
+   wide as the single column, so rows never change width as they move between them. */
+.dualList {
+  display: flex;
+  align-items: flex-start;
+}
+
+.dualLeft {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.dualLeft[data-split] {
+  border-right: 1px solid var(--border);
+}
+
+.dualRight {
+  flex: none;
+  width: 236px;
 }
 
 .empty {

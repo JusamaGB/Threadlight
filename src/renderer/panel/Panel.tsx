@@ -35,6 +35,7 @@ import { useVoice } from '../hooks/useVoice'
 import { useRecordedAgentVoice } from '../hooks/useRecordedAgentVoice'
 import { MicSessionRouter, type MicRoute } from '../../shared/voiceCommands'
 import { en } from '../i18n/en'
+import { flushSync } from 'react-dom'
 import { SettingsView, Stepper } from '../settings/SettingsView'
 import { Tip } from './Tip'
 import { SharedSpacesView, type SpacesNavigation } from '../spaces/SharedSpacesView'
@@ -81,7 +82,9 @@ const isActive = (s: Session) => s.state === 'working' || s.state === 'waiting'
 /** A thread that has just gone idle stays in the Active list this long, so its reply can be read. */
 const LINGER_MS = 30_000
 /** Longer than the card's width transition, so the window only narrows once the card has. */
-const LAYOUT_ANIMATION_MS = 320
+const LAYOUT_CARD_MS = 320
+/** Rows slide between the columns, then close up the gaps (or the reverse when collapsing). */
+const ROW_FLIP_MS = 560
 
 interface MenuState {
   x: number
@@ -155,43 +158,109 @@ export function Panel() {
   // Dual shows Claude and Codex side by side, so it needs both; otherwise the column stays single.
   const bothProviders = enabled.includes('claude') && enabled.includes('codex')
   const wantDual = settings?.panelLayout === 'dual' && bothProviders
-  const [layout, setLayout] = useState({ wide: false, dual: false, instant: true, width: 480 })
+  const [layout, setLayout] = useState({
+    wide: false,
+    dual: false,
+    split: false,
+    instant: true,
+    width: 475,
+  })
   const layoutApplied = useRef(false)
+  const listElement = useRef<HTMLDivElement>(null)
+  /**
+   * Runs `update`, then glides every thread row from where it was to where it now is. Splitting
+   * slides rows sideways first and then closes the gaps; merging opens the gaps first.
+   */
+  const flipRows = (update: () => void, order: 'sideways-first' | 'vertical-first') => {
+    const list = listElement.current
+    const before = new Map<string, DOMRect>()
+    list?.querySelectorAll<HTMLElement>('[data-session-id]').forEach((row) => {
+      before.set(row.dataset.sessionId!, row.getBoundingClientRect())
+    })
+    const heightBefore = list?.getBoundingClientRect().height ?? 0
+    flushSync(update)
+    if (!list || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    // The list keeps its old height while rows slide sideways, so none are clipped, and takes
+    // its new height while they close up (or open out).
+    const heightAfter = list.getBoundingClientRect().height
+    if (Math.abs(heightBefore - heightAfter) > 1) {
+      const held = order === 'sideways-first' ? heightBefore : heightAfter
+      list.animate(
+        [
+          { height: `${heightBefore}px`, easing: 'ease-in-out' },
+          { height: `${held}px`, offset: 0.5, easing: 'ease-in-out' },
+          { height: `${heightAfter}px` },
+        ],
+        { duration: ROW_FLIP_MS },
+      )
+    }
+    list.querySelectorAll<HTMLElement>('[data-session-id]').forEach((row) => {
+      const from = before.get(row.dataset.sessionId!)
+      if (!from) return
+      const to = row.getBoundingClientRect()
+      const dx = from.left - to.left
+      const dy = from.top - to.top
+      if (!dx && !dy) return
+      row.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px)`, easing: 'ease-in-out' },
+          {
+            transform:
+              order === 'sideways-first' ? `translate(0px, ${dy}px)` : `translate(${dx}px, 0px)`,
+            offset: 0.5,
+            easing: 'ease-in-out',
+          },
+          { transform: 'translate(0px, 0px)' },
+        ],
+        { duration: ROW_FLIP_MS },
+      )
+    })
+  }
   useEffect(() => {
     if (!settings) return
     let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
+    const timers: ReturnType<typeof setTimeout>[] = []
+    const after = (ms: number, action: () => void) =>
+      timers.push(setTimeout(() => !cancelled && action(), ms))
+    const frames = (action: () => void) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => !cancelled && action()))
     const first = !layoutApplied.current
     layoutApplied.current = true
-    const settle = () => {
-      // Turn the card's width transition back on once the first, instant layout is in place.
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => !cancelled && setLayout((l) => ({ ...l, instant: false }))),
-      )
-    }
+    const instant = first || window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const run = async () => {
       if (wantDual) {
-        // The window widens first (the card stays against its right edge), then the card grows.
+        // The window widens first (the card stays against its right edge); then the card grows,
+        // and once it has, the rows pull apart into their columns and close up.
         const result = await window.threadlight.setPanelLayout('dual')
         if (cancelled || !result) return
-        setLayout((l) => ({ ...l, wide: true, width: result.cardWidth, instant: first }))
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            if (cancelled) return
-            setLayout((l) => ({ ...l, dual: true }))
-            if (first) settle()
-          }),
+        if (instant) {
+          setLayout({ wide: true, dual: true, split: true, instant: true, width: result.cardWidth })
+          frames(() => setLayout((l) => ({ ...l, instant: false })))
+          return
+        }
+        setLayout((l) => ({ ...l, wide: true, width: result.cardWidth, instant: false }))
+        frames(() => setLayout((l) => ({ ...l, dual: true })))
+        after(LAYOUT_CARD_MS + 60, () =>
+          flipRows(() => setLayout((l) => ({ ...l, split: true })), 'sideways-first'),
         )
       } else if (layout.wide) {
-        // The card narrows first, then the window follows it.
-        setLayout((l) => ({ ...l, dual: false, instant: first }))
-        timer = setTimeout(
-          async () => {
+        if (instant) {
+          setLayout((l) => ({ ...l, dual: false, split: false, instant: true }))
+          after(0, async () => {
             await window.threadlight.setPanelLayout('single')
-            if (!cancelled) setLayout((l) => ({ ...l, wide: false }))
-          },
-          first ? 0 : LAYOUT_ANIMATION_MS,
-        )
+            if (!cancelled) setLayout((l) => ({ ...l, wide: false, instant: false }))
+          })
+          return
+        }
+        // The rows come back together first, then the card narrows, then the window follows it.
+        void window.threadlight.setPanelLayout('dual', true)
+        // Not synchronously: React will not flush a forced update from inside an effect.
+        after(0, () => flipRows(() => setLayout((l) => ({ ...l, split: false })), 'vertical-first'))
+        after(ROW_FLIP_MS, () => setLayout((l) => ({ ...l, dual: false })))
+        after(ROW_FLIP_MS + LAYOUT_CARD_MS, async () => {
+          await window.threadlight.setPanelLayout('single')
+          if (!cancelled) setLayout((l) => ({ ...l, wide: false }))
+        })
       } else if (first) {
         setLayout((l) => ({ ...l, instant: false }))
       }
@@ -199,7 +268,7 @@ export function Panel() {
     void run()
     return () => {
       cancelled = true
-      if (timer) clearTimeout(timer)
+      timers.forEach(clearTimeout)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of layout runs this
   }, [settings === null, wantDual])
@@ -1476,6 +1545,7 @@ export function Panel() {
               )}
 
               <div
+                ref={listElement}
                 id="thread-list"
                 role="region"
                 aria-label="Threads"
@@ -1510,7 +1580,23 @@ export function Panel() {
                             : emptyWindow}
                       </p>
                     )}
-                    {shown.map(renderRow)}
+                    {layout.wide ? (
+                      <div className={styles.dualList}>
+                        <div className={styles.dualLeft} data-split={layout.split || undefined}>
+                          {layout.split
+                            ? shown.filter((s) => sessionProvider(s.id) === 'claude').map(renderRow)
+                            : null}
+                        </div>
+                        <div className={styles.dualRight}>
+                          {(layout.split
+                            ? shown.filter((s) => sessionProvider(s.id) === 'codex')
+                            : shown
+                          ).map(renderRow)}
+                        </div>
+                      </div>
+                    ) : (
+                      shown.map(renderRow)
+                    )}
                   </>
                 )}
               </div>

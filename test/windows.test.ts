@@ -186,6 +186,23 @@ describe('panel movement and available height', () => {
     expect(windows.panel.getBounds().width).toBe(single.width)
   })
 
+  it('can start the animation window without changing the width', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.setPanelLayout('dual')
+    vi.advanceTimersByTime(1100)
+    const wide = windows.panel.getBounds()
+    state.cursor = { x: wide.x + 8, y: wide.y + 30 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    expect(windows.setPanelLayout('dual', true)).toEqual({ cardWidth: PANEL_WIDTH_DUAL })
+    expect(windows.panel.getBounds()).toEqual(wide)
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    vi.advanceTimersByTime(1100)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+  })
+
   it('keeps dual view inside a narrow work area', () => {
     state.saved = { x: -300, y: 100 }
     state.secondary = { x: -1280, y: 0, width: 400, height: 720 }
@@ -211,7 +228,7 @@ describe('panel movement and available height', () => {
     state.cursor = { x: moved.x + 8, y: moved.y + 80 }
     vi.advanceTimersByTime(16)
     expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
-    vi.advanceTimersByTime(600)
+    vi.advanceTimersByTime(1100)
     expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
   })
 

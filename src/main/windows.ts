@@ -20,9 +20,9 @@ import type { Session } from '../shared/types'
 export { DOT_SIZE }
 export const PANEL_WIDTH = 238 // 236 of content plus a 1 px border each side
 /** Two columns wide: Claude and Codex threads side by side. */
-export const PANEL_WIDTH_DUAL = 480
+export const PANEL_WIDTH_DUAL = 475 // two 236px columns, a 1px divider and a border each side
 /** The widening and narrowing animation; the gutter stays interactive-safe while it runs. */
-const LAYOUT_ANIMATION_MS = 500
+const LAYOUT_ANIMATION_MS = 1000
 const MARGIN = 8
 
 export const CORNERS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'] as const
@@ -316,15 +316,20 @@ export class WindowManager {
   }
 
   /** Single is the narrow column; dual widens the window leftwards from the dot's corner. */
-  setPanelLayout(value: unknown): { cardWidth: number } | null {
+  setPanelLayout(value: unknown, animating?: unknown): { cardWidth: number } | null {
     if (value !== 'single' && value !== 'dual') return null
-    if (value !== this.panelLayout) {
-      this.panelLayout = value
+    const changed = value !== this.panelLayout
+    // `animating` starts the animation window without changing the width, for the rows and card
+    // that move before the window narrows.
+    if (changed || animating === true) {
       if (this.layoutAnimation) clearTimeout(this.layoutAnimation)
       this.layoutAnimation = setTimeout(() => {
         this.layoutAnimation = null
       }, LAYOUT_ANIMATION_MS)
       this.layoutAnimation.unref?.()
+    }
+    if (changed) {
+      this.panelLayout = value
       this.placePanel(this.panel.getBounds().height)
     }
     return { cardWidth: this.cardWidth() }
