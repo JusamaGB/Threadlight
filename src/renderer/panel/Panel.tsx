@@ -1071,17 +1071,10 @@ export function Panel() {
           <header
             className={styles.header}
             data-voice={showVoiceActivity || undefined}
-            tabIndex={0}
             aria-label="Panel header"
             aria-description={hold === 'pinned' ? en.panel.pinnedHint : en.panel.pinHint}
             data-tour-help={hold === 'pinned' ? en.panel.pinnedHint : en.panel.pinHint}
             onClick={onHeaderClick}
-            onKeyDown={(event) => {
-              if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key))
-                return
-              event.preventDefault()
-              changeHold(hold === 'normal' ? 'pinned' : 'normal')
-            }}
             {...drag.handlers}
           >
             {showVoiceActivity && (

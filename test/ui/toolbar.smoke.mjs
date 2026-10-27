@@ -190,13 +190,18 @@ export async function checkPagePinning(page, title) {
   assert.equal(await leaveCalls(), before + 1, 'unpinned subpages allow pointer leave')
   await heading.click({ clickCount: 3 })
   await pin.waitFor()
-  await header.press('Enter')
+  await heading.dblclick()
   await pin.waitFor({ state: 'detached' })
-  assert.equal(await heading.count(), 1, 'the third click and keyboard unpin preserve the page')
+  assert.equal(
+    await heading.count(),
+    1,
+    'the third click and the next double-click preserve the page',
+  )
 }
 
 export async function checkSubpagePinning(page) {
   const header = page.locator('header')
+  assert.equal(await header.getAttribute('tabindex'), null, 'the header never takes keyboard focus')
   await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
   await checkPagePinning(page, 'Agent')
   await header.getByRole('button', { name: 'Back to sessions', exact: true }).click()
@@ -210,7 +215,7 @@ export async function checkSubpagePinning(page) {
   await header.getByText('Shared Spaces', { exact: true }).waitFor()
   const pin = page.locator('[data-card][data-pinned]')
   await pin.waitFor()
-  await header.press('Enter')
+  await header.getByText('Shared Spaces', { exact: true }).dblclick()
   await checkPagePinning(page, 'Shared Spaces')
   await header.getByRole('button', { name: 'Back in Shared Spaces', exact: true }).click()
   await header.getByText('Settings', { exact: true }).waitFor()
@@ -297,19 +302,13 @@ async function checkPinning(page) {
     await view.click()
     await header.locator(`[data-thread-view="${next}"]`).waitFor()
     assert.equal(await pin.count(), 1, 'the view control changes lists without unpinning')
-    await header.press('Enter')
+    await header.dblclick({ position: await bare() })
     await pin.waitFor({ state: 'detached' })
     assert.equal(
       await view.getAttribute('data-thread-view'),
       next,
-      'keyboard unpin also preserves the view',
+      'unpinning after a view change also preserves the view',
     )
-    if (mode === 'active') {
-      await header.press('Space')
-      await pin.waitFor()
-      await header.press('Space')
-      await pin.waitFor({ state: 'detached' })
-    }
   }
   console.log(
     'PASS: immediate double-click pin/unpin in all four views, ignored third click, pinned view switching and pointer leave.',
