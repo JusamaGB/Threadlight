@@ -113,8 +113,7 @@ header-only glow ends 6px above the header divider. The colour uses the header w
 clip's connected or disconnected conductor colour at 75%, mixed with 25% panel
 background. There is no pin icon taking header space, on either the list or
 subpages. Double-clicking the header still
-toggles pinning; the header can also receive keyboard focus and Enter or Space
-toggles it. Tour explains this gesture. The count-to-divider gap is 2px and the
+toggles pinning; it is the only way to pin. Tour explains this gesture. The count-to-divider gap is 2px and the
 provider begins 3px after the divider's border; icon spacing on the right is retained.
 
 | Behavior                    | Existing implementation reused                                              |

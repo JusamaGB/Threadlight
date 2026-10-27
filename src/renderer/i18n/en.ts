@@ -43,9 +43,8 @@ export const en = {
     nothingWorking: 'Nothing working right now',
     showList: 'Show the full list',
     hideList: 'Show only active sessions',
-    pinnedHint:
-      'Pinned open. Double-click the header, or focus it and press Enter or Space to unpin.',
-    pinHint: 'Double-click the header, or focus it and press Enter or Space to pin this view open.',
+    pinnedHint: 'Pinned open. Double-click the header to unpin.',
+    pinHint: 'Double-click the header to pin this view open.',
     header: {
       views: {
         active: 'Active: threads that are working or waiting for you right now.',
