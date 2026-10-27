@@ -844,6 +844,42 @@
   margin: 6px 0;
 }
 
+.tipInfo,
+.tipHelp {
+  display: block;
+}
+
+.tipHelp {
+  color: var(--muted);
+}
+
+.tipHelp + .tipHelp {
+  margin-top: 4px;
+}
+
+.tipDiff {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tipDiffHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tipDiffCounts {
+  display: flex;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tipDiffStatus {
+  font-size: 10px;
+}
+
 .age {
   color: var(--faint);
   font-size: 11px;

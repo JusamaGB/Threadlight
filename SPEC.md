@@ -236,8 +236,13 @@ all available hints immediately, including last-active and native button titles,
 and adds explanations for thread diffs, Git branches and “Needs your input”. Off
 hides custom and native hover help, including structured task hints, and releases
 the footer space. Controls, hover menus, clicks, scrolling and resizing still work.
-New explanatory help can use the shared Tip's `tourText` or `tourOnly` options;
+New explanatory help can use the shared Tip's `tourHelp` or `tourOnly` options;
 adding Tour help does not change the Info baseline.
+Information and guidance have separate presentation: help starts on its own line
+in muted grey, separated from factual information by the existing divider. This
+also applies to action hints. Thread-diff hints group the heading/file count,
+coloured additions/removals and attribution status into distinct rows; Tour's
+click guidance follows below the divider.
 Footer hints animate their height over 180ms. When the text changes, the outgoing
 message fades out for 65ms before the new message fades in over 110ms. Rapid hover
 changes cancel stale transitions and keep only the latest hint interactive. The

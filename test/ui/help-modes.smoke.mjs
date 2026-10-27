@@ -99,7 +99,7 @@ export async function checkHelpModes(page, row, capture) {
       .getByRole('button', { name: /^Thread diff/ })
       .hover()
     await tip.waitFor()
-    assert.match(await tip.innerText(), /click to view its files and diffs/)
+    assert.match(await tip.innerText(), /Click to view this thread's files and diffs/)
     await settingsButton().hover()
     await tip.waitFor()
     assert.equal(await tip.innerText(), 'Settings', 'Tour makes native title help immediate')

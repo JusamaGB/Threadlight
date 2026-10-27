@@ -39,7 +39,27 @@ function ThreadCount({ diff, onOpen }: { diff: ThreadDiffSummary; onOpen: () => 
     <Tip
       className={`${styles.diff} ${styles.diffLink}`}
       text={threadDiffSentence(diff)}
-      tourText={`${threadDiffSentence(diff)}. Changes recorded for this thread; click to view its files and diffs.`}
+      infoContent={
+        <span className={styles.tipDiff}>
+          <span className={styles.tipDiffHeading}>
+            <strong>{en.changes.title}</strong>
+            <span>{en.git.filesChanged(diff.files)}</span>
+          </span>
+          {(diff.added > 0 || diff.removed > 0) && (
+            <span className={styles.tipDiffCounts}>
+              {diff.added > 0 && <span className={styles.added}>+{compact(diff.added)} added</span>}
+              {diff.removed > 0 && (
+                <span className={styles.removed}>−{compact(diff.removed)} removed</span>
+              )}
+            </span>
+          )}
+          <span className={styles.tipDiffStatus}>
+            {en.changes.uncommitted}
+            {!diff.complete && ` · ${en.changes.partialShort}`}
+          </span>
+        </span>
+      }
+      tourHelp="Click to view this thread's files and diffs."
       onClick={(event) => {
         event.stopPropagation() // the row itself would expand
         onOpen()
@@ -94,7 +114,7 @@ export function SessionRow(props: SessionRowProps) {
                   ? 'Context unavailable'
                   : ''
             }
-            tourText={`${session.contextUsed !== null ? contextLabel(session.contextUsed) : 'Context unavailable'}. The ring shows the thread's context usage and animates while the thread is active.`}
+            tourHelp="The ring shows the thread's context usage and animates while the thread is active."
           >
             {(session.contextUsed !== null || session.state === 'working') && (
               <ContextRing
@@ -131,7 +151,7 @@ export function SessionRow(props: SessionRowProps) {
               className={styles.needsYou}
               text=""
               tourOnly
-              tourText="Needs your input: this thread is waiting for an answer or approval. Open the thread to respond."
+              tourHelp="This thread is waiting for an answer or approval. Open the thread to respond."
             >
               {en.attention.needsYou}
             </Tip>
@@ -149,7 +169,7 @@ export function SessionRow(props: SessionRowProps) {
               data-git-tracker=""
               className={styles.diff}
               text={gitLine(session.git)}
-              tourText={`${gitLine(session.git)}. This is the thread's Git branch. ↑ counts commits to push; ↓ counts commits behind main.`}
+              tourHelp="This is the thread's Git branch. ↑ counts commits to push; ↓ counts commits behind main."
             >
               {!session.git.ahead && !session.git.behind && (
                 <span className={styles.branch}>{session.git.branch ?? en.git.noBranch}</span>

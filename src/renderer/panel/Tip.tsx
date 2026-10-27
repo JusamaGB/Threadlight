@@ -23,10 +23,12 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
   as?: 'span' | 'button'
   /** What the tip says; shown while the pointer is over the anchor. */
   text: string
+  /** Optional presentation of the same information; text remains the accessible anchor label. */
+  infoContent?: ReactNode
   /** A separate action available on the same hover target. */
   actionHint?: string
   /** Additional help appears only in Tour, leaving Info's wording and timing unchanged. */
-  tourText?: string
+  tourHelp?: string
   tourOnly?: boolean
   /** Wait for the pointer to stay still this long. Other tips remain immediate. */
   restDelay?: number
@@ -40,8 +42,9 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
 export function Tip({
   as: Tag = 'span',
   text: infoText,
+  infoContent,
   actionHint,
-  tourText,
+  tourHelp,
   tourOnly = false,
   restDelay = 0,
   children,
@@ -50,9 +53,10 @@ export function Tip({
   ...props
 }: TipProps) {
   const mode = useHelpMode()
-  const text = mode === 'tour' ? (tourText ?? infoText) : tourOnly ? '' : infoText
+  const help = mode === 'tour' ? tourHelp : undefined
+  const hasInfo = !tourOnly && !!(infoText || infoContent)
   const delay = mode === 'tour' ? 0 : restDelay
-  const enabled = mode !== 'off' && !!text
+  const enabled = mode !== 'off' && !!(hasInfo || help || actionHint)
   const anchor = useRef<HTMLElement>(null)
   const setAnchor = useCallback((element: HTMLElement | null) => {
     anchor.current = element
@@ -204,14 +208,13 @@ export function Tip({
       {children}
       {point && enabled && (
         <HoverInfo anchor={anchor} point={point.local} onDismiss={dismiss}>
-          {actionHint ? (
+          {hasInfo && <span className={styles.tipInfo}>{infoContent ?? infoText}</span>}
+          {(help || actionHint) && (
             <>
-              <span>{text}</span>
-              <span role="separator" className={styles.tipDivider} />
-              <span>{actionHint}</span>
+              {hasInfo && <span role="separator" className={styles.tipDivider} />}
+              {help && <span className={styles.tipHelp}>{help}</span>}
+              {actionHint && <span className={styles.tipHelp}>{actionHint}</span>}
             </>
-          ) : (
-            text
           )}
         </HoverInfo>
       )}

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { HelpModeContext, type HelpMode } from './helpMode'
 import { hasDockedHover, HoverInfo, type HoverPoint } from './HoverInfo'
+import styles from './Panel.module.css'
 
 /** One policy for custom hints and legacy native titles throughout the panel and its portals. */
 export function HoverHelp({ mode, children }: { mode: HelpMode; children: ReactNode }) {
@@ -14,7 +15,7 @@ export function HoverHelp({ mode, children }: { mode: HelpMode; children: ReactN
 
 function NativeHints({ mode }: { mode: HelpMode }) {
   const anchor = useRef<HTMLElement | null>(null)
-  const [hint, setHint] = useState<{ text: string; point: HoverPoint } | null>(null)
+  const [hint, setHint] = useState<{ text: string; point: HoverPoint; help: boolean } | null>(null)
   const lastPointer = useRef<HoverPoint | null>(null)
   useLayoutEffect(() => {
     if (mode === 'info') return
@@ -90,7 +91,11 @@ function NativeHints({ mode }: { mode: HelpMode }) {
         screenY: event.screenY,
       }
       lastPointer.current = point
-      setHint({ text: titles.get(target) ?? target.dataset.tourHelp!, point })
+      setHint({
+        text: titles.get(target) ?? target.dataset.tourHelp!,
+        point,
+        help: !titles.has(target),
+      })
     }
     const click = (event: MouseEvent) => {
       if (!(event.target instanceof Element) || !event.target.closest('[role="tooltip"]')) clear()
@@ -113,7 +118,7 @@ function NativeHints({ mode }: { mode: HelpMode }) {
   }, [mode])
   return mode === 'tour' && hint ? (
     <HoverInfo anchor={anchor} point={hint.point} onDismiss={() => setHint(null)}>
-      {hint.text}
+      <span className={hint.help ? styles.tipHelp : undefined}>{hint.text}</span>
     </HoverInfo>
   ) : null
 }
