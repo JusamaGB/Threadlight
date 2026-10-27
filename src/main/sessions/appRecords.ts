@@ -6,6 +6,7 @@ import { join } from 'node:path'
 
 import type { PullRequest } from '../../shared/types'
 import { isObject, str } from './json'
+import { FILE_LANES, mapLimit } from './parallel'
 
 export interface AppRecord {
   /** The app's thread id (`local_…`). */
@@ -44,9 +45,11 @@ export class AppRecordIndex {
   async refresh(): Promise<Map<string, AppRecord>> {
     const byCliId = new Map<string, AppRecord>()
     const seen = new Set<string>()
-    for (const file of await recordFiles(this.dir)) {
+    const files = await recordFiles(this.dir)
+    const records = await mapLimit(files, FILE_LANES, (file) => this.load(file))
+    for (const [index, file] of files.entries()) {
       seen.add(file)
-      const record = await this.load(file)
+      const record = records[index]
       if (record) byCliId.set(record.cliSessionId, record)
     }
     for (const file of this.cache.keys()) if (!seen.has(file)) this.cache.delete(file)

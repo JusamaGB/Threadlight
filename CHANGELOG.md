@@ -6,6 +6,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Workspace with All drives (or a drive with more than 500 workspaces) showed only one Claude thread: the list of open workspaces was dropped for being too long. It now asks for everything at once, and the folder scan reads files in parallel.
+
 - Very long Claude threads (hundreds of MB of pasted images and tool output) no longer hold the list up: the first read takes a thread's opening lines and the last 8 MB, so every row loads at once.
 
 - **Claude threads appear straight away after a start or a change of view.** A thread's

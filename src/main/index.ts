@@ -358,11 +358,12 @@ async function start(): Promise<void> {
   ipcMain.handle(IPC.getSnapshot, () => sessions.snapshot)
   ipcMain.on(IPC.setTreeView, (_event, view: unknown) => {
     const valid = (list: unknown): list is string[] =>
-      Array.isArray(list) && list.length <= 500 && list.every((item) => typeof item === 'string')
+      Array.isArray(list) && list.length <= 20000 && list.every((item) => typeof item === 'string')
     const raw = (typeof view === 'object' && view !== null ? view : {}) as Record<string, unknown>
     sessions.setView({
       expanded: raw['expanded'] === null ? null : valid(raw['expanded']) ? raw['expanded'] : null,
       showAll: valid(raw['showAll']) ? raw['showAll'] : [],
+      everything: raw['everything'] === true,
     })
   })
   ipcMain.on(IPC.dotClick, () => windows.openFromDot())

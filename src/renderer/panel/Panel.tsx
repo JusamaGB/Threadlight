@@ -1096,12 +1096,23 @@ export function Panel() {
   // Tell the main process which workspaces can be seen, so it reads only their transcripts.
   useEffect(() => {
     if (!tree) return window.threadlight.setTreeView({ expanded: [], showAll: [] })
+    if (listMode === 'workspace' && allDrives)
+      return window.threadlight.setTreeView({ expanded: [], showAll: [], everything: true })
     if (listMode === 'workspace') {
       const only = focusGroupKeys ? focusGroupKeys.split('\n') : focusId ? [focusId] : []
       return window.threadlight.setTreeView({ expanded: only, showAll: only })
     }
     window.threadlight.setTreeView({ expanded: openWorkspaces, showAll: moreWorkspaces })
-  }, [tree, listMode, focusId, focusGroupKeys, openWorkspaces, moreWorkspaces, enabledKey])
+  }, [
+    tree,
+    listMode,
+    allDrives,
+    focusId,
+    focusGroupKeys,
+    openWorkspaces,
+    moreWorkspaces,
+    enabledKey,
+  ])
 
   const openMenu = (event: MouseEvent, session: Session) => {
     event.preventDefault()

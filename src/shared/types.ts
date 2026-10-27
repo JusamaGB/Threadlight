@@ -270,6 +270,8 @@ export interface Workspace {
 export interface TreeView {
   expanded: string[] | null
   showAll: string[]
+  /** Every workspace is listed in full (All drives), however many there are. */
+  everything?: boolean
 }
 
 /** Everything one scan produces. */

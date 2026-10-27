@@ -20,6 +20,7 @@ import { AppRecordIndex, type AppRecord } from './appRecords'
 import type { HeldCard } from '../holds'
 import type { HookRecord, HookStateStore } from './hookState'
 import { oneLine } from './json'
+import { FILE_LANES, mapLimit } from './parallel'
 import { liveSessionIds } from './liveSessions'
 import type { ClaudePaths } from './paths'
 import { TranscriptReader, type TranscriptSummary } from './transcript'
@@ -66,6 +67,8 @@ export interface TrackerOptions {
 
 /** Plenty for the Workspace list, and what a scan can build in well under a second. */
 const DEFAULT_TREE_BUDGET = 300
+/** Up to this many workspaces shown in full are exempt from the budget. */
+const FULL_WORKSPACES = 8
 const DEFAULT_COLD_BUILDS = 25
 const DEFAULT_COLD_MS = 500
 /** The recent list is cut to a few dozen, so only the newest transcripts are ever read for it. */
@@ -173,6 +176,8 @@ export class Tracker {
       (view.expanded ?? (currentWorkspace ? [currentWorkspace] : [])).map(workspaceKey),
     )
     const showAll = new Set(view.showAll.map(workspaceKey))
+    const every = view.everything === true
+    const isExpanded = (key: string) => every || expanded.has(key)
 
     // "Show sessions from the last …" applies here too. A thread outside the window stays only
     // when a side thread under it is inside, so the nesting still reads right.
@@ -231,7 +236,10 @@ export class Tracker {
         hiddenCount: 0,
         worktrees: 0,
       }
-      if (expanded.has(key) && (budget > 0 || showAll.has(key))) {
+      // One workspace asked for in full is never cut; a list of everything (All drives) shares
+      // the budget, newest workspaces first.
+      const inFull = !every && showAll.has(key) && showAll.size <= FULL_WORKSPACES
+      if (isExpanded(key) && (budget > 0 || inFull)) {
         // Side threads nest under the thread that started them, when it is in the same workspace.
         const byAppId = new Map(members.map((app) => [app.appId, app]))
         const childrenOf = new Map<string, AppRecord[]>()
@@ -246,7 +254,9 @@ export class Tracker {
         const orderedAt = (app: AppRecord) =>
           this.completionOrder.time(app.cliSessionId, activity(app))
         roots.sort((a, b) => orderedAt(b) - orderedAt(a) || a.appId.localeCompare(b.appId))
-        const shown = showAll.has(key) ? roots : roots.slice(0, this.maxSessions)
+        const shown = inFull
+          ? roots
+          : roots.slice(0, every || showAll.has(key) ? budget : this.maxSessions)
         workspace.hiddenCount = roots.length - shown.length
         budget -= shown.length
         const seen = new Set<string>()
@@ -265,7 +275,7 @@ export class Tracker {
           if (affordable(app.cliSessionId)) workspace.threads.push(await node(app))
         }
         workspace.worktrees = countWorktrees(workspace.threads)
-      } else if (expanded.has(key)) {
+      } else if (isExpanded(key)) {
         // Over budget: listed, but its threads load only when asked for.
         workspace.hiddenCount = members.filter((app) => !app.parentAppId).length
       }
@@ -374,23 +384,26 @@ export class Tracker {
     } catch {
       return found
     }
-    for (const project of projects) {
-      let entries
+    const lists = await mapLimit(projects, FILE_LANES, async (project) => {
       try {
-        entries = await readdir(project, { withFileTypes: true })
+        const entries = await readdir(project, { withFileTypes: true })
+        return entries
+          .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+          .map((entry) => ({ name: entry.name, path: join(project, entry.name) }))
       } catch {
-        continue
+        return []
       }
-      for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
-        const path = join(project, entry.name)
-        try {
-          const { mtimeMs } = await stat(path)
-          found.set(entry.name.slice(0, -'.jsonl'.length), { path, mtimeMs })
-        } catch {
-          // deleted between listing and stat
-        }
+    })
+    const stats = await mapLimit(lists.flat(), FILE_LANES, async ({ name, path }) => {
+      try {
+        return { name, path, mtimeMs: (await stat(path)).mtimeMs }
+      } catch {
+        return null // deleted between listing and stat
       }
+    })
+    for (const file of stats) {
+      if (file)
+        found.set(file.name.slice(0, -'.jsonl'.length), { path: file.path, mtimeMs: file.mtimeMs })
     }
     return found
   }

@@ -499,9 +499,14 @@ export class CodexTracker {
             (a, b) => orderedAt(b) - orderedAt(a) || String(a['id']).localeCompare(String(b['id'])),
           )
         if (!recentMembers.length) continue
-        const list = expanded.has(cwd)
-          ? await buildList(all.has(cwd) ? recentMembers : recentMembers.slice(0, this.maxSessions))
-          : []
+        const list =
+          view.everything || expanded.has(cwd)
+            ? await buildList(
+                view.everything || all.has(cwd)
+                  ? recentMembers
+                  : recentMembers.slice(0, this.maxSessions),
+              )
+            : []
         const nodes = list.map((session) => ({
           session,
           children: [] as { session: Session; children: never[] }[],
@@ -526,7 +531,10 @@ export class CodexTracker {
           activeCount: states.filter((s) => s !== 'idle').length,
           anyWorking: states.includes('working'),
           threads: roots,
-          hiddenCount: expanded.has(cwd) ? Math.max(0, recentMembers.length - list.length) : 0,
+          hiddenCount:
+            view.everything || expanded.has(cwd)
+              ? Math.max(0, recentMembers.length - list.length)
+              : 0,
           worktrees: 0,
         })
       }
