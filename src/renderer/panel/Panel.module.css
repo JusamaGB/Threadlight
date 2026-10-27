@@ -632,6 +632,36 @@
   right: 0;
 }
 
+/* An open chat is boxed by its provider colour: the top and bottom edges fade inward like the
+   side tint, with the same tree inset. */
+.edgeTop,
+.edgeBottom {
+  position: absolute;
+  left: calc(0px - var(--thread-inset, 0px));
+  right: 0;
+  height: 12px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.edgeTop {
+  top: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--provider-tint) 30%, transparent),
+    transparent
+  );
+}
+
+.edgeBottom {
+  bottom: 0;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--provider-tint) 30%, transparent),
+    transparent
+  );
+}
+
 .row[data-provider='codex'],
 .fileRow[data-provider='codex'] {
   --provider-tint: var(--provider-codex);
