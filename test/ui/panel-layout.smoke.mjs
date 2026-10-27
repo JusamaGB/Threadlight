@@ -101,6 +101,38 @@ export async function checkPanelLayout(page, capture) {
       () => Math.round(document.querySelector('[data-card]').getBoundingClientRect().width) === 475,
     )
 
+    // Shared Spaces, the Agent and Settings use the thin card: the panel narrows while one is
+    // open and goes back to the two columns when it closes. The saved choice stays dual.
+    const narrow = () =>
+      page.waitForFunction(
+        () =>
+          Math.round(document.querySelector('[data-card]').getBoundingClientRect().width) === 238,
+      )
+    const wide = () =>
+      page.waitForFunction(
+        () =>
+          Math.round(document.querySelector('[data-card]').getBoundingClientRect().width) === 475,
+      )
+    for (const [open, back] of [
+      ['Settings', 'Back to sessions'],
+      ['Shared Spaces', 'Back in Shared Spaces'],
+      ['Agent: ask it to do something', 'Back to sessions'],
+    ]) {
+      await page.getByRole('button', { name: open, exact: true }).click()
+      await narrow()
+      await page.waitForFunction(
+        () => document.querySelector('#root > div').getAttribute('data-wide') === null,
+      )
+      assert.equal(await stage(page).getAttribute('data-dual'), null, `${open} uses the thin card`)
+      await page.getByRole('button', { name: back, exact: true }).click()
+      await wide()
+      assert.equal(await stage(page).getAttribute('data-dual'), 'true', `${open} gives it back`)
+      assert.equal(
+        await page.evaluate(async () => (await window.threadlight.getSettings()).panelLayout),
+        'dual',
+      )
+    }
+
     const back = await threadMenu()
     assert.equal(await back.getByRole('menuitem', { name: 'Dual view' }).count(), 0)
     await back.getByRole('menuitem', { name: 'Single view' }).click()
@@ -138,7 +170,7 @@ export async function checkPanelLayout(page, capture) {
       'dual',
     )
     console.log(
-      'PASS: thread right-click menu item, single/dual choice saved, widen-then-grow and narrow-then-shrink order, saved dual waiting for Recent after a reload, and one-provider fallback.',
+      'PASS: thread right-click menu item, single/dual choice saved, widen-then-grow and narrow-then-shrink order, saved dual waiting for Recent after a reload, and one-provider fallback, and the thin card for Settings, Shared Spaces and the Agent.',
     )
   } finally {
     await page.evaluate((settings) => window.threadlight.updateSettings(settings), {

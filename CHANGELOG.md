@@ -6,6 +6,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Dual view now steps aside for Shared Spaces, the Agent and Settings: the panel narrows
+  smoothly to the normal thin card while one of them is open and widens back to the two
+  columns when you return to the list. Your Dual view choice is kept.
+
 - **One drip for every thread that needs input.** While Threadlight is minimised, each
   waiting thread (up to ten) now has its own drip, in the order the Active list shows
   them, in its own provider's colour, instead of one drip for one chosen thread. With N
