@@ -30,6 +30,15 @@ export function AttentionView() {
   const state = useAttentionMotion()
   const wheel = useRef<HTMLCanvasElement>(null),
     liquid = useRef<HTMLCanvasElement>(null)
+  // The painter reads the latest state each frame, so a changing list of waiting threads never
+  // restarts it and the drops already falling carry on.
+  const latest = useRef(state)
+  const redraw = useRef<(() => void) | null>(null)
+  useLayoutEffect(() => {
+    latest.current = state
+    // A still frame stops the loop, so a new state has to restart it.
+    redraw.current?.()
+  }, [state])
   useLayoutEffect(() => {
     if (!state.active || !wheel.current || !liquid.current) return
     const painter = createAttentionPainter(wheel.current, liquid.current)
@@ -38,7 +47,7 @@ export function AttentionView() {
     let frame = 0
     const draw = () => {
       cancelAnimationFrame(frame)
-      const still = painter.draw(state, Date.now() / 1000, preference.matches)
+      const still = painter.draw(latest.current, Date.now() / 1000, preference.matches)
       if (!still && !document.hidden) frame = requestAnimationFrame(draw)
     }
     const wake = () => {
@@ -48,19 +57,25 @@ export function AttentionView() {
     preference.addEventListener('change', wake)
     document.addEventListener('visibilitychange', wake)
     // Prime even a hidden native window, then animate only while it is visible.
+    redraw.current = draw
     draw()
     return () => {
+      redraw.current = null
       cancelAnimationFrame(frame)
       preference.removeEventListener('change', wake)
       document.removeEventListener('visibilitychange', wake)
       painter.dispose()
     }
-  }, [state])
+  }, [state.active])
   // Native visibility controls presentation. Retain the last painted frame while
   // inactive so showing the window never exposes newly mounted, empty canvases.
   return (
     <div
-      aria-label={`${state.provider === 'codex' ? 'Codex' : 'Claude'} needs input`}
+      aria-label={
+        state.providers.length > 1
+          ? `${state.providers.length} threads need input`
+          : `${state.provider === 'codex' ? 'Codex' : 'Claude'} needs input`
+      }
       aria-hidden={!state.active}
       data-attention-provider={state.provider}
       style={{ width: state.width, height: state.height, pointerEvents: 'none' }}

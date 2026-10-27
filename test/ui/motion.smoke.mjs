@@ -146,6 +146,7 @@ try {
           getAttentionMotion: async () => ({
             active: window.location.search.includes('attention'),
             provider: 'claude',
+            providers: ['claude'],
             width: 140,
             height: 300,
             x: 70,
@@ -490,18 +491,34 @@ try {
   )
   await page.addInitScript(() => {
     if (window.location.search.includes('attention'))
-      Date.now = () => window.motionProof.attentionClock ?? 1300
+      // Milliseconds. One thread: a drip leaves every 6 s, the first at 0, so 1297 ms is 1.3 s
+      // into it, with the pool still forming.
+      Date.now = () => window.motionProof.attentionClock ?? 1297
   })
   await page.goto(url + '/?view=attention')
   const attention = page.locator('[data-attention-provider]')
   await attention.waitFor()
-  let painted = await readMotionFrame(attention)
+  // The wheel has its own colours (and a shimmer that moves with the clock), so the liquid is
+  // measured with the wheel hidden.
+  const liquidOnly = async () => {
+    const hide = await page.addStyleTag({
+      content: '[data-attention-provider] canvas:first-child { visibility: hidden }',
+    })
+    try {
+      return await readMotionFrame(attention)
+    } finally {
+      await hide.evaluate((element) => element.remove())
+    }
+  }
+  let painted = await liquidOnly()
   assert.ok(painted.orange > painted.blue, 'Claude attention uses the orange provider palette')
+  const claudeFrame = painted
   await capture('claude-attention-pool', attention)
   await page.evaluate(() =>
     window.motionProof.emit('onAttentionMotion', {
       active: true,
       provider: 'codex',
+      providers: ['codex'],
       width: 140,
       height: 300,
       x: 70,
@@ -510,11 +527,18 @@ try {
     }),
   )
   await page.locator('[data-attention-provider="codex"]').waitFor()
-  painted = await readMotionFrame(attention)
-  assert.ok(painted.blue > painted.orange, 'Codex attention uses the blue provider palette')
+  // A drip takes its thread's colour as it is born, so the next one (at 6 s) is the Codex one.
+  await page.evaluate(() => {
+    window.motionProof.attentionClock = 7300
+  })
+  await page.waitForTimeout(150)
+  painted = await liquidOnly()
+  // The wheel keeps its own Claude-orange design for every provider; only the liquid changes.
+  assert.ok(painted.blue > painted.orange, 'Codex attention liquid uses the blue provider palette')
+  assert.ok(painted.blue > claudeFrame.blue, 'and Claude liquid has none of it')
   await capture('codex-attention-pool', attention)
   await page.evaluate(() => {
-    window.motionProof.attentionClock = 2150
+    window.motionProof.attentionClock = 8200
   })
   await page.waitForTimeout(100)
   painted = await readMotionFrame(attention)
@@ -523,6 +547,52 @@ try {
     'the production liquid reaches its native taskbar collision plane',
   )
   await capture('codex-attention-splash', attention)
+
+  // Four threads wait, so a drip leaves every 1.5 s and a Codex splash is still settling as the
+  // next Claude drop forms. The wheel is orange either way, so measure the liquid layer alone.
+  const waiting = (providers) =>
+    page.evaluate(
+      (providers) =>
+        window.motionProof.emit('onAttentionMotion', {
+          active: true,
+          provider: providers[0],
+          providers,
+          width: 140,
+          height: 300,
+          x: 70,
+          y: 11,
+          floor: 280,
+        }),
+      providers,
+    )
+  // The list changes first and the clock jumps after, so the drips are rebuilt from the new list.
+  await waiting(['claude', 'claude', 'claude', 'claude'])
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="4 threads need input"]') !== null,
+  )
+  await page.evaluate(() => {
+    window.motionProof.attentionClock = 1500900
+  })
+  await page.waitForTimeout(150)
+  const allClaude = await liquidOnly()
+  assert.ok(allClaude.orange > 20 && allClaude.blue < 5, 'four Claude threads drip only orange')
+  // Drops already falling keep their colour, so the next one (at 1501.5 s) is the Codex drop and
+  // the Claude drop before it is still settling.
+  await waiting(['claude', 'codex', 'claude', 'codex'])
+  await page.evaluate(() => {
+    window.motionProof.attentionClock = 1502400
+  })
+  await page.waitForTimeout(150)
+  const mixed = await liquidOnly()
+  assert.ok(
+    mixed.orange > 20 && mixed.blue > 20,
+    "several drips run at once, each in its own thread's colour",
+  )
+  await capture('mixed-attention-drips', attention)
+  await waiting(['codex'])
+  await page.evaluate(() => {
+    window.motionProof.attentionClock = 8200
+  })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.waitForTimeout(150)
   const hanging = await attention.screenshot()

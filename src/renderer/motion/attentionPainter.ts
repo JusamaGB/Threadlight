@@ -4,7 +4,6 @@ import { createCanvasRenderer } from './render'
 import {
   HOLD_START,
   RELEASE,
-  CYCLE,
   GRAVITY,
   RELEASE_SPEED,
   clamp,
@@ -20,6 +19,10 @@ import {
 } from './drip-physics'
 
 import type { AttentionMotion } from '../../shared/attentionMotion'
+import { DripSchedule, dripClock } from '../../shared/dripSchedule'
+
+/** The shimmer sweeps every 2.1 s; wrapping the clock at a whole number of sweeps is seamless. */
+const SHIMMER_WRAP = 840
 
 /** The same pool, 250 ms hold, neck, gravity and splash used by the approved preview. */
 export function createAttentionPainter(wheel: HTMLCanvasElement, liquid: HTMLCanvasElement) {
@@ -42,6 +45,13 @@ export function createAttentionPainter(wheel: HTMLCanvasElement, liquid: HTMLCan
     startY = 0,
     impactAt = 0,
     impactVelocity = 0
+  // A drip stays up through forming, the fall and the settling splash.
+  // The wheel keeps turning between drips, so it follows the latest one even after it has gone.
+  let latest: { start: number; scale: number } | null = null
+  const schedule = new DripSchedule(
+    RELEASE,
+    (scale) => RELEASE * scale + (impactAt - RELEASE) + 1.2,
+  )
   function liquidFill(x: number, y: number, r: number) {
     const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.5, 0, x, y, r * 1.6)
     ;[0, 0.22, 0.5, 0.82, 1].forEach((stop, i) => g.addColorStop(stop, colours.liquid[i]!))
@@ -340,7 +350,7 @@ export function createAttentionPainter(wheel: HTMLCanvasElement, liquid: HTMLCan
       cx = state.x
       cy = state.y
       floor = state.floor
-      colours = PROVIDER_COLOURS[state.provider]
+      const providers = state.providers?.length ? state.providers : [state.provider]
       scale = Math.min(2, devicePixelRatio || 1)
       tip = cy + diameter * 0.365
       startY = cy + pooledDrop(RELEASE, diameter).y
@@ -356,9 +366,24 @@ export function createAttentionPainter(wheel: HTMLCanvasElement, liquid: HTMLCan
       wheel.style.left = cx - diameter / 2 + 'px'
       wheel.style.top = cy - diameter / 2 + 'px'
       const still = reduced || floor - cy < diameter * 2
-      const t = still ? 1.3 : now % Math.max(CYCLE, impactAt + 1.2)
-      const vertices = mesh.build(diameter, diameter, 0, pose, true)
-      const angle = wheelAngle(t),
+      // One drip per waiting thread, each born at its own time. A still frame shows one.
+      const drips = still
+        ? [{ start: 0, provider: providers[0]!, scale: 1 }]
+        : state.active
+          ? schedule.update(now, providers)
+          : (schedule.reset(), [])
+      const clockOf = (drip: { start: number; scale: number }) =>
+        still ? 1.3 : dripClock(now - drip.start, drip.scale, RELEASE)
+      const newest = drips.at(-1)
+      if (!state.active) latest = null
+      else if (newest) latest = newest
+      const t = latest ? clockOf(latest) : 0
+      // The wheel keeps its own design (Claude orange with the Codex-blue shimmer travelling
+      // outwards); only the liquid takes a provider's colour. The mesh already turns with its
+      // clock, so the extra turn only adds the pause that matches the drop forming.
+      const shimmer = still ? 0 : now % SHIMMER_WRAP
+      const vertices = mesh.build(diameter, diameter, shimmer, pose, still, false, true)
+      const angle = wheelAngle(t) - 2.5 * shimmer,
         c = Math.cos(angle),
         s = Math.sin(angle)
       for (let i = 0; i < vertices.length; i += 6) {
@@ -366,18 +391,19 @@ export function createAttentionPainter(wheel: HTMLCanvasElement, liquid: HTMLCan
           y = vertices[i + 1]! - diameter / 2
         vertices[i] = diameter / 2 + x * c - y * s
         vertices[i + 1] = diameter / 2 + x * s + y * c
-        const light = 0.78 + 0.22 * vertices[i + 3]!
-        vertices[i + 2] = colours.rgb[0] * light
-        vertices[i + 3] = colours.rgb[1] * light
-        vertices[i + 4] = colours.rgb[2] * light
       }
       graphics.draw(vertices, diameter, diameter, scale)
       ctx.setTransform(scale, 0, 0, scale, 0, 0)
       ctx.clearRect(0, 0, width, height)
       if (state.active) {
-        liquidReservoir(t)
-        if (t < impactAt) attached(t)
-        else splash(t - impactAt)
+        for (const drip of drips) {
+          colours = PROVIDER_COLOURS[drip.provider]
+          const own = clockOf(drip)
+          // Only the newest drip is still being drawn out of the wheel.
+          if (drip === newest) liquidReservoir(own)
+          if (own < impactAt) attached(own)
+          else splash(own - impactAt)
+        }
       }
       return still
     },
