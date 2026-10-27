@@ -161,7 +161,8 @@ export function SessionRow(props: SessionRowProps) {
           <span className={styles.stage} data-tone={line?.tone}>
             {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
           </span>
-          {session.git && (
+          {/* "Needs your input" has the bottom right corner; the counts return when it goes. */}
+          {session.git && !attention && (
             <Tip
               data-git-tracker=""
               className={styles.diff}
@@ -177,7 +178,7 @@ export function SessionRow(props: SessionRowProps) {
               )}
             </Tip>
           )}
-          {!(expanded && appId) && session.backgroundTasks.length > 0 && (
+          {!(expanded && appId) && !attention && session.backgroundTasks.length > 0 && (
             <TaskTimer tasks={session.backgroundTasks} />
           )}
           {/* On the second row, at the right after the counts, so the title keeps the whole top row. */}

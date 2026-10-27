@@ -46,7 +46,9 @@ export async function checkThreadBadges(page, capture) {
     const row = page.locator(`[data-session-id][data-provider="${provider}"]`).first()
     await row.getByText('+124', { exact: true }).waitFor()
     await row.getByText('−13', { exact: true }).waitFor()
-    await row.getByText('↑2', { exact: true }).waitFor()
+    // "Needs your input" has the bottom right corner, so the Codex row (which is waiting on
+    // the user) shows it in place of the branch counts.
+    if (provider === 'claude') await row.getByText('↑2', { exact: true }).waitFor()
     if (provider === 'claude') {
       await row.locator(':scope > button').first().click()
       const line = row.locator('[class*="_gitLine_"]')
@@ -66,6 +68,7 @@ export async function checkThreadBadges(page, capture) {
     if (provider === 'codex') {
       assert.match(await badge.getAttribute('title'), /linked; status unavailable/)
       await row.getByText('Needs your input', { exact: true }).waitFor()
+      assert.equal(await row.getByText('↑2', { exact: true }).count(), 0)
     }
   }
   await capture('codex-thread-badges')
