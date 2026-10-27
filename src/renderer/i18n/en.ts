@@ -300,7 +300,6 @@ export const en = {
     hoverHelp: 'Hover help',
     launchAtSignIn: 'Launch at sign-in',
     agent: 'Agent',
-    agentLifetime: 'Conversation lasts',
     lifetime: (minutes: number) =>
       minutes === 0 ? 'Until ended' : minutes < 60 ? `${minutes} min` : `${minutes / 60} h`,
     agentWorker: 'Worker',
@@ -320,8 +319,8 @@ export const en = {
         tour: "Changes apply to new conversations. An existing one keeps its model. This applies to Threadlight's own Agent only, not to your Claude or Codex threads.",
       },
       agentLifetime: {
-        info: 'How long the Agent conversation is reused after its last reply.',
-        tour: "After that a fresh conversation starts. 'Until ended' keeps it until you press End.",
+        info: 'Conversation lasts: how long the Agent chat is kept after its last reply, then a fresh one starts.',
+        tour: "'Until ended' keeps it until you press End. An ended Codex conversation is archived and can be continued from Earlier.",
       },
       voiceTarget: {
         info: 'Local STT transcribes on this PC. GPT Live sends audio to GPT.',

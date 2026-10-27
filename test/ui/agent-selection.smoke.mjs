@@ -1,4 +1,4 @@
-/* global window, document */
+/* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 
 export async function checkAgentSelection(page, capture) {
@@ -235,7 +235,24 @@ export async function checkAgentSettings(page, capture) {
   await page.keyboard.press('Escape')
   await page.mouse.move(0, 0)
   assert.equal(await page.getByRole('checkbox', { name: 'Show additional models' }).count(), 0)
-  assert.equal(await group.locator('select').count(), 0)
+  // The only native select is the conversation lifetime, in the same row as the menus.
+  assert.equal(await group.locator('select').count(), 1)
+  // With no visible label, hovering it says what it is for.
+  await group.locator('select').hover()
+  await page.getByRole('tooltip').waitFor()
+  assert.match(await page.getByRole('tooltip').innerText(), /Conversation lasts: how long/)
+  await page.mouse.move(0, 0)
+  // It matches the text controls beside it: no border or background of its own.
+  assert.deepEqual(
+    await group
+      .locator('select')
+      .evaluate((el) => [getComputedStyle(el).borderTopWidth, getComputedStyle(el).appearance]),
+    ['0px', 'none'],
+  )
+  assert.equal(
+    await group.locator('select').getAttribute('aria-label'),
+    'Agent conversation lifetime',
+  )
   assert.equal(
     await page
       .getByText('Wait quietly in the background until Claude or Codex opens, then show the dot.')

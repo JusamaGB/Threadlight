@@ -16,13 +16,13 @@
   font: inherit;
   font-size: 11px;
   height: 20px;
-  padding: 0 3px;
+  padding: 0 1px 0 3px;
 }
 .agentSelection {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: baseline;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   padding: 2px 0;
   color: var(--fg);
@@ -38,6 +38,36 @@
   justify-self: center;
   text-align: center;
 }
+.agentSelection > .agentLifetime {
+  justify-self: end;
+  margin-left: 8px;
+}
+
+/* Plain text like the provider, model and effort beside it: no box, no arrow. The explanation
+   is the hover text; clicking still opens the list of times. */
+.group .agentLifetime select {
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  appearance: none;
+  field-sizing: content;
+  cursor: pointer;
+}
+
+.group .agentLifetime select:hover,
+.group .agentLifetime select:focus-visible {
+  color: var(--fg);
+}
+
+.group .agentLifetime option {
+  background: var(--raised);
+  color: var(--fg);
+}
+
 .agentSelection > button[data-field='effort'] {
   justify-self: end;
   color: var(--muted);
