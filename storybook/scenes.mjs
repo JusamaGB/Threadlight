@@ -70,7 +70,7 @@ export const SCENES = [
     async run({ row, wait, frame }) {
       await row('Fix checkout').locator('[data-workspace-anchor]').hover()
       await wait(1000)
-      return [await frame('03-hover')]
+      return [await frame('03-hover', { keep: true })]
     },
   },
   {
@@ -135,7 +135,7 @@ export const SCENES = [
       await wait(700)
       await row('Fix checkout').locator('button').first().hover()
       await wait(500)
-      return [await frame('08-wires')]
+      return [await frame('08-wires', { keep: true })]
     },
   },
   {
@@ -162,10 +162,10 @@ export const SCENES = [
       const shots = []
       await row('Fix checkout').locator('button').first().hover()
       await wait(500)
-      shots.push(await frame('10-dual-wires-api'))
+      shots.push(await frame('10-dual-wires-api', { keep: true }))
       await row('Redesign pricing').locator('button').first().hover()
       await wait(500)
-      shots.push(await frame('10-dual-wires-web'))
+      shots.push(await frame('10-dual-wires-web', { keep: true }))
       return shots
     },
   },

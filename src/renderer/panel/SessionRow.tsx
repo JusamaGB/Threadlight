@@ -153,18 +153,6 @@ export function SessionRow(props: SessionRowProps) {
           {session.threadDiff && (
             <ThreadCount diff={session.threadDiff} onOpen={props.onShowChanges} />
           )}
-          {/* A long title fades out behind this, so it always shows. */}
-          {attention && (
-            <Tip
-              className={styles.needsYou}
-              data-ignored={session.ignored || undefined}
-              text=""
-              tourOnly
-              tourHelp="This thread is waiting for an answer or approval. Open the thread to respond."
-            >
-              {en.attention.needsYou}
-            </Tip>
-          )}
           {/* Keep space for Open ↗, drawn outside this button on expanded rows. */}
           {expanded && appId && <span className={styles.openSpace} aria-hidden="true" />}
         </span>
@@ -191,6 +179,18 @@ export function SessionRow(props: SessionRowProps) {
           )}
           {!(expanded && appId) && session.backgroundTasks.length > 0 && (
             <TaskTimer tasks={session.backgroundTasks} />
+          )}
+          {/* On the second row, at the right after the counts, so the title keeps the whole top row. */}
+          {attention && (
+            <Tip
+              className={styles.needsYou}
+              data-ignored={session.ignored || undefined}
+              text=""
+              tourOnly
+              tourHelp="This thread is waiting for an answer or approval. Open the thread to respond."
+            >
+              {en.attention.needsYou}
+            </Tip>
           )}
         </span>
       </Tip>
