@@ -1,4 +1,4 @@
-export const DOT_SIZE = 22
+export const DOT_SIZE = 32
 export const MIC_PILL_WIDTH = 92
 export const MIC_PILL_HEIGHT = 18
 

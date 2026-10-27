@@ -102,7 +102,7 @@ try {
           const b = windows.dot.getBounds()
           move(b.x + 11, b.y + 11)
         })
-        await dot.mouse.move(11, 11)
+        await dot.mouse.move(16, 16)
         await pause(1000)
         const opened = await app.evaluate(() => {
           const { windows, events } = globalThis.hoverProof
@@ -146,7 +146,7 @@ try {
       const b = windows.dot.getBounds()
       move(b.x + 11, b.y + 11)
     })
-    await dot.mouse.move(11, 11)
+    await dot.mouse.move(16, 16)
     await pause(80)
     assert(await app.evaluate(() => globalThis.hoverProof.windows.panel.isVisible()))
   }

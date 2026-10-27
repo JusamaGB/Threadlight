@@ -483,7 +483,7 @@ Rules carried over from the Python prototype:
 
 ## 7. Features (v1 = parity with the prototype + hotkeys + settings)
 
-**Dot** — 22 px, draggable, position remembered per display; pulses while any session works; hidden when the Claude app is not running.
+**Dot** — 32 px, about the size of a taskbar icon, draggable, position remembered per display; pulses while any session works; hidden when the Claude app is not running.
 
 **Panel** — opens in the dot's place (top-right corner anchored to the dot; flips when near screen edges); closes on any click outside or `Esc`. Header: "Active"/"Recent", counts, and the dot itself (click toggles Active/Recent). Rows: state dot, title, age, one-line stage. Click to expand: status, folder, last prompt, plan with ✓/●/○, "Now", result or last reply, Open ↗.
 

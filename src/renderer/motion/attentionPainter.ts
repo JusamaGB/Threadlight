@@ -1,3 +1,4 @@
+import { DOT_SIZE } from '../../shared/micIndicator'
 import { MotionGeometry, restingPose } from './geometry'
 import { PROVIDER_COLOURS } from './provider-colours'
 import { createCanvasRenderer } from './render'
@@ -39,7 +40,7 @@ export function createAttentionPainter(wheel: HTMLCanvasElement, liquid: HTMLCan
     cx = 0,
     cy = 0,
     floor = 0
-  const diameter = 22,
+  const diameter = DOT_SIZE,
     radius = diameter * 0.195
   let tip = 0,
     startY = 0,

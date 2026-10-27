@@ -96,7 +96,7 @@ describe('panel movement and available height', () => {
     windows.resizePanel(400)
     expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 400 })
     windows.openPanel({ fresh: true })
-    expect(windows.panel.getBounds()).toMatchObject({ y: 222, height: 400 })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 232, height: 400 })
   })
 
   beforeEach(() => {
@@ -403,11 +403,11 @@ describe('panel movement and available height', () => {
     windows.resizePanel(800)
     windows.dragDot(-1500, 400)
     expect(windows.panel.webContents.send).toHaveBeenLastCalledWith(IPC.panelOpened, {
-      maxHeight: 614,
+      maxHeight: 624,
       opensDown: false,
       fresh: false,
     })
-    expect(windows.panel.getBounds()).toMatchObject({ x: -532, y: 8, height: 614 })
+    expect(windows.panel.getBounds()).toMatchObject({ x: -522, y: 8, height: 624 })
     windows.endDrag()
     windows.dragDot(0, 98)
     expect(windows.panel.webContents.send).toHaveBeenLastCalledWith(IPC.panelOpened, {
@@ -425,7 +425,7 @@ describe('panel movement and available height', () => {
     windows.openPanel()
     windows.dragDot(0, 200)
     expect(windows.panel.webContents.send).toHaveBeenLastCalledWith(IPC.panelOpened, {
-      maxHeight: 1014,
+      maxHeight: 1024,
       opensDown: false,
       fresh: false,
     })

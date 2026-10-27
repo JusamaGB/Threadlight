@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NO_ATTENTION, type AttentionMotion } from '../../shared/attentionMotion'
+import { DOT_SIZE } from '../../shared/micIndicator'
 import { createAttentionPainter } from './attentionPainter'
 
 export function useAttentionMotion(): AttentionMotion {
@@ -80,7 +81,11 @@ export function AttentionView() {
       data-attention-provider={state.provider}
       style={{ width: state.width, height: state.height, pointerEvents: 'none' }}
     >
-      <canvas ref={wheel} aria-hidden style={{ position: 'absolute', width: 22, height: 22 }} />
+      <canvas
+        ref={wheel}
+        aria-hidden
+        style={{ position: 'absolute', width: DOT_SIZE, height: DOT_SIZE }}
+      />
       <canvas
         ref={liquid}
         aria-hidden

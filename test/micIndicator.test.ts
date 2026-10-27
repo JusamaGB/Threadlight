@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { micIndicatorBounds } from '../src/shared/micIndicator'
+import { DOT_SIZE, micIndicatorBounds } from '../src/shared/micIndicator'
 import { IPC } from '../src/shared/ipc'
 import { IDLE_MOTION } from '../src/shared/motion'
 
@@ -19,9 +19,9 @@ import type { WindowManager } from '../src/main/windows'
 describe('floating microphone indicator', () => {
   it.each([
     { x: 8, y: 8 },
-    { x: 1890, y: 8 },
-    { x: 8, y: 1050 },
-    { x: 1890, y: 1050 },
+    { x: 1880, y: 8 },
+    { x: 8, y: 1040 },
+    { x: 1880, y: 1040 },
     { x: -1912, y: 8 },
   ])('grows inward and restores its anchor at %j', (anchor) => {
     const area = { x: anchor.x < 0 ? -1920 : 0, y: 0, width: 1920, height: 1080 }
@@ -31,7 +31,11 @@ describe('floating microphone indicator', () => {
     expect(pill.x).toBeGreaterThanOrEqual(area.x)
     expect(pill.x + pill.width).toBeLessThanOrEqual(area.x + area.width)
     expect(pill.y + pill.height).toBeLessThanOrEqual(area.height)
-    expect(micIndicatorBounds(anchor, area, false)).toEqual({ ...anchor, width: 22, height: 22 })
+    expect(micIndicatorBounds(anchor, area, false)).toEqual({
+      ...anchor,
+      width: DOT_SIZE,
+      height: DOT_SIZE,
+    })
   })
 
   it('relays bounded levels, closes only an open mic and clears stale state on reload', () => {
