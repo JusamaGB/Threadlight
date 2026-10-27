@@ -10,8 +10,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   diff, Compose and Open in Claude) to widen the panel and show Claude and Codex threads side
   by side. The window widens, the card grows, the Claude threads slide left and every thread
   closes up into two stacked columns; **Single view** reverses it. The choice is remembered
-  and needs both providers switched on. It applies to the Recent and Workspace lists: Active
-  and All stay one column, and the choice returns with the list. Workspace wires are hidden
+  and needs both providers switched on. It applies to the Recent and Workspace lists (Workspace
+  repeats its headers in each column): Active and All stay one column, and the choice returns
+  with the list. Workspace wires are hidden
   while the columns are split. **Sessions listed** now goes up to 50.
 
 - Fixed Git metadata disappearing during folder rechecks and diff reads restarting

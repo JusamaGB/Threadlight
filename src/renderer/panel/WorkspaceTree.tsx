@@ -26,11 +26,9 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
     : workspaces
 
   if (shown.length === 0) {
-    return (
-      <>
-        <p className={`${styles.empty} ${styles.emptyWindow}`}>{props.emptyMessage}</p>
-      </>
-    )
+    return props.emptyMessage ? (
+      <p className={`${styles.empty} ${styles.emptyWindow}`}>{props.emptyMessage}</p>
+    ) : null
   }
 
   // Number visible rows in display order, including children, so stripes do not restart at
