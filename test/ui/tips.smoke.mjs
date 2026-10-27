@@ -175,7 +175,7 @@ export async function checkTips(page, row, capture = async () => {}) {
       window.proof.emit('onSnapshot', await window.threadlight.getSnapshot()),
     )
     await page.mouse.move(5, 5)
-    const pointer = await context('Claude')
+    await context('Claude')
     await page.getByRole('tooltip', { name: 'Context 20%', exact: true }).waitFor()
     await page.mouse.down()
     assert.equal(await tip.count(), 1, 'pressing on the target keeps the bubble')
