@@ -13,15 +13,14 @@ export async function checkRecentLimit(page, capture) {
     await view.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
     assert.equal(await view.innerText(), 'Recent')
-    // The chosen option is shown as selected (a tick, full colour), not greyed out like a
-    // blocked one, though choosing it again does nothing.
+    // The view already chosen is not offered again; the others are.
     await view.click({ button: 'right' })
-    const chosen = page.getByRole('menuitem', { name: 'Recent', exact: true })
-    const other = page.getByRole('menuitem', { name: 'Workspace', exact: true })
-    assert.equal(await chosen.getAttribute('data-current'), 'true')
-    assert.equal(await chosen.isDisabled(), true)
-    const colour = (item) => item.evaluate((el) => getComputedStyle(el).color)
-    assert.equal(await colour(chosen), await colour(other), 'the chosen option is not dimmed')
+    await page.getByRole('menuitem', { name: 'Workspace', exact: true }).waitFor()
+    assert.deepEqual(
+      await page.getByRole('menuitem').allTextContents(),
+      ['Active', 'Workspace', 'All'],
+      'the chosen view is left out of the menu',
+    )
     await page.keyboard.press('Escape')
     assert.equal((await control.innerText()).replace(/\s/g, ''), '−10+')
     await control.getByRole('button', { name: 'Decrease Sessions listed', exact: true }).click()
