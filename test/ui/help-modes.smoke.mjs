@@ -79,6 +79,11 @@ export async function checkHelpModes(page, row, capture) {
     await row('Claude').locator('[data-git-tracker]').hover()
     await tip.waitFor()
     assert.equal(await tip.innerText(), 'main', 'Info keeps the original Git hint')
+    assert.equal(
+      await page.locator('[data-hover-message] [role="tooltip"]').count(),
+      0,
+      'Info keeps short hints beside the cursor',
+    )
     await mode('Tour')
     await hoverRow()
     await tip.waitFor()
@@ -103,8 +108,26 @@ export async function checkHelpModes(page, row, capture) {
     await settingsButton().hover()
     await tip.waitFor()
     assert.equal(await tip.innerText(), 'Settings', 'Tour makes native title help immediate')
+    assert.equal(
+      await page.locator('[data-hover-message] [role="tooltip"]').count(),
+      1,
+      'Tour shows even a short hint in the footer',
+    )
     assert.equal(await tip.count(), 1)
     assert.equal(await settingsButton().getAttribute('title'), '')
+    // A control with no hint of its own must not inherit the header's pin hint.
+    const viewControl = page.locator('header [data-thread-view]')
+    await viewControl.click()
+    assert.equal(await viewControl.getAttribute('data-thread-view'), 'recent')
+    await page.getByRole('button', { name: /^Decrease/ }).hover()
+    await page.clock.runFor(100)
+    assert.equal(await tip.count(), 0, '− shows no pin hint')
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
+    await tip.waitFor()
+    assert.match(await tip.innerText(), /^Double-click the header to pin/)
+    await viewControl.click()
+    await viewControl.click()
+    assert.equal(await viewControl.getAttribute('data-thread-view'), 'active')
     await page.evaluate(() => window.threadlight.updateSettings({ hoverHelp: 'off' }))
     await tip.waitFor({ state: 'detached' })
     assert.equal(

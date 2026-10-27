@@ -14,6 +14,12 @@
   stroke-width: 1;
   opacity: 0.35;
 }
+/* A wide invisible stroke makes the thin wire easy to hover and right-click. */
+.hit {
+  stroke: transparent;
+  stroke-width: 8;
+  pointer-events: stroke;
+}
 .back {
   stroke: #0e1118;
   stroke-width: 3;

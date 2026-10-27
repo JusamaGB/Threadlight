@@ -58,7 +58,7 @@ export async function checkHoverMotion(page, capture) {
       }),
     )
     await choose('Recent')
-    await page.locator('header').hover()
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     const baseline = await page.locator('[data-card]').boundingBox()
     await page.getByLabel(/^Claude · 5-hour limit/).hover()
     const opening = await sample()
@@ -79,7 +79,7 @@ export async function checkHoverMotion(page, capture) {
     assert.equal(replacement.at(-1).opacity, 1)
     assert.match(await tip.innerText(), /^Codex/)
     await capture('hover-motion-codex-settled')
-    await page.locator('header').hover()
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     const closing = await sample()
     assert.ok(varying(closing, 'height'), 'closing contracts through intermediate heights')
     assert.equal(closing.at(-1).height, baseline.height)
@@ -99,7 +99,7 @@ export async function checkHoverMotion(page, capture) {
     assert.equal(await tip.count(), 0)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.evaluate(() => window.threadlight.updateSettings({ hoverHelp: 'info' }))
-    await page.locator('header').hover()
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     await page.getByLabel(/^Claude · 5-hour limit/).hover()
     await tip.waitFor()
     assert.equal(
@@ -107,7 +107,7 @@ export async function checkHoverMotion(page, capture) {
       0,
       'reduced motion skips height and text animations',
     )
-    await page.locator('header').hover()
+    await page.locator('header').hover({ position: { x: 2, y: 2 } })
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async () => {
       window.threadlight.setWorkspacePanel = async () => ({

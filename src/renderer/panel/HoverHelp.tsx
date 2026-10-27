@@ -71,6 +71,8 @@ function NativeHints({ mode }: { mode: HelpMode }) {
           break
         }
         if (element.hasAttribute('data-tip-anchor')) break
+        // A control without a hint of its own, like − and +, must not inherit its container's.
+        if (element.matches('button, [role="button"], input, select, textarea, a[href]')) break
       }
       if (!target) {
         clear()

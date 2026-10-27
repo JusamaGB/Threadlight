@@ -86,6 +86,8 @@ export const IPC = {
   panelOpened: 'panel:opened',
   workspacePanel: 'panel:workspace-layout',
   panelResize: 'panel:resize',
+  panelLayout: 'panel:layout',
+  workspaceWireRegions: 'panel:wire-regions',
   panelClose: 'panel:close',
   panelLeave: 'panel:leave',
   panelPointerOutside: 'panel:pointer-outside',
@@ -196,6 +198,10 @@ export interface ThreadlightApi {
   /** While on, clicking elsewhere does not close the panel (the active or full list pinned open). */
   setStayOpen(on: boolean): void
   setWorkspaceWireControl(bounds: { top: number; height: number } | null): void
+  /** The thin clickable strips along each wire; everything else in the gutter passes clicks through. */
+  setWorkspaceWireRegions(regions: { x: number; y: number; width: number; height: number }[]): void
+  /** Widens or narrows the panel window. Resolves with the card width the layout gives. */
+  setPanelLayout(layout: 'single' | 'dual'): Promise<{ cardWidth: number }>
   openInClaude(appId: string): void
 
   /** Relays `text` to a session in the background. Resolves once accepted, not when replied. */

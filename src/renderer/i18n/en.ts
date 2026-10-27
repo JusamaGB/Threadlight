@@ -43,9 +43,28 @@ export const en = {
     nothingWorking: 'Nothing working right now',
     showList: 'Show the full list',
     hideList: 'Show only active sessions',
-    pinnedHint:
-      'Pinned open. Double-click the header, or focus it and press Enter or Space to unpin.',
-    pinHint: 'Double-click the header, or focus it and press Enter or Space to pin this view open.',
+    pinnedHint: 'Pinned open. Double-click the header to unpin.',
+    pinHint: 'Double-click the header to pin this view open.',
+    header: {
+      views: {
+        active: 'Active: threads that are working or waiting for you right now.',
+        recent: 'Recent: your latest threads, newest first.',
+        workspace: 'Workspace: the threads in the workspace you have chosen.',
+        all: 'All: every thread, grouped by workspace.',
+      },
+      viewHelp: 'Click to switch between Active, Recent and Workspace. Right-click for every view.',
+      sessionsListed: 'How many threads Recent lists (3 to 25).',
+      sources: {
+        both: 'Showing Claude and Codex threads together.',
+        claude: 'Showing Claude threads only.',
+        codex: 'Showing Codex threads only.',
+      },
+      sourceHelp: 'Click to show Claude, Codex or both.',
+      workspaceInfo: (name: string) => `Workspace: ${name}`,
+      workspaceHelp: 'Click to choose which workspace to show.',
+      sharedSpaces:
+        'Shared Spaces: notes, decisions and handoffs that Claude and Codex can both use.',
+    },
   },
   state: {
     working: 'Working',
@@ -240,6 +259,7 @@ export const en = {
     sessions: 'Sessions',
     app: 'App',
     talkHotkey: 'Talk hotkey',
+    talkMode: 'Talk mode',
     toggle: 'Toggle',
     toggleHint: 'Press to open the microphone, press again to close it',
     hold: 'Push to talk',
@@ -258,7 +278,6 @@ export const en = {
     localStt: 'Local STT',
     gptLive: 'GPT Live',
     localDestination: 'Send text to',
-    localSttHint: 'Transcribe on this PC, then send text to the selected destination.',
     gptLiveNeedsCodex:
       'GPT Live requires a Codex Agent conversation. Choose Codex in Agent settings; end an existing Claude conversation first.',
     agentConversation: 'Agent conversation',

@@ -37,6 +37,8 @@ export const settingsSchema = z.object({
   launchAtSignIn: z.boolean().default(false),
   /** The header's wire clip connects/disconnects workspace links. Opt in on first use. */
   workspaceWires: z.boolean().default(false),
+  /** Single is the narrow column; dual widens the panel for Claude and Codex side by side. */
+  panelLayout: z.enum(['single', 'dual']).default('single'),
   /**
    * What the full list (the "recent" view) shows: the most recent threads, one workspace with
    * all its threads (the workspace of the thread last open in Claude), or every workspace as
