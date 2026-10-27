@@ -15,6 +15,8 @@ export function HoverChoice<T extends string>({
   onChange,
   disabled = false,
   placeholder = 'Select',
+  appearance = 'boxed',
+  title,
 }: {
   /** Names the setting, for assistive technology and the menu. */
   label: string
@@ -23,6 +25,10 @@ export function HoverChoice<T extends string>({
   onChange: (value: T) => void | Promise<unknown>
   disabled?: boolean
   placeholder?: string
+  /** "text" matches the plain Agent row buttons: no box and no chevron. */
+  appearance?: 'boxed' | 'text'
+  /** Hover help for the button, like the Agent row's. */
+  title?: string
 }) {
   const [open, setOpen] = useState<Open | null>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -65,8 +71,9 @@ export function HoverChoice<T extends string>({
   return (
     <>
       <button
-        className={`${styles.small} ${styles.choice}`}
+        className={appearance === 'text' ? styles.textChoice : `${styles.small} ${styles.choice}`}
         aria-label={`${label}: ${current}`}
+        title={title}
         aria-haspopup="menu"
         aria-expanded={open !== null}
         disabled={disabled}
@@ -75,9 +82,11 @@ export function HoverChoice<T extends string>({
         onMouseLeave={closeSoon}
       >
         {current}
-        <span aria-hidden="true" className={styles.chevron}>
-          ▾
-        </span>
+        {appearance === 'boxed' && (
+          <span aria-hidden="true" className={styles.chevron}>
+            ▾
+          </span>
+        )}
       </button>
       {open && (
         <ContextMenu

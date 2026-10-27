@@ -38,34 +38,9 @@
   justify-self: center;
   text-align: center;
 }
-.agentSelection > .agentLifetime {
+.agentSelection > .textChoice {
   justify-self: end;
   margin-left: 8px;
-}
-
-/* Plain text like the provider, model and effort beside it: no box, no arrow. The explanation
-   is the hover text; clicking still opens the list of times. */
-.group .agentLifetime select {
-  height: auto;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  appearance: none;
-  field-sizing: content;
-  cursor: pointer;
-}
-
-.group .agentLifetime select:hover,
-.group .agentLifetime select:focus-visible {
-  color: var(--fg);
-}
-
-.group .agentLifetime option {
-  background: var(--raised);
-  color: var(--fg);
 }
 
 .agentSelection > button[data-field='effort'] {
@@ -172,6 +147,25 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+
+/* A choice that looks like the plain Agent row buttons: no box, no chevron. */
+.textChoice {
+  flex: none;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.textChoice:hover:not(:disabled),
+.textChoice[aria-expanded='true'] {
+  color: var(--fg);
+}
+
+.textChoice:disabled {
+  cursor: default;
 }
 
 .chevron {

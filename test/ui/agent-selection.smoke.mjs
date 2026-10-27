@@ -235,31 +235,59 @@ export async function checkAgentSettings(page, capture) {
   await page.keyboard.press('Escape')
   await page.mouse.move(0, 0)
   assert.equal(await page.getByRole('checkbox', { name: 'Show additional models' }).count(), 0)
-  // The only native select is the conversation lifetime, in the same row as the menus.
-  assert.equal(await group.locator('select').count(), 1)
-  // With no visible label, hovering it says what it is for.
-  await group.locator('select').hover()
-  await page.getByRole('tooltip').waitFor()
-  assert.match(await page.getByRole('tooltip').innerText(), /Conversation lasts: how long/)
-  await page.mouse.move(0, 0)
-  // It matches the text controls beside it: no border or background of its own.
+  // Conversation lasts works like provider, model and effort: no native select, a text button
+  // in the same row, and hovering it lists the other choices.
+  assert.equal(await group.locator('select').count(), 0)
+  const lifetimeButton = group.getByRole('button', { name: /^Agent conversation lifetime:/ })
+  assert.equal(await lifetimeButton.count(), 1)
+  assert.match(await lifetimeButton.getAttribute('title'), /Conversation lasts: how long/)
+  const rowTops = await group
+    .locator('button')
+    .evaluateAll((buttons) =>
+      buttons.map((button) => Math.round(button.getBoundingClientRect().top)),
+    )
+  assert.equal(new Set(rowTops).size, 1, 'the lifetime shares the provider, model and effort row')
   assert.deepEqual(
-    await group
-      .locator('select')
-      .evaluate((el) => [getComputedStyle(el).borderTopWidth, getComputedStyle(el).appearance]),
-    ['0px', 'none'],
+    await lifetimeButton.evaluate((el) => [getComputedStyle(el).borderTopWidth, el.textContent]),
+    ['0px', '1 h'],
+    'plain text, like the buttons beside it',
   )
-  assert.equal(
-    await group.locator('select').getAttribute('aria-label'),
-    'Agent conversation lifetime',
+  await lifetimeButton.hover()
+  const lifetimeMenu = page.getByRole('menu', { name: 'Agent conversation lifetime' })
+  await lifetimeMenu.waitFor()
+  assert.deepEqual(
+    await lifetimeMenu.getByRole('menuitem').allTextContents(),
+    ['10 min', '4 h', 'Until ended'],
+    'the current 1 h is not offered again',
   )
+  await page.keyboard.press('Escape')
+  await lifetimeMenu.waitFor({ state: 'detached' })
+  await page.mouse.move(0, 0)
+  // One click holds the menu open; choosing saves, closes it, and the button shows the choice.
+  const lifetimeMinutes = () =>
+    page.evaluate(async () => (await window.threadlight.getSettings()).agentLifetimeMinutes)
+  await lifetimeButton.click()
+  await lifetimeMenu.waitFor()
+  await lifetimeMenu.getByRole('menuitem', { name: '4 h', exact: true }).click()
+  await lifetimeMenu.waitFor({ state: 'detached' })
+  assert.equal(await lifetimeMinutes(), 240)
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('button')].some((b) =>
+      b.getAttribute('aria-label')?.endsWith('lifetime: 4 h'),
+    ),
+  )
+  await lifetimeButton.click()
+  await lifetimeMenu.getByRole('menuitem', { name: '1 h', exact: true }).click()
+  await lifetimeMenu.waitFor({ state: 'detached' })
+  assert.equal(await lifetimeMinutes(), 60)
+  await page.mouse.move(0, 0)
   assert.equal(
     await page
       .getByText('Wait quietly in the background until Claude or Codex opens, then show the dot.')
       .count(),
     0,
   )
-  const lifetime = page.getByLabel('Agent conversation lifetime', { exact: true })
+  const lifetime = lifetimeButton
   await lifetime.focus()
   await control('model').hover()
   await page.getByRole('menuitem', { name: 'Future Deep', exact: true }).waitFor()
