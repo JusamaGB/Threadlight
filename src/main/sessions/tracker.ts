@@ -69,8 +69,8 @@ export interface TrackerOptions {
 const DEFAULT_TREE_BUDGET = 300
 /** Up to this many workspaces shown in full are exempt from the budget. */
 const FULL_WORKSPACES = 8
-const DEFAULT_COLD_BUILDS = 25
-const DEFAULT_COLD_MS = 500
+const DEFAULT_COLD_BUILDS = 150
+const DEFAULT_COLD_MS = 1500
 /** The recent list is cut to a few dozen, so only the newest transcripts are ever read for it. */
 const RECENT_CANDIDATES = 120
 

@@ -59,6 +59,8 @@ import { ClaudeReadAdapter } from './threadRead/claude'
 import { CodexReadAdapter } from './threadRead/codex'
 import { attentionEvidence } from './threadRead/attention'
 
+/** Updates from the two sources closer together than this go out as one. */
+const PUBLISH_COALESCE_MS = 120
 const SCAN_INTERVAL_MS = 1000
 const CLAUDE_CHECK_INTERVAL_MS = 2000
 /** How often to look for a new window in front, to raise the dot above it. */
@@ -198,11 +200,19 @@ async function start(): Promise<void> {
       }
     }
   }
+  // Claude and Codex scan separately and rarely finish together. Updates arriving within a
+  // moment of each other go out as one, so both columns appear in the same frame; nothing
+  // waits longer than this for the other source.
+  let publishTimer: NodeJS.Timeout | null = null
   function publish() {
-    const snapshot = sessions.snapshot
-    windows.setAttention(snapshot.sessions)
-    windows.send(IPC.sessionsChanged, snapshot.sessions)
-    windows.panel.webContents.send(IPC.snapshotChanged, snapshot)
+    if (publishTimer) return
+    publishTimer = setTimeout(() => {
+      publishTimer = null
+      const snapshot = sessions.snapshot
+      windows.setAttention(snapshot.sessions)
+      windows.send(IPC.sessionsChanged, snapshot.sessions)
+      windows.panel.webContents.send(IPC.snapshotChanged, snapshot)
+    }, PUBLISH_COALESCE_MS)
   }
   const sessions = {
     get snapshot() {
