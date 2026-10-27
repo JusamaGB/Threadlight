@@ -6,6 +6,7 @@ import { SESSION_WINDOW_HOURS, type Settings, type SettingsPatch } from '../../s
 import { PROVIDERS, providerName } from '../../shared/providers'
 import type { SttStatus } from '../../shared/stt'
 import { en } from '../i18n/en'
+import { Tip } from '../panel/Tip'
 import { windowLabel } from '../lib/format'
 import styles from './Settings.module.css'
 
@@ -359,6 +360,8 @@ export function Stepper(props: {
   disabled?: boolean
   compact?: boolean
   label?: string
+  /** Explains the number itself when it is hovered. */
+  valueTip?: string
   onChange: (n: number) => void
 }) {
   const { value, min, max, format, disabled = false, onChange } = props
@@ -377,7 +380,13 @@ export function Stepper(props: {
       >
         −
       </button>
-      <span className={styles.value}>{format(value)}</span>
+      {props.valueTip ? (
+        <Tip className={styles.value} text={props.valueTip}>
+          {format(value)}
+        </Tip>
+      ) : (
+        <span className={styles.value}>{format(value)}</span>
+      )}
       <button
         disabled={disabled || value >= max}
         onClick={() => onChange(value + 1)}

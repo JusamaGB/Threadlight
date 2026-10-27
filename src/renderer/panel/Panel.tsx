@@ -36,6 +36,7 @@ import { useRecordedAgentVoice } from '../hooks/useRecordedAgentVoice'
 import { MicSessionRouter, type MicRoute } from '../../shared/voiceCommands'
 import { en } from '../i18n/en'
 import { SettingsView, Stepper } from '../settings/SettingsView'
+import { Tip } from './Tip'
 import { SharedSpacesView, type SpacesNavigation } from '../spaces/SharedSpacesView'
 import { AgentView } from './AgentView'
 import { ChangesView } from './ChangesView'
@@ -1158,7 +1159,10 @@ export function Panel() {
               </>
             ) : (
               <>
-                <button
+                <Tip
+                  as="button"
+                  text={en.panel.header.views[headerView]}
+                  tourHelp={en.panel.header.viewHelp}
                   className={styles.viewControl}
                   data-thread-view={headerView}
                   aria-pressed={view === 'all'}
@@ -1167,11 +1171,12 @@ export function Panel() {
                   onClick={cycleView}
                 >
                   {headerView === 'recent' ? viewLabel : `${viewLabel} · ${viewCount}`}
-                </button>
+                </Tip>
                 {headerView === 'recent' && (
                   <Stepper
                     compact
                     label={en.settings.maxSessions}
+                    valueTip={en.panel.header.sessionsListed}
                     value={settings?.maxSessions ?? 10}
                     min={3}
                     max={25}
@@ -1191,36 +1196,47 @@ export function Panel() {
                   />
                 )}
                 <div className={styles.sourceWorkspace}>
-                  <button
+                  <Tip
+                    as="button"
+                    text={
+                      provider === 'both' || provider === 'claude' || provider === 'codex'
+                        ? en.panel.header.sources[provider]
+                        : ''
+                    }
+                    tourHelp={en.panel.header.sourceHelp}
                     className={styles.sourceControl}
                     aria-label={`Filter applications: ${sourceLabel}`}
                     aria-haspopup="menu"
                     aria-expanded={sourceMenu !== null}
                     onClick={(event) => {
-                      const box = event.currentTarget.getBoundingClientRect()
+                      const button = event.currentTarget as HTMLElement
+                      const box = button.getBoundingClientRect()
                       setSourceMenu({
                         x: box.left,
                         y: box.bottom + 2,
-                        anchor: event.currentTarget.closest('header') ?? event.currentTarget,
+                        anchor: button.closest('header') ?? button,
                       })
                     }}
                   >
                     {sourceLabel}
-                  </button>
+                  </Tip>
                   <span aria-hidden="true">·</span>
-                  <button
+                  <Tip
+                    as="button"
+                    text={en.panel.header.workspaceInfo(workspaceName)}
+                    tourHelp={en.panel.header.workspaceHelp}
                     className={styles.workspaceControl}
                     aria-label={`Choose workspace: ${workspaceName}`}
                     onClick={() => setPickingWorkspace(true)}
                   >
                     {workspaceName}
-                  </button>
+                  </Tip>
                 </div>
                 <button
                   className={styles.gear}
                   onClick={openSharedSpaces}
                   aria-label="Shared Spaces"
-                  title="Shared Spaces"
+                  title={en.panel.header.sharedSpaces}
                 >
                   <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M8 4a2.5 2.5 0 0 0-4.7-1.2A2.6 2.6 0 0 0 1.7 7a2.6 2.6 0 0 0 .7 4.7A2.7 2.7 0 0 0 8 13V4Zm0 0a2.5 2.5 0 0 1 4.7-1.2A2.6 2.6 0 0 1 14.3 7a2.6 2.6 0 0 1-.7 4.7A2.7 2.7 0 0 1 8 13" />
