@@ -766,7 +766,9 @@
   overflow: hidden;
   white-space: nowrap;
   /* A long title fades out before whatever sits beside it, rather than ending in "…". */
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+  /* Closes part of the row's gap, so the fade ends close to the label beside it. */
+  margin-right: -3px;
 }
 
 .composing {
@@ -976,7 +978,8 @@
   font-size: 11px;
   overflow: hidden;
   white-space: nowrap;
-  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  margin-right: -3px;
 }
 
 /* The badge already fills the gutter. */
