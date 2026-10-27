@@ -82,9 +82,18 @@ interface ToolCall {
 /** Tools that run a command, which the Claude app lists among its tasks while they run. */
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
 
+/**
+ * A long thread's file can run to hundreds of megabytes (pasted images, tool output). The
+ * first read takes the opening lines (title, folder) and only the end of the rest, which is
+ * where the current state lives; later reads are incremental as before.
+ */
+const HEAD_BYTES = 256 * 1024
+const TAIL_BYTES = 8 * 1024 * 1024
+
 export class TranscriptReader {
   private offset = 0
   private leftover = Buffer.alloc(0)
+  private skipPartial = false
 
   private customTitle: string | null = null
   private agentName: string | null = null
@@ -127,10 +136,27 @@ export class TranscriptReader {
 
     const handle = await open(this.path, 'r')
     try {
+      if (this.offset === 0 && size > HEAD_BYTES + TAIL_BYTES) {
+        const head = Buffer.alloc(HEAD_BYTES)
+        const { bytesRead: headRead } = await handle.read(head, 0, HEAD_BYTES, 0)
+        this.consume(head.subarray(0, head.lastIndexOf(0x0a) + 1 || headRead))
+        this.leftover = Buffer.alloc(0)
+        this.offset = size - TAIL_BYTES
+        // Start the tail on a whole line: a cut one would not parse anyway.
+        const probe = Buffer.alloc(1)
+        const { bytesRead } = await handle.read(probe, 0, 1, this.offset - 1)
+        if (bytesRead && probe[0] !== 0x0a) this.skipPartial = true
+      }
       const chunk = Buffer.alloc(size - this.offset)
       const { bytesRead } = await handle.read(chunk, 0, chunk.length, this.offset)
       this.offset += bytesRead
-      this.consume(chunk.subarray(0, bytesRead))
+      let data = chunk.subarray(0, bytesRead)
+      if (this.skipPartial) {
+        const newline = data.indexOf(0x0a)
+        data = newline === -1 ? data.subarray(data.length) : data.subarray(newline + 1)
+        this.skipPartial = false
+      }
+      this.consume(data)
     } finally {
       await handle.close()
     }
