@@ -1291,9 +1291,8 @@ export function Panel() {
           <WorkspaceLinks
             card={card}
             enabled={settings?.workspaceWires ?? false}
-            // The wires hang off the card's left edge, so beside two columns they would point
-            // at the wrong rows.
-            hidden={layout.split}
+            // Beside two columns the rail runs down the divider between them.
+            centre={layout.split}
             onToggle={async () => {
               try {
                 const result = await window.threadlight.updateSettings({
@@ -1670,7 +1669,7 @@ export function Panel() {
                           <WorkspaceTree {...treeProps} workspaces={workspacesOf('claude')} />
                         )}
                       </div>
-                      <div className={styles.dualRight}>
+                      <div className={styles.dualRight} data-dual-right="">
                         <WorkspaceTree
                           {...treeProps}
                           workspaces={layout.split ? workspacesOf('codex') : snapshot.workspaces}
@@ -1704,7 +1703,7 @@ export function Panel() {
                             ? shown.filter((s) => sessionProvider(s.id) === 'claude').map(renderRow)
                             : null}
                         </div>
-                        <div className={styles.dualRight}>
+                        <div className={styles.dualRight} data-dual-right="">
                           {(layout.split
                             ? shown.filter((s) => sessionProvider(s.id) === 'codex')
                             : shown

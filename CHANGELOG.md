@@ -6,6 +6,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Workspace wires now work in dual view: the same rail runs down the divider between the columns, joining threads of one repo across Claude and Codex. The longest group sits dead centre with a spike to each thread, and overlapping shorter groups step to alternate sides and reach further, layered as before. No extra width.
+
 - A hover hint no longer closes when you press the mouse on its target. It closes when the pointer leaves, or when what is under the pointer moves or changes, and steps aside for a menu that opens.
 
 - Claude and Codex rows now appear together: updates from the two sources that land within 120 ms go out as one, and a first load reads up to 150 threads per scan instead of 25.
