@@ -271,6 +271,11 @@ height while rows slide so none are clipped, and takes the new height as they cl
 Reduced-motion preferences switch layouts instantly. A thread that is open or waiting on
 an answer stays inside its own column; the other column does not move.
 
+Shared Spaces, the Agent and Settings are laid out for the thin card, so opening one
+narrows the panel to the single column (the card narrows at once, with no rows to bring
+back together, and the window follows) and closing it widens the panel again with the
+usual column split. The saved choice is untouched.
+
 Dual applies to the Recent and Workspace lists. Active (short, and usually one or two
 threads) and All stay one column. Switching to one of those narrows the panel back to a
 single column without changing the saved choice, and returning to Recent or Workspace

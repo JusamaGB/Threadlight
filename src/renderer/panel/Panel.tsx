@@ -159,7 +159,10 @@ export function Panel() {
   const bothProviders = enabled.includes('claude') && enabled.includes('codex')
   const dualView =
     view === 'all' && (settings?.listMode === 'recent' || settings?.listMode === 'workspace')
-  const wantDual = settings?.panelLayout === 'dual' && bothProviders && dualView
+  // Shared Spaces, the Agent and Settings are made for the normal thin card, so the panel
+  // narrows while one is open and widens again when it closes. The saved choice is kept.
+  const onPage = showMemory || showSettings || showAgent
+  const wantDual = settings?.panelLayout === 'dual' && bothProviders && dualView && !onPage
   const [layout, setLayout] = useState({
     wide: false,
     dual: false,
@@ -254,8 +257,18 @@ export function Panel() {
           })
           return
         }
-        // The rows come back together first, then the card narrows, then the window follows it.
         void window.threadlight.setPanelLayout('dual', true)
+        if (onPage) {
+          // The list is out of sight behind the page, so there are no rows to bring back
+          // together: the card narrows at once and the window follows it.
+          after(0, () => setLayout((l) => ({ ...l, split: false, dual: false })))
+          after(LAYOUT_CARD_MS, async () => {
+            await window.threadlight.setPanelLayout('single')
+            if (!cancelled) setLayout((l) => ({ ...l, wide: false }))
+          })
+          return
+        }
+        // The rows come back together first, then the card narrows, then the window follows it.
         // Not synchronously: React will not flush a forced update from inside an effect.
         after(0, () => flipRows(() => setLayout((l) => ({ ...l, split: false })), 'vertical-first'))
         after(ROW_FLIP_MS, () => setLayout((l) => ({ ...l, dual: false })))
