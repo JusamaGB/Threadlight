@@ -341,8 +341,8 @@ async function start(): Promise<void> {
   ipcMain.on(IPC.workspaceWireRegions, (event, regions: unknown) => {
     if (event.sender === windows.panel.webContents) windows.setWorkspaceWireRegions(regions)
   })
-  ipcMain.handle(IPC.panelLayout, (event, layout: unknown) =>
-    event.sender === windows.panel.webContents ? windows.setPanelLayout(layout) : null,
+  ipcMain.handle(IPC.panelLayout, (event, layout: unknown, animating: unknown) =>
+    event.sender === windows.panel.webContents ? windows.setPanelLayout(layout, animating) : null,
   )
   ipcMain.handle(IPC.workspacePanel, (event, on: unknown) =>
     event.sender === windows.panel.webContents && typeof on === 'boolean'

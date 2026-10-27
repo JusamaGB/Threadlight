@@ -353,7 +353,7 @@ checks: try {
           resizePanel: (height) => window.proof.resizes.push(height),
           setPanelLayout: async (layout) => {
             window.proof.layouts = [...(window.proof.layouts ?? []), layout]
-            return { cardWidth: layout === 'dual' ? 480 : 238 }
+            return { cardWidth: layout === 'dual' ? 475 : 238 }
           },
           setWorkspaceWireRegions: (regions) => {
             window.proof.wireRegions = regions
