@@ -100,11 +100,6 @@
   font-size: 12px;
 }
 
-/* A setting that is switched off (e.g. Window with no time limit). */
-.labelOff {
-  color: var(--faint);
-}
-
 .hint,
 .error {
   font-size: 10px;

@@ -115,7 +115,6 @@ export const en = {
   },
   /** Shown wherever the chosen "Show sessions from the last" window holds nothing. */
   nothingInWindow: (window: string) => `Nothing within your chosen time frame · ${window}`,
-  nothingToShow: 'No threads to show yet.',
   attention: {
     needsYou: 'Needs your input',
     ignore: 'Ignore',
@@ -354,8 +353,8 @@ export const en = {
         tour: 'Choosing Workspace asks which workspace to show. Click it again to change it.',
       },
       window: {
-        info: 'Hides threads with no activity in this time. Click the chosen time again to remove the limit.',
-        tour: 'With no limit, threads of any age are listed. A long history means a lot more to read, so the panel can be slower to fill.',
+        info: 'Hides threads with no activity in this time.',
+        tour: 'Threads older than this are not loaded, which keeps the panel quick to fill. Find older ones in your files.',
       },
       count: {
         info: 'How many threads the Recent list shows (3–50).',

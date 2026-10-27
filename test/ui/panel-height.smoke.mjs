@@ -94,7 +94,7 @@ export async function checkWorkspaceHeight(page, capture) {
     const timeMenu = page.getByRole('menu', { name: 'Time frame', exact: true })
     assert.deepEqual(
       await timeMenu.getByRole('menuitem').allTextContents(),
-      ['6h', '12h', '3d', '7d', 'Any time'],
+      ['6h', '12h', '3d', '7d'],
       'the current 24h is not offered again',
     )
     await capture('workspace-empty-time-frame-menu')

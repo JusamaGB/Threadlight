@@ -219,7 +219,7 @@ export class CodexTracker {
     private readonly pinned?: (session: Session) => boolean,
   ) {}
   configure(hours: number, max: number): void {
-    this.windowHours = hours > 0 ? hours : Infinity
+    this.windowHours = hours
     this.maxSessions = max
   }
   private async tail(path: string): Promise<Row[]> {
