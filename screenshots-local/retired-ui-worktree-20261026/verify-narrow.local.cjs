@@ -1,0 +1,14 @@
+const fs=require('node:fs');
+(async()=>{
+const targets=await(await fetch('http://127.0.0.1:9333/json/list')).json();const ws=new WebSocket(targets.find(t=>t.url.includes('view=panel')).webSocketDebuggerUrl);
+try{
+await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j});let id=0;const pending=new Map();ws.onmessage=e=>{const m=JSON.parse(e.data);if(pending.has(m.id)){pending.get(m.id)(m);pending.delete(m.id)}};const call=(method,params)=>new Promise(r=>{const n=++id;pending.set(n,r);ws.send(JSON.stringify({id:n,method,params}))});const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.result?.exceptionDetails)throw Error(JSON.stringify(r.result.exceptionDetails));return r.result.result.value};const delay=ms=>new Promise(r=>setTimeout(r,ms));
+const prior=JSON.parse(fs.readFileSync('screenshots-local/narrow-prior.json','utf8'));
+await evaluate(`window.threadlight.setStayOpen(true);window.threadlight.openPanelQuietly()`);await delay(200);
+if(await evaluate(`document.querySelector('header [data-thread-view]')?.dataset.threadView`)!==prior.view){await evaluate(`document.querySelector('header [data-thread-view]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:12}))`);await delay(100);await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find(el=>el.textContent.trim().toLowerCase()===${JSON.stringify(prior.view)})?.click()`);await delay(350)}
+const result=await evaluate(`(()=>{const card=document.querySelector('[data-card]');const list=document.querySelector('#thread-list');return {width:innerWidth,cardWidth:card?.getBoundingClientRect().width,view:document.querySelector('[data-thread-view]')?.dataset.threadView,scrollbars:document.querySelectorAll('[role="scrollbar"]').length,scrollbarWidth:list&&getComputedStyle(list).scrollbarWidth,gutter:list&&list.offsetWidth-list.clientWidth,scrollHeight:list?.scrollHeight,clientHeight:list?.clientHeight,innerHeight,screen:{height:screen.height,availHeight:screen.availHeight},cardMax:card&&getComputedStyle(card).maxHeight,sessions:[...document.querySelectorAll("[data-session-id]")].length,tabIndex:list?.tabIndex,asset:document.querySelector('script[type="module"]').src}})()`);console.log(JSON.stringify(result));if(result.width!==280||result.cardWidth!==264||result.scrollbars!==0||result.scrollbarWidth!=='none'||result.gutter!==0)throw Error('Unexpected native layout');
+const screen=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync('screenshots-local/narrow-native.local.png',Buffer.from(screen.result.data,'base64'));
+await evaluate(`window.threadlight.setStayOpen(${Boolean(prior.pinned)})`);
+}finally{ws.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});
+

@@ -1,0 +1,21 @@
+{
+  "header": "Active · 4Both·General",
+  "view": "active",
+  "pinned": false,
+  "agent": {
+    "revision": 0,
+    "provider": "codex",
+    "model": "gpt-6-luna",
+    "reasoning": "medium",
+    "conversationId": null,
+    "requests": [],
+    "status": "idle",
+    "items": [],
+    "approval": null,
+    "progress": null,
+    "error": null,
+    "ended": false,
+    "costUsd": null,
+    "sessionId": null
+  }
+}

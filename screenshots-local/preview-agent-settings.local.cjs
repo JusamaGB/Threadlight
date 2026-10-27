@@ -1,0 +1,40 @@
+const fs=require('node:fs')
+;(async()=>{
+ const tabs=await(await fetch('http://127.0.0.1:9333/json/list')).json()
+ const ws=new WebSocket(tabs.find(t=>t.url.includes('view=panel')).webSocketDebuggerUrl)
+ try{
+  await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j});let id=0;const pending=new Map()
+  ws.onmessage=e=>{const m=JSON.parse(e.data);if(pending.has(m.id)){pending.get(m.id)(m);pending.delete(m.id)}}
+  const call=(method,params)=>new Promise(r=>{const n=++id;pending.set(n,r);ws.send(JSON.stringify({id:n,method,params}))})
+  const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.result?.exceptionDetails)throw Error(JSON.stringify(r.result.exceptionDetails));return r.result.result.value}
+  const delay=ms=>new Promise(r=>setTimeout(r,ms))
+  const prior=await evaluate(`(async()=>{const s=await window.threadlight.getSettings();const a=await window.threadlight.getAgent();return {provider:s.agentProvider,model:s.agentCodexModel,reasoning:s.agentCodexReasoning,worker:s.agentWorker,live:!!a.live,motion:await window.threadlight.getMotion(),pinned:!!document.querySelector('header button[aria-label^="Pinned open"]')}})()`)
+  if(prior.live||prior.motion.mode==='listening'||prior.motion.input.level>0.01)throw Error('Voice is active; defer renderer refresh')
+  await call('Page.reload',{ignoreCache:true});await delay(800)
+  await evaluate(`window.threadlight.setStayOpen(true);window.threadlight.openPanelQuietly();document.querySelector('header button[aria-label="Settings"]')?.click()`)
+  await delay(700)
+  await evaluate(`document.querySelector('header [class*="_pageHeading_"]').dispatchEvent(new MouseEvent('click',{bubbles:true,detail:2}))`)
+  await delay(80)
+  const pinned=await evaluate(`!!document.querySelector('header button[aria-label^="Pinned open"]')`)
+  if(!pinned)throw Error('Title double-click failed to pin Settings')
+  if(!prior.pinned){
+    await evaluate(`document.querySelector('header [class*="_pageHeading_"]').dispatchEvent(new MouseEvent('click',{bubbles:true,detail:2}))`)
+    await delay(80)
+    if(await evaluate(`!!document.querySelector('header button[aria-label^="Pinned open"]')`))throw Error('Title double-click failed to unpin Settings')
+  }
+  await evaluate(`window.threadlight.setStayOpen(true);window.threadlight.openPanelQuietly()`)
+  console.log('PASS: live Settings title double-click toggles pin/unpin.')
+  const result=await evaluate(`(async()=>{const group=document.querySelector('[role="group"][aria-label="Agent settings"]');const s=await window.threadlight.getSettings();return {labels:[...group.querySelectorAll('button')].map(b=>b.textContent),dropdowns:group.querySelectorAll('select').length,additionalCheckbox:document.body.textContent.includes('Show additional models'),removedHint:!document.body.textContent.includes('Wait quietly in the background'),provider:s.agentProvider,model:s.agentCodexModel,reasoning:s.agentCodexReasoning,worker:s.agentWorker,asset:document.querySelector('script[type="module"]').src}})()`)
+  if(result.dropdowns||result.additionalCheckbox||!result.removedHint)throw Error('Old Settings controls still present')
+  for(const key of ['provider','model','reasoning','worker'])if(result[key]!==prior[key])throw Error('User selection changed')
+  const layout=await evaluate(`(()=>{const group=document.querySelector('[role="group"][aria-label="Agent settings"]');const box=group.getBoundingClientRect();const rect=field=>group.querySelector('[data-field="'+field+'"]').getBoundingClientRect();const provider=rect('provider'),model=rect('model'),effort=group.querySelector('[data-field="effort"]')?.getBoundingClientRect();return {left:provider.left-box.left,center:(model.left+model.right-box.left-box.right)/2,right:effort?box.right-effort.right:null}})()`)
+  if(Math.abs(layout.left)>1||Math.abs(layout.center)>1||(layout.right!==null&&Math.abs(layout.right)>1))throw Error(JSON.stringify(layout))
+  console.log(JSON.stringify(layout))
+  await evaluate(`(()=>{const group=document.querySelector('[role="group"][aria-label="Agent settings"]');group.parentElement.scrollIntoView({block:'end'})})()`)
+  await delay(150)
+  const shot=await call('Page.captureScreenshot',{format:'png'})
+  fs.writeFileSync('screenshots-local/agent-settings-native.local.png',Buffer.from(shot.result.data,'base64'))
+  console.log(JSON.stringify(result))
+  await evaluate(`window.threadlight.setStayOpen(${Boolean(prior.pinned)})`)
+ }finally{ws.close()}
+})().catch(e=>{console.error(e);process.exitCode=1})

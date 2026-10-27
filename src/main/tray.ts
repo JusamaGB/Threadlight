@@ -13,8 +13,15 @@ export interface TrayActions {
 }
 
 export function createTray(actions: TrayActions): Tray {
-  const icon = nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon-32.png'))
-  const tray = new Tray(icon.resize({ width: 16, height: 16 }))
+  const icon = nativeImage.createEmpty()
+  for (const scaleFactor of [1, 2, 4]) {
+    const size = 16 * scaleFactor
+    const image = nativeImage.createFromPath(
+      join(app.getAppPath(), 'resources', `icon-${size}.png`),
+    )
+    icon.addRepresentation({ scaleFactor, dataURL: image.toDataURL() })
+  }
+  const tray = new Tray(icon)
   tray.setToolTip('Threadlight')
 
   const rebuild = () =>
