@@ -55,6 +55,7 @@ export function TimeWindowMessage({ hours }: { hours: number }) {
             ...SESSION_WINDOW_HOURS.map((value) => ({
               label: windowLabel(value),
               disabled: value === hours,
+              current: value === hours,
               onSelect: () => void save(value),
             })),
             { label: windowLabel(0), onSelect: () => void save(0) },

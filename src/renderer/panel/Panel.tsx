@@ -975,10 +975,16 @@ export function Panel() {
     { mode: 'all', label: en.settings.listAll },
   ] as const
   const listMenuItems = [
-    { label: 'Active', disabled: view === 'active', onSelect: () => setView('active') },
+    {
+      label: 'Active',
+      disabled: view === 'active',
+      current: view === 'active',
+      onSelect: () => setView('active'),
+    },
     ...LIST_MODES.map(({ mode, label }) => ({
       label,
       disabled: view === 'all' && listMode === mode,
+      current: view === 'all' && listMode === mode,
       onSelect: () => void selectList(mode),
     })),
   ]
@@ -1004,6 +1010,7 @@ export function Panel() {
   ].map(({ label, selection }) => ({
     label,
     disabled: label === sourceLabel,
+    current: label === sourceLabel,
     onSelect: () => selectApplications(selection),
   }))
 

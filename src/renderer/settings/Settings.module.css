@@ -15,7 +15,8 @@
   color: var(--fg);
   font: inherit;
   font-size: 11px;
-  padding: 4px;
+  height: 20px;
+  padding: 0 3px;
 }
 .agentSelection {
   display: grid;
@@ -23,7 +24,7 @@
   align-items: baseline;
   gap: 6px;
   min-width: 0;
-  padding: 4px 0;
+  padding: 2px 0;
   color: var(--fg);
   font-size: 12px;
 }
@@ -63,13 +64,13 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 26px;
-  padding: 2px 0;
+  min-height: 22px;
+  padding: 1px 0;
 }
 
 /* A single-line row only as tall as its control. */
 .rowSlim {
-  min-height: 22px;
+  min-height: 20px;
   padding: 0;
 }
 
@@ -92,6 +93,11 @@
 
 .label {
   font-size: 12px;
+}
+
+/* A setting that is switched off (e.g. Window with no time limit). */
+.labelOff {
+  color: var(--faint);
 }
 
 .hint,
@@ -117,14 +123,14 @@
 .pair {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .small,
 .key,
 .stepper,
 .segmented {
-  height: 22px;
+  height: 20px;
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -144,7 +150,7 @@
 }
 
 .small {
-  padding: 0 9px;
+  padding: 0 6px;
   color: var(--muted);
 }
 
@@ -170,8 +176,7 @@
 }
 
 .key {
-  min-width: 82px;
-  padding: 0 8px;
+  padding: 0 6px;
   text-align: center;
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-size: 10.5px;
@@ -194,7 +199,7 @@
 }
 
 .stepper button {
-  width: 20px;
+  width: 16px;
   height: 100%;
   text-align: center;
   color: var(--muted);
@@ -210,7 +215,7 @@
 }
 
 .value {
-  min-width: 26px;
+  min-width: 22px;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -241,7 +246,7 @@
 }
 
 .segmented button {
-  padding: 0 7px;
+  padding: 0 5px;
   border-radius: 4px;
   color: var(--muted);
 }
@@ -258,7 +263,7 @@
 
 .providerCheck {
   display: inline-block;
-  width: 12px;
+  width: 10px;
   color: var(--accent);
 }
 

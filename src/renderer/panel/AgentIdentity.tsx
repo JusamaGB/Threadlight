@@ -104,12 +104,14 @@ export function AgentIdentity({
     items = (['claude', 'codex'] as const).map((value) => ({
       label: value === 'codex' ? 'Codex' : 'Claude',
       disabled: settings?.agentProvider === value,
+      current: settings?.agentProvider === value,
       onSelect: () => void save({ agentProvider: value }),
     }))
   } else if (menu?.field === 'model' && activeProvider === 'claude') {
     items = (['opus', 'sonnet'] as const).map((value) => ({
       label: value === 'opus' ? 'Opus' : 'Sonnet',
       disabled: settings?.agentProvider === 'claude' && settings.agentWorker === value,
+      current: settings?.agentProvider === 'claude' && settings.agentWorker === value,
       onSelect: () => void save({ agentProvider: 'claude', agentWorker: value }),
     }))
   } else if (menu) {
@@ -129,6 +131,7 @@ export function AgentIdentity({
       items = models.map((candidate) => ({
         label: candidate.name,
         disabled: settings?.agentProvider === 'codex' && configured?.id === candidate.id,
+        current: settings?.agentProvider === 'codex' && configured?.id === candidate.id,
         onSelect: () => void save({ agentProvider: 'codex', ...codexModelSettings(candidate) }),
       }))
       if (!items.length) items = note('No Codex models available.')
@@ -136,6 +139,10 @@ export function AgentIdentity({
       items = selected.efforts.map((effort) => ({
         label: effort,
         disabled:
+          settings?.agentProvider === 'codex' &&
+          configured?.id === selected.id &&
+          (settings.agentCodexReasoning ?? selected.defaultEffort) === effort,
+        current:
           settings?.agentProvider === 'codex' &&
           configured?.id === selected.id &&
           (settings.agentCodexReasoning ?? selected.defaultEffort) === effort,

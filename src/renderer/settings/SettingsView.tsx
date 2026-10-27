@@ -195,7 +195,11 @@ export function SettingsView({
             onReselect={(listMode) => listMode === 'workspace' && onPickWorkspace()}
           />
         </Row>
-        <Row label={en.settings.listWindow} help={en.settings.help.window}>
+        <Row
+          label={en.settings.listWindow}
+          help={en.settings.help.window}
+          off={settings.listWindowHours === 0}
+        >
           {/* Choosing the highlighted time again removes the limit (0 hours). */}
           <Segmented
             value={settings.listWindowHours}
@@ -292,6 +296,8 @@ function Row(props: {
   label: string
   /** Hover help: `info` always, `tour` only in Tour mode. */
   help?: { info: string; tour?: string }
+  /** The setting is switched off: its name greys out, the control stays usable. */
+  off?: boolean
   hint?: string
   error?: string | undefined
   disabled?: boolean
@@ -310,11 +316,17 @@ function Row(props: {
     >
       <div className={styles.text}>
         {props.help ? (
-          <Tip className={styles.label} text={props.help.info} tourHelp={props.help.tour}>
+          <Tip
+            className={props.off ? `${styles.label} ${styles.labelOff}` : styles.label}
+            text={props.help.info}
+            tourHelp={props.help.tour}
+          >
             {props.label}
           </Tip>
         ) : (
-          <span className={styles.label}>{props.label}</span>
+          <span className={props.off ? `${styles.label} ${styles.labelOff}` : styles.label}>
+            {props.label}
+          </span>
         )}
         {props.error ? (
           <span className={styles.error}>{props.error}</span>

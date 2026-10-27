@@ -1885,6 +1885,15 @@ span.planStep {
   cursor: default;
 }
 
+/* The chosen option is selected, not unavailable: full colour with a tick. The tick is a
+   background image so it stays out of the item's accessible name. */
+.menuItem[data-current]:disabled {
+  padding-right: 22px;
+  color: var(--fg);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.5l2.4 2.4L8.5 2.6' fill='none' stroke='%237fb2ff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 7px center / 10px 10px;
+}
+
 .voiceActivity {
   position: absolute;
   left: 0;
