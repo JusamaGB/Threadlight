@@ -243,7 +243,10 @@ describe('workspace tree', () => {
 
   it('lists every workspace in full for All drives, however many there are', async () => {
     for (let k = 0; k < 40; k++) await thread(`C:\\demo\\w${k}`, `Thread ${k}`, { agoMs: HOUR + k })
-    const { workspaces } = await tracker().snapshot({ expanded: [], showAll: [], everything: true })
+    const live = tracker()
+    const view = { expanded: [], showAll: [], everything: true }
+    await live.snapshot(view) // first-time reads are rationed per scan; the rest follow
+    const { workspaces } = await live.snapshot(view)
     expect(workspaces.flatMap((w) => w.threads)).toHaveLength(40)
   })
 })
