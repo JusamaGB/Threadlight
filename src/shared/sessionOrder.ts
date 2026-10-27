@@ -6,9 +6,14 @@ export const compareSessionOrder = (a: Session, b: Session) =>
   sessionOrderAt(b) - sessionOrderAt(a) || a.id.localeCompare(b.id)
 
 /** Reserve the limited list's places for active threads, preserving completion order. */
-export function recentSessions(sessions: Session[], max: number): Session[] {
+export function recentSessions(
+  sessions: Session[],
+  max: number,
+  /** Threads that keep their place however old: active ones, unless the user set them aside. */
+  pinned: (session: Session) => boolean = (session) => session.state !== 'idle',
+): Session[] {
   const ranked = [...sessions].sort(compareSessionOrder)
-  const chosen = new Set(ranked.filter((session) => session.state !== 'idle').slice(0, max))
+  const chosen = new Set(ranked.filter(pinned).slice(0, max))
   for (const session of ranked) {
     if (chosen.size >= max) break
     chosen.add(session)

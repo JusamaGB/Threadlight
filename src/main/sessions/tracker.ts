@@ -47,6 +47,8 @@ export interface TrackerOptions {
   gitFor?: (folder: string) => GitState | null
   /** A card Threadlight is holding for the user to answer here (holds.ts). */
   held?: (sessionId: string) => HeldPart | null
+  /** Which threads keep their place in the recent list however old (default: any not idle). */
+  pinned?: (session: Session) => boolean
 }
 
 interface TranscriptFile {
@@ -221,7 +223,7 @@ export class Tracker {
     workspaces.sort(byName)
 
     return {
-      sessions: recentSessions(recent, this.maxSessions),
+      sessions: recentSessions(recent, this.maxSessions, this.options.pinned),
       workspaces,
       allWorkspaces: [...allWorkspaces.values()].sort(byName),
       currentWorkspace,

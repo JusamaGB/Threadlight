@@ -136,6 +136,7 @@ export function SessionRow(props: SessionRowProps) {
                 className={styles.stateDot}
                 data-state={session.state}
                 data-attention={attention ? '' : undefined}
+                data-ignored={session.ignored || undefined}
               />
             )}
           </Tip>
@@ -156,6 +157,7 @@ export function SessionRow(props: SessionRowProps) {
           {attention && (
             <Tip
               className={styles.needsYou}
+              data-ignored={session.ignored || undefined}
               text=""
               tourOnly
               tourHelp="This thread is waiting for an answer or approval. Open the thread to respond."

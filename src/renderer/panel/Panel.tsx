@@ -43,7 +43,7 @@ import { AgentView } from './AgentView'
 import { ChangesView } from './ChangesView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import styles from './Panel.module.css'
-import { PanelRoomContext, type PanelRoom } from './room'
+import { PanelRoomContext, type PanelRoomSource } from './room'
 import { HoverHelp } from './HoverHelp'
 import { HoverFooter } from './HoverFooter'
 import type { HelpMode } from './helpMode'
@@ -453,13 +453,18 @@ export function Panel() {
     return () => observer.disconnect()
   }, [room])
 
+  // Each pop-up asks for room on its own account; the window grows for the largest request.
+  const requests = useRef(new Map<object, number>())
   const panelRoom = useMemo(
     () => ({
       opensDown,
       extra: room,
-      reserve: (px: number) => {
+      reserve: (px: number, owner: object) => {
         const cardHeight = card.current?.getBoundingClientRect().height ?? 0
-        setRoom(Math.round(Math.max(0, Math.min(px, maxHeight - cardHeight))))
+        const granted = Math.round(Math.max(0, Math.min(px, maxHeight - cardHeight)))
+        if (granted > 0) requests.current.set(owner, granted)
+        else requests.current.delete(owner)
+        setRoom(Math.max(0, ...requests.current.values()))
       },
     }),
     [opensDown, room, maxHeight],
@@ -1101,6 +1106,25 @@ export function Panel() {
     : bothProviders && dualView
       ? [{ label: 'Dual view', onSelect: () => void setPanelLayoutSetting('dual') }]
       : []
+  // A thread waiting on the user can be set aside in Threadlight alone (nothing is sent to the app).
+  const ignoreItems = (session: Session): MenuItem[] =>
+    session.state !== 'waiting' && !session.attention
+      ? []
+      : session.ignored
+        ? [
+            {
+              label: en.attention.stopIgnoring,
+              help: en.attention.stopIgnoringHelp,
+              onSelect: () => window.threadlight.ignoreNeedsInput(session.id, false),
+            },
+          ]
+        : [
+            {
+              label: en.attention.ignore,
+              help: en.attention.ignoreHelp,
+              onSelect: () => window.threadlight.ignoreNeedsInput(session.id, true),
+            },
+          ]
   const menuItems = (session: Session): MenuItem[] => [
     {
       label: en.changes.worktreeTitle,
@@ -1113,6 +1137,7 @@ export function Panel() {
       disabled: !session.appId,
       onSelect: () => session.appId && window.threadlight.openInClaude(session.appId),
     },
+    ...ignoreItems(session),
     ...layoutMenuItems,
   ]
 
@@ -1731,7 +1756,7 @@ function PanelProviders({
   helpMode,
   children,
 }: {
-  room: PanelRoom
+  room: PanelRoomSource
   helpMode: HelpMode
   children: ReactNode
 }) {

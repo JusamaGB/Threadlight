@@ -216,6 +216,7 @@ export class CodexTracker {
     readonly hooks: CodexHolds,
     private readonly gitFor: (cwd: string) => GitState | null = () => null,
     private readonly hidden: (id: string, cwd: string) => boolean = () => false,
+    private readonly pinned?: (session: Session) => boolean,
   ) {}
   configure(hours: number, max: number): void {
     this.windowHours = hours > 0 ? hours : Infinity
@@ -533,7 +534,7 @@ export class CodexTracker {
       return {
         provider: 'codex',
         codexUsage: usage,
-        sessions: recentSessions(sessions, this.maxSessions),
+        sessions: recentSessions(sessions, this.maxSessions, this.pinned),
         workspaces,
         allWorkspaces: [...groups.keys()].map((id) => ({
           id,

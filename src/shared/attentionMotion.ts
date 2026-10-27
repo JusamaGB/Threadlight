@@ -29,7 +29,7 @@ export const NO_ATTENTION: AttentionMotion = {
 /** Every thread waiting for input, in the order the panel lists them, capped at ten drips. */
 export function attentionThreads(sessions: Session[]): Session[] {
   return sessions
-    .filter((s) => s.state === 'waiting' || s.attention != null)
+    .filter((s) => !s.ignored && (s.state === 'waiting' || s.attention != null))
     .sort(compareSessionOrder)
     .slice(0, MAX_ATTENTION_DRIPS)
 }

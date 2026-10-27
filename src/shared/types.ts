@@ -232,6 +232,11 @@ export interface Session {
   contextUsed: number | null
   /** Set while the thread is waiting on the user; its card replaces the usual details. */
   attention: Attention | null
+  /**
+   * The user set this thread's pending request aside in Threadlight: its tag is toned down, it
+   * is not held in Recent and it does not drip. Nothing changes in Claude or Codex.
+   */
+  ignored?: boolean
   permissionMode: string | null
   model: string | null
   /** Oldest first, so the last one is the latest. */

@@ -39,6 +39,7 @@ import { checkWorkspaceLinks } from './workspace-links.smoke.mjs'
 import { checkActivityRings } from './activity-rings.smoke.mjs'
 
 import { checkThreadBadges } from './thread-badges.smoke.mjs'
+import { checkIgnoreInput } from './ignore-input.smoke.mjs'
 
 import { setupMemory, checkMemory } from './memory.smoke.mjs'
 import { setupSpaces, checkSpaces, checkSpacesSetup } from './spaces.smoke.mjs'
@@ -442,6 +443,7 @@ checks: try {
           },
           copyText: (...args) => window.proof.calls.push(['copy', ...args]),
           openInClaude: (...args) => window.proof.calls.push(['open', ...args]),
+          ignoreNeedsInput: (...args) => window.proof.calls.push(['ignore', ...args]),
         },
         {
           get(target, name) {
@@ -675,6 +677,9 @@ checks: try {
   await checkThreadBadges(page, capture)
   assert.deepEqual(errors, [])
   if (process.env.THREADLIGHT_UI_FOCUS === 'badges') break checks
+  await checkIgnoreInput(page, capture)
+  assert.deepEqual(errors, [])
+  if (process.env.THREADLIGHT_UI_FOCUS === 'ignore-input') break checks
   if (process.env.THREADLIGHT_UI_FOCUS === 'workspace') {
     await checkToolbar(page)
     assert.deepEqual(errors, [])

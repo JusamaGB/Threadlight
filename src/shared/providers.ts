@@ -54,6 +54,7 @@ export function combinedSnapshot(
   enabled: Provider[],
   snapshots: Record<Provider, Snapshot>,
   max: number,
+  pinned?: (session: Session) => boolean,
 ): Snapshot {
   const providers = PROVIDERS.filter((provider) => enabled.includes(provider))
   if (providers.length === 1)
@@ -71,7 +72,7 @@ export function combinedSnapshot(
   return {
     providers,
     codexUsage: providers.includes('codex') ? snapshots.codex.codexUsage : undefined,
-    sessions: recentSessions(sessions, max),
+    sessions: recentSessions(sessions, max, pinned),
     lookupSessions: sessions,
     workspaces: providers.flatMap((provider) =>
       snapshots[provider].workspaces.map((workspace) => ({
