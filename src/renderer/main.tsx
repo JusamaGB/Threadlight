@@ -6,9 +6,12 @@ import { IDLE_MOTION, type MotionSnapshot } from '../shared/motion'
 import { FloatingDot } from './dot/Dot'
 import { useSessions } from './hooks/useSessions'
 import { useSettings } from './hooks/useSettings'
+import { installFinerScroll } from './lib/finerScroll'
 import { Panel } from './panel/Panel'
 import { AttentionView, useAttentionMotion } from './motion/AttentionView'
 import './theme.css'
+
+installFinerScroll()
 
 // Each window loads this page with ?view=… and renders only its own piece.
 const view = new URLSearchParams(window.location.search).get('view') ?? 'dot'

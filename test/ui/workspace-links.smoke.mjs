@@ -169,6 +169,20 @@ export async function checkWorkspaceLinks(page, capture) {
     await capture('workspace-wires-production')
     const expanded = await page.locator('[data-wire-key] path').first().getAttribute('d')
     await list.hover()
+    // One wheel notch moves a quarter of what the browser would.
+    await page.evaluate(
+      () => (document.querySelector('[data-workspace-thread-list]').scrollTop = 0),
+    )
+    await page.mouse.wheel(0, 100)
+    await page.waitForFunction(
+      () => document.querySelector('[data-workspace-thread-list]').scrollTop > 0,
+    )
+    assert.ok(
+      Math.abs(
+        (await page.locator('[data-workspace-thread-list]').evaluate((el) => el.scrollTop)) - 25,
+      ) < 2,
+      'a wheel notch scrolls 25 px, not 100',
+    )
     await page.mouse.wheel(0, 100)
     await page.waitForFunction(
       (before) => document.querySelector('[data-wire-key] path')?.getAttribute('d') !== before,
