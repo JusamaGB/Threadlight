@@ -25,7 +25,7 @@ import { checkHoverMotion } from './hover-motion.smoke.mjs'
 
 import { checkNowTimer } from './now-timer.smoke.mjs'
 import { checkToolbar, checkRecentLimit, checkSubpagePinning } from './toolbar.smoke.mjs'
-import { checkPanelLayout } from './panel-layout.smoke.mjs'
+import { checkDualDetails, checkPanelLayout } from './panel-layout.smoke.mjs'
 import { checkWorkspacePaths } from './workspace-paths.smoke.mjs'
 import { checkWorkspacePicker } from './workspace-picker.smoke.mjs'
 import { checkChecklistDiff } from './checklist-diff.smoke.mjs'
@@ -606,6 +606,7 @@ checks: try {
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'panel-layout') {
     await checkPanelLayout(page, capture)
+    await checkDualDetails(page, capture)
     assert.deepEqual(errors, [])
     break checks
   }

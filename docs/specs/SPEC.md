@@ -252,6 +252,34 @@ hidden throughout the app. Wheel, trackpad and keyboard scrolling remain native;
 thread and workspace lists can receive keyboard focus. There is no scrollbar
 overlay or reserved gutter, leaving the rows' full width available for content.
 
+### Dual view
+
+Right-clicking the header wire clip, or any workspace wire, opens a menu with one item:
+**Dual view**, or **Single view** when the panel is already dual. The choice is saved
+(`panelLayout`) and restored when the panel opens. Dual view needs both Claude and Codex
+switched on; otherwise the column stays single and the menu does not open. There is no
+drag handle and no keyboard shortcut.
+
+Dual widens the native window leftwards from the dot's corner (inside the work area) to a
+475px card: two 236px columns and a 1px divider, so a row is the same width as in the
+single column and never reflows as it moves. The card's right edge does not move.
+Expanding runs in order: the window widens, the card grows, the Claude rows slide left
+with their gaps still open, then every row closes up the gaps, leaving Claude on the left
+and Codex on the right, each stacked from the top. Collapsing reverses it: the gaps open,
+the rows slide back, the card narrows, and the window follows. The list keeps its old
+height while rows slide so none are clipped, and takes the new height as they close up.
+Reduced-motion preferences switch layouts instantly. A thread that is open or waiting on
+an answer stays inside its own column; the other column does not move.
+
+Dual applies to the Active and Recent lists. Workspace and All keep a single column at the
+wider card width. The workspace wires hang off the card's left edge, so they are not drawn
+while the columns are split; the clip and its menu remain.
+
+The 16px gutter beside the card is otherwise click-through. Each wire has a thin (about
+8px) clickable strip along its rail, reported to the main process as a list of regions;
+the rest of the gutter passes clicks to the app behind. While the layout animates the
+gutter is not click-through, because the card is moving.
+
 Context circles spin for the full `working` state, including thinking, tools and
 replies. Whenever thinking resumes, including mid-task with known context, the
 wheel switches to a dotted appearance using the same thinking flag as the Now line.

@@ -6,6 +6,14 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Dual view.** Right-click the wire clip or any workspace wire and choose **Dual view**
+  to widen the panel and show Claude and Codex threads side by side. The window widens, the
+  card grows, the Claude threads slide left and every thread closes up into two stacked
+  columns; **Single view** reverses it. The choice is remembered, needs both providers
+  switched on, and applies to the Active and Recent lists. Workspace wires are hidden while
+  the columns are split. Each wire now has a thin clickable strip; the rest of the gutter
+  still passes clicks through.
+
 - Fixed Git metadata disappearing during folder rechecks and diff reads restarting
   throughout an active chat. Clean branches remain visible; the loading indicator
   no longer contains a replacement character.
