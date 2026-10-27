@@ -6,6 +6,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Dual view no longer shows a half-built layout when you move between lists. Going from Active
+  to Recent used to grow the card with all ten threads crammed in the right column for about a
+  second before splitting them. The columns now open and close with the card; the rows glide
+  between columns only when you choose Dual view or Single view yourself.
+
 - **Restart** in Settings → App, and in the tray menu, closes Threadlight and starts it again
   (settings and threads are untouched). The tray item works even if the panel will not open;
   if the normal quit ever hangs, the process is forced out after six seconds so the restart

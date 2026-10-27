@@ -268,7 +268,9 @@ with their gaps still open, then every row closes up the gaps, leaving Claude on
 and Codex on the right, each stacked from the top. Collapsing reverses it: the gaps open,
 the rows slide back, the card narrows, and the window follows. The list keeps its old
 height while rows slide so none are clipped, and takes the new height as they close up.
-Past 120 rows, or with reduced motion, the columns change without the glide. Reduced-motion preferences switch layouts instantly. A thread that is open or waiting on
+The glide only runs when Dual view or Single view is chosen; moving between lists or pages
+opens and closes the columns with the card, with no row crammed into one column. Past 120
+rows, or with reduced motion, the columns change without the glide. Reduced-motion preferences switch layouts instantly. A thread that is open or waiting on
 an answer stays inside its own column; the other column does not move.
 
 Shared Spaces, the Agent and Settings are laid out for the thin card, so opening one

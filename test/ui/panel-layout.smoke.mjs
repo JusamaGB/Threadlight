@@ -1,4 +1,4 @@
-/* global window, document */
+/* global window, document, requestAnimationFrame */
 import assert from 'node:assert/strict'
 
 const stage = (page) => page.locator('#root > div').first()
@@ -155,11 +155,42 @@ export async function checkPanelLayout(page, capture) {
       () =>
         Math.round(document.querySelector('[data-card]')?.getBoundingClientRect().width) === 238,
     )
+    // Moving between lists changes the rows themselves, so the columns open with the card: no
+    // frame may show the card grown with every row still in one column, and no row may glide.
+    await page.evaluate(() => {
+      window.layoutProof = { crammed: 0, gliding: 0, frames: 0, stop: false }
+      const sample = () => {
+        const proof = window.layoutProof
+        const stage = document.querySelector('#root > div')
+        const left = document.querySelector('[class*="_dualLeft_"]')
+        const rows = document.querySelectorAll('[data-session-id]')
+        proof.frames++
+        if (stage?.dataset.dual && left && !left.hasAttribute('data-split') && rows.length)
+          proof.crammed++
+        if ([...rows].some((row) => row.getAnimations().length > 0)) proof.gliding++
+        if (!proof.stop) requestAnimationFrame(sample)
+      }
+      sample()
+    })
     await showRecent()
     await page.waitForFunction(
       () =>
         Math.round(document.querySelector('[data-card]')?.getBoundingClientRect().width) === 475,
     )
+    await page.waitForTimeout(800)
+    await page.locator('[data-thread-view]').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Active', exact: true }).click()
+    await narrow()
+    await page.waitForTimeout(800)
+    const proof = await page.evaluate(() => {
+      window.layoutProof.stop = true
+      return window.layoutProof
+    })
+    assert.ok(proof.frames > 30, 'the transition was sampled')
+    assert.equal(proof.crammed, 0, 'rows are never crammed into one column of a grown card')
+    assert.equal(proof.gliding, 0, 'changing list does not glide the rows')
+    await showRecent()
+    await wide()
     // Turning a provider off drops back to one column without forgetting the choice.
     await page.evaluate(() => window.threadlight.updateSettings({ enabledProviders: ['codex'] }))
     await page.waitForFunction(

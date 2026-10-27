@@ -173,6 +173,8 @@ export function Panel() {
     width: 475,
   })
   const layoutApplied = useRef(false)
+  // Which saved layout the last pass saw, to tell the Dual view toggle from a view or page change.
+  const lastLayoutSetting = useRef<string | null>(null)
   const listElement = useRef<HTMLDivElement>(null)
   /**
    * Runs `update`, then glides every thread row from where it was to where it now is. Splitting
@@ -239,6 +241,10 @@ export function Panel() {
       requestAnimationFrame(() => requestAnimationFrame(() => !cancelled && action()))
     const first = !layoutApplied.current
     layoutApplied.current = true
+    // Choosing Dual or Single view glides the rows between the columns. Moving between lists or
+    // pages changes the rows themselves, so there the columns just open and close with the card.
+    const toggled =
+      lastLayoutSetting.current !== null && lastLayoutSetting.current !== settings.panelLayout
     const instant = first || window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const run = async () => {
       if (wantDual) {
@@ -252,6 +258,10 @@ export function Panel() {
           return
         }
         setLayout((l) => ({ ...l, wide: true, width: result.cardWidth, instant: false }))
+        if (!toggled) {
+          frames(() => setLayout((l) => ({ ...l, dual: true, split: true })))
+          return
+        }
         frames(() => setLayout((l) => ({ ...l, dual: true })))
         after(LAYOUT_CARD_MS + 60, () =>
           flipRows(() => setLayout((l) => ({ ...l, split: true })), 'sideways-first'),
@@ -266,9 +276,9 @@ export function Panel() {
           return
         }
         void window.threadlight.setPanelLayout('dual', true)
-        if (onPage) {
-          // The list is out of sight behind the page, so there are no rows to bring back
-          // together: the card narrows at once and the window follows it.
+        if (onPage || !toggled) {
+          // The list is out of sight, or is about to be a different one, so there are no rows to
+          // bring back together: the card narrows at once and the window follows it.
           after(0, () => setLayout((l) => ({ ...l, split: false, dual: false })))
           after(LAYOUT_CARD_MS, async () => {
             await window.threadlight.setPanelLayout('single')
@@ -295,6 +305,10 @@ export function Panel() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of layout runs this
   }, [settings === null, wantDual])
+  // Remembered after the pass above has compared against it, whether or not that pass ran.
+  useEffect(() => {
+    lastLayoutSetting.current = settings?.panelLayout ?? null
+  }, [settings?.panelLayout])
   /** The composer is hidden while this is null. */
   const [compose, setCompose] = useState<ComposeState | null>(null)
   /** Speech that needs a thread picked before it can be sent. */
