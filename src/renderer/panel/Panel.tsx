@@ -150,8 +150,6 @@ export function Panel() {
     y: number
     anchor: HTMLElement
   } | null>(null)
-  /** The wire clip's and wires' right-click menu: switch between the single and dual layouts. */
-  const [layoutMenu, setLayoutMenu] = useState<{ x: number; y: number } | null>(null)
   // Dual shows Claude and Codex side by side, so it needs both; otherwise the column stays single.
   const bothProviders = enabled.includes('claude') && enabled.includes('codex')
   const wantDual = settings?.panelLayout === 'dual' && bothProviders
@@ -385,14 +383,13 @@ export function Panel() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       if (sourceMenu) setSourceMenu(null)
-      else if (layoutMenu) setLayoutMenu(null)
       else if (listMenu) setListMenu(null)
       else if (menu) setMenu(null)
       else window.threadlight.closePanel()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [menu, listMenu, sourceMenu, layoutMenu])
+  }, [menu, listMenu, sourceMenu])
 
   /** Turns finished speech into a composer for the right thread, or asks which thread. */
   const finishTalk = useCallback(async () => {
@@ -990,6 +987,14 @@ export function Panel() {
     event.preventDefault()
     setMenu({ x: event.clientX, y: event.clientY, session })
   }
+  // Dual view puts Claude and Codex side by side, so it needs both, and it is offered in the
+  // Recent and Workspace lists. Single view stays reachable from anywhere while dual is on.
+  const layoutMenuItems: MenuItem[] =
+    settings?.panelLayout === 'dual'
+      ? [{ label: 'Single view', onSelect: () => void setPanelLayoutSetting('single') }]
+      : bothProviders && view === 'all' && (listMode === 'recent' || listMode === 'workspace')
+        ? [{ label: 'Dual view', onSelect: () => void setPanelLayoutSetting('dual') }]
+        : []
   const menuItems = (session: Session): MenuItem[] => [
     {
       label: en.changes.worktreeTitle,
@@ -1002,6 +1007,7 @@ export function Panel() {
       disabled: !session.appId,
       onSelect: () => session.appId && window.threadlight.openInClaude(session.appId),
     },
+    ...layoutMenuItems,
   ]
 
   /** One thread row, the same in the recent list and inside a workspace. */
@@ -1112,9 +1118,6 @@ export function Panel() {
           <WorkspaceLinks
             card={card}
             enabled={settings?.workspaceWires ?? false}
-            onMenu={(point) => {
-              if (bothProviders) setLayoutMenu(point)
-            }}
             onToggle={async () => {
               try {
                 const result = await window.threadlight.updateSettings({
@@ -1555,19 +1558,6 @@ export function Panel() {
                 y={menu.y}
                 items={menuItems(menu.session)}
                 onClose={() => setMenu(null)}
-              />
-            )}
-            {layoutMenu && (
-              <ContextMenu
-                x={layoutMenu.x}
-                y={layoutMenu.y}
-                label="Panel layout"
-                items={[
-                  settings?.panelLayout === 'dual'
-                    ? { label: 'Single view', onSelect: () => void setPanelLayoutSetting('single') }
-                    : { label: 'Dual view', onSelect: () => void setPanelLayoutSetting('dual') },
-                ]}
-                onClose={() => setLayoutMenu(null)}
               />
             )}
             {listMenu && (

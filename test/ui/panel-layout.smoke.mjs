@@ -7,17 +7,30 @@ const cardWidth = (page) =>
     Math.round(document.querySelector('[data-card]').getBoundingClientRect().width),
   )
 
-/** Right-click the wire clip: Dual view widens the panel; Single view narrows it again. */
+/** Right-click a thread: Dual view widens the panel; Single view narrows it again. */
 export async function checkPanelLayout(page, capture) {
   const initial = await page.evaluate(() => window.threadlight.getSettings())
-  const clip = page.getByRole('button', { name: /workspace wires$/ })
+  const row = page.getByRole('button', { name: /Synthetic/ }).first()
+  const threadMenu = async () => {
+    await row.click({ button: 'right' })
+    const menu = page.getByRole('menu')
+    await menu.waitFor()
+    return menu
+  }
+  const showRecent = async () => {
+    await page.locator('[data-thread-view]').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+  }
   try {
-    // With only one provider there is nothing to put side by side, so there is no menu.
+    // With only one provider there is nothing to put side by side, so the thread menu has no
+    // layout item.
     await page.evaluate(() =>
       window.threadlight.updateSettings({ enabledProviders: ['claude'], panelLayout: 'single' }),
     )
-    await clip.click({ button: 'right' })
-    assert.equal(await page.getByRole('menu', { name: 'Panel layout' }).count(), 0)
+    await showRecent()
+    const single = await threadMenu()
+    assert.equal(await single.getByRole('menuitem', { name: /view$/ }).count(), 0)
+    await page.keyboard.press('Escape')
 
     await page.evaluate(() =>
       window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
@@ -25,10 +38,8 @@ export async function checkPanelLayout(page, capture) {
     assert.equal(await cardWidth(page), 238, 'single view is the narrow column')
     assert.equal(await stage(page).getAttribute('data-wide'), null)
 
-    await clip.click({ button: 'right' })
-    const menu = page.getByRole('menu', { name: 'Panel layout' })
-    await menu.waitFor()
-    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts(), ['Dual view'])
+    const menu = await threadMenu()
+    assert.equal(await menu.getByRole('menuitem', { name: 'Dual view' }).count(), 1)
     await capture('panel-layout-menu')
     await menu.getByRole('menuitem', { name: 'Dual view' }).click()
     assert.equal(
@@ -44,9 +55,8 @@ export async function checkPanelLayout(page, capture) {
     assert.equal(await stage(page).getAttribute('data-dual'), 'true')
     await capture('panel-layout-dual')
 
-    await clip.click({ button: 'right' })
-    const back = page.getByRole('menu', { name: 'Panel layout' })
-    assert.deepEqual(await back.getByRole('menuitem').allInnerTexts(), ['Single view'])
+    const back = await threadMenu()
+    assert.equal(await back.getByRole('menuitem', { name: 'Dual view' }).count(), 0)
     await back.getByRole('menuitem', { name: 'Single view' }).click()
     await page.waitForFunction(() => window.proof.layouts?.at(-1) === 'single')
     await page.waitForFunction(
@@ -71,7 +81,7 @@ export async function checkPanelLayout(page, capture) {
       'dual',
     )
     console.log(
-      'PASS: wire-clip right-click menu, single/dual choice saved, widen-then-grow and narrow-then-shrink order, instant restore on load, and one-provider fallback.',
+      'PASS: thread right-click menu item, single/dual choice saved, widen-then-grow and narrow-then-shrink order, instant restore on load, and one-provider fallback.',
     )
   } finally {
     await page.evaluate((settings) => window.threadlight.updateSettings(settings), {
