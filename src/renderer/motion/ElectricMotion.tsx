@@ -2,6 +2,7 @@ import { useEffect, useRef, type RefObject } from 'react'
 import { IDLE_MOTION, type MotionSnapshot } from '../../shared/motion'
 import { advancePose, MotionGeometry, restingPose } from './geometry'
 import { createCanvasRenderer, createWebGLRenderer } from './render'
+import type { PROVIDER_COLOURS } from './provider-colours'
 import styles from './Motion.module.css'
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   source?: RefObject<MotionSnapshot>
   label: string
   className?: string
+  provider?: keyof typeof PROVIDER_COLOURS
   edgeToEdge?: boolean
 }
 
@@ -19,8 +21,13 @@ export function ElectricMotion({
   label,
   className = '',
   edgeToEdge = false,
+  provider,
 }: Props) {
   const host = useRef<HTMLSpanElement>(null)
+  const providerRef = useRef(provider)
+  useEffect(() => {
+    providerRef.current = provider
+  }, [provider])
   const latest = useRef(snapshot)
   useEffect(() => {
     latest.current = snapshot
@@ -111,6 +118,7 @@ export function ElectricMotion({
           motion.matches,
           edgeToEdge,
           value.mode === 'thinking' || value.mode === 'transcribing',
+          providerRef.current,
         )
         renderer.draw(vertices, width, height, scale)
         needsPaint = false

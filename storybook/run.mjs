@@ -1,4 +1,4 @@
-/* global process, console, URL, window */
+/* global window */
 // Storybook: the real Threadlight renderer, driven by an invented working day, photographed
 // scene by scene. Run `npm run build` first, then `npm run storybook`.
 //   node storybook/run.mjs            every scene

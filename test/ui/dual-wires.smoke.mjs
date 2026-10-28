@@ -260,8 +260,7 @@ export async function checkDualWires(page, capture) {
   await page.locator('[data-wire-toggle]').press('Enter')
   await checkGeometry()
   workspace = true
-  await page.evaluate(() => window.threadlight.updateSettings({ listMode: 'workspace' }))
-  await page.waitForFunction(() => document.querySelector('[class*="_workspace_"]'))
+  await selectThreadView(page, 'workspace')
   const header = page.getByRole('button', { name: /Wire project/ }).first()
   if (await header.count()) {
     if ((await header.getAttribute('aria-expanded')) === 'false') await header.click()

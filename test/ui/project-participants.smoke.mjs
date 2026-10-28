@@ -102,11 +102,11 @@ export async function checkProjectParticipants(page, memory, spaces, chats, capt
   await codex.getByText('role · Unverified', { exact: true }).first().waitFor()
   await capture('project-capability-manual')
 
-  await view.getByRole('tab', { name: 'Ideas', exact: true }).click()
-  await view.getByLabel('New idea', { exact: true }).fill('Inspect browser screenshots')
-  await view.getByRole('button', { name: 'Save idea', exact: true }).click()
+  await view.getByRole('tab', { name: 'Notes', exact: true }).click()
+  await view.getByLabel('New note', { exact: true }).fill('Inspect browser screenshots')
+  await view.getByRole('button', { name: 'Save note', exact: true }).click()
   await view.getByRole('button', { name: /Inspect browser screenshots/ }).click()
-  await view.getByRole('button', { name: 'Move to Brainstorm', exact: true }).click()
+  await view.getByRole('button', { name: 'Discuss in Brainstorm', exact: true }).click()
   await view
     .getByLabel('Message to Agent', { exact: true })
     .fill('Which chat should inspect the browser?')

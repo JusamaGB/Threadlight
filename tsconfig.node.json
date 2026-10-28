@@ -5,5 +5,13 @@
     "lib": ["ES2023"],
     "types": ["node"]
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "test/**/*", "*.config.mjs"]
+  "include": [
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "src/renderer/lib/artifactMessage.ts",
+    "src/renderer/lib/stackedDiff.ts",
+    "test/**/*",
+    "*.config.mjs"
+  ]
 }

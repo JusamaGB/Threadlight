@@ -1,3 +1,4 @@
+import { PROVIDER_COLOURS } from './provider-colours'
 import { SILENT_AUDIO, unit, type AudioEnergy, type MotionSnapshot } from '../../shared/motion'
 
 export interface MotionPose {
@@ -98,6 +99,7 @@ export class MotionGeometry {
     reduced: boolean,
     edgeToEdge = false,
     activeWheel = false,
+    provider?: keyof typeof PROVIDER_COLOURS,
   ): Float32Array {
     this.count = 0
     const compact = height < 36 || edgeToEdge
@@ -147,6 +149,16 @@ export class MotionGeometry {
         const b = palette[Math.floor(p) + 1]!
         const f = p % 1
         const base: Colour = [mix(a[0], b[0], f), mix(a[1], b[1], f), mix(a[2], b[2], f)]
+        // Fade provider colour with the smoothed playback envelope, including speech tails.
+        if (agent && provider) {
+          const tone = PROVIDER_COLOURS[provider].rgb
+          const speaking = unit(audio.level / 0.035)
+          return [
+            mix(base[0], tone[0], speaking),
+            mix(base[1], tone[1], speaking),
+            mix(base[2], tone[2], speaking),
+          ]
+        }
         const tint = agent ? VIOLET : CYAN
         const warm = pose.warmth
         return [
@@ -164,7 +176,17 @@ export class MotionGeometry {
           Math.sin(u * Math.PI * 13 - t * 3.2 + phase) * audio.high * 0.16
         const span = edgeToEdge ? width : width * 0.96 * (1 - pose.rest * (compact ? 0.15 : 0.6))
         const x = (u - 0.5) * span
-        const rawY = envelope * amplitude * sway + offset
+        // Overlapping frequency regions avoid seams: bass left, mids centre, treble right.
+        // Overall level still controls silence; individual bands control local height.
+        const weights = [0.18, 0.5, 0.82].map((centre) =>
+          Math.exp(-0.5 * ((u - centre) / 0.18) ** 2),
+        )
+        const local =
+          (weights[0]! * audio.low + weights[1]! * audio.mid + weights[2]! * audio.high) /
+          (weights[0]! + weights[1]! + weights[2]!)
+        const response =
+          energy > 0 ? 0.12 + 0.88 * Math.sqrt(unit(local / Math.max(0.008, audio.level))) : 1
+        const rawY = envelope * amplitude * response * sway + offset
         // Most expression opens below the bar; the short upper crest stays clear
         // of header text. Soft compression avoids clipped, flat-topped waves.
         const room = rawY < 0 ? Math.max(1, Math.min(4.5, divider - 1.5)) : 11

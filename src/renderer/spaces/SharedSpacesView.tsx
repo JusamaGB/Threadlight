@@ -124,7 +124,9 @@ export function SharedSpacesView({
         ? i.sharedSpaceId === openedSpace
         : unassigned
           ? !i.workspaceId
-          : workspace && i.workspaceId === workspace.id && !i.sharedSpaceId,
+          : workspace &&
+            i.workspaceId === workspace.id &&
+            (!i.sharedSpaceId || i.sharedSpaceId === openedSpace),
     ),
   }
   const memory = allMemory ? scopeMemory(allMemory, spaceIds) : null
@@ -297,7 +299,7 @@ export function SharedSpacesView({
     }),
     [back, navigateHistory, allMemory],
   )
-  useEffect(() => {
+  useLayoutEffect(() => {
     onControlRoute?.({
       page: 'spaces',
       area: creating ? 'create' : openedSpace ? 'space' : 'library',
@@ -345,6 +347,15 @@ export function SharedSpacesView({
   ])
   const startDiscussion = async (note?: SpaceIdea) => {
     if (!openedSpace || !workspaceReady) return
+    if (note && !note.sharedSpaceId) {
+      const attached = await request({
+        action: 'attach_material',
+        id: note.id,
+        spaceId: openedSpace,
+        revision: note.revision,
+      })
+      if (!attached.ok) return
+    }
     const result = await request({
       action: 'create_discussion',
       id: crypto.randomUUID(),
@@ -923,7 +934,7 @@ export function SharedSpacesView({
                         action: 'create',
                         id: (captureIds.current[viewKey] ??= crypto.randomUUID()),
                         workspaceId: workspace?.id ?? null,
-                        sharedSpaceId: openedLocation ? openedSpace : null,
+                        sharedSpaceId: openedSpace,
                         title: (text.trim().split('\n')[0] ?? text.trim()).slice(0, 80),
                         text: text.trim(),
                       })
