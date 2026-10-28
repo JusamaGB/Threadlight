@@ -6,6 +6,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- "Needs your input" now has the bottom right corner of a thread's second row. The branch counts and task timer step aside while it shows and return when it goes, so the title keeps the whole top row (it was squeezed out by the diff counts, and vanished entirely on an open thread).
+- The question and approval cards no longer carry the "Waiting for you here · opening it in Claude answers it there instead" note.
+
+- The three header icons (brain, agent, cog) share one centre line; the agent star sat about a pixel too high.
+
 - Mouse-wheel scrolling is finer everywhere in the app: one notch now moves a quarter as far (25 px instead of 100 px). Touchpads are unchanged.
 
 - Centre wires in dual view are tidier: three slots (Claude side, middle, Codex side) with a group sitting on the side its threads are on, short spikes that stay clear of row text, and rounded joins. Wires are grey until their group is lit, then show their colour. While a wire is lit, the text of every thread outside it dims a little.

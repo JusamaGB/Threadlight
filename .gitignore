@@ -23,3 +23,4 @@ out/
 *.tsbuildinfo
 
 tidy-root.mjs
+storybook/frames/
