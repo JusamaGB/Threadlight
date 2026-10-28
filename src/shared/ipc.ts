@@ -33,6 +33,10 @@ import type {
 } from './types'
 
 export const IPC = {
+  artifacts: 'artifacts:request',
+  artifactsChanged: 'artifacts:changed',
+  artifactPreview: 'artifacts:preview',
+  artifactPreviewEvent: 'artifacts:preview-event',
   communicationRequest: 'communication:request',
   communicationChanged: 'communication:changed',
 
