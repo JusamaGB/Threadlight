@@ -19,6 +19,7 @@ type Entry = {
   version: number
   latest: Session
   dirty: boolean
+  settled: boolean
   running?: Promise<void>
   data: ThreadDiffData | null
   replay?: ClaudeDiffReplay
@@ -51,7 +52,9 @@ export class ThreadChanges {
       if (root && (!session.git || gitPathKey(root) !== gitPathKey(session.git.root))) continue
       const entry = this.entries.get(session.id)
       if (entry) {
-        entry.version++
+        // Filesystem activity may continue throughout a read. Publish that
+        // observation and coalesce another read rather than starving the UI.
+        entry.dirty = true
         entry.checked = -Infinity
       }
       this.summary(session)
@@ -68,17 +71,18 @@ export class ThreadChanges {
         version: 0,
         latest: session,
         dirty: false,
+        settled: false,
       }
       this.entries.set(session.id, entry)
-      if (this.entries.size > 128) {
-        const oldest = [...this.entries].find(([id, value]) => id !== session.id && !value.running)
-        if (oldest) this.entries.delete(oldest[0])
-      }
+      this.prune(session.id)
     }
     const root = session.git?.root ?? null
     const input = `${root ?? ''}\0${session.cwd}`
     if (entry.input !== input) {
-      if (entry.root !== root) entry.data = null
+      if (entry.root !== root) {
+        entry.data = null
+        entry.settled = false
+      }
       entry.input = input
       entry.root = root
       entry.version++
@@ -100,7 +104,7 @@ export class ThreadChanges {
     entry.dirty = false
     const version = entry.version
     const before = entry.data?.summary.revision
-    const first = entry.checked === -Infinity
+    const first = !entry.settled
     entry.running = yieldToEvents()
       .then(async () => {
         let next: ThreadDiffData | null = null
@@ -136,7 +140,10 @@ export class ThreadChanges {
           entry.replay = undefined
         }
         if (version !== entry.version) return
-        entry.data = next
+        // A failed provider/Git read is not evidence that recorded edits vanished.
+        // A successful empty projection still replaces the previous counts.
+        if (next) entry.data = next
+        entry.settled = true
         entry.checked = entry.dirty ? -Infinity : (this.options.now?.() ?? Date.now())
       })
       .finally(() => {
@@ -170,10 +177,29 @@ export class ThreadChanges {
   }
   private async read(session: Session): Promise<ThreadDiffData | null> {
     const entry = this.entry(session)
-    while (entry.running) await entry.running
+    // Wait for this observation, not an unbounded chain of background follow-ups.
+    await entry.running
     return entry.data
   }
+  private prune(current?: string): void {
+    for (const [id, entry] of this.entries) {
+      if (this.entries.size <= 128) break
+      if (id !== current && !this.listed.has(id) && !entry.running) this.entries.delete(id)
+    }
+  }
   annotate(snapshot: Snapshot): Snapshot {
+    // Pin the new demand set before creating entries. Cache limits apply to idle
+    // history, not to rows included in the current snapshot.
+    const listed = new Map(snapshot.sessions.map((session) => [session.id, session]))
+    const collect = (nodes: ThreadNode[]) => {
+      for (const node of nodes) {
+        listed.set(node.session.id, node.session)
+        collect(node.children)
+      }
+    }
+    for (const workspace of snapshot.workspaces) collect(workspace.threads)
+    this.listed = listed
+    this.prune()
     const cache = new Map<string, Session>()
     const attach = (session: Session): Session => {
       let result = cache.get(session.id)
@@ -185,7 +211,7 @@ export class ThreadChanges {
           threadDiff: summary,
           threadDiffStatus: summary
             ? 'ready'
-            : session.gitStatus === 'loading' || entry.running
+            : session.gitStatus === 'loading' || (!entry.settled && entry.running)
               ? 'loading'
               : 'unavailable',
         }
@@ -197,7 +223,7 @@ export class ThreadChanges {
       session: attach(item.session),
       children: item.children.map(node),
     })
-    const listed = snapshot.sessions.map(attach)
+    const sessions = snapshot.sessions.map(attach)
     const workspaces = snapshot.workspaces.map((workspace) => ({
       ...workspace,
       threads: workspace.threads.map(node),
@@ -205,7 +231,7 @@ export class ThreadChanges {
     this.listed = cache
     return {
       ...snapshot,
-      sessions: listed,
+      sessions,
       // Voice/search-only catalogue entries do not schedule thousands of background replays.
       lookupSessions: snapshot.lookupSessions?.map((session) => cache.get(session.id) ?? session),
       workspaces,
