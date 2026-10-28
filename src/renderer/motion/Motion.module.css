@@ -29,6 +29,15 @@
   border-bottom: 1px solid var(--border);
 }
 
+.presence[data-compact] {
+  padding-block: 2px;
+}
+
+.presence[data-compact] .status {
+  justify-content: center;
+  text-align: center;
+}
+
 .surface[data-edge-to-edge][data-renderer='unavailable']::after {
   width: 100%;
   top: 9px;

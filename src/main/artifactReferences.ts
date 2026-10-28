@@ -98,10 +98,24 @@ export function presentedPaths(record: unknown, provider: ArtifactSource['provid
   const paths: string[] = []
   const text = (body: string) => {
     const visible = body.replace(/```[^\n]*\n[\s\S]*?```/g, '')
+    const references: { index: number; path: string }[] = []
     for (const match of visible.matchAll(
       /!?\[[^\]\n]*\]\((<[^>\n]+>|[^()\n]*(?:\([^()\n]*\)[^()\n]*)*)\)/g,
     ))
-      paths.push(match[1]!.replace(/\s+"[^"\n]*"$/, ''))
+      references.push({ index: match.index, path: match[1]!.replace(/\s+"[^"\n]*"$/, '') })
+    // Codex presents inline HTML with a native marker rather than a Markdown link.
+    // Extract only its explicit path; discovery still applies the usual local-file checks.
+    if (provider === 'codex' && !user)
+      for (const match of visible.matchAll(/\uE200visualize\uE202([^\uE200\uE201]*)\uE201/g)) {
+        try {
+          const value: unknown = JSON.parse(match[1]!)
+          if (isObject(value) && typeof value.path === 'string')
+            references.push({ index: match.index, path: value.path })
+        } catch {
+          // An incomplete or malformed marker must not hide other presented files.
+        }
+      }
+    paths.push(...references.sort((a, b) => a.index - b.index).map((item) => item.path))
     if (user && body.includes('# Files mentioned by the user:')) {
       const envelope = body.split('## My request:')[0]!
       for (const match of envelope.matchAll(/^## [^\n]+?: ([^\r\n]+)$/gm)) paths.push(match[1]!)

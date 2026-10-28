@@ -1,3 +1,4 @@
+import { selectThreadView } from './header-navigation.mjs'
 /* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 
@@ -14,8 +15,7 @@ export async function checkWorkspaceLinks(page, capture) {
         workspaceWires: false,
       }),
     )
-    await page.locator('header [data-thread-view]').click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+    await selectThreadView(page, 'recent')
     await page.evaluate(async () => {
       const snapshot = await window.threadlight.getSnapshot(),
         base = snapshot.sessions[0]

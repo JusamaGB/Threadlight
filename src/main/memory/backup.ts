@@ -4,6 +4,7 @@ import { realpath } from 'node:fs/promises'
 import { dirname, basename, join, relative, sep, isAbsolute } from 'node:path'
 import { z } from 'zod'
 import { communicationRecordSchemas } from '../../shared/communication'
+import { capabilityReportSchema } from '../../shared/projectParticipants'
 
 export async function exportDestination(file: string, privateDirectory: string) {
   const root = await realpath(privateDirectory)
@@ -23,6 +24,7 @@ const id = z.string().uuid(),
   title = z.string().min(1).max(80)
 const base = z.object({ id, spaceId: id, createdAt: number, author: z.string().max(300) })
 const schemas = {
+  capability_report: capabilityReportSchema,
   space: base.extend({
     title,
     description: z.string().max(300),
@@ -140,7 +142,17 @@ export function readBackup(file: string) {
     if (rows.length > 200000) throw new Error('This backup exceeds the record limit.')
     const records = rows.map((row) => {
       const kind = z
-        .enum(['space', 'folder', 'item', 'revision', 'grant', 'task', 'message', 'subscription'])
+        .enum([
+          'space',
+          'folder',
+          'item',
+          'revision',
+          'grant',
+          'task',
+          'message',
+          'subscription',
+          'capability_report',
+        ])
         .parse(row.kind)
       return { kind, value: schemas[kind].strict().parse(JSON.parse(String(row.data))) }
     })

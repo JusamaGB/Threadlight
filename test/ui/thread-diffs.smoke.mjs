@@ -1,3 +1,4 @@
+import { selectThreadView } from './header-navigation.mjs'
 /* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 import { checkPagePinning } from './toolbar.smoke.mjs'
@@ -11,8 +12,7 @@ export async function checkThreadDiffs(page, capture) {
   await page.evaluate(() =>
     window.threadlight.updateSettings({ enabledProviders: ['claude', 'codex'] }),
   )
-  await page.locator('header [data-thread-view]').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+  await selectThreadView(page, 'recent')
   await page.evaluate(async () => {
     const snapshot = await window.threadlight.getSnapshot()
     window.proof.threadDiff = {
@@ -171,7 +171,7 @@ export async function checkThreadDiffs(page, capture) {
       'Git tracker sits at the right of the second row',
     )
     assert.equal(layout.inlineAge, false, 'last active time no longer takes up row space')
-    assert.equal(layout.padding, 3, 'adjacent thread contents have three pixels of padding')
+    assert.equal(layout.padding, 2, 'adjacent thread contents retain the compact row padding')
     await badge('Claude').hover()
     const tip = page.getByRole('tooltip')
     await tip.waitFor()
@@ -477,7 +477,6 @@ export async function checkThreadDiffs(page, capture) {
       await window.threadlight.updateSettings(initial.settings)
       window.proof.emit('onSnapshot', initial.snapshot)
     }, initial)
-    await page.locator('header [data-thread-view]').click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Active', exact: true }).click()
+    await selectThreadView(page, 'active')
   }
 }

@@ -235,6 +235,24 @@ describe('gitFolder', () => {
 })
 
 describe('Tracker', () => {
+  it('replaces a previous plan with the compaction status, then restores normal progress', async () => {
+    await addSession(
+      'cli-1',
+      [prompt('go'), plan({ items: [{ content: 'Build app', status: 'in_progress' }] })],
+      MINUTE,
+    )
+    hooks.apply({ session_id: 'cli-1', hook_event_name: 'UserPromptSubmit' }, NOW - 1000)
+    hooks.apply({ session_id: 'cli-1', hook_event_name: 'PreCompact' }, NOW)
+    expect((await recent())[0]).toMatchObject({
+      state: 'working',
+      compacting: true,
+      stage: 'Compacting context',
+      thinking: false,
+      attention: null,
+    })
+    hooks.apply({ session_id: 'cli-1', hook_event_name: 'PostCompact' }, NOW)
+    expect((await recent())[0]).toMatchObject({ compacting: false, stage: '1/1 · Build app' })
+  })
   it('lists sessions with app titles, ids and the current stage', async () => {
     await addSession(
       'cli-1',

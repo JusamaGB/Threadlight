@@ -1,5 +1,5 @@
 import { AgentRequestCard } from '../panel/AgentRequestCard'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type {
   CommunicationSnapshot,
   Destination,
@@ -205,6 +205,7 @@ export function CommunicationView({
             key={q.id}
             title={`${q.body}${q.reason ? ` — ${q.reason}` : ''}`}
             choices={q.choices}
+            allowOther={q.allowOther}
             busy={busy}
             answer={(answer) =>
               call('answer_request', {
@@ -368,15 +369,18 @@ export function CommunicationView({
 export function Question({
   title,
   choices,
+  allowOther = false,
   busy,
   answer,
 }: {
   title: string
   choices: string[]
+  allowOther?: boolean
   busy: boolean
   answer: (text: string) => Promise<boolean>
 }) {
   const [text, setText] = useState('')
+  const optionsId = useId()
   return (
     <form
       onSubmit={(e) => {
@@ -385,7 +389,7 @@ export function Question({
       }}
     >
       <strong>{title}</strong>
-      {choices.length ? (
+      {choices.length && !allowOther ? (
         <select aria-label="Question answer" value={text} onChange={(e) => setText(e.target.value)}>
           <option value="">Choose an answer</option>
           {choices.map((c) => (
@@ -395,10 +399,18 @@ export function Question({
       ) : (
         <input
           aria-label="Question answer"
+          list={optionsId}
           value={text}
           maxLength={8000}
           onChange={(e) => setText(e.target.value)}
         />
+      )}
+      {allowOther && (
+        <datalist id={optionsId}>
+          {choices.map((choice) => (
+            <option key={choice} value={choice} />
+          ))}
+        </datalist>
       )}
       <button disabled={busy || !text.trim()}>Answer</button>
     </form>

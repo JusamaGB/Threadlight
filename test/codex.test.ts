@@ -252,6 +252,11 @@ describe('read-only Codex discovery', () => {
       }
       const original = { recent: ['Newer', 'Older'], tree: ['Newer', 'Older'] }
       expect(await read()).toEqual(original)
+      const warm = await tracker.snapshot({ expanded: [], showAll: [], preload: true })
+      expect(warm.workspaces[0]!.threads.map((node) => node.session.title)).toEqual(original.tree)
+      expect(tracker.transcriptPath(`codex:${id}`)).toBe(rollout)
+      expect(tracker.transcriptPath(id)).toBeNull()
+      expect(tracker.transcriptPath('codex:unknown')).toBeNull()
       for (const key of [id, second])
         history.prepare("INSERT INTO thread_turns VALUES (?,2,'in_progress',?,NULL)").run(key, now)
       state.prepare('UPDATE threads SET updated_at=? WHERE id=?').run(now + 10, id)
@@ -342,6 +347,16 @@ describe('read-only Codex discovery', () => {
       history
         .prepare('INSERT INTO thread_items VALUES (?,203,?)')
         .run(id, JSON.stringify({ type: 'agentMessage', text: 'Synthetic reply.' }))
+      // The desktop retains unanswered async cards in history after completion.
+      history.prepare('INSERT INTO thread_items VALUES (?,204,?)').run(
+        id,
+        JSON.stringify({
+          type: 'agentMessage',
+          id: 'expired-question',
+          delivery: 'async',
+          questions: [{ title: 'An old decision?', options: ['Blue', 'Green'] }],
+        }),
+      )
       history.prepare('INSERT INTO thread_turns VALUES (?,1,?,1,2)').run(id, 'completed')
       if (native) {
         history.exec(
@@ -382,6 +397,7 @@ describe('read-only Codex discovery', () => {
         lastPrompt: 'Synthetic prompt',
         lastReply: 'Synthetic reply.',
         state: 'idle',
+        attention: null,
         tracked: true,
         contextUsed: 0.25,
         planText: '# Synthetic plan\n- Build the display',
@@ -479,6 +495,30 @@ describe('read-only Codex discovery', () => {
       summarizeCodex([call, { type: 'function_call_output', call_id: 'question-call' }]).attention,
     ).toBe(null)
   })
+  it.each(['completed', 'failed', 'interrupted'])(
+    'expires desktop and rollout async questions when their turn is %s',
+    (status) => {
+      const questions = [{ title: 'Choose a colour', options: ['Blue', 'Green'] }]
+      const desktop = [{ type: 'agentMessage', delivery: 'async', questions }]
+      const rollout = [
+        {
+          type: 'function_call',
+          name: 'functions.request_user_input_async',
+          call_id: 'native-question',
+          arguments: JSON.stringify({ questions }),
+        },
+      ]
+      for (const records of [desktop, rollout]) {
+        expect(summarizeCodex(records, 'inProgress').attention?.kind).toBe('question')
+        expect(summarizeCodex(records, 'in_progress').attention?.kind).toBe('question')
+        expect(summarizeCodex(records, status).attention).toBeNull()
+        expect(summarizeCodex(records, undefined).attention?.kind).toBe('question')
+      }
+      expect(
+        summarizeCodex([{ type: 'agentMessage', text: 'What next?' }], status).attention?.kind,
+      ).toBe('next-step')
+    },
+  )
   it('keeps default Claude settings and separate workspace choices', () => {
     expect(parseSettings({}).enabledProviders).toEqual(['claude'])
     expect(validatePatch({ enabledProviders: ['codex'] })).toEqual({

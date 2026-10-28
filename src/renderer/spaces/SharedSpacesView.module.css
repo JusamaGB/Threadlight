@@ -17,6 +17,24 @@
 .view[data-setup] .body {
   flex: 0 1 auto;
 }
+.view[data-workspace-picker] {
+  height: 300px;
+}
+.view .workspaceChoice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin-top: 3px;
+  padding: 6px 8px;
+  background: var(--raised);
+}
+.workspaceChoice > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .workspaceHeading {
   display: flex;
   align-items: center;
@@ -36,7 +54,7 @@
   font: inherit;
 }
 .workspace {
-  padding: 8px 12px;
+  padding: 4px 12px 8px;
   flex: none;
   border-bottom: 1px solid var(--border);
 }
@@ -58,6 +76,24 @@
   padding: 4px 0;
   margin-right: 12px;
   font-size: 11px;
+}
+.spaceHeading {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 4px;
+}
+.spaceHeading > button {
+  justify-self: start;
+  margin: 0;
+  padding: 2px 0;
+}
+.spaceHeading > strong {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
 }
 .path {
   font-size: 11px;
@@ -97,6 +133,18 @@
   min-height: 0;
   flex: 1;
 }
+.connections {
+  margin: 8px 12px 0;
+  font-size: 11px;
+  color: var(--muted);
+  max-height: 130px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.connections p {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .handoffs {
   min-height: 0;
   flex: 1;
@@ -122,6 +170,43 @@
 }
 .editor .hint {
   padding: 5px 0;
+}
+.view[data-setup] .editor {
+  padding: 12px 12px 8px;
+}
+.view[data-setup] .editor > h3 {
+  margin: 0 0 6px;
+}
+.view[data-setup] .editor > p {
+  margin: 4px 0;
+  line-height: 1.35;
+}
+.view[data-setup] .editor > .hint {
+  padding: 0;
+}
+.view[data-setup] .editor > .primary {
+  display: block;
+  width: fit-content;
+  margin: 6px 0 0;
+}
+.view[data-setup] .editor > form {
+  line-height: 1.35;
+}
+.view[data-setup] .editor > form label {
+  margin: 6px 0;
+}
+.view[data-setup] .editor > form p,
+.view[data-setup] .editor > form pre {
+  margin: 6px 0;
+  line-height: 1.35;
+}
+.view[data-setup] .editor > form .hint {
+  padding: 0;
+}
+.view[data-setup] .editor > form input,
+.view[data-setup] .editor > form select {
+  margin-top: 3px;
+  padding: 6px 8px;
 }
 .body textarea,
 .body input,
@@ -173,6 +258,23 @@
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   overflow-wrap: anywhere;
+}
+.spaceEntry {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 8px 0;
+  padding: 10px !important;
+}
+.spaceEntry strong,
+.spaceEntry span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.spaceEntry span {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 5px;
 }
 .row .open {
   display: block;

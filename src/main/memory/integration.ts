@@ -146,6 +146,8 @@ export async function startMemory(
   }
   if (store)
     store.onChange = () => {
+      // Restore can replace question records inside the outer memory transaction.
+      delivery.questionsChanged?.(store!.communications.list('question'))
       if (!panel.isDestroyed()) panel.webContents.send(IPC.memoryChanged, snapshot())
     }
   if (server)
@@ -290,8 +292,10 @@ export async function startMemory(
   })
   if (store)
     store.communications.onChange = () => {
+      delivery.questionsChanged?.(store!.communications.list('question'))
       if (!panel.isDestroyed()) panel.webContents.send(IPC.communicationChanged)
     }
+  delivery.questionsChanged?.(store?.communications.list('question') ?? [])
   ipcMain.handle(IPC.memoryRequest, (event, input: unknown) =>
     safely(() => {
       const memory = ours(event),

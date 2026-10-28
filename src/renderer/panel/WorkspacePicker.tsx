@@ -3,6 +3,7 @@ import { isWorkspaceRoot, workspaceFolder } from '../../shared/providers'
 import {
   searchWorkspaces,
   workspaceExplorer,
+  workspacePath,
   type KnownWorkspace,
   type WorkspaceFolder,
 } from '../lib/workspaceExplorer'
@@ -10,14 +11,16 @@ import styles from './Panel.module.css'
 import { ContextMenu } from './ContextMenu'
 
 interface WorkspacePickerProps {
-  provider: 'claude' | 'codex' | 'both' | 'none'
+  provider?: 'claude' | 'codex' | 'both' | 'none'
   /** Every known workspace, including threads outside the recent time window. */
   workspaces: KnownWorkspace[]
   chosen: string | null
-  allDrives: boolean
-  onPickAll: () => void
-  onProviderChange: (provider: 'claude' | 'codex' | 'both') => void
+  allDrives?: boolean
+  onPickAll?: () => void
+  onProviderChange?: (provider: 'claude' | 'codex' | 'both') => void
   onPick: (workspaceId: string) => void
+  /** Choose one known workspace without changing the panel's list or app filters. */
+  selectionOnly?: boolean
 }
 
 /** A folder browser over known thread locations, rather than unrelated files on disk. */
@@ -27,14 +30,19 @@ export function WorkspacePicker({
   allDrives,
   onPickAll,
   onPick,
-  provider,
+  provider = 'none',
   onProviderChange,
+  selectionOnly = false,
 }: WorkspacePickerProps) {
   const explorer = useMemo(() => workspaceExplorer(workspaces), [workspaces])
-  const [location, setLocation] = useState('')
+  const [location, setLocation] = useState(() =>
+    selectionOnly && chosen
+      ? (explorer.folders.get(workspaceFolder(workspacePath(chosen)))?.parent ?? '')
+      : '',
+  )
   const [query, setQuery] = useState('')
   const [searchHovered, setSearchHovered] = useState(false)
-  const [searchPinned, setSearchPinned] = useState(false)
+  const [searchPinned, setSearchPinned] = useState(selectionOnly)
   const [searchFocused, setSearchFocused] = useState(false)
   const searchInput = useRef<HTMLInputElement>(null)
   const searchLink = useRef<HTMLButtonElement>(null)
@@ -88,55 +96,63 @@ export function WorkspacePicker({
     <div className={styles.workspacePicker}>
       <div className={styles.pickerToolbar} onMouseLeave={() => setSearchHovered(false)}>
         <div className={styles.pickerControls}>
-          <button className={styles.pickerUseAll} aria-pressed={allDrives} onClick={onPickAll}>
-            Use All Drives
-          </button>
+          {selectionOnly ? (
+            <span>Choose workspace</span>
+          ) : (
+            <button className={styles.pickerUseAll} aria-pressed={allDrives} onClick={onPickAll}>
+              Use All Drives
+            </button>
+          )}
           <div className={styles.pickerTools}>
-            <span onMouseLeave={closeAppsSoon}>
-              <button
-                className={styles.pickerLink}
-                aria-label={`Workspace applications: ${sourceLabel}`}
-                aria-haspopup="menu"
-                aria-expanded={!!appsMode}
-                onMouseEnter={(event) => {
-                  setAppsAnchor(event.currentTarget)
-                  cancelAppsClose()
-                  setSearchHovered(false)
-                  setAppsMode((mode) => (mode === 'click' ? mode : 'hover'))
-                }}
-                onClick={(event) => {
-                  setAppsAnchor(event.currentTarget)
-                  cancelAppsClose()
-                  setAppsMode((mode) => (mode === 'click' ? null : 'click'))
-                }}
-              >
-                Apps
-              </button>
-              {appsMode && appsAt && (
-                <ContextMenu
-                  label="Workspace applications"
-                  anchor={appsAnchor ?? undefined}
-                  x={appsAt.left}
-                  y={appsAt.bottom}
-                  modal={appsMode === 'click'}
-                  onClose={() => {
+            {!selectionOnly && (
+              <span onMouseLeave={closeAppsSoon}>
+                <button
+                  className={styles.pickerLink}
+                  aria-label={`Workspace applications: ${sourceLabel}`}
+                  aria-haspopup="menu"
+                  aria-expanded={!!appsMode}
+                  onMouseEnter={(event) => {
+                    setAppsAnchor(event.currentTarget)
                     cancelAppsClose()
-                    setAppsMode(null)
+                    setSearchHovered(false)
+                    setAppsMode((mode) => (mode === 'click' ? mode : 'hover'))
                   }}
-                  onMouseEnter={cancelAppsClose}
-                  onMouseLeave={closeAppsSoon}
-                  items={(['claude', 'codex', 'both'] as const).map((value) => ({
-                    label: value === 'both' ? 'Both' : value === 'claude' ? 'Claude' : 'Codex',
-                    disabled: provider === value,
-                    current: provider === value,
-                    onSelect: () => onProviderChange(value),
-                  }))}
-                />
-              )}
-            </span>
-            <span className={styles.pickerToolDivider} aria-hidden="true">
-              |
-            </span>
+                  onClick={(event) => {
+                    setAppsAnchor(event.currentTarget)
+                    cancelAppsClose()
+                    setAppsMode((mode) => (mode === 'click' ? null : 'click'))
+                  }}
+                >
+                  Apps
+                </button>
+                {appsMode && appsAt && (
+                  <ContextMenu
+                    label="Workspace applications"
+                    anchor={appsAnchor ?? undefined}
+                    x={appsAt.left}
+                    y={appsAt.bottom}
+                    modal={appsMode === 'click'}
+                    onClose={() => {
+                      cancelAppsClose()
+                      setAppsMode(null)
+                    }}
+                    onMouseEnter={cancelAppsClose}
+                    onMouseLeave={closeAppsSoon}
+                    items={(['claude', 'codex', 'both'] as const).map((value) => ({
+                      label: value === 'both' ? 'Both' : value === 'claude' ? 'Claude' : 'Codex',
+                      disabled: provider === value,
+                      current: provider === value,
+                      onSelect: () => onProviderChange?.(value),
+                    }))}
+                  />
+                )}
+              </span>
+            )}
+            {!selectionOnly && (
+              <span className={styles.pickerToolDivider} aria-hidden="true">
+                |
+              </span>
+            )}
             <button
               ref={searchLink}
               className={styles.pickerLink}
@@ -198,7 +214,7 @@ export function WorkspacePicker({
               />
             </svg>
           </button>
-          {(folder.workspace || isWorkspaceRoot(folder.path)) && !searching ? (
+          {(folder.workspace || (!selectionOnly && isWorkspaceRoot(folder.path))) && !searching ? (
             <button
               className={styles.pickerChoose}
               title={folder.path}

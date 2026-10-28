@@ -14,6 +14,8 @@ import { relayLine } from '../lib/relay'
 import styles from './Panel.module.css'
 import { StepView } from './StepView'
 import { CodexPlan } from './CodexPlan'
+import { ThreadConversation } from './ThreadConversation'
+import type { ThreadTimelineState } from '../hooks/useThreadTimeline'
 
 const MARKS: Record<PlanItem['status'], string> = { completed: '✓', in_progress: '●', pending: '○' }
 
@@ -21,9 +23,35 @@ interface SessionDetailProps {
   session: Session
   relay: RelayStatus | undefined
   now: number
+  onOpenArtifact?: (id: string) => void
+  timelineState: ThreadTimelineState
 }
 
-export function SessionDetail({ session, relay, now }: SessionDetailProps) {
+export function SessionDetail({
+  session,
+  relay,
+  now,
+  timelineState,
+  onOpenArtifact,
+}: SessionDetailProps) {
+  if (
+    typeof window.threadlight.threadTimeline === 'function' &&
+    typeof window.threadlight.onThreadTimeline === 'function'
+  )
+    return (
+      <ThreadConversation
+        key={session.id}
+        session={session}
+        relay={relay}
+        now={now}
+        timelineState={timelineState}
+        onOpenArtifact={onOpenArtifact}
+      />
+    )
+  return <SummaryDetail session={session} relay={relay} now={now} />
+}
+
+function SummaryDetail({ session, relay, now }: Omit<SessionDetailProps, 'timelineState'>) {
   const done = session.plan.filter((item) => item.status === 'completed').length
   const active = session.state !== 'idle'
   const unavailable = session.provider === 'codex' && !session.tracked
@@ -107,13 +135,17 @@ export function SessionDetail({ session, relay, now }: SessionDetailProps) {
         </Section>
       )}
 
-      {active && (session.lastAction || session.thinking) && (
+      {active && (session.compacting || session.lastAction || session.thinking) && (
         <Section
           label={en.detail.now}
           extra={session.turnStartedAt !== null && <Elapsed since={session.turnStartedAt} />}
         >
           <p className={styles.strong}>
-            {session.thinking ? en.detail.thinking : session.lastAction}
+            {session.compacting
+              ? session.stage
+              : session.thinking
+                ? en.detail.thinking
+                : session.lastAction}
           </p>
         </Section>
       )}

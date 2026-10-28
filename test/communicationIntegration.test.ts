@@ -9,11 +9,117 @@ import { OwnedRequests } from '../src/main/communication/ownedRequests'
 import { Holds } from '../src/main/holds'
 import type { AgentService } from '../src/main/agent/agentService'
 import { IDLE_AGENT, type AgentState } from '../src/shared/agent'
-import type { CommunicationMessage, Workflow } from '../src/shared/communication'
+import type {
+  CommunicationMessage,
+  CommunicationQuestion,
+  Workflow,
+} from '../src/shared/communication'
 import type { MemorySpace } from '../src/shared/memory'
 import { sandbox } from './helpers'
 
 describe('Communication real callers, recovery and native capabilities', () => {
+  it('answers a managed card through the authenticated MCP caller and rejects a revoked reader', async () => {
+    const box = await sandbox(),
+      memory = new MemoryStore(join(box.root, 'memory.sqlite')),
+      server = new MemoryServer(memory)
+    const target = `codex:${randomUUID()}`,
+      human = { id: 'human', kind: 'human' as const }
+    const space = memory.execute({
+      action: 'create_space',
+      operationId: randomUUID(),
+      title: 'Decision proof',
+    }) as MemorySpace
+    const deliver = vi.fn(async () => ({ reply: 'Must not run' }))
+    const service = new CommunicationService(memory.communications, {
+      destinations: async () => [],
+      deliver,
+      authorize: (actor, id) => memory.authorizeCommunication(actor, id),
+      input: (actor, id, revision) => memory.communicationInput(actor, id, revision),
+      project: (id) => memory.space(id),
+    })
+    memory.communicationService = service
+    try {
+      await server.start(0)
+      const connection = server.connectCommunication(() => ({
+        id: 'owned-test-agent',
+        kind: 'agent',
+        target,
+        spaceId: space.id,
+      }))
+      const call = async (action: string, args: unknown) => {
+        const response = await fetch(connection.endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${connection.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: randomUUID(),
+            method: 'tools/call',
+            params: { name: `threadlight_${action}`, arguments: args },
+          }),
+        })
+        const value = (await response.json()) as {
+          result: { isError: boolean; content: { text: string }[] }
+        }
+        return value.result
+      }
+      const asked = await call('ask_question', {
+        operationId: randomUUID(),
+        spaceId: space.id,
+        body: 'Which direction?',
+        audience: 'human',
+        choices: ['Explore', 'Build'],
+        answerDelivery: 'tool',
+        allowOther: true,
+      })
+      expect(asked.isError).toBe(false)
+      const q = JSON.parse(asked.content[0]!.text) as CommunicationQuestion
+      const waiting = call('read_question', { id: q.id, generation: q.generation, waitMs: 2000 })
+      await service.execute(
+        'answer_request',
+        { operationId: randomUUID(), id: q.id, generation: q.generation, answer: 'Explore first' },
+        human,
+      )
+      const received = await waiting
+      expect(received.isError).toBe(false)
+      expect(JSON.parse(received.content[0]!.text)).toMatchObject({
+        id: q.id,
+        state: 'answered',
+        answer: 'Explore first',
+      })
+      expect(deliver).not.toHaveBeenCalled()
+      expect(memory.communications.list('message')).toHaveLength(0)
+      const next = JSON.parse(
+        (
+          await call('ask_question', {
+            operationId: randomUUID(),
+            spaceId: space.id,
+            body: 'Another question?',
+            audience: 'human',
+            answerDelivery: 'tool',
+          })
+        ).content[0]!.text,
+      ) as CommunicationQuestion
+      const revoked = call('read_question', {
+        id: next.id,
+        generation: next.generation,
+        waitMs: 2000,
+      })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      connection.close()
+      expect(await revoked).toMatchObject({
+        isError: true,
+        content: [{ text: expect.stringContaining('expired') }],
+      })
+    } finally {
+      service.close()
+      server.close()
+      memory.close()
+      await box.cleanup()
+    }
+  })
   it('serves the exact scoped tool inventory, persists backup replay IDs, and revokes owned capabilities', async () => {
     const box = await sandbox(),
       memory = new MemoryStore(join(box.root, 'memory.sqlite')),

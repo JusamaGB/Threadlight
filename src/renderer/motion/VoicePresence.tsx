@@ -3,21 +3,22 @@ import styles from './Motion.module.css'
 export function VoicePresence({
   label,
   caption,
-  inactiveMicrophone = false,
+  compact = false,
   provisional = false,
 }: {
   label: string
   caption: string
-  inactiveMicrophone?: boolean
+  compact?: boolean
   provisional?: boolean
 }) {
   return (
-    <section className={styles.presence} aria-label="Voice activity">
+    <section
+      className={styles.presence}
+      aria-label="Voice activity"
+      data-compact={compact || undefined}
+    >
       <div className={styles.status}>
-        <span role="status">
-          {label}
-          {inactiveMicrophone ? ' - No active Mic' : ''}
-        </span>
+        <span role="status">{label}</span>
       </div>
       {caption && (
         <p className={styles.caption} data-provisional={provisional || undefined}>

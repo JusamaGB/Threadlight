@@ -4,6 +4,7 @@ import { PassThrough } from 'node:stream'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentState } from '../src/shared/agent'
+import { THREADLIGHT_AGENT_IDENTITY } from '../src/shared/agentIdentity'
 import { AgentRun, onlyLooks, readable, toolLabel } from '../src/main/agent/agentRun'
 
 /** A stand-in for claude.exe: what Threadlight writes, and a way to make it say things. */
@@ -75,6 +76,7 @@ describe('AgentRun', () => {
   it('starts Claude Code on the two-way stream, answering permissions itself', async () => {
     expect(run.send('Find my next meeting')).toEqual({ ok: true })
     await settle()
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain(THREADLIGHT_AGENT_IDENTITY)
     expect(args).toEqual(
       expect.arrayContaining([
         '--input-format',

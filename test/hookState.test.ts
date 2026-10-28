@@ -10,6 +10,28 @@ const event = (name: string, extra: object = {}) => ({
 })
 
 describe('HookStateStore', () => {
+  it('tracks compaction through start, completion, resume, interruption and subsequent work', () => {
+    const store = new HookStateStore()
+    store.apply(event('UserPromptSubmit'), 1)
+    store.apply(event('PreCompact', { trigger: 'auto' }), 2)
+    expect(store.get('session-a')).toMatchObject({ state: 'working', compacting: true })
+    store.apply(event('PostCompact'), 3)
+    expect(store.get('session-a')).toMatchObject({ state: 'working', compacting: false })
+    store.apply(event('SessionStart', { source: 'compact' }), 3)
+    expect(store.get('session-a')).toMatchObject({ state: 'working', compacting: false })
+    store.apply(event('PreCompact'), 4)
+    store.apply(event('SessionStart', { source: 'compact' }), 5)
+    expect(store.get('session-a')).toMatchObject({ state: 'working', compacting: false })
+    store.apply(event('PreCompact'), 6)
+    store.apply(event('PreToolUse'), 7)
+    expect(store.get('session-a')?.compacting).toBe(false)
+    store.apply(event('PreCompact'), 8)
+    store.apply(event('Stop'), 9)
+    expect(store.get('session-a')).toMatchObject({ state: 'idle', compacting: false })
+    store.apply(event('PreCompact', { trigger: 'manual' }), 10)
+    store.apply(event('PostCompact', { trigger: 'manual' }), 11)
+    expect(store.get('session-a')).toMatchObject({ state: 'idle', compacting: false })
+  })
   it('maps hook events to states', () => {
     const store = new HookStateStore()
     const stateAfter = (name: string, extra?: object) => {

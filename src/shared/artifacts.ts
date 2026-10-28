@@ -27,7 +27,16 @@ export type ArtifactPreviewEvent = {
   reason?: string
 }
 
+// Threadlight is dark-only. Preserve authored layout and colours while ensuring
+// adaptive colours, native controls and scrollbars use the dark appearance.
+export const ARTIFACT_THEME_CSS = `
+:root { color-scheme: only dark !important; }
+:where(html) { background: #171717; color: #fafafa; font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; }
+:where(body) { margin: 0; }
+:where(.viz-dotted-background) { background-image: radial-gradient(circle, color-mix(in srgb, currentColor 14%, transparent) 0.8px, transparent 0.8px); background-position: center; background-size: 16px 16px; }
+`
+
 /** Static HTML only: scripts, forms, network and nested frames are disabled. */
 export function artifactDocument(html: string): string {
-  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'"></head><body>${html}</body></html>`
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'"><style>${ARTIFACT_THEME_CSS}</style></head><body>${html}</body></html>`
 }

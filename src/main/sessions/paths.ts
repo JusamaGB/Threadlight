@@ -60,6 +60,11 @@ export const messagingPaths = (userData: string) => ({
   store: join(userData, 'message-recovery.json'),
 })
 
+export const newThreadPaths = (userData: string, documents: string) => ({
+  receipts: join(userData, 'new-thread-receipts'),
+  workspaces: join(documents, 'Threadlight', 'Chats'),
+})
+
 export const launcherPaths = (userData: string) => ({
   script: join(userData, 'app-launcher.ps1'),
   config: join(userData, 'app-launcher.json'),

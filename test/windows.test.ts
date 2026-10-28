@@ -56,6 +56,9 @@ vi.mock('electron', () => {
       isVisible() {
         return this.visible
       }
+      isDestroyed() {
+        return false
+      }
     },
   }
 })
@@ -67,16 +70,16 @@ describe('panel movement and available height', () => {
     const windows = new WindowManager()
     windows.openPanel()
     expect(windows.setWorkspacePanel(true)).toEqual({
-      maxHeight: 1024,
+      maxHeight: 1040,
       opensDown: true,
       fresh: false,
     })
-    windows.resizePanel(1024)
-    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 1024 })
+    windows.resizePanel(1040)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 0, height: 1040 })
     windows.resizePanel(540)
-    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 540 })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 0, height: 540 })
     windows.dragDot(0, 50)
-    expect(windows.panel.getBounds()).toMatchObject({ y: 58, height: 540 })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 50, height: 540 })
     windows.endDrag()
     expect(windows.setWorkspacePanel(false)).toEqual({
       maxHeight: 782,
@@ -90,11 +93,11 @@ describe('panel movement and available height', () => {
     state.saved = { x: -300, y: 600 }
     const windows = new WindowManager()
     windows.openPanel()
-    expect(windows.setWorkspacePanel(true).maxHeight).toBe(704)
+    expect(windows.setWorkspacePanel(true).maxHeight).toBe(720)
     windows.resizePanel(2000)
-    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 704 })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 0, height: 720 })
     windows.resizePanel(400)
-    expect(windows.panel.getBounds()).toMatchObject({ y: 8, height: 400 })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 0, height: 400 })
     windows.openPanel({ fresh: true })
     expect(windows.panel.getBounds()).toMatchObject({ y: 232, height: 400 })
   })
@@ -118,6 +121,64 @@ describe('panel movement and available height', () => {
     state.cursor.x = bounds.x + 25
     vi.advanceTimersByTime(16)
     expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+  })
+
+  it('hides the dot for Control despite keep-on-top and restores it on release', () => {
+    const windows = new WindowManager()
+    windows.setClaudeRunning(true)
+    expect(windows.dot.isVisible()).toBe(true)
+    windows.setModifierStage('hidden')
+    expect(windows.dot.isVisible()).toBe(false)
+    windows.keepOnTop()
+    windows.openFromDot()
+    expect(windows.dot.isVisible()).toBe(false)
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.setModifierStage('normal')
+    expect(windows.dot.isVisible()).toBe(true)
+  })
+
+  it('shows an unfocused click-through peek until release, then restores the dot', () => {
+    const windows = new WindowManager()
+    windows.setClaudeRunning(true)
+    windows.setModifierStage('hidden')
+    windows.setModifierStage('peek')
+    expect(windows.panel.isVisible()).toBe(true)
+    expect(windows.dot.isVisible()).toBe(false)
+    expect(windows.panel.focus).not.toHaveBeenCalled()
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor = { x: 10, y: 10 }
+    vi.advanceTimersByTime(50)
+    windows.closeOnPointerLeave()
+    windows.closePanel()
+    expect(windows.panel.isVisible()).toBe(true)
+    windows.setModifierStage('hidden')
+    expect(windows.panel.isVisible()).toBe(false)
+    expect(windows.dot.isVisible()).toBe(false)
+    windows.setModifierStage('normal')
+    expect(windows.dot.isVisible()).toBe(true)
+  })
+
+  it('restores an existing pinned Workspace and dual bounds after a temporary peek', () => {
+    const windows = new WindowManager()
+    windows.setClaudeRunning(true)
+    windows.openPanel()
+    windows.setWorkspacePanel(true)
+    windows.setPanelLayout('dual')
+    windows.setWorkspaceWireGutter(10)
+    windows.resizePanel(700)
+    windows.setStayOpen(true)
+    const before = windows.panel.getBounds()
+    windows.setModifierStage('peek')
+    windows.setPanelLayout('single')
+    windows.setWorkspacePanel(false)
+    windows.resizePanel(100)
+    windows.setModifierStage('normal')
+    expect(windows.panel.isVisible()).toBe(true)
+    expect(windows.panel.getBounds()).toEqual(before)
+    state.cursor = { x: 10, y: 10 }
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(true)
+    expect(windows.panel.webContents.send).toHaveBeenCalledWith(IPC.panelPeek, false)
   })
 
   it('accepts clicks on the header wire clip while the rest of the gutter passes through', () => {
@@ -172,12 +233,13 @@ describe('panel movement and available height', () => {
 
   it('widens the panel leftwards for dual view, keeps its right edge, and narrows it again', () => {
     const windows = new WindowManager()
+    windows.setWorkspaceWireGutter(16)
     windows.openPanel()
     const single = windows.panel.getBounds()
     expect(windows.setPanelLayout('dual')).toEqual({ cardWidth: PANEL_WIDTH_DUAL })
     const dual = windows.panel.getBounds()
-    expect(dual.width).toBe(PANEL_WIDTH_DUAL + WORKSPACE_GUTTER)
-    expect(dual.x + dual.width).toBe(single.x + single.width)
+    expect(dual.width).toBe(PANEL_WIDTH_DUAL + 2 * WORKSPACE_GUTTER)
+    expect(dual.x + dual.width - WORKSPACE_GUTTER).toBe(single.x + single.width)
     expect(dual.y).toBe(single.y)
     expect(windows.setPanelLayout('single')).toEqual({ cardWidth: PANEL_WIDTH })
     expect(windows.panel.getBounds()).toMatchObject({ x: single.x, width: single.width })
@@ -207,13 +269,94 @@ describe('panel movement and available height', () => {
     state.saved = { x: -300, y: 100 }
     state.secondary = { x: -1280, y: 0, width: 400, height: 720 }
     const windows = new WindowManager()
+    windows.setWorkspaceWireGutter(10)
     windows.openPanel()
     const { cardWidth } = windows.setPanelLayout('dual')!
-    expect(cardWidth).toBe(400 - 16 - WORKSPACE_GUTTER)
+    expect(cardWidth).toBe(400 - 16 - WORKSPACE_GUTTER - 10)
     const bounds = windows.panel.getBounds()
     expect(bounds.x).toBeGreaterThanOrEqual(-1280)
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(-880)
     state.secondary = { x: -1280, y: 0, width: 1280, height: 720 }
+  })
+
+  it('passes both dual gutters through, with the header clip intercepting only on the left', () => {
+    const windows = new WindowManager()
+    windows.setWorkspaceWireGutter(16)
+    windows.openPanel()
+    windows.setPanelLayout('dual')
+    vi.advanceTimersByTime(1100)
+    windows.setWorkspaceWireControl({ top: 1, height: 24 })
+    const bounds = windows.panel.getBounds()
+    state.cursor = { x: bounds.x + bounds.width - 8, y: bounds.y + 12 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor.x = bounds.x + 8
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    state.cursor.y = bounds.y + 40
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor.x = bounds.x + bounds.width - WORKSPACE_GUTTER - 1
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    // Returning to single view removes the extra transparent right edge.
+    windows.setPanelLayout('single')
+    vi.advanceTimersByTime(1100)
+    const single = windows.panel.getBounds()
+    state.cursor = { x: single.x + single.width - 8, y: single.y + 40 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+  })
+
+  it('keeps the right gutter on-screen when the dot is at the display edge', () => {
+    state.saved = { x: 1888, y: 200 }
+    const windows = new WindowManager()
+    windows.setWorkspaceWireGutter(16)
+    windows.openPanel()
+    windows.setPanelLayout('dual')
+    const dual = windows.panel.getBounds()
+    expect(dual.x + dual.width).toBe(1920)
+    expect(dual.width).toBe(PANEL_WIDTH_DUAL + 2 * WORKSPACE_GUTTER)
+  })
+
+  it('fits the right gutter to requested lanes and removes it when no wires remain', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.setWorkspacePanel(true)
+    windows.setPanelLayout('dual')
+    const empty = windows.panel.getBounds()
+    expect(empty.width).toBe(PANEL_WIDTH_DUAL + WORKSPACE_GUTTER)
+    windows.setWorkspaceWireGutter(6)
+    expect(windows.panel.getBounds().width).toBe(empty.width + 6)
+    expect(windows.panel.getBounds().x).toBe(empty.x)
+    windows.setWorkspaceWireGutter(10)
+    expect(windows.panel.getBounds().width).toBe(empty.width + 10)
+    vi.advanceTimersByTime(1100)
+    const bounds = windows.panel.getBounds()
+    state.cursor = { x: bounds.x + bounds.width - 5, y: bounds.y + 50 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    windows.setWorkspaceWireGutter(0)
+    expect(windows.panel.getBounds()).toEqual(empty)
+    for (const invalid of [-1, 17, 1.5, NaN, Infinity, '6', null]) {
+      expect(windows.setWorkspaceWireGutter(invalid)).toBeNull()
+      expect(windows.panel.getBounds()).toEqual(empty)
+    }
+  })
+
+  it('lets Workspace reach the work-area top and bottom after dragging and resizing', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.setWorkspacePanel(true)
+    windows.resizePanel(500)
+    windows.dragDot(0, -1000)
+    windows.endDrag()
+    expect(windows.panel.getBounds()).toMatchObject({ y: 0, height: 500 })
+    windows.dragDot(0, 5000)
+    windows.endDrag()
+    expect(windows.panel.getBounds()).toMatchObject({ y: 540, height: 500 })
+    windows.resizePanel(1040)
+    expect(windows.panel.getBounds()).toMatchObject({ y: 0, height: 1040 })
   })
 
   it('takes the gutter out of click-through only while the layout animates', () => {

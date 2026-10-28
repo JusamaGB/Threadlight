@@ -27,6 +27,18 @@ export class CommunicationStore {
       CREATE TABLE IF NOT EXISTS communication_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL,kind TEXT NOT NULL,space TEXT,action TEXT NOT NULL,at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS communication_operations(actor TEXT NOT NULL,id TEXT NOT NULL,digest TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(actor,id));`)
     this.transaction(() => {
+      for (const q of this.list('question')) {
+        if (q.answerDelivery === 'tool' && q.state === 'pending')
+          this.put(
+            'question',
+            {
+              ...q,
+              state: 'expired',
+              reason: 'Threadlight restarted. Ask a new question if it is still needed.',
+            },
+            'Question expired',
+          )
+      }
       for (const m of this.list('message')) {
         let changed = false
         for (const d of m.deliveries) {

@@ -37,6 +37,28 @@ select **Answer through Agent** on that card first, then give an explicit answer
 replacement questions and peer requests cannot reuse a human decision. Closing the mic does not
 stop background work or reopen GPT Live.
 
+### Hosted Agent application control
+
+The Agent's role is **your Threadlight agent, powered by your selected provider, coordinating
+your Claude and Codex work**. Claude, Codex and live voice receive the same identity instructions.
+The conversation reached through the Agent view or hotkey is distinct from the work chats it
+creates or coordinates. Keeping its history exclusively in Threadlight is the intended behavior;
+provider-session storage isolation is not yet implemented, so CLI execution alone does not
+guarantee that the conversation is absent from provider history.
+
+The foreground Agent receives the same Threadlight page guide and typed application tools with
+Claude or Codex. Ask it to open Shared Spaces, select a known chat or artifact, show an exact
+edit card, or change a supported preference. Navigation waits for the panel to confirm the
+requested view; unsent drafts and Back/Forward history remain available.
+
+Settings changes, named-space creation, native Codex chat creation and restart use the existing
+Agent decision cards. The proposed target and values are shown before a write. Restart remains
+pending until the next application instance confirms startup. These tools belong to the hosted
+foreground Agent, not Shared Spaces workers or the shared-memory plugins. Claude chat creation
+and Claude captured-card diffs are unavailable. See the
+[implementation and validation report](docs/validation/THREADLIGHT-AGENT-CONTROL-VALIDATION.md)
+for supported settings, runtime evidence and remaining limitations.
+
 ## What it does
 
 - **A dot in the corner of your screen.** Green when none of your Claude Code sessions
@@ -47,6 +69,11 @@ stop background work or reopen GPT Live.
 - **Right-click a session → Compose** to type or speak a message to that thread. It is
   delivered in the background, without opening the Claude window.
   ✓ means delivered, ✓✓ means the thread read it and replied.
+- **Hold shortcuts**: hold Control to hide the floating logo and click what's behind
+  it; add Alt for a temporary, unfocused Active preview. Release to restore the normal
+  logo or your already open page. The talk shortcut takes priority over this preview.
+- **Mouse back/forward**: use the mouse's side buttons to navigate pages, nested Shared
+  Spaces, earlier Agent conversations, artifact selections and file diffs.
 - **A talk hotkey** (default `Ctrl+Alt+Q`, press to start and again to stop, or push to
   talk) works anywhere, even in a game: say _"message docs site, check the build passed"_
   and Threadlight finds the thread, shows a short countdown you can cancel, and sends. Or
@@ -78,22 +105,29 @@ agent turns still use your provider account.
 
 ### Shared Spaces
 
-Open **Shared Spaces** (the brain icon in the panel header) and set up the workspace. Workspace view
-follows the thread view's workspace; other views offer a workspace selector. Setup
-creates `shared-spaces/ideas/`, `plans/`, `handoffs/` and `results/` inside that workspace.
-The location is fixed, with no alternative folder picker. The tabs are **Handoffs**,
-**Ideas** and **Brainstorm**. This is a collaboration and handoff layer between Claude and Codex;
-each provider keeps its own memory. Share the context a collaborator needs, rather
-than maintaining another personal memory archive.
+Open **Shared Spaces** (the brain icon in the panel header) and choose a named space.
+The tabs are **Handoffs**, **Chats**, **Notes** and **Brainstorm**. New readable snapshots
+use `notes/`, `plans/`, `handoffs/` and `results/` within the space's workspace folder.
+Existing `ideas/` snapshots and their links remain readable.
 
-Capture an idea without calling a model, move it to Brainstorm, and discuss it with
-the configured Agent. Each idea keeps its own resumable conversation, separate from
-the general Agent. Edit a mini plan and choose each assignment's provider, exact chat,
-brief and shared output folder. **Prepare assignments for review** saves a pinned plan
-and unsent task drafts. Open each task in Handoffs to review and authorise delivery.
-Prepared plans stay frozen so later discussion cannot change a recipient's brief.
-This first version uses existing chats and their models; automatic task decomposition,
-new-chat creation, dependency scheduling and workflow profiles remain future work.
+Capture a note without calling a model. **Discuss in Brainstorm** starts a separate discussion
+linked to the note; the note remains in Notes. **New discussion** also works in an empty space.
+Each discussion keeps its own saved history, draft and optional linked notes.
+
+Brainstorm uses the selected Claude or Codex provider with a shared Threadlight planning role
+and skills. It can retrieve saved notes, enrolled chat history, handoffs, results, assignments,
+questions and communication from its own space. Use the comparison controls to explicitly add
+another space for a request. Source references open available evidence; context and search
+results report their limits. Tracking runs when requested, without background model polling.
+
+V1 reads, tracks and proposes. Its runtime exposes only the scoped read tools; it cannot send
+messages, dispatch work, answer approvals or control the app. Edit and save a mini plan, choose
+exact existing chats and **Prepare assignments for review** to create unsent task drafts.
+Review and authorise delivery separately in Handoffs. Independently enabled project workflows
+retain their existing controls; Brainstorm proposals do not advance them.
+
+See the [implementation spec](docs/specs/SHARED-SPACES-BRAINSTORM-SPEC.md) and
+[validation and limits](docs/validation/SHARED-SPACES-BRAINSTORM-VALIDATION.md).
 
 Setup creates the workspace's collaboration space. In **Handoffs**, add named sectors/folders
 for notes, decisions, scratchpads, images and documents. The map, folder, item and task
@@ -218,6 +252,60 @@ Every option is optional. Running it again changes only what is not right yet.
 
 The hooks only reach Claude Code sessions started after the plugin is installed. The voice
 speech model (76 MB) downloads the first time you use voice, after you agree to it.
+
+### Thread artifacts
+
+The existing thread status and expanded **Now** line show **Compacting context**
+while the provider explicitly reports compaction. Codex uses the active turn's
+unfinished compaction item in its local history; older history schemas without
+start/completion metadata cannot supply this cue. Claude uses its
+[PreCompact/PostCompact hooks](https://code.claude.com/docs/en/hooks#precompact).
+Normal progress returns when compaction finishes or work resumes. Claude sessions
+must load the updated Threadlight plugin hooks to report these events.
+
+Active, Recent and Workspace share the current in-memory snapshot. Workspace rows
+stay warm while another view is open, and background polls publish Claude and Codex
+together. Initial history loading is still bounded; very large or newly selected
+workspaces can fill in over subsequent scans.
+
+Artifact chips and the viewer share a metadata cache across view changes. Visible
+threads are checked about every three seconds; hidden thread references warm in
+small background batches. File contents are read only when opened or refreshed;
+preloading does not create saved copies or run interactive artifacts.
+
+Right-click a thread and choose **Artifacts…** to open a square viewer in the panel.
+The small chips centered on the Artifacts header divider jump directly to a file;
+hover for its name. The arrows cycle backward/forward and wrap at either end.
+The selected chip stays visible in long lists. The preview fills the panel without an inner frame;
+refresh, save-copy and link-file icons live in the header, with file details and action help below.
+Threadlight discovers local files explicitly attached or linked in that thread's
+Claude Code or Codex transcript. It reads the originals in place, without copying
+them or changing provider data. Discovery continues in bounded batches and the viewer
+reports incomplete scans. It retains the 200 most recently presented references.
+**Link file…** adds a reference to another local file; **Refresh** rereads the selected
+original. **Keep a copy** explicitly saves a snapshot under the thread (up to 20 saved
+copies). Existing saved copies remain available. If an original moves or is deleted,
+its reference reports that it is unavailable.
+
+The viewer supports PNG, JPEG, WebP, UTF-8 text/Markdown (displayed as text),
+and self-contained HTML, up to 5 MiB each.
+HTML opens in an isolated interactive preview: inline JavaScript, buttons, sliders,
+canvas and animations work. The preview has no Threadlight bridge, Node access,
+filesystem access or external resources. WebRTC, workers, popups and persistent browser
+storage are unavailable. Navigation away from the page falls back to a static preview;
+Refresh reopens the original. Escape returns to the thread list. JSX/TSX remains source
+text; external libraries, sibling assets and cloud runtimes are not included yet.
+Recognized PDF, Office and media files appear as references
+but cannot yet be previewed. Cloud-only artifacts and remote URLs are outside this
+local implementation. Automatic references are restricted to the thread's workspace,
+local temporary directory and Codex visualization directory.
+
+Threads with artifacts show a thin checker strip below the title and Now text: each tile is one
+artifact, with an overflow tile when needed. Hover for its name; click or focus and
+press Enter to open that artifact directly. Every thread reserves the same compact
+third line, so containers stay the same height with or without artifacts. Artifacts
+use dual width without changing the saved layout.
+See [the reference specification](docs/specs/ARTIFACT-REFERENCES-SPEC.md).
 
 ### Startup
 

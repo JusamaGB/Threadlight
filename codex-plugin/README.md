@@ -59,6 +59,12 @@ steps are separate and are not run automatically by the provider toggle.
 - Native `request_user_input` cards have no documented answer-through-hook
   contract. They show the question/options and preserve a typed answer for
   **Copy and open Codex**. An expired Stop card uses the same fallback.
+- Future questions can use Threadlight-managed cards through `threadlight_ask_question`
+  with `audience: "human"`, `answerDelivery: "tool"` and optional `allowOther: true`.
+  The human answers on the linked thread; the agent collects the result with
+  `threadlight_read_question` on its existing connection. Requires approved linked
+  project access and communication permission. See the
+  [decision-card specification](../docs/specs/MANAGED-DECISION-CARDS-SPEC.md).
 - Open uses `codex://threads/<id>`. Workspace following uses last recorded user
   activity, not a claim about the exact foreground tab. Remote/cloud chats are
   outside this local-file adapter. The separate [hosted Agent](../README.md#hosted-agent)

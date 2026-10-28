@@ -177,7 +177,7 @@ export class Tracker {
     )
     const showAll = new Set(view.showAll.map(workspaceKey))
     const every = view.everything === true
-    const isExpanded = (key: string) => every || expanded.has(key)
+    const isExpanded = (key: string) => every || expanded.has(key) || view.preload === true
 
     // "Show sessions from the last …" applies here too. A thread outside the window stays only
     // when a side thread under it is inside, so the nesting still reads right.
@@ -219,7 +219,9 @@ export class Tracker {
     // The most recently active workspaces are built first, so a budget runs out on the oldest.
     let budget = this.options.treeBudget ?? DEFAULT_TREE_BUDGET
     const newestFirst = [...groups].sort(
-      ([, a], [, b]) => Math.max(...b.map(activity)) - Math.max(...a.map(activity)),
+      ([aKey, a], [bKey, b]) =>
+        Number(expanded.has(bKey)) - Number(expanded.has(aKey)) ||
+        Math.max(...b.map(activity)) - Math.max(...a.map(activity)),
     )
     for (const [key, members] of newestFirst) {
       const path = homeOf(members[0]!)
@@ -256,7 +258,7 @@ export class Tracker {
         roots.sort((a, b) => orderedAt(b) - orderedAt(a) || a.appId.localeCompare(b.appId))
         const shown = inFull
           ? roots
-          : roots.slice(0, every || showAll.has(key) ? budget : this.maxSessions)
+          : roots.slice(0, every || view.preload || showAll.has(key) ? budget : this.maxSessions)
         workspace.hiddenCount = roots.length - shown.length
         budget -= shown.length
         const seen = new Set<string>()
@@ -313,10 +315,13 @@ export class Tracker {
       hookState: hook?.state ?? null,
       lastActiveAt: Math.max(file?.mtimeMs ?? 0, hook?.updatedAt ?? 0),
       transcriptChangedAt: file?.mtimeMs ?? 0,
-      interrupted: summary?.interrupted ?? false,
+      interrupted:
+        (summary?.interrupted ?? false) &&
+        !(hook?.compacting && hook.updatedAt > (file?.mtimeMs ?? 0)),
       now,
     })
     const cwd = hook?.cwd ?? app?.cwd ?? summary?.cwd ?? ''
+    const compacting = state === 'working' && hook?.compacting === true
     return this.completionOrder.observe(
       {
         id,
@@ -327,8 +332,9 @@ export class Tracker {
         cwd,
         lastActiveAt,
         focusedAt: app?.lastFocusedAt ?? 0,
-        stage: stageLine(state, summary),
-        thinking: isThinking(state, summary),
+        stage: compacting ? 'Compacting context' : stageLine(state, summary),
+        compacting,
+        thinking: !compacting && isThinking(state, summary),
         lastPrompt: summary?.lastPrompt ?? null,
         plan: summary?.plan ?? [],
         currentStep: summary?.currentStep ?? null,
@@ -348,7 +354,9 @@ export class Tracker {
         gitFolders: [gitFolder(app, summary, cwd)],
         live: live.has(id),
         contextUsed: contextUsed(summary, app?.model ?? null),
-        attention: attentionFor(state, summary, this.options.held?.(id) ?? null),
+        attention: compacting
+          ? null
+          : attentionFor(state, summary, this.options.held?.(id) ?? null),
         permissionMode: app?.permissionMode ?? null,
         model: app?.model ?? null,
         pullRequests: app?.pullRequests ?? [],

@@ -1,3 +1,5 @@
+import { openHeaderPage, selectThreadView } from './header-navigation.mjs'
+import { checkHeaderMenu } from './header-menu.smoke.mjs'
 // Run after npm run build. Uses Playwright from THREADLIGHT_PLAYWRIGHT or local resolution.
 // All IPC is synthetic; this never launches Threadlight, hooks or either provider CLI.
 /* global window, document, getComputedStyle */
@@ -35,7 +37,21 @@ import {
   checkConversationEvents,
 } from './communication.smoke.mjs'
 import { checkThreadDiffs } from './thread-diffs.smoke.mjs'
+import { checkArtifacts } from './artifacts.smoke.mjs'
+import { checkViewCache } from './view-cache.smoke.mjs'
+import { checkCompaction } from './compaction.smoke.mjs'
+import { checkManagedQuestions } from './managed-questions.smoke.mjs'
+import { checkNativeCodexQuestions } from './native-codex-questions.smoke.mjs'
+import { checkNativeCodexMessages } from './native-codex-messages.smoke.mjs'
+import { checkCodexQueue } from './codex-queue.smoke.mjs'
+import { checkThreadTimeline } from './thread-timeline.smoke.mjs'
+import { checkCompletionNotices } from './completion-notices.smoke.mjs'
+import { checkConnectionSetup } from './connection-setup.smoke.mjs'
+import { checkSpacesLibrary } from './spaces-library.smoke.mjs'
+import { checkProjectParticipants } from './project-participants.smoke.mjs'
 import { checkWorkspaceLinks } from './workspace-links.smoke.mjs'
+import { checkDualWires } from './dual-wires.smoke.mjs'
+import { checkInputNavigation } from './input-navigation.smoke.mjs'
 import { checkActivityRings } from './activity-rings.smoke.mjs'
 
 import { checkThreadBadges } from './thread-badges.smoke.mjs'
@@ -65,6 +81,7 @@ require.extensions['.ts'] = (module, filename) =>
   )
 const { DEFAULT_SETTINGS, validatePatch } = require(join(root, 'src/shared/settings.ts'))
 const { combinedSnapshot, providerView } = require(join(root, 'src/shared/providers.ts'))
+const { withManagedQuestions } = require(join(root, 'src/shared/managedQuestions.ts'))
 const { IDLE_AGENT } = require(join(root, 'src/shared/agent.ts'))
 const { summarizeCodex } = require(join(root, 'src/main/codex/tracker.ts'))
 const { codexState } = require(join(root, 'src/main/codex/state.ts'))
@@ -189,7 +206,16 @@ const state = () => ({
   settings,
   snapshot: combinedSnapshot(
     settings.enabledProviders,
-    { claude: source('claude'), codex: source('codex') },
+    {
+      claude: withManagedQuestions(
+        source('claude'),
+        memoryProof?.store.communications.list('question') ?? [],
+      ),
+      codex: withManagedQuestions(
+        source('codex'),
+        memoryProof?.store.communications.list('question') ?? [],
+      ),
+    },
     settings.maxSessions,
   ),
 })
@@ -312,6 +338,9 @@ checks: try {
       }
       window.threadlight = new Proxy(
         {
+          // App-control handshakes belong to their dedicated integration fixtures.
+          controlHello: undefined,
+          codexQueue: async () => ({ ok: true, items: [] }),
           communicationRequest: (input) => window.mockCommunication(input),
           memoryRequest: (input) => window.mockMemory(input),
           spacesRequest: (input) => window.mockSpaces(input),
@@ -330,6 +359,11 @@ checks: try {
           getSnapshot: async () => (await window.mockState()).snapshot,
           getAttentionMotion: async () => ({ active: false }),
           getSessions: async () => (await window.mockState()).snapshot.sessions,
+          artifacts: async () => ({ ok: true, items: [] }),
+          // Legacy fixture mode; the live-timeline focus installs the full feed contract.
+          threadTimeline: undefined,
+          // Browser-only fixtures use the static preview; native previews have an Electron fixture.
+          artifactPreview: undefined,
           updateSettings: async (patch) => {
             const result = await window.mockUpdate(patch)
             emit('onSnapshot', result.snapshot)
@@ -348,6 +382,9 @@ checks: try {
           setMotion: (value) => {
             window.proof.motion = value
           },
+          setTalkState: (state) => {
+            window.proof.talkState = state
+          },
           getMotion: async () => ({
             mode: 'idle',
             input: { level: 0, low: 0, mid: 0, high: 0 },
@@ -362,6 +399,10 @@ checks: try {
           },
           setWorkspaceWireRegions: (regions) => {
             window.proof.wireRegions = regions
+          },
+          setWorkspaceWireGutter: async (width) => {
+            window.proof.rightWireGutter = width
+            return null
           },
           stopOpenMic: () => window.proof.calls.push(['stopOpenMic']),
           getAgent: async () => agent,
@@ -437,6 +478,8 @@ checks: try {
           },
           agentClose: () =>
             window.proof.agent({ status: 'idle', ended: true, requests: [], conversationId: null }),
+          composerFilePath: () => '',
+          composerAttachments: async () => ({ ok: true, items: [] }),
           sendMessage: async (...args) => {
             window.proof.calls.push(['send', ...args])
             return { ok: true }
@@ -504,6 +547,94 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'header-menu') {
+    await checkHeaderMenu(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'completion-notices') {
+    await checkCompletionNotices(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'thread-timeline') {
+    await checkThreadTimeline(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'project-participants') {
+    await checkProjectParticipants(page, memoryProof, spacesProof, chats, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'spaces-library') {
+    await checkSpacesLibrary(page, spacesProof, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'connection-setup') {
+    await checkConnectionSetup(page, memoryProof, communicationProof, capture, chats.codex.id)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'input-navigation') {
+    await checkInputNavigation(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'memory-navigation') {
+    await checkMemory(page, memoryProof, capture)
+    await checkSpaces(page, spacesProof, memoryProof.store, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'view-cache') {
+    await checkViewCache(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'compaction') {
+    await checkCompaction(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'native-codex-questions') {
+    await checkNativeCodexQuestions(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'native-codex-messages') {
+    await checkNativeCodexMessages(page, compose, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'codex-queue') {
+    await checkCodexQueue(page, compose, capture)
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'managed-questions') {
+    const changed = memoryProof.store.communications.onChange
+    memoryProof.store.communications.onChange = () => {
+      changed()
+      void page
+        .evaluate((snapshot) => window.proof.emit('onSnapshot', snapshot), state().snapshot)
+        .catch(() => {})
+    }
+    await checkManagedQuestions(
+      page,
+      communicationProof,
+      memoryProof.store,
+      capture,
+      chats.codex.id,
+    )
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'artifacts') {
+    await checkArtifacts(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'startup') {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const signIn = page.getByRole('switch', { name: 'Launch at sign-in', exact: true })
@@ -569,7 +700,7 @@ checks: try {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     await checkAgentSettings(page, capture)
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
-    await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+    await openHeaderPage(page, 'Agent')
     await checkFooterSettings(page, capture)
     assert.deepEqual(errors, [])
     break checks
@@ -609,7 +740,7 @@ checks: try {
     break checks
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'thread-reading') {
-    await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+    await openHeaderPage(page, 'Agent')
     await checkThreadReading(page, capture)
     assert.deepEqual(errors, [])
     break checks
@@ -636,6 +767,11 @@ checks: try {
     await checkPanelLayout(page, capture)
     await checkDualDetails(page, capture)
     await checkDualLong(page)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'wire-routing') {
+    await checkDualWires(page, capture)
     assert.deepEqual(errors, [])
     break checks
   }
@@ -745,8 +881,7 @@ checks: try {
   assert.notEqual(claudeFade, codexFade)
   await page.locator('header button[data-thread-view]').click()
   await capture('combined-list')
-  await page.locator('header button[data-thread-view]').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Active', exact: true }).click()
+  await selectThreadView(page, 'active')
   await compose('Codex')
   await box.fill('Codex draft')
   await row('Codex').click()
@@ -962,25 +1097,6 @@ checks: try {
     'Blue pending answer',
   )
   await page.evaluate(() => window.proof.patch({ live: true }))
-  await page
-    .getByText('Sending to this open Codex chat is not connected yet.', { exact: true })
-    .waitFor()
-  const beforeEnter = await page.evaluate(() => window.proof.calls.length)
-  await box.press('Enter')
-  assert.equal(await page.evaluate(() => window.proof.calls.length), beforeEnter)
-  assert.equal(await box.inputValue(), 'Codex draft')
-  await page
-    .getByRole('group', { name: 'Codex message composer' })
-    .getByRole('button', { name: 'Copy and open Codex', exact: true })
-    .click()
-  assert.deepEqual(await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'send')), [])
-  assert.ok(
-    (await page.evaluate(() => window.proof.calls)).some(
-      (c) => c[0] === 'copy' && c[1] === 'Codex draft',
-    ),
-    JSON.stringify(await page.evaluate(() => window.proof.calls)),
-  )
-  await page.evaluate(() => window.proof.patch({ live: false }))
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.proof.calls.find((c) => c[0] === 'send')), [
     'send',
@@ -1019,8 +1135,7 @@ checks: try {
     await page.getByRole('button', { name: 'Open the mic for voice commands' }).count(),
     0,
   )
-  await page.locator('header button[data-thread-view]').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'All', exact: true }).click()
+  await selectThreadView(page, 'all')
   assert.equal(await page.getByRole('button', { name: /^Claude · shared/ }).isVisible(), true)
   assert.equal(await page.getByRole('button', { name: /^Codex · shared/ }).isVisible(), true)
   await capture('combined-workspaces')
@@ -1202,7 +1317,7 @@ checks: try {
   assert.equal(settings.agentCodexReasoning, 'ultra')
   await capture('agent-codex-settings')
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
-  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  await openHeaderPage(page, 'Agent')
   await page.getByPlaceholder('Ask your agent…').fill('Synthetic agent question')
   await page.getByPlaceholder('Ask your agent…').press('Enter')
   await page.getByRole('button', { name: 'Stop', exact: true }).waitFor()
@@ -1299,6 +1414,7 @@ checks: try {
   throw error
 } finally {
   await browser?.close()
+  memoryProof?.connections.close()
   spacesProof?.close()
   communicationProof?.close()
   memoryProof?.close()

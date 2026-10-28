@@ -14,6 +14,9 @@ import { basename } from 'node:path'
 import {
   canonicalRoot,
   checkFolders,
+  checkSpace,
+  documentsRoot,
+  spaceFolderName,
   digest,
   ideaDocuments,
   memoryDocuments,
@@ -23,8 +26,15 @@ import {
 } from './documents'
 import type { MigrationPreview, SpaceWorkspace } from '../../shared/spaces'
 import type { MemorySpace } from '../../shared/memory'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { SpaceContextService } from './context'
+import { SpaceContextServer } from './contextServer'
 
 export class SpacesService {
+  readonly context: SpaceContextService
+  readonly contextServer: SpaceContextServer
+  private comparisons: string[] = []
   readonly agent: AgentService
   private activeId: string | null = null
   private switching = false
@@ -38,15 +48,28 @@ export class SpacesService {
     private changed: (snapshot: SpacesSnapshot) => void,
     private knownRoots: () => string[] = () => sessions().map((s) => s.cwd),
   ) {
+    this.context = new SpaceContextService(
+      store,
+      memory,
+      sessions,
+      options.threadReads,
+      (id, cursor) => this.agent.read(id, cursor),
+    )
+    this.contextServer = new SpaceContextServer(this.context)
     this.documents = new SpaceDocuments(store)
     store.beforeSave = (idea) => {
       if (idea.workspaceId)
-        this.documents.publish(this.requireWorkspace(idea.workspaceId), ideaDocuments(idea))
+        this.documents.publish(
+          idea.sharedSpaceId
+            ? this.requireSpace(idea.sharedSpaceId)
+            : this.requireWorkspace(idea.workspaceId),
+          ideaDocuments(idea),
+        )
     }
     const shared = memory()
     if (shared) {
       shared.executionContext = (spaceId, assignee) => {
-        const workspace = this.requireWorkspace(store.owners()[spaceId])
+        const workspace = this.requireSpace(spaceId)
         if (assignee) {
           const session = this.sessions().find((s) => s.id === assignee)
           if (
@@ -61,13 +84,20 @@ export class SpacesService {
         return {
           workspaceId: workspace.id,
           root: workspace.root,
-          documentsRoot: `${workspace.root}/shared-spaces`,
+          documentsRoot: documentsRoot(workspace),
         }
       }
       shared.beforeCommit = () => this.syncMemory()
     }
     this.agent = new AgentService({
       ...options,
+      appControl: undefined,
+      communication: undefined,
+      threadReads: undefined,
+      spaceContext: () => {
+        if (!this.activeId) throw Error('Open a space discussion first.')
+        return this.contextServer.connect(this.activeId, this.comparisons)
+      },
       communicationProject: () => (this.activeId ? this.projectFor(this.activeId) : undefined),
       onChange: (state) => {
         if (this.activeId && state.conversationId) {
@@ -94,9 +124,20 @@ export class SpacesService {
         : undefined)
     )
   }
+  start() {
+    return this.contextServer.start()
+  }
   snapshot(): SpacesSnapshot {
     const agent = this.agent.current
     return {
+      locations: this.store.locations().map((location) => {
+        try {
+          checkSpace(this.store.workspace(location.workspaceId), location)
+          return { ...location, ready: true, issue: null }
+        } catch (error) {
+          return { ...location, ready: false, issue: (error as Error).message }
+        }
+      }),
       workspaces: this.store.workspaces().map((w) => {
         const aliases = (w.aliases ?? []).filter((root) => {
           try {
@@ -115,6 +156,7 @@ export class SpacesService {
       spaceOwners: this.store.owners(),
       documents: this.store.documents(),
       ideas: this.store.all(),
+      discussions: this.store.discussions(),
       activeId: this.activeId,
       agent: this.issue ? { ...agent, error: this.issue } : agent,
     }
@@ -136,18 +178,98 @@ export class SpacesService {
     const memory = this.memory()
     if (!memory) return
     const owners = this.store.owners()
-    for (const workspace of this.store.workspaces()) {
-      const docs = memoryDocuments(
-        memory,
-        Object.keys(owners).filter((id) => owners[id] === workspace.id),
-      )
+    for (const [spaceId, workspaceId] of Object.entries(owners)) {
+      const workspace = this.store.workspace(workspaceId)
+      const docs = memoryDocuments(memory, [spaceId])
       // Only changed source documents need publishing; an offline unrelated workspace must not block work elsewhere.
       const heads = this.store.documents().filter((d) => d.workspaceId === workspace.id)
       const changed = docs.filter(
         (d) => !heads.some((h) => h.id === d.id && h.sourceHash === digest(d.body)),
       )
-      if (changed.length) this.documents.publish(this.requireWorkspace(workspace.id), changed)
+      if (changed.length) this.documents.publish(this.requireSpace(spaceId), changed)
     }
+  }
+  private requireSpace(spaceId: string) {
+    const location = this.store.locations().find((l) => l.spaceId === spaceId)
+    return location
+      ? checkSpace(this.store.workspace(location.workspaceId), location)
+      : this.requireWorkspace(this.store.owners()[spaceId])
+  }
+  private createSpace(
+    input: Extract<import('../../shared/spaces').SpacesInput, { action: 'create_space' }>,
+  ) {
+    if (
+      !this.knownRoots().some(
+        (r) => pathKey(r.replace(/^(claude|codex):/, '')) === pathKey(input.root),
+      ) &&
+      !this.store
+        .workspaces()
+        .some((w) => [w.root, ...(w.aliases ?? [])].some((r) => pathKey(r) === pathKey(input.root)))
+    )
+      throw new Error('Choose a workspace known to Threadlight.')
+    const root = canonicalRoot(input.root)
+    const directory = spaceFolderName(input.title)
+    const existing = this.store.locations().find((l) => l.requestId === input.id)
+    let workspace = this.store.workspaces().find((w) => pathKey(w.root) === pathKey(root))
+    if (
+      !existing &&
+      this.store
+        .locations()
+        .some((l) => l.workspaceId === workspace?.id && l.directory === directory)
+    )
+      throw new Error(
+        'A shared space with that folder name is already registered in this workspace.',
+      )
+    if (
+      existing &&
+      (existing.workspaceId !== workspace?.id ||
+        existing.title !== input.title ||
+        existing.directory !== directory)
+    )
+      throw new Error('This creation request was already used for another space.')
+    if (!existing && existsSync(join(root, 'shared-spaces', directory)))
+      throw new Error(
+        'A folder with that space name already exists. Choose another name; existing files will be kept.',
+      )
+    const memory = this.memory()
+    if (!memory) throw new Error('Shared context storage is unavailable.')
+    workspace ??= {
+      id: randomUUID(),
+      root,
+      name: basename(root),
+      ready: true,
+      issue: null,
+      layout: 'named',
+    }
+    checkFolders({ ...workspace, layout: 'named' }, true)
+    workspace.aliases = [...new Set([...(workspace.aliases ?? []), input.root, root])]
+    this.store.putWorkspace(workspace)
+    const space = memory.execute({
+      action: 'create_space',
+      operationId: input.id,
+      title: input.title,
+      description: 'Shared context, notes, plans, handoffs and results.',
+    }) as MemorySpace
+    const location = existing ?? {
+      spaceId: space.id,
+      workspaceId: workspace.id,
+      requestId: input.id,
+      title: input.title,
+      directory,
+    }
+    this.store.putLocation(location)
+    checkSpace(workspace, location, true)
+    this.store.assign(workspace.id, [], [space.id])
+    for (const title of ['Plans', 'Handoffs', 'Results'])
+      memory.execute({
+        action: 'ensure_folder',
+        operationId: `${input.id.slice(0, 24)}${digest(input.id + title).slice(0, 12)}`,
+        spaceId: space.id,
+        title,
+        description: `${title} for ${input.title}.`,
+        reason: 'Shared space creation.',
+      })
+    return space.id
   }
   private setup(root: string) {
     if (
@@ -270,6 +392,55 @@ export class SpacesService {
   async request(value: unknown): Promise<SpacesReply> {
     try {
       const input = spacesInput.parse(value)
+      if (input.action === 'attach_material') {
+        if (input.id === this.activeId)
+          throw Error('Close the active discussion before assigning it.')
+        const record = this.store.get(input.id),
+          workspace = this.requireSpace(input.spaceId)
+        if (
+          record.prepared &&
+          !this.memory()
+            ?.snapshot()
+            .folders.some((f) => f.id === record.prepared!.folderId && f.spaceId === input.spaceId)
+        )
+          throw Error('Choose the space containing this material’s prepared handoffs.')
+        this.store.attach(input.id, input.spaceId, workspace.id, input.revision)
+        this.publish()
+        return { ok: true, snapshot: this.snapshot() }
+      }
+      if (input.action === 'create_discussion') {
+        const workspace = this.requireSpace(input.spaceId)
+        const discussion = this.store.discussion(input, workspace.id)
+        this.publish()
+        return { ok: true, snapshot: this.snapshot(), discussionId: discussion.id }
+      }
+      if (input.action === 'context' || input.action === 'source') {
+        if (input.action === 'source')
+          return {
+            ok: true,
+            snapshot: this.snapshot(),
+            context: await this.contextServer.inspect(
+              input.id,
+              input.sourceRef,
+              input.revision,
+              input.offset,
+            ),
+          }
+        const scope = this.context.open(input.id)
+        try {
+          const context = await this.context.call(scope, 'threadlight_get_space_context', {
+            limit: 50,
+          })
+          return { ok: true, snapshot: this.snapshot(), context }
+        } finally {
+          this.context.close(scope)
+        }
+      }
+      if (input.action === 'create_space') {
+        const spaceId = this.createSpace(input)
+        this.publish()
+        return { ok: true, snapshot: this.snapshot(), spaceId }
+      }
       if (input.action === 'setup') this.setup(input.root)
       else if (input.action === 'migration_preview' || input.action === 'migrate') {
         const result = this.migration(input)
@@ -283,31 +454,45 @@ export class SpacesService {
         this.documents.publish(result.workspace, result.docs)
         this.store.assign(input.workspaceId, input.ideaIds, input.spaceIds)
       } else if (input.action === 'create' || input.action === 'save') {
-        if (input.action === 'create' && input.workspaceId) this.requireWorkspace(input.workspaceId)
+        if (input.action === 'save' && input.noteIds) {
+          const discussion = this.store.get(input.id)
+          if (discussion.recordKind !== 'discussion')
+            throw Error('Only discussions can link notes.')
+          for (const id of input.noteIds) {
+            const note = this.store.get(id)
+            if (
+              note.recordKind === 'discussion' ||
+              !discussion.sharedSpaceId ||
+              note.sharedSpaceId !== discussion.sharedSpaceId
+            )
+              throw Error('Choose notes belonging to this discussion’s space.')
+          }
+        }
+        if (input.action === 'create' && input.sharedSpaceId) {
+          const workspace = this.requireSpace(input.sharedSpaceId)
+          if (workspace.id !== input.workspaceId)
+            throw new Error('Choose a space in this workspace.')
+        }
+        if (input.action === 'create' && input.workspaceId && !input.sharedSpaceId)
+          this.requireWorkspace(input.workspaceId)
         if (input.action === 'save' && input.workflowSpaceId) {
           const idea = this.store.get(input.id)
-          if (this.store.owners()[input.workflowSpaceId] !== idea.workspaceId)
-            throw new Error('Choose a workflow in this idea’s workspace.')
+          if (
+            this.store.owners()[input.workflowSpaceId] !== idea.workspaceId ||
+            (idea.sharedSpaceId && idea.sharedSpaceId !== input.workflowSpaceId)
+          )
+            throw new Error('Choose a workflow in this note’s workspace.')
           if (!this.memory()?.communicationService?.workflow(input.workflowSpaceId))
             throw new Error('Configure this project workflow first.')
         }
         this.store.edit(input)
-        if (input.action === 'save') {
-          const updated = this.store.get(input.id)
-          const project = this.projectFor(updated.id)
-          if (project)
-            this.memory()?.communicationService?.ideaChanged(
-              project,
-              updated.id,
-              updated.revision,
-              `${updated.text}\n${updated.plan}`,
-            )
-        }
       } else if (input.action === 'prepare') {
         const idea = this.store.get(input.id),
           memory = this.memory()
         if (!memory) throw new Error('Handoffs are unavailable. Your plan is still saved.')
-        const workspace = this.requireWorkspace(idea.workspaceId)
+        const workspace = idea.sharedSpaceId
+          ? this.requireSpace(idea.sharedSpaceId)
+          : this.requireWorkspace(idea.workspaceId)
         if (idea.revision !== input.revision)
           throw new Error('The plan changed. Reopen it before preparing assignments.')
         if (!idea.plan.trim() || !idea.assignments.length)
@@ -320,8 +505,11 @@ export class SpacesService {
           .snapshot()
           .folders.find((f) => f.id === input.folderId && !f.archived && !f.redirectId)
         if (!folder) throw new Error('Choose an available shared folder in Handoffs.')
-        if (this.store.owners()[folder.spaceId] !== workspace.id)
-          throw new Error('Choose an output folder belonging to this idea’s workspace.')
+        if (
+          this.store.owners()[folder.spaceId] !== workspace.id ||
+          (idea.sharedSpaceId && idea.sharedSpaceId !== folder.spaceId)
+        )
+          throw new Error('Choose an output folder belonging to this note’s workspace.')
         this.documents.publish(workspace, ideaDocuments(idea))
         for (const assignment of idea.assignments) {
           if (
@@ -346,14 +534,16 @@ export class SpacesService {
               folderId: folder.id,
               title: idea.title,
               kind: 'note',
-              body: `Idea\n${idea.text}\n\nReviewed plan (revision ${idea.revision})\n${idea.plan}`,
+              body: `Note\n${idea.text}\n\nReviewed plan (revision ${idea.revision})\n${idea.plan}`,
             },
             idea.assignments.map((a) => ({
               action: 'create_task',
               operationId: a.id,
               folderId: folder.id,
               title: a.title,
-              body: a.brief,
+              body: a.rationale
+                ? `${a.brief}\n\nAssignment rationale (reviewed with the plan):\n${a.rationale}`
+                : a.brief,
               assignee: a.assignee,
             })),
           )
@@ -368,15 +558,26 @@ export class SpacesService {
         this.switching = true
         try {
           const idea = this.store.get(input.id)
-          const workspace = this.requireWorkspace(idea.workspaceId)
+          const workspace = idea.sharedSpaceId
+            ? this.requireSpace(idea.sharedSpaceId)
+            : this.requireWorkspace(idea.workspaceId)
           this.documents.publish(workspace, ideaDocuments(idea))
-          if (idea.stage !== 'brainstorm') throw new Error('Move this idea to Brainstorm first.')
+          if (idea.stage !== 'brainstorm')
+            throw new Error('Start a discussion in Brainstorm first.')
           if (input.action === 'resume' && !idea.conversationId)
-            throw new Error('This idea has no saved discussion yet.')
-          if (this.activeId !== idea.id || this.agent.current.ended || input.action === 'resume') {
+            throw new Error('This note has no saved discussion yet.')
+          const comparisons = input.action === 'chat' ? input.compareSpaceIds : []
+          for (const id of comparisons) this.requireSpace(id)
+          if (
+            this.activeId !== idea.id ||
+            this.agent.current.ended ||
+            input.action === 'resume' ||
+            JSON.stringify(comparisons) !== JSON.stringify(this.comparisons)
+          ) {
             this.activeId = null
             await this.agent.close()
             this.activeId = idea.id
+            this.comparisons = comparisons
             if (idea.conversationId) {
               const resumed = await this.agent.resume(idea.conversationId)
               if (!resumed.ok) {
@@ -386,25 +587,26 @@ export class SpacesService {
             }
           }
           if (input.action === 'resume') return { ok: true, snapshot: this.snapshot() }
-          const currentDocuments = ideaDocuments(idea)
-            .map((doc) => this.documents.target(workspace, doc))
-            .join('\n')
-          const project = this.projectFor(idea.id)
-          const workflow = project
-            ? this.memory()?.communicationService?.workflow(project)
-            : undefined
-          const prompt = `${workflow ? `Active project workflow: ${JSON.stringify(workflow)}. Use Threadlight communication tools to read current state, propose assignments and contact configured roles within its authority. New ideas amend the existing project; do not duplicate delivered work.\n` : ''}Workspace ID: ${workspace.id}\nWorkspace root: ${workspace.root}\nShared documents: ${workspace.root}/shared-spaces/\nFixed folders: ideas/, plans/, handoffs/, results/. Keep this discussion and its proposed work within this workspace; never use the currently viewed workspace as a substitute.\nCurrent idea and plan snapshots (earlier snapshots are historical; do not edit snapshot files):\n${currentDocuments}\n\n${brainstormPrompt(idea, input.text, !!workflow)}`
-          if (prompt.length > 32000)
-            throw new Error(
-              'This brainstorm context is too long. Shorten the plan or assignment briefs before sending.',
-            )
-          if (project && workflow)
-            this.memory()?.communicationService?.ideaChanged(
-              project,
-              idea.id,
-              idea.revision + 1,
-              input.text,
-            )
+          const scope = this.context.open(idea.id, this.comparisons)
+          let overview: unknown
+          try {
+            overview = await this.context.call(scope, 'threadlight_get_space_context', {
+              limit: 20,
+            })
+          } finally {
+            this.context.close(scope)
+          }
+          const encodedOverview = JSON.stringify(overview)
+          const boundedOverview =
+            encodedOverview.length <= 12000
+              ? encodedOverview
+              : JSON.stringify({
+                  outcome: 'partial',
+                  spaceIds: scope.spaceIds,
+                  reason:
+                    'Large space. Retrieve paginated context with threadlight_get_space_context.',
+                })
+          const prompt = `Bound discussion: ${idea.id}. This turn is read, track and propose only. Comparison spaces explicitly selected by the user for this request: ${JSON.stringify(this.comparisons)}.\n<space-context>${boundedOverview}</space-context>\n${brainstormPrompt(idea, input.text)}`
           const sent = await this.agent.send(prompt, input.text)
           if (!sent.ok) throw new Error(sent.reason)
         } finally {
@@ -412,12 +614,17 @@ export class SpacesService {
         }
       } else if (input.action === 'read') {
         const idea = this.store.get(input.id)
-        if (this.activeId === idea.id)
+        if (this.activeId === idea.id && !input.cursor)
           return { ok: true, snapshot: this.snapshot(), items: this.agent.current.items }
         if (!idea.conversationId) return { ok: true, snapshot: this.snapshot(), items: [] }
-        const history = await this.agent.read(idea.conversationId)
+        const history = await this.agent.read(idea.conversationId, input.cursor)
         if (history.error) throw new Error(history.error)
-        return { ok: true, snapshot: this.snapshot(), items: history.items }
+        return {
+          ok: true,
+          snapshot: this.snapshot(),
+          items: history.items,
+          historyCursor: history.cursor,
+        }
       } else if (input.action === 'stop') {
         if (input.id !== this.activeId) throw new Error('This brainstorm is not running.')
         const result = await this.agent.interrupt()
@@ -443,6 +650,7 @@ export class SpacesService {
     return this.agent.respond(requestId, response)
   }
   async close() {
+    this.contextServer.close()
     await this.agent.close()
     await this.agent.store.flush()
     this.store.close()

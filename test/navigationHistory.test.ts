@@ -1,0 +1,46 @@
+import { describe, expect, it } from 'vitest'
+import { NavigationHistory } from '../src/shared/navigationHistory'
+
+describe('page navigation history', () => {
+  it('goes back and forward without duplicating restored locations', () => {
+    const history = new NavigationHistory<{ page: string }>()
+    for (const page of ['threads', 'settings', 'picker']) history.record({ page })
+    expect(history.travel('back')).toEqual({ page: 'settings' })
+    history.record({ page: 'settings' })
+    expect(history.travel('back')).toEqual({ page: 'threads' })
+    expect(history.travel('back')).toBeUndefined()
+    expect(history.travel('forward')).toEqual({ page: 'settings' })
+    expect(history.travel('forward')).toEqual({ page: 'picker' })
+    expect(history.travel('forward')).toBeUndefined()
+  })
+  it('preserves forward after an on-screen Back and discards it after new navigation', () => {
+    const history = new NavigationHistory<string>()
+    history.record('threads')
+    history.record('settings')
+    history.record('picker')
+    history.record('settings')
+    expect(history.travel('forward')).toBe('picker')
+    history.travel('back')
+    history.record('spaces')
+    expect(history.travel('forward')).toBeUndefined()
+    expect(history.travel('back')).toBe('settings')
+  })
+  it('bounds retained locations and supports clearing history', () => {
+    const history = new NavigationHistory<number>()
+    for (let i = 0; i < 100; i++) history.record(i)
+    for (let i = 98; i >= 36; i--) expect(history.travel('back')).toBe(i)
+    expect(history.travel('back')).toBeUndefined()
+    history.reset(5)
+    expect(history.travel('forward')).toBeUndefined()
+  })
+  it('recognizes an ancestor Back even when its saved scroll position changed', () => {
+    const history = new NavigationHistory<{ page: string; scroll?: number }>()
+    history.record({ page: 'root' })
+    history.record({ page: 'folder' })
+    history.record({ page: 'item' })
+    history.record({ page: 'root', scroll: 120 })
+    expect(history.travel('back')).toBeUndefined()
+    expect(history.travel('forward')).toEqual({ page: 'folder' })
+    expect(history.travel('back')).toEqual({ page: 'root', scroll: 120 })
+  })
+})

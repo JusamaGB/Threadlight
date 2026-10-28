@@ -1,3 +1,4 @@
+import { selectThreadView } from './header-navigation.mjs'
 /* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 
@@ -12,8 +13,7 @@ export async function checkIgnoreInput(page, capture) {
   )
   const view = page.locator('header [data-thread-view]')
   if ((await view.getAttribute('data-thread-view')) !== 'recent') {
-    await view.click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+    await selectThreadView(page, 'recent')
   }
   const snapshot = await page.evaluate(() => window.threadlight.getSnapshot())
   const codex = page.locator('[data-session-id][data-provider="codex"]').first()

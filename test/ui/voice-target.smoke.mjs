@@ -14,18 +14,30 @@ export async function checkVoiceTarget(page) {
       (value) => window.proof.agent({ provider: value, status: 'ready', live: null, ended: false }),
       provider,
     )
-  const record = async (mode) => {
+  const record = async (mode, target = 'agent') => {
     const tracks = await page.evaluate(() => window.proof.stoppedTracks)
     await page.evaluate((value) => {
       delete window.proof.finishTranscript
       window.proof.emit(value === 'hold' ? 'onTalkHold' : 'onTalkToggle', 'down')
     }, mode)
-    await page.getByRole('region', { name: 'Voice waveform', exact: true }).waitFor()
-    await page
-      .getByRole('region', { name: 'Voice activity' })
-      .getByRole('status')
-      .filter({ hasText: /^(Listening|You speaking)$/ })
-      .waitFor()
+    await page.waitForFunction(() => window.proof.talkState === 'listening')
+    if (target === 'agent') {
+      await page.getByRole('region', { name: 'Voice waveform', exact: true }).waitFor()
+      await page
+        .getByRole('region', { name: 'Voice activity' })
+        .getByRole('status')
+        .filter({ hasText: /^(Listening|You speaking)$/ })
+        .waitFor()
+    } else {
+      assert.equal(
+        await page.getByRole('region', { name: 'Voice waveform', exact: true }).count(),
+        0,
+      )
+      assert.equal(
+        await page.getByRole('region', { name: 'Voice activity', exact: true }).count(),
+        0,
+      )
+    }
     assert.equal(await page.getByText(/no active mic/i).count(), 0)
     await page.waitForTimeout(260)
     await page.evaluate(
@@ -36,6 +48,11 @@ export async function checkVoiceTarget(page) {
       (n) => window.proof.stoppedTracks > n && typeof window.proof.finishTranscript === 'function',
       tracks,
     )
+    if (target === 'thread')
+      assert.equal(
+        await page.getByRole('region', { name: 'Voice activity', exact: true }).count(),
+        0,
+      )
   }
   const transcribe = (text) => page.evaluate((value) => window.proof.finishTranscript(value), text)
 
@@ -73,7 +90,7 @@ export async function checkVoiceTarget(page) {
   for (const talkMode of ['toggle', 'hold']) {
     await settings({ voiceMode: 'local-stt', talkMode, voiceTarget: 'thread', voiceHold: true })
     const count = (await calls()).length
-    await record(talkMode)
+    await record(talkMode, 'thread')
     await transcribe(`message Synthetic Codex, review ${talkMode}`)
     await page.waitForFunction(
       (value) =>
@@ -81,6 +98,8 @@ export async function checkVoiceTarget(page) {
       `Review ${talkMode}`,
     )
     assert.equal((await calls()).length, count)
+    assert.equal(await page.getByRole('region', { name: 'Voice waveform', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('region', { name: 'Voice activity', exact: true }).count(), 0)
   }
 
   // A release during asynchronous microphone acquisition cannot leave recording running.

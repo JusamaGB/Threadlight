@@ -1,3 +1,4 @@
+import { openHeaderPage, selectThreadView } from './header-navigation.mjs'
 /* global window, document, requestAnimationFrame */
 import assert from 'node:assert/strict'
 
@@ -31,8 +32,7 @@ export async function checkPanelLayout(page, capture) {
     return menu
   }
   const showRecent = async () => {
-    await page.locator('[data-thread-view]').click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+    await selectThreadView(page, 'recent')
   }
   try {
     // With only one provider there is nothing to put side by side, so the thread menu has no
@@ -83,8 +83,7 @@ export async function checkPanelLayout(page, capture) {
 
     // Active is not a dual view: the card narrows to one column and no layout item is offered,
     // but the saved choice returns with the Recent list.
-    await page.locator('[data-thread-view]').click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Active', exact: true }).click()
+    await selectThreadView(page, 'active')
     await page.waitForFunction(
       () => Math.round(document.querySelector('[data-card]').getBoundingClientRect().width) === 238,
     )
@@ -116,9 +115,10 @@ export async function checkPanelLayout(page, capture) {
     for (const [open, back] of [
       ['Settings', 'Back to sessions'],
       ['Shared Spaces', 'Back in Shared Spaces'],
-      ['Agent: ask it to do something', 'Back to sessions'],
+      ['Agent', 'Back to sessions'],
     ]) {
-      await page.getByRole('button', { name: open, exact: true }).click()
+      if (open === 'Settings') await page.getByRole('button', { name: open, exact: true }).click()
+      else await openHeaderPage(page, open)
       await narrow()
       await page.waitForFunction(
         () => document.querySelector('#root > div').getAttribute('data-wide') === null,
@@ -178,8 +178,7 @@ export async function checkPanelLayout(page, capture) {
         Math.round(document.querySelector('[data-card]')?.getBoundingClientRect().width) === 475,
     )
     await page.waitForTimeout(800)
-    await page.locator('[data-thread-view]').click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Active', exact: true }).click()
+    await selectThreadView(page, 'active')
     await narrow()
     await page.waitForTimeout(800)
     const proof = await page.evaluate(() => {
@@ -294,8 +293,7 @@ export async function checkDualDetails(page, capture) {
     await page.waitForFunction(() => document.querySelectorAll('[data-wire-key]').length === 1)
 
     // The panel opens on Active, which stays one column; dual belongs to Recent.
-    await page.locator('[data-thread-view]').click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+    await selectThreadView(page, 'recent')
     await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'dual' }))
     await page.waitForFunction(() => {
       const left = document.querySelector('[data-session-id="claude-1"]')
@@ -310,7 +308,7 @@ export async function checkDualDetails(page, capture) {
     await settled(page)
     await page.waitForFunction(() => document.querySelectorAll('[data-wire-key]').length === 1)
     const centred = await page.evaluate(() => {
-      const strip = document.querySelector('[data-workspace-links]').getBoundingClientRect()
+      const strip = document.querySelector('[data-wire-zone="centre"]').getBoundingClientRect()
       const right = document.querySelector('[data-dual-right]').getBoundingClientRect()
       const wire = document.querySelector('[data-wire-key]')
       return {
@@ -416,8 +414,7 @@ export async function checkDualLong(page) {
     const view = page.locator('[data-thread-view]')
     await view.waitFor()
     if ((await view.getAttribute('data-thread-view')) !== 'recent') {
-      await view.click({ button: 'right' })
-      await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+      await selectThreadView(page, 'recent')
     }
     await page.waitForFunction(() => document.querySelectorAll('[data-session-id]').length === 140)
     await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'dual' }))

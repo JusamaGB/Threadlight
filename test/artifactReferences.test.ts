@@ -49,6 +49,92 @@ const codex = (text: string) => ({
   payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] },
 })
 const line = (record: unknown) => JSON.stringify(record) + '\n'
+const visualize = (path: string) => `\uE200visualize\uE202${JSON.stringify({ path })}\uE201`
+
+it('discovers Codex inline visualizations ahead of older findings and preserves original HTML', async () => {
+  source.provider = 'codex'
+  const discovery = new ArtifactDiscovery()
+  await writeFile(source.transcript, line(codex('[Technical findings](findings.json)')))
+  expect((await discovery.scan('codex:visual', source)).items[0]!.title).toBe('findings.json')
+  // The native response_item/output_text shape used by the real mockup reply.
+  const reply = codex(
+    `Press **Play demo**, then scroll up while messages arrive.\n\n${visualize(original)}`,
+  )
+  const bytes = Buffer.from(line(reply))
+  const cut = bytes.indexOf(Buffer.from('\uE200')) + 1
+  await appendFile(source.transcript, bytes.subarray(0, cut))
+  expect((await discovery.scan('codex:visual', source)).items).toHaveLength(1)
+  await appendFile(source.transcript, bytes.subarray(cut))
+  const result = await discovery.scan('codex:visual', source)
+  expect(result.items.map((item) => item.title)).toEqual(['story board.html', 'findings.json'])
+  expect(result.items[0]).toMatchObject({ kind: 'html', path: original, source: 'reference' })
+  expect(artifactContent(await readArtifactBytes(result.items[0]!.path!), original).content).toBe(
+    '<h1>Original</h1>',
+  )
+  await appendFile(source.transcript, line(codex(`[Again](<${original}>)`)))
+  expect((await discovery.scan('codex:visual', source)).items).toEqual(result.items)
+})
+
+it('keeps mixed visualization and Markdown references in presentation order', () => {
+  const windowsPath = 'C:\\Users\\example\\.codex\\visualizations\\review {draft}\\mock.html'
+  expect(
+    presentedPaths(
+      codex(`[Before](before.json)\n${visualize(windowsPath)}\n[After](after.html)`),
+      'codex',
+    ),
+  ).toEqual(['before.json', windowsPath, 'after.html'])
+  expect(
+    presentedPaths(
+      { type: 'event_msg', payload: { type: 'agent_message', message: visualize(original) } },
+      'codex',
+    ),
+  ).toEqual([original])
+})
+
+it('ignores malformed visualization markers, examples, tool output and reasoning', () => {
+  const marker = visualize(original)
+  for (const text of [
+    '\uE200visualize\uE202{bad json}\uE201',
+    '\uE200visualize\uE202{"path":42}\uE201',
+    '\uE200visualize\uE202null\uE201',
+    '\uE200visualize\uE202{}\uE201',
+    marker.slice(0, -1),
+    `\`\`\`text\n${marker}\n\`\`\``,
+  ]) {
+    expect(presentedPaths(codex(text), 'codex')).toEqual([])
+  }
+  const record = codex(marker)
+  expect(
+    presentedPaths({ ...record, payload: { ...record.payload, channel: 'analysis' } }, 'codex'),
+  ).toEqual([])
+  expect(
+    presentedPaths(
+      { type: 'response_item', payload: { type: 'function_call_output', output: marker } },
+      'codex',
+    ),
+  ).toEqual([])
+  expect(presentedPaths(claude(marker), 'claude')).toEqual([])
+  expect(
+    presentedPaths({ ...record, payload: { ...record.payload, role: 'user' } }, 'codex'),
+  ).toEqual([])
+  expect(presentedPaths(codex(`\uE200visualize\uE202{bad}\uE201\n${marker}`), 'codex')).toEqual([
+    original,
+  ])
+})
+
+it('applies the existing local path boundaries to visualization references', async () => {
+  source.provider = 'codex'
+  const candidates = [
+    'https://example.com/mock.html',
+    '\\\\server\\mock.html',
+    'C:\\mock.html:secret',
+    join(box.root, 'outside.html'),
+    original,
+  ]
+  await writeFile(source.transcript, line(codex(candidates.map(visualize).join('\n'))))
+  const result = await new ArtifactDiscovery().scan('codex:visual', source)
+  expect(result.items.map((item) => item.path)).toEqual([original])
+})
 
 describe.each(['claude', 'codex'] as const)('%s artifact references', (provider) => {
   it('discovers presented files, deduplicates paths, isolates IDs and leaves original bytes untouched', async () => {

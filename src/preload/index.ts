@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 
 import type { AgentState } from '../shared/agent'
 import type { LiveVoiceEvent } from '../shared/liveVoice'
@@ -19,6 +19,20 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: ThreadlightApi = {
+  controlHello: () => ipcRenderer.invoke('control:hello'),
+  controlPublish: (value) => ipcRenderer.send('control:publish', value),
+  controlClaim: (command) => ipcRenderer.invoke('control:claim', command),
+  onControlCommand: (listener) => subscribe('control:command', listener),
+  newThread: (input) => ipcRenderer.invoke(IPC.newThread, input),
+  composerAttachments: (input) => ipcRenderer.invoke(IPC.composerAttachments, input),
+  composerFilePath: (file) => webUtils.getPathForFile(file),
+  threadImage: (input) => ipcRenderer.invoke(IPC.threadImage, input),
+  threadTimeline: (input) => ipcRenderer.invoke(IPC.threadTimeline, input),
+  onThreadTimeline: (listener) => subscribe(IPC.threadTimelineChanged, listener),
+  artifactPreview: (input) => ipcRenderer.invoke(IPC.artifactPreview, input),
+  onArtifactPreviewEvent: (listener) => subscribe(IPC.artifactPreviewEvent, listener),
+  artifacts: (threadId, action, id) => ipcRenderer.invoke(IPC.artifacts, threadId, action, id),
+  onArtifactsChanged: (listener) => subscribe(IPC.artifactsChanged, listener),
   communicationRequest: (input) => ipcRenderer.invoke(IPC.communicationRequest, input),
   onCommunication: (listener) => subscribe(IPC.communicationChanged, listener),
 
@@ -41,6 +55,8 @@ const api: ThreadlightApi = {
   saveComposerDraft: (id, text, revision) =>
     ipcRenderer.invoke(IPC.saveComposerDraft, id, text, revision),
   answerCodex: (id, holdId, answer) => ipcRenderer.invoke(IPC.answerCodex, id, holdId, answer),
+  answerNativeCodexQuestion: (id, reference, answers) =>
+    ipcRenderer.invoke(IPC.answerNativeCodexQuestion, id, reference, answers),
   getVersion: () => ipcRenderer.invoke(IPC.getVersion),
   getSessions: () => ipcRenderer.invoke(IPC.getSessions),
   onSessions: (listener) => subscribe<Session[]>(IPC.sessionsChanged, listener),
@@ -48,6 +64,8 @@ const api: ThreadlightApi = {
   onSnapshot: (listener) => subscribe<Snapshot>(IPC.snapshotChanged, listener),
   setTreeView: (view) => ipcRenderer.send(IPC.setTreeView, view),
   onPanelOpened: (listener) => subscribe<PanelOpened>(IPC.panelOpened, listener),
+  onPanelPeek: (listener) => subscribe<boolean>(IPC.panelPeek, listener),
+  onPanelNavigate: (listener) => subscribe<'back' | 'forward'>(IPC.panelNavigate, listener),
   setWorkspacePanel: (on) => ipcRenderer.invoke(IPC.workspacePanel, on),
 
   dotClick: () => ipcRenderer.send(IPC.dotClick),
@@ -62,13 +80,16 @@ const api: ThreadlightApi = {
   setStayOpen: (on) => ipcRenderer.send(IPC.panelStayOpen, on),
   setWorkspaceWireControl: (bounds) => ipcRenderer.send(IPC.workspaceWireControl, bounds),
   setWorkspaceWireRegions: (regions) => ipcRenderer.send(IPC.workspaceWireRegions, regions),
+  setWorkspaceWireGutter: (width) => ipcRenderer.invoke(IPC.workspaceWireGutter, width),
   setPanelLayout: (layout, animating) => ipcRenderer.invoke(IPC.panelLayout, layout, animating),
   openInClaude: (appId) => ipcRenderer.send(IPC.openInClaude, appId),
   restartApp: () => ipcRenderer.send(IPC.restartApp),
   ignoreNeedsInput: (sessionId, ignore) =>
     ipcRenderer.send(IPC.ignoreNeedsInput, sessionId, ignore),
 
-  sendMessage: (sessionId, text) => ipcRenderer.invoke(IPC.sendMessage, sessionId, text),
+  sendMessage: (sessionId, text, attachmentIds, mode) =>
+    ipcRenderer.invoke(IPC.sendMessage, sessionId, text, attachmentIds, mode),
+  codexQueue: (sessionId, command) => ipcRenderer.invoke(IPC.codexQueue, sessionId, command),
   getRelays: () => ipcRenderer.invoke(IPC.getRelays),
   answerQuestion: (sessionId, answers, holdId) =>
     ipcRenderer.invoke(IPC.answerQuestion, sessionId, answers, holdId),

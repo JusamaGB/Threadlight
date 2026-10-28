@@ -21,6 +21,7 @@ import { codexUsage } from './usage'
 import type { Usage } from '../../shared/usage'
 import { codexDisplayText, codexToolActivity, codexUserRequest } from './presentation'
 import { codexState } from './state'
+import { nativeQuestionRef } from './nativeQuestions'
 import { codexGitFolders, codexPullRequest } from './badges'
 import { CompletionOrder } from '../sessions/completionOrder'
 import { compareSessionOrder, recentSessions } from '../../shared/sessionOrder'
@@ -118,7 +119,7 @@ function questionCard(value: unknown): Attention | null {
 }
 
 /** Accepts the history projection and the older rollout format without rewriting either. */
-export function summarizeCodex(records: Row[]): CodexSummary {
+export function summarizeCodex(records: Row[], turnStatus?: unknown): CodexSummary {
   let questionCall: string | null = null,
     asynchronous = false,
     progress: string | null = null
@@ -170,6 +171,7 @@ export function summarizeCodex(records: Row[]): CodexSummary {
       if (card) {
         out.attention = card
         questionCall = null
+        asynchronous = true
       }
     }
     if (type === 'commandExecution') out.lastAction = progress || codexToolActivity(type, item)
@@ -199,10 +201,23 @@ export function summarizeCodex(records: Row[]): CodexSummary {
       if (limit > 0) out.contextUsed = Math.min(1, Number(usage['input_tokens'] || 0) / limit)
     }
   }
+  // Desktop async cards belong to the active turn. Their question text remains in
+  // history after that turn finishes, even when no answer was submitted. Do not
+  // reconstruct that historical text as a currently answerable request.
+  if (
+    asynchronous &&
+    out.attention?.kind === 'question' &&
+    ['completed', 'failed', 'interrupted'].includes(String(turnStatus))
+  )
+    out.attention = null
   return out
 }
 
 export class CodexTracker {
+  private transcripts = new Map<string, string>()
+  transcriptPath(id: string): string | null {
+    return this.transcripts.get(id) ?? null
+  }
   private completionOrder = new CompletionOrder()
   private windowHours = 24
   private maxSessions = 10
@@ -242,7 +257,9 @@ export class CodexTracker {
           if (prior) records.unshift(prior)
         }
       }
-      if (this.tails.size >= 200) this.tails.delete(this.tails.keys().next().value!)
+      // Cover the recent (200) plus preloaded workspace (300) rows without evicting
+      // their tails on every poll. Larger explicitly opened histories remain bounded.
+      if (this.tails.size >= 600) this.tails.delete(this.tails.keys().next().value!)
       this.tails.set(path, { stamp, identity, size: info.size, records })
       return records
     } catch {
@@ -283,12 +300,28 @@ export class CodexTracker {
       }
       // Native projections expose the type separately. Parsing every historical JSON
       // payload to find a plan stalls the window event loop on long conversations.
-      const planType = history
-        ?.prepare('PRAGMA table_info(thread_items)')
-        .all()
-        .some((column) => column['name'] === 'item_type')
+      const itemColumns = new Set(
+        history
+          ?.prepare('PRAGMA table_info(thread_items)')
+          .all()
+          .map((column) => String(column['name'])),
+      )
+      const planType = itemColumns.has('item_type')
         ? 'item_type'
         : "json_extract(item_json,'$.type')"
+      const compactionMetadata =
+        ['item_type', 'turn_id', 'started_at_ms', 'completed_at_ms'].every((column) =>
+          itemColumns.has(column),
+        ) &&
+        history
+          ?.prepare('PRAGMA table_info(thread_turns)')
+          .all()
+          .some((column) => column['name'] === 'turn_id')
+      const pendingCompaction = compactionMetadata
+        ? history?.prepare(
+            "SELECT 1 FROM thread_items WHERE thread_id=? AND turn_id=? AND item_type='contextCompaction' AND started_at_ms IS NOT NULL AND completed_at_ms IS NULL LIMIT 1",
+          )
+        : undefined
       const focus = new Map<string, number>()
       try {
         const state = json(await readFile(this.paths.desktopState, 'utf8')),
@@ -310,6 +343,11 @@ export class CodexTracker {
         (row) =>
           CODEX_UUID.test(String(row['id'])) &&
           !this.hidden(codexKey(String(row['id'])), String(row['cwd'])),
+      )
+      this.transcripts = new Map(
+        valid
+          .filter((row) => typeof row['rollout_path'] === 'string')
+          .map((row) => [codexKey(String(row['id'])), String(row['rollout_path'])]),
       )
       const focused = valid
         .filter((row) => focus.has(String(row['id'])))
@@ -377,7 +415,7 @@ export class CodexTracker {
             if (priorPlan) records.unshift(json(priorPlan['item_json']))
             turn = (history
               .prepare(
-                'SELECT status,started_at,completed_at,(SELECT completed_at FROM thread_turns WHERE thread_id=? AND completed_at IS NOT NULL ORDER BY rollout_ordinal DESC LIMIT 1) AS last_completed_at FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1',
+                `SELECT ${compactionMetadata ? 'turn_id,' : ''}status,started_at,completed_at,(SELECT completed_at FROM thread_turns WHERE thread_id=? AND completed_at IS NOT NULL ORDER BY rollout_ordinal DESC LIMIT 1) AS last_completed_at FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1`,
               )
               .get(id, id) || {}) as Row
           } catch {
@@ -387,15 +425,30 @@ export class CodexTracker {
         const tail = await this.tail(String(row['rollout_path']))
         observeUsage(tail)
         // Paginated projections are authoritative for messages; tail still supplies token usage.
-        const summary = summarizeCodex(records.length ? records : tail),
+        const summary = summarizeCodex(records.length ? records : tail, turn['status']),
           tailSummary = summarizeCodex(tail)
         const live = await writerHeld(this.paths.locks, id)
         const hook = this.hooks.records.get(key)
         const fresh = hook && Date.now() - hook.at < 10 * 60_000 ? hook : null
-        const attention = fresh
+        let attention = fresh
           ? fresh.attention || (fresh.state === 'waiting' ? summary.attention : null)
           : summary.attention
+        if (
+          attention?.kind === 'question' &&
+          ['inProgress', 'in_progress'].includes(String(turn['status']))
+        ) {
+          const reference = nativeQuestionRef(records, turn['turn_id'])
+          if (reference) attention = { ...attention, nativeCodex: reference }
+        }
         const { state, tracked } = codexState(turn['status'], live, attention, fresh)
+        // A completed historical compaction is not a live status. Match the active turn
+        // and the item's start/end lifecycle metadata from the read-only projection.
+        const compacting =
+          state === 'working' &&
+          live &&
+          ['inProgress', 'in_progress'].includes(String(turn['status'])) &&
+          !!pendingCompaction?.get(id, String(turn['turn_id']))
+        if (compacting) attention = null
         const planSource = tailSummary.hasPlan ? tailSummary : summary
         const plan = planSource.plan
         const current = plan.findIndex((p) => p.status === 'in_progress')
@@ -442,10 +495,11 @@ export class CodexTracker {
           cwd,
           state,
           tracked,
-          thinking: state === 'working' && !lastAction,
+          thinking: state === 'working' && !lastAction && !compacting,
+          compacting,
           lastActiveAt: activity(row),
           focusedAt: focus.get(id) || 0,
-          stage: codexStage(state, currentStep, lastAction, lastReply, attention),
+          stage: codexStage(state, currentStep, lastAction, lastReply, attention, compacting),
           lastPrompt:
             summary.lastPrompt ||
             tailSummary.lastPrompt ||
@@ -490,7 +544,11 @@ export class CodexTracker {
       const expanded = new Set(view.expanded ?? (currentWorkspace ? [currentWorkspace] : [])),
         all = new Set(view.showAll)
       const workspaces: Workspace[] = []
-      for (const [cwd, members] of groups) {
+      let preloadBudget = 300
+      const prioritized = [...groups].sort(
+        ([a], [b]) => Number(expanded.has(b)) - Number(expanded.has(a)),
+      )
+      for (const [cwd, members] of prioritized) {
         const orderedAt = (row: Row) =>
           this.completionOrder.time(codexKey(String(row['id'])), activity(row))
         const recentMembers = members
@@ -500,13 +558,17 @@ export class CodexTracker {
           )
         if (!recentMembers.length) continue
         const list =
-          view.everything || expanded.has(cwd)
+          view.everything || expanded.has(cwd) || view.preload
             ? await buildList(
                 view.everything || all.has(cwd)
                   ? recentMembers
-                  : recentMembers.slice(0, this.maxSessions),
+                  : recentMembers.slice(
+                      0,
+                      view.preload ? Math.max(0, preloadBudget) : this.maxSessions,
+                    ),
               )
             : []
+        preloadBudget -= list.length
         const nodes = list.map((session) => ({
           session,
           children: [] as { session: Session; children: never[] }[],
@@ -532,7 +594,7 @@ export class CodexTracker {
           anyWorking: states.includes('working'),
           threads: roots,
           hiddenCount:
-            view.everything || expanded.has(cwd)
+            view.everything || expanded.has(cwd) || view.preload
               ? Math.max(0, recentMembers.length - list.length)
               : 0,
           worktrees: 0,
@@ -569,7 +631,9 @@ export function codexStage(
   action: string | null,
   reply: string | null,
   attention: Attention | null,
+  compacting = false,
 ): string {
+  if (state === 'working' && compacting) return 'Compacting context'
   if (state !== 'idle' && step)
     return `${state === 'waiting' ? 'Waiting for you · ' : ''}${step.index}/${step.total} · ${step.content}`
   if (attention) return attention.kind === 'approval' ? 'Needs approval' : 'Waiting for you'

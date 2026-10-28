@@ -1,3 +1,5 @@
+import { openHeaderPage } from './header-navigation.mjs'
+import { setupLegacySpace } from './space-navigation.mjs'
 /* global window */
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -9,6 +11,7 @@ export async function setupMemory(page, MemoryStore, MemoryConnections) {
   const directory = mkdtempSync(join(tmpdir(), 'threadlight-ui-memory-')),
     store = new MemoryStore(join(directory, 'memory.sqlite'))
   const connections = new MemoryConnections(store)
+  store.connectionStatus = () => connections.list()
   const snapshot = () => {
     const pending = connections.list()
     return { ...store.snapshot(), endpoint: 'http://127.0.0.1:47618/mcp', connections: pending }
@@ -46,13 +49,8 @@ export async function setupMemory(page, MemoryStore, MemoryConnections) {
 }
 
 export async function checkMemory(page, proof, capture) {
-  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
-  await page
-    .getByLabel('Shared Spaces workspace', { exact: true })
-    .selectOption({ label: 'shared' })
-  assert.equal(await page.getByRole('tab', { name: 'Ideas', exact: true }).count(), 0)
-  await capture('shared-spaces-setup')
-  await page.getByRole('button', { name: 'Create Shared Spaces', exact: true }).click()
+  await openHeaderPage(page, 'Shared Spaces')
+  await setupLegacySpace(page)
   const view = page.getByRole('region', { name: 'Handoffs', exact: true })
   await view.getByRole('button', { name: /shared Workspace collaboration/ }).click()
   await view.getByRole('button', { name: 'New folder', exact: true }).click()

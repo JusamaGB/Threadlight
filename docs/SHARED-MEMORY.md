@@ -101,6 +101,30 @@ New folders update quietly in place. The compact map shows six at a level, then 
 List shows the rest. Drafts are stored by item/task/form destination. Native thread
 composer drafts and provider toggles retain their existing behaviour.
 
+## Project participants and capability reports
+
+A Shared Space is a project area. After creating it and connecting chats, open
+**Chats** to see participants, connection status and capability reports. Each
+platform keeps its own tools, skills and plugins; the project gives Brainstorm
+context for suggesting which native chat should do a task.
+
+Ask a connected chat with project-wide publishing access to use
+`memory_report_capabilities` to report its actual tools, skills, plugins and roles.
+You can also record a separate manual report. Reports are timestamped claims.
+Use **Record verification** to record what you tested or inspected; only the
+human can add this evidence. New reports start unverified. Reports over seven
+days old are flagged for rechecking. No credentials or private configuration
+should be included in a report.
+
+Brainstorm receives its project's current participant directory each turn.
+Assignment drafts offer **Suggested chats**, with matching capabilities and
+rationale. Selecting one changes the draft. Save the plan, prepare assignments
+and review them in Handoffs before authorizing dispatch. Capability reports do
+not grant permissions or establish that a native destination can currently send.
+Reload updated provider plugin tools to make the reporting tool available.
+
+See [the participant specification](specs/PROJECT-PARTICIPANTS-SPEC.md).
+
 ## Plugin setup
 
 Use Node 22.16+ on PATH and a Threadlight build that includes the memory bridge.

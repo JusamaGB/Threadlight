@@ -10,8 +10,17 @@ import { codexPolicy, verifyCodexPolicy } from '../src/main/agent/codexPolicy'
 import { AgentStore } from '../src/main/agent/agentStore'
 import { AgentService } from '../src/main/agent/agentService'
 import { DEFAULT_SETTINGS } from '../src/shared/settings'
+import { THREADLIGHT_AGENT_IDENTITY } from '../src/shared/agentIdentity'
+import {
+  SPACE_CONTEXT_SERVER,
+  SPACE_CONTEXT_TOOLS,
+  BRAINSTORM_INSTRUCTIONS,
+} from '../src/shared/spaceContext'
 import type { JsonObject } from '../src/main/sessions/json'
 import { archiveAgentConversation } from '../src/main/agent/agentArchive'
+import { controlTools, APP_CONTROL_SERVER } from '../src/shared/appControl'
+import type { ControlCaller } from '../src/main/appControl/service'
+import type { AppControlServer } from '../src/main/appControl/server'
 
 const models = [
   {
@@ -107,6 +116,133 @@ async function fixture() {
 const settle = async (run: CodexAgentRun) => expect.poll(() => run.current.status).toBe('ready')
 
 describe('Codex agent', () => {
+  it('restricts Brainstorm to its scoped integration and denies permission escalations', async () => {
+    const { fake, options } = await fixture()
+    let closed = 0
+    fake.handler = async (method) =>
+      method === 'config/read'
+        ? { config: { mcp_servers: { outside: { enabled: true, command: 'unused' } } } }
+        : method === 'mcpServerStatus/list'
+          ? {
+              data: [
+                {
+                  name: SPACE_CONTEXT_SERVER,
+                  tools: SPACE_CONTEXT_TOOLS.map((name) => ({ name })),
+                  runtimeStatus: 'ready',
+                },
+                { name: 'outside', runtimeStatus: 'disabled' },
+              ],
+              nextCursor: null,
+            }
+          : undefined
+    const run = new CodexAgentRun({
+      ...options,
+      spaceContext: () => ({
+        endpoint: 'http://127.0.0.1:1234/mcp',
+        token: 'synthetic',
+        close: () => {
+          closed++
+        },
+      }),
+    })
+    try {
+      expect(await run.send('Read and propose')).toEqual({ ok: true })
+      const params = fake.calls.find((c) => c.method === 'thread/start')!.params
+      expect(params.developerInstructions).toContain(BRAINSTORM_INSTRUCTIONS)
+      expect(params.config).toMatchObject({
+        'features.shell_tool': false,
+        'tools.view_image': false,
+        web_search: 'disabled',
+        mcp_servers: {
+          outside: { enabled: false },
+          [SPACE_CONTEXT_SERVER]: { enabled: true, enabled_tools: SPACE_CONTEXT_TOOLS },
+        },
+      })
+      fake.emit(
+        'item/commandExecution/requestApproval',
+        { turnId: 'turn-1', itemId: 'command', command: 'unapproved' },
+        91,
+      )
+      expect(fake.replies.at(-1)?.result).toMatchObject({ decision: 'decline' })
+      expect(run.current.requests).toEqual([])
+    } finally {
+      await run.close()
+    }
+    expect(closed).toBe(1)
+  })
+  it('routes control proposals through the existing Agent cards and binds decisions to the active conversation', async () => {
+    const { folder, fake } = await fixture()
+    let caller: ControlCaller | undefined
+    fake.handler = async (method) =>
+      method === 'mcpServerStatus/list'
+        ? {
+            data: [
+              {
+                name: APP_CONTROL_SERVER,
+                tools: controlTools.map((t) => ({ name: t.name })),
+                runtimeStatus: 'ready',
+              },
+            ],
+            nextCursor: null,
+          }
+        : undefined
+    const service = new AgentService({
+      workspace: folder,
+      index: join(folder, 'control-agent.json'),
+      claudeProjects: folder,
+      settings: () => ({ ...DEFAULT_SETTINGS, agentProvider: 'codex' }),
+      snapshot: () => ({
+        sessions: [],
+        workspaces: [],
+        allWorkspaces: [],
+        currentWorkspace: null,
+        currentThreadId: null,
+      }),
+      cli: async () => null,
+      codexClient: async () => fake,
+      onChange: () => {},
+      onRateLimit: () => {},
+      appControl: {
+        service: { orientation: () => ({ version: 'fixture' }) },
+        connect: (value: ControlCaller) => {
+          caller = value
+          return {
+            endpoint: 'http://127.0.0.1:1/mcp',
+            token: 'fixture',
+            close: () => {
+              value.active = false
+            },
+          }
+        },
+      } as unknown as AppControlServer,
+    })
+    try {
+      expect((await service.send('Synthetic control action')).ok).toBe(true)
+      fake.complete()
+      await expect.poll(() => service.current.status).toBe('ready')
+      const decision = vi.fn()
+      caller!.approve('control:fixture', 'Change hover help', '{"hoverHelp":"off"}', decision)
+      expect(service.current.requests).toContainEqual(
+        expect.objectContaining({
+          id: 'control:fixture',
+          detail: '{"hoverHelp":"off"}',
+          kind: 'approval',
+        }),
+      )
+      expect(decision).not.toHaveBeenCalled()
+      expect(service.respond('control:fixture', { action: 'allow' }).ok).toBe(true)
+      expect(decision).toHaveBeenCalledWith(true)
+      expect(service.respond('control:fixture', { action: 'allow' }).ok).toBe(false)
+      const denied = vi.fn()
+      caller!.approve('control:pending', 'Create named space', 'Exact title and workspace', denied)
+      await service.close()
+      expect(denied).toHaveBeenCalledWith(false)
+      expect(caller!.active).toBe(false)
+      expect(service.current.requests).toEqual([])
+    } finally {
+      await service.close()
+    }
+  })
   it('archives once on End, retains Agent history and restores the same conversation on Continue', async () => {
     const { run, fake, store, options } = await fixture()
     await run.send('Keep my history')
@@ -131,6 +267,9 @@ describe('Codex agent', () => {
       client: async () => next,
     })
     await resumed.prepareResume()
+    expect(
+      next.calls.find((c) => c.method === 'thread/resume')?.params.developerInstructions,
+    ).toContain(THREADLIGHT_AGENT_IDENTITY)
     expect(next.calls.find((c) => c.method === 'thread/unarchive')?.params).toEqual({
       threadId: 'owned-thread',
     })
@@ -595,9 +734,16 @@ describe('native Live voice', () => {
     const { run, fake, store } = await fixture()
     connect(fake)
     expect(await run.startLive(voiceId, offer)).toBe(answer)
+    expect(
+      fake.calls.find((c) => c.method === 'thread/start')?.params.developerInstructions,
+    ).toContain(THREADLIGHT_AGENT_IDENTITY)
     expect(fake.calls.find((c) => c.method === 'thread/realtime/start')?.params).toMatchObject({
       transport: { type: 'webrtc', sdp: offer },
       flushTranscriptTailOnSessionEnd: false,
+      prompt: expect.stringContaining(THREADLIGHT_AGENT_IDENTITY),
+      initialItems: [
+        { role: 'developer', text: expect.stringContaining(THREADLIGHT_AGENT_IDENTITY) },
+      ],
     })
     expect(
       fake.calls.some(

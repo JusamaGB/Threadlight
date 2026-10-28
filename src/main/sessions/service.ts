@@ -43,9 +43,11 @@ export class SessionService {
   }
 
   /** The UI opened or closed a workspace: rescan now, so its threads appear straight away. */
-  setView(view: TreeView): void {
+  setView(view: TreeView, refresh = true): boolean {
+    if (JSON.stringify(this.view) === JSON.stringify(view)) return false
     this.view = view
-    void this.refresh()
+    if (refresh) void this.refresh()
+    return true
   }
 
   start(intervalMs: number): void {
@@ -80,7 +82,7 @@ export class SessionService {
   private async scan(): Promise<void> {
     try {
       const started = performance.now()
-      const snapshot = await this.tracker.snapshot(this.view)
+      const snapshot = await this.tracker.snapshot({ ...this.view, preload: true })
       const took = performance.now() - started
       if (took > SLOW_SCAN_MS) this.onSlow?.(took, snapshot)
       const json = JSON.stringify(snapshot)

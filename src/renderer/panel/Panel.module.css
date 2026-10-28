@@ -10,14 +10,19 @@
 .panelStage[data-wide] {
   display: flex;
   justify-content: flex-end;
-  width: calc(var(--dual-card-width, 475px) + 16px);
+  width: calc(var(--dual-card-width, 475px) + 16px + var(--right-wire-gutter, 0px));
 }
 
 /* The 16px wire gutter sits against the card's left edge, wherever that edge is. */
 .cardFrame {
   position: relative;
   box-sizing: border-box;
+  width: max-content;
   padding-left: 16px;
+}
+
+.panelStage[data-wide] .cardFrame {
+  padding-right: var(--right-wire-gutter, 0px);
 }
 
 .card {
@@ -33,6 +38,26 @@
   transition:
     border-color 120ms ease,
     width 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.panelContents {
+  display: contents;
+}
+.panelContents[hidden] {
+  display: none;
+}
+.peekView {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+}
+.peekList {
+  min-height: 0;
+  overflow-y: auto;
+}
+.peekRow {
+  box-sizing: border-box;
 }
 
 .panelStage[data-dual] .card {
@@ -92,8 +117,36 @@
   cursor: default;
 }
 
+/* The artifact controls sit on the existing header border, without adding a row. */
+.artifactNavigationSlot {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: -3px;
+  height: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
 .heading {
   font-weight: 600;
+}
+
+.artifactActionsSlot {
+  position: absolute;
+  left: 6px;
+  top: 3px;
+  display: flex;
+  gap: 3px;
+}
+
+/* Artifact details yield the bottom space to the current hover explanation. */
+.usageBars:has([data-hover-message]:not(:empty))
+  .artifactInfoSlot:not(:has([role='alert'], [role='status'])) {
+  display: none;
 }
 
 .header > .viewControl,
@@ -348,6 +401,12 @@
 .emptyWindow {
   text-align: center;
 }
+
+.emptyActive {
+  padding-block: 2px;
+  text-align: center;
+}
+
 .timeWindowChoice {
   padding: 0;
   border: 0;
@@ -627,6 +686,55 @@
   position: relative;
 }
 
+/* Every thread reserves a compact third line beneath the title and Now text. Its buttons
+   are siblings of the row button, so activating a tile never expands the thread. */
+.artifactStrip {
+  margin: 0 6px;
+  height: 6px;
+  display: flex;
+  justify-content: center;
+  gap: 1px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.artifactTile {
+  position: relative;
+  flex: 0 1 12px;
+  min-width: 0;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.artifactTile > span:first-child {
+  position: absolute;
+  inset: 2px 0 1px;
+  background: #9da9b8;
+  opacity: 0.7;
+}
+
+.artifactStrip .artifactTile > span:first-child {
+  top: 1px;
+  bottom: 2px;
+}
+
+.artifactTile:nth-child(even) > span:first-child {
+  background: #596575;
+}
+.artifactTile:hover > span:first-child,
+.artifactTile:focus-visible > span:first-child {
+  opacity: 1;
+  background: #d6e5f5;
+}
+.artifactTile:focus-visible {
+  outline: 1px solid #d6e5f5;
+  outline-offset: 1px;
+}
+
 .row[data-striped] {
   background: var(--raised);
   /* Continue the stripe to the card edge while keeping nested guide lines visible. */
@@ -647,11 +755,17 @@
 .rowButton {
   display: block;
   width: 100%;
-  padding: 1.5px 6px 1.5px 10px;
+  padding: 0.5px 6px 1.5px 10px;
   transition: opacity 120ms ease;
 }
 
 /* Overlay the whole row so raised details and cards don't interrupt the narrow edge tint. */
+.row[data-provider],
+.fileRow[data-provider] {
+  --provider-edge-size: 10px;
+  --provider-edge-colour: color-mix(in srgb, var(--provider-tint) 20%, transparent);
+}
+
 .row[data-provider]::before,
 .row[data-provider]::after,
 .fileRow[data-provider]::before,
@@ -660,14 +774,10 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 10px;
+  width: var(--provider-edge-size);
   pointer-events: none;
   z-index: 1;
-  background-image: linear-gradient(
-    to left,
-    color-mix(in srgb, var(--provider-tint) 20%, transparent),
-    transparent
-  );
+  background-image: linear-gradient(to left, var(--provider-edge-colour), transparent);
 }
 
 .row[data-provider]::before {
@@ -692,27 +802,19 @@
   position: absolute;
   left: calc(0px - var(--thread-inset, 0px));
   right: 0;
-  height: 12px;
+  height: var(--provider-edge-size);
   pointer-events: none;
   z-index: 1;
 }
 
 .edgeTop {
   top: 0;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--provider-tint) 30%, transparent),
-    transparent
-  );
+  background: linear-gradient(to bottom, var(--provider-edge-colour), transparent);
 }
 
 .edgeBottom {
   bottom: 0;
-  background: linear-gradient(
-    to top,
-    color-mix(in srgb, var(--provider-tint) 30%, transparent),
-    transparent
-  );
+  background: linear-gradient(to top, var(--provider-edge-colour), transparent);
 }
 
 .row[data-provider='codex'],
@@ -733,6 +835,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  line-height: 15px;
+  min-height: 15px;
 }
 
 /* The dot's slot keeps every title in line; the context ring is centred on it. */
@@ -771,6 +875,10 @@
 .ringFill {
   fill: none;
   stroke-width: 1.5;
+}
+
+.unreadDot {
+  fill: var(--accent);
 }
 
 .ringTrack {
@@ -974,7 +1082,9 @@
 .rowBottom {
   display: flex;
   align-items: center;
-  margin-top: 1px;
+  margin-top: 0;
+  line-height: 14px;
+  min-height: 14px;
 }
 
 .rowBottom > .age,
@@ -1035,6 +1145,16 @@
   margin-right: -3px;
 }
 
+.stage[data-compacting] {
+  text-align: center;
+}
+
+/* With no trailing badge, keep the fade inside the row's right-hand padding. */
+.title:last-child,
+.stage:last-child {
+  margin-right: 0;
+}
+
 /* The badge already fills the gutter. */
 .pr + .stage {
   margin-left: 0;
@@ -1082,10 +1202,11 @@
 /* Open ↗ on an expanded row's top line; the space keeps the title clear. */
 .rowOpen {
   position: absolute;
-  top: 1.5px;
+  top: 0.5px;
   right: 10px;
   color: var(--muted);
   font-size: 11px;
+  line-height: 15px;
 }
 
 .rowOpen:hover {
@@ -1322,6 +1443,7 @@ span.planStep {
   flex: none;
   color: var(--amber);
   font-size: 11px;
+  margin-left: 8px;
 }
 
 /* Set aside in Threadlight: still there, but plainly dealt with. */
@@ -1626,71 +1748,6 @@ span.planStep {
   text-align: left;
 }
 
-.diffBlock {
-  margin: 0 10px 8px;
-  max-height: 380px;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  font-family: 'Cascadia Mono', Consolas, monospace;
-  font-size: 10px;
-  line-height: 1.5;
-}
-
-.diffLine {
-  display: grid;
-  grid-template-columns: 28px 28px 12px 1fr;
-  color: var(--muted);
-}
-
-.diffLine[data-type='add'] {
-  background: rgb(46 204 113 / 12%);
-  color: var(--fg);
-}
-
-.diffLine[data-type='remove'] {
-  background: rgb(231 76 60 / 12%);
-  color: var(--fg);
-}
-
-.diffNo {
-  padding-right: 4px;
-  text-align: right;
-  color: var(--faint);
-  user-select: none;
-}
-
-.diffSign {
-  text-align: center;
-  user-select: none;
-}
-
-.diffLine[data-type='add'] .diffSign {
-  color: var(--green);
-}
-
-.diffLine[data-type='remove'] .diffSign {
-  color: var(--red);
-}
-
-.diffText {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  padding-right: 6px;
-}
-
-.diffHunk {
-  padding: 2px 8px;
-  border-top: 1px solid var(--border);
-  color: var(--faint);
-  background: var(--raised);
-}
-
-.diffHunk:first-child {
-  border-top: 0;
-}
-
 .diffFoot {
   display: flex;
   justify-content: flex-end;
@@ -1713,8 +1770,8 @@ span.planStep {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 6px 10px 8px;
-  gap: 6px;
+  padding: 3px 10px 4px;
+  gap: 4px;
 }
 
 .agentLog {
@@ -1796,7 +1853,26 @@ span.planStep {
 .agentInput .qOther {
   flex: 1;
   width: auto;
+  min-width: 0;
+  height: 20px;
   margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.agentInput .qOther:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.agentHotkey {
+  flex: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .agentEnd {
@@ -1901,6 +1977,40 @@ span.planStep {
   cursor: default;
 }
 
+.providerPill {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  margin: 2px 3px;
+}
+
+.providerChoice {
+  display: flex;
+  align-items: center;
+}
+.providerSlash {
+  color: var(--faint);
+  padding: 0 2px;
+}
+.providerChoice button {
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+.providerChoice button:hover:not(:disabled),
+.providerChoice button:focus-visible {
+  background: var(--accent);
+  color: var(--bg);
+  outline: none;
+}
+.providerChoice button:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
 .voiceActivity {
   position: absolute;
   left: 0;
@@ -1955,6 +2065,7 @@ span.planStep {
   min-height: 0;
   max-width: 100%;
   padding: 6px 10px;
+  text-align: center;
   border: 0;
   border-radius: 0;
   background: var(--bg);
@@ -2052,7 +2163,7 @@ span.planStep {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--border);
-  margin: 2px -10px -8px;
+  margin: 2px -10px -4px;
   padding: 2px 10px;
 }
 
@@ -2060,7 +2171,6 @@ span.planStep {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 5px;
   height: 16px;
   padding: 0;
   border: 0;
@@ -2072,16 +2182,6 @@ span.planStep {
 
 .agentEarlierHead:hover {
   color: var(--fg);
-}
-
-.agentChevron {
-  display: inline-block;
-  width: 8px;
-  transition: transform 150ms ease;
-}
-
-.agentChevron[data-open] {
-  transform: rotate(90deg);
 }
 
 .agentPast {

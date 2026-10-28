@@ -66,13 +66,13 @@ const tools = [
     },
   })),
 ]
-async function post(path, body, secret) {
+async function post(path, body, secret, timeout = 5000) {
   let response
   try {
     response = await fetch(new URL(path, url), {
       method: 'POST',
       redirect: 'error',
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeout),
       headers: {
         'Content-Type': 'application/json',
         ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
@@ -218,6 +218,7 @@ async function call(name, args) {
       params: { name, arguments: arguments_ },
     },
     record.secret,
+    name === 'threadlight_read_question' ? 35000 : 5000,
   )
   if (result.error) throw new Error(result.error.message)
   return result.result

@@ -1,0 +1,141 @@
+.root {
+  margin: 0 6px 8px;
+  max-height: 380px;
+  overflow: auto;
+  background: var(--bg);
+  border-radius: 5px;
+  color: var(--fg);
+  font:
+    11px/16px 'Cascadia Mono',
+    Consolas,
+    monospace;
+}
+.hunk + .hunk {
+  margin-top: 8px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 3px 5px;
+  color: var(--muted);
+  font:
+    10px/16px 'Segoe UI',
+    sans-serif;
+}
+.toolbar > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toolbar button {
+  flex: none;
+  color: var(--muted);
+  font: inherit;
+  padding: 1px 0;
+}
+.toolbar button[aria-pressed='true'] {
+  color: var(--accent);
+}
+.group {
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.group:last-child,
+.context:last-child {
+  margin-bottom: 0;
+}
+.group[data-type='remove'] {
+  background: color-mix(in srgb, var(--red) 12%, var(--bg));
+}
+.group[data-type='add'] {
+  background: color-mix(in srgb, var(--green) 12%, var(--bg));
+}
+.groupHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 7px;
+  font:
+    600 10px/16px 'Segoe UI',
+    sans-serif;
+}
+.groupHead > span:last-child {
+  font-weight: 400;
+}
+.group[data-type='remove'] .groupHead {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+}
+.group[data-type='add'] .groupHead {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 8%, transparent);
+}
+.codeLines {
+  padding: 4px 0;
+}
+.line {
+  display: grid;
+  grid-template-columns: max(26px, var(--diff-number-width)) minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: start;
+  padding: 2px 6px 2px 2px;
+}
+.number {
+  padding-right: 1px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 10px;
+  user-select: none;
+}
+.text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+.root[data-wrap='false'] .codeLines {
+  overflow-x: auto;
+}
+.root[data-wrap='false'] .line {
+  min-width: max-content;
+  grid-template-columns: max(26px, var(--diff-number-width)) auto;
+}
+.root[data-wrap='false'] .text {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.context {
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+.context summary {
+  list-style: none;
+  border-radius: 4px;
+  padding: 3px 6px;
+  background: var(--raised);
+  font:
+    10px/16px 'Segoe UI',
+    sans-serif;
+  cursor: pointer;
+}
+.context summary::-webkit-details-marker {
+  display: none;
+}
+.context summary::before {
+  content: '›';
+  display: inline-block;
+  margin-right: 5px;
+}
+.context[open] summary::before {
+  transform: rotate(90deg);
+}
+.root button:focus-visible,
+.root summary:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}

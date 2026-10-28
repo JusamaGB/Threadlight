@@ -69,6 +69,10 @@ export interface NextStepAction {
 export type Attention =
   | {
       kind: 'question'
+      /** Exact native Codex desktop question; independent of Claude holds and Shared Spaces. */
+      nativeCodex?: import('./codexQuestions').CodexQuestionRef
+      /** Threadlight-owned decision, answered through its saved request ID. */
+      managed?: { id: string; generation: string; allowOther: boolean }
       holdId?: string
       questions: CardQuestion[]
       /**
@@ -199,10 +203,14 @@ export interface Session {
   lastActiveAt: number
   /** Position timestamp: held during work and advanced when a task finishes. */
   orderAt?: number
+  /** UI-local unread completion, cleared when this thread is opened. */
+  unread?: boolean
   /** When the Claude app last had this thread in front; 0 when unknown. */
   focusedAt: number
   /** One line describing where the session is. */
   stage: string
+  /** Explicit provider lifecycle signal, never inferred from a full context meter. */
+  compacting?: boolean
   /** The line is the Thinking placeholder: drawn turning, as the agent's progress line is. */
   thinking: boolean
   lastPrompt: string | null
@@ -272,6 +280,8 @@ export interface TreeView {
   showAll: string[]
   /** Every workspace is listed in full (All drives), however many there are. */
   everything?: boolean
+  /** Keep a bounded set of workspace rows warm even when their view is hidden. */
+  preload?: boolean
 }
 
 /** Everything one scan produces. */

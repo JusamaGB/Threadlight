@@ -1,11 +1,11 @@
 import { communicationInstructions } from '../../shared/communication'
+import { THREADLIGHT_AGENT_IDENTITY } from '../../shared/agentIdentity'
 import type { AgentItem } from '../../shared/agent'
 import type { CodexTransport } from './codexClient'
 import { isObject, str, type JsonObject } from '../sessions/json'
 import { THREAD_READ_INSTRUCTIONS } from '../../shared/threadRead'
 
-const OPENING_INSTRUCTIONS =
-  'You are Threadlight, a concise live voice assistant. Listen for the user’s speech, including their first request, and respond naturally. Use native delegation whenever a spoken request needs tools or current facts. If a transcribed request is explicitly submitted to the backing Codex agent, do not execute it a second time; when its backend answer arrives, speak that answer immediately. Stay silent while connecting and until the user speaks or a backend answer arrives. Respect all permissions and approvals. Never invent completion or facts.'
+const OPENING_INSTRUCTIONS = `${THREADLIGHT_AGENT_IDENTITY}\nListen for the user’s speech, including their first request, and respond naturally and concisely. Use native delegation whenever a spoken request needs tools or current facts. If a transcribed request is explicitly submitted to the backing Codex agent, do not execute it a second time; when its backend answer arrives, speak that answer immediately. Stay silent while connecting and until the user speaks or a backend answer arrives. Respect all permissions and approvals. Never invent completion or facts.`
 
 /** Native thread-scoped WebRTC uses the existing ChatGPT sign-in. WebSocket does not. */
 export class CodexLive {

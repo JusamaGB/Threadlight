@@ -1,3 +1,5 @@
+import { openHeaderPage } from './header-navigation.mjs'
+import { setupLegacySpace, openSpace } from './space-navigation.mjs'
 /* global window */
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -107,11 +109,8 @@ export async function setupCommunication(
   return { service, feed, destinations, native, human, close: () => service.close() }
 }
 export async function checkCommunication(page, proof, memory, capture) {
-  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
-  await page
-    .getByLabel('Shared Spaces workspace', { exact: true })
-    .selectOption({ label: 'shared' })
-  await page.getByRole('button', { name: 'Create Shared Spaces', exact: true }).click()
+  await openHeaderPage(page, 'Shared Spaces')
+  await setupLegacySpace(page)
   const handoffs = page.getByRole('region', { name: 'Handoffs', exact: true })
   await handoffs.getByRole('button', { name: /shared Workspace collaboration/ }).click()
   const view = page.getByRole('region', { name: 'Thread communication' })
@@ -202,10 +201,8 @@ export async function checkCommunication(page, proof, memory, capture) {
   assert.equal(proof.native.length, 0)
   await capture('communication-workflow-and-history')
   await page.reload()
-  await page.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
-  await page
-    .getByLabel('Shared Spaces workspace', { exact: true })
-    .selectOption({ label: 'shared' })
+  await openHeaderPage(page, 'Shared Spaces')
+  await openSpace(page)
   await page
     .getByRole('region', { name: 'Handoffs', exact: true })
     .getByRole('button', { name: /shared Workspace collaboration/ })
@@ -290,7 +287,7 @@ export async function checkConversationEvents(page, proof, memory, capture) {
     window.threadlight.updateSettings({ voiceTarget: 'agent', agentProvider: 'codex' }),
   )
   await setAgent(owner)
-  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  await openHeaderPage(page, 'Agent')
   const first = page.getByRole('region', { name: 'Communication claude native card', exact: true })
   const second = page.getByRole('region', { name: 'Communication codex native card', exact: true })
   await first.waitFor()

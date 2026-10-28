@@ -400,6 +400,7 @@ export class CommunicationService {
     action: CommunicationAction,
     raw: unknown,
     actor: CommunicationActor,
+    validateConnection?: () => void,
   ): Promise<unknown> {
     if (this.closed) throw new Error('Communication service is closed.')
     if (action === 'claim_delivery' || action === 'complete_delivery') {
@@ -903,9 +904,66 @@ export class CommunicationService {
         return this.store.put('message', m, action === 'cancel_message' ? 'Cancelled' : 'Resumed')
       })
     }
+    if (action === 'read_question' || action === 'cancel_question') {
+      const i = communicationSchemas[action].parse(raw)
+      const read = () => {
+        if (this.closed) throw new Error('Communication service is closed.')
+        validateConnection?.()
+        const q = this.store.get('question', i.id)
+        this.check(actor, q.spaceId)
+        if (actor.kind !== 'human' && q.sender !== actor.id)
+          throw new Error('Only the asking connection can collect or withdraw this question.')
+        if (q.generation !== i.generation) throw new Error('That question generation ended.')
+        if (q.state === 'pending' && q.expiresAt && q.expiresAt <= this.now())
+          return this.store.transaction(() =>
+            this.store.put(
+              'question',
+              { ...q, state: 'expired', reason: 'Question expired.' },
+              'Question expired',
+            ),
+          )
+        return q
+      }
+      let q = read()
+      if (action === 'cancel_question' && 'operationId' in i) {
+        return this.store.operation(actor.id, i.operationId, { action, ...i }, () => {
+          if (q.state !== 'pending') throw new Error('That question is no longer pending.')
+          return this.store.put(
+            'question',
+            { ...q, state: 'expired', reason: 'Question cancelled.' },
+            'Question cancelled',
+          )
+        })
+      }
+      const deadline = Date.now() + ('waitMs' in i ? i.waitMs : 0)
+      while (q.state === 'pending' && Date.now() < deadline) {
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, Math.min(250, deadline - Date.now())),
+        )
+        q = read()
+      }
+      return q
+    }
     if (action === 'ask_question') {
       const i = communicationSchemas.ask_question.parse(raw)
       this.check(actor, i.spaceId)
+      if (
+        i.answerDelivery === 'tool' &&
+        (i.audience !== 'human' || !actor.target || actor.kind === 'human')
+      )
+        throw new Error(
+          'A tool decision card requires an approved linked chat and a human audience.',
+        )
+      // Keep pre-card operation digests replayable after an upgrade.
+      const { answerDelivery: _delivery, allowOther: _other, ...legacy } = i
+      const operationInput =
+        i.answerDelivery === 'message' && !i.allowOther ? { action, ...legacy } : { action, ...i }
+      const replay = this.store.replay<CommunicationQuestion>(
+        actor.id,
+        i.operationId,
+        operationInput,
+      )
+      if (replay) return this.store.get('question', replay.id)
       if (i.originMessageId) {
         const origin = this.store.get('message', i.originMessageId)
         if (
@@ -922,7 +980,7 @@ export class CommunicationService {
         throw new Error('Question audience is not in this project.')
       if (i.taskId && this.store.get('assignment', i.taskId).spaceId !== i.spaceId)
         throw new Error('Wrong task.')
-      return this.store.operation(actor.id, i.operationId, { action, ...i }, () => {
+      return this.store.operation(actor.id, i.operationId, operationInput, () => {
         const pending = this.store
           .list('question')
           .filter((q) => q.spaceId === i.spaceId && q.state === 'pending')
@@ -942,6 +1000,9 @@ export class CommunicationService {
             ? 'Reciprocal question dependency. The coordinator or user must resolve the wait; no connection is blocked.'
             : undefined
         const q: CommunicationQuestion = {
+          answerDelivery: i.answerDelivery,
+          allowOther: i.allowOther,
+          ...(i.answerDelivery === 'tool' ? { expiresAt: this.now() + 60 * 60_000 } : {}),
           id: randomUUID(),
           spaceId: i.spaceId,
           taskId: i.taskId,
@@ -965,6 +1026,8 @@ export class CommunicationService {
       this.check(actor, q.spaceId)
       const replay = this.store.replay(actor.id, i.operationId, { action, ...i })
       if (replay) return this.store.get('question', q.id)
+      if (q.answerDelivery === 'tool' && actor.kind !== 'human')
+        throw new Error('This decision card requires the human to answer in Threadlight.')
       if (
         actor.kind !== 'human' &&
         !(
@@ -984,14 +1047,18 @@ export class CommunicationService {
       )
         throw new Error('This question requires its addressed recipient.')
       return this.store.operation(actor.id, i.operationId, { action, ...i }, () => {
-        if (q.generation !== i.generation || q.state !== 'pending')
+        if (
+          q.generation !== i.generation ||
+          q.state !== 'pending' ||
+          (q.expiresAt && q.expiresAt <= this.now())
+        )
           throw new Error('That question is no longer pending.')
-        if (q.choices.length && !q.choices.includes(i.answer))
+        if (q.choices.length && !q.allowOther && !q.choices.includes(i.answer))
           throw new Error('Choose one of the current options.')
         q.state = 'answered'
         q.answer = i.answer
         q.answeredBy = actor.id
-        if (q.senderTarget) {
+        if (q.senderTarget && q.answerDelivery !== 'tool') {
           const id = randomUUID()
           const m: CommunicationMessage = {
             id,
@@ -1157,6 +1224,18 @@ export class CommunicationService {
   }
   async tick() {
     if (this.pumping || this.closed || this.recoveryIssue) return
+    const expired = this.store
+      .list('question')
+      .filter((q) => q.state === 'pending' && q.expiresAt && q.expiresAt <= this.now())
+    if (expired.length)
+      this.store.transaction(() => {
+        for (const q of expired)
+          this.store.put(
+            'question',
+            { ...q, state: 'expired', reason: 'Question expired.' },
+            'Question expired',
+          )
+      })
     this.pumping = true
     try {
       const messages = this.store.list('message')

@@ -3,6 +3,9 @@ import type { MemoryDeliveryContext } from '../../shared/memory'
 import { MemoryStore } from './store'
 
 export interface MemoryDelivery {
+  questionsChanged?: (
+    questions: import('../../shared/communication').CommunicationQuestion[],
+  ) => void
   conversationOwner?: () => string | undefined
   nativeRequests?: () => import('../../shared/communication').NativeCommunicationRequest[]
   respondNative?: (

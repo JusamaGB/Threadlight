@@ -17,8 +17,13 @@ const labels: Record<MotionMode, string> = {
   error: 'Needs attention',
 }
 
-/** The panel's audio timer also feeds the separate dot while the panel is hidden. */
-export function useMotion(mode: MotionMode, input: EnergySource, output: EnergySource) {
+/** A motion source can also publish telemetry for the separate floating dot. */
+export function useMotion(
+  mode: MotionMode,
+  input: EnergySource,
+  output: EnergySource,
+  publishToDot = true,
+) {
   const source = useRef<MotionSnapshot>(IDLE_MOTION)
   const latest = useRef({ mode, input, output })
   const [label, setLabel] = useState(labels[mode])
@@ -42,7 +47,7 @@ export function useMotion(mode: MotionMode, input: EnergySource, output: EnergyS
       }
       setLabel(performance.now() - spoken < 180 && speakingLabel ? speakingLabel : labels[mode])
       const serial = JSON.stringify(value)
-      if (serial !== lastSent) {
+      if (publishToDot && serial !== lastSent) {
         window.threadlight.setMotion(value)
         lastSent = serial
       }
@@ -51,8 +56,8 @@ export function useMotion(mode: MotionMode, input: EnergySource, output: EnergyS
     const timer = window.setInterval(update, 50)
     return () => {
       window.clearInterval(timer)
-      window.threadlight.setMotion(IDLE_MOTION)
+      if (publishToDot) window.threadlight.setMotion(IDLE_MOTION)
     }
-  }, [])
+  }, [publishToDot])
   return { source, label }
 }

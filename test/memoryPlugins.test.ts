@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MemoryStore } from '../src/main/memory/store'
 import { MemoryServer } from '../src/main/memory/server'
 import { MemoryConnections } from '../src/main/memory/connections'
+import { CommunicationService } from '../src/main/communication/service'
 import type { MemoryInput, MemorySpace, MemoryFolder } from '../src/shared/memory'
 import { sandbox, type Sandbox } from './helpers'
 
@@ -314,6 +315,138 @@ function bridge(provider: 'claude' | 'codex', endpoint: string) {
 const value = (reply: Reply) => JSON.parse(reply.result!.content![0]!.text!)
 
 describe('actual packaged stdio bridges', () => {
+  it.each(['claude', 'codex'] as const)(
+    '%s reports only its linked project capabilities through the packaged bridge',
+    async (provider) => {
+      const b = bridge(provider, await server.start(0))
+      const id = value(await b.call('memory_connect', { label: 'Capability report' })).connectionId
+      const assignee = provider === 'codex' ? 'codex:capability-chat' : 'capability-chat'
+      approve(server.connections, id, { folderId: undefined, assignee, readOnly: false })
+      const args = {
+        connectionId: id,
+        operationId: randomUUID(),
+        capabilities: [
+          { kind: 'tool', name: 'Browser automation', description: 'Browser screenshots' },
+        ],
+      }
+      const report = value(await b.call('memory_report_capabilities', args))
+      expect(report).toMatchObject({
+        spaceId: space.id,
+        assignee,
+        source: 'reported',
+        verifications: [],
+      })
+      expect(value(await b.call('memory_report_capabilities', args)).id).toBe(report.id)
+      expect(
+        value(await b.call('memory_briefing', { connectionId: id })).capabilityReports,
+      ).toEqual([report])
+      expect(
+        (await b.call('memory_report_capabilities', { ...args, assignee: 'pretend-other' })).result
+          ?.isError,
+      ).toBe(true)
+      expect(
+        (
+          await b.call('memory_verify_capability', {
+            connectionId: id,
+            id: report.id,
+            capabilityIndex: 0,
+            evidence: 'pretend verified',
+          })
+        ).result?.isError,
+      ).toBe(true)
+    },
+  )
+  it.each(['claude', 'codex'] as const)(
+    '%s collects a human card answer on its original bridge beyond the normal HTTP timeout',
+    async (provider) => {
+      const service = new CommunicationService(store.communications, {
+        destinations: async () => [],
+        deliver: async () => {
+          throw new Error('Decision cards must not launch a provider')
+        },
+        authorize: (actor, id) => store.authorizeCommunication(actor, id),
+        input: (actor, id, revision) => store.communicationInput(actor, id, revision),
+        project: (id) => store.space(id),
+      })
+      store.communicationService = service
+      const target = `${provider === 'codex' ? 'codex:' : ''}${randomUUID()}`
+      try {
+        service.configure(
+          {
+            id: randomUUID(),
+            spaceId: space.id,
+            revision: 1,
+            mode: 'manual',
+            paused: true,
+            participants: [
+              {
+                id: randomUUID(),
+                target,
+                role: 'Test',
+                model: 'test',
+                communicate: true,
+                requestWork: false,
+              },
+            ],
+            maxConcurrent: 1,
+            maxDispatches: 1,
+            expiresAt: Date.now() + 60000,
+            recover: false,
+            acceptBy: 'human',
+          },
+          0,
+          { id: 'human', kind: 'human' },
+        )
+        const b = bridge(provider, await server.start(0))
+        const id = value(
+          await b.call('memory_connect', { label: 'Decision card test' }),
+        ).connectionId
+        approve(server.connections, id, { folderId: undefined, readOnly: false, assignee: target })
+        const asked = await b.call('threadlight_ask_question', {
+          connectionId: id,
+          operationId: randomUUID(),
+          spaceId: space.id,
+          audience: 'human',
+          body: 'Choose the next step',
+          choices: ['Explore', 'Build'],
+          answerDelivery: 'tool',
+          allowOther: true,
+        })
+        expect(asked.result?.isError).toBe(false)
+        const q = value(asked)
+        const pending = b.call('threadlight_read_question', {
+          connectionId: id,
+          id: q.id,
+          generation: q.generation,
+          waitMs: 7000,
+        })
+        // Exercise the actual bridge's former five-second abort, not a mocked fetch.
+        await new Promise((resolve) => setTimeout(resolve, 5500))
+        await service.execute(
+          'answer_request',
+          {
+            operationId: randomUUID(),
+            id: q.id,
+            generation: q.generation,
+            answer: 'Explore, then build',
+          },
+          { id: 'human', kind: 'human' },
+        )
+        const response = await pending
+        expect(response.result?.isError).toBe(false)
+        expect(value(response)).toMatchObject({
+          id: q.id,
+          state: 'answered',
+          answer: 'Explore, then build',
+          senderTarget: target,
+        })
+        expect(store.communications.list('message')).toHaveLength(0)
+      } finally {
+        service.close()
+      }
+    },
+    15000,
+  )
   it.each(['claude', 'codex'] as const)(
     '%s initializes offline and requires explicit per-call connection IDs',
     async (provider) => {

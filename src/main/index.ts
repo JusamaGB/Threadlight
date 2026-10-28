@@ -1,12 +1,23 @@
+import { AppControlService, controlSettingsRevision } from './appControl/service'
+import { restartAction } from './restart'
+import { controlWorkspaces } from './appControl/workspaces'
+import { observerActive } from './appControl/restartGuard'
+import { AppControlServer } from './appControl/server'
+import { registerAppControl } from './appControl/integration'
 import { OwnedRequests } from './communication/ownedRequests'
+import { withManagedQuestions } from '../shared/managedQuestions'
+import type { CommunicationQuestion } from '../shared/communication'
 import { codexCommunicationAdmitted } from './communication/admission'
 import { codexHeld } from './codex/live'
 import { CommunicationCatalog } from './communication/catalog'
 import { appendFile, mkdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { join, win32 } from 'node:path'
+import { tmpdir } from 'node:os'
 
-import { app, clipboard, ipcMain, session, shell, type WebContents } from 'electron'
+import { app, clipboard, ipcMain, nativeTheme, session, shell, type WebContents } from 'electron'
+import { registerArtifacts } from './artifactIntegration'
+import { registerThreadTimeline } from './threadTimelineIntegration'
 
 import { agentBusy } from '../shared/agent'
 import { IPC } from '../shared/ipc'
@@ -14,10 +25,16 @@ import { registerMicIndicator } from './micIndicator'
 import type { Settings } from '../shared/settings'
 import { voiceHotkeyMode } from '../shared/settings'
 import type { Provider, Session, Snapshot, ThreadNode, RelayStatus } from '../shared/types'
-import { combinedSnapshot, PROVIDERS, providerView, sessionProvider } from '../shared/providers'
+import {
+  combinedSnapshot,
+  providerView,
+  sessionProvider,
+  workspaceFolder,
+} from '../shared/providers'
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
 import { TalkHotkey } from './hotkeys'
+import { ModifierStepper } from './modifierStepper'
 import { AgentService } from './agent/agentService'
 import { excludeAgentChats } from './agent/briefing'
 import { isObject } from './sessions/json'
@@ -32,11 +49,22 @@ import { agentPaths, codexPaths, defaultPaths, messagingPaths } from './sessions
 import { MessageStore } from './messaging/store'
 import { MESSAGE_LIMIT } from '../shared/messaging'
 import { CodexTracker } from './codex/tracker'
+import { NativeCodexQuestions } from './codex/nativeQuestions'
+import { NativeCodexMessages } from './codex/nativeMessages'
+import { CodexQueue } from './codex/queue'
+import type { QueueCommand } from '../shared/codexQueue'
+import { NewCodexThreads, handoffNewCodexThread } from './codex/newThread'
+import { CodexClient } from './agent/codexClient'
+import { newThreadPaths } from './sessions/paths'
+import type { NewThreadRequest } from '../shared/newThread'
+import { ComposerAttachmentStore } from './messaging/attachments'
+import { registerComposerAttachments } from './messaging/attachmentIntegration'
 import { CodexHolds } from './codex/holds'
 import { CodexRelayService, findCodexCli } from './codex/relay'
 import { codexDeepLink } from './codex/identity'
 import { codexProcesses } from './codex/live'
 import { SessionService } from './sessions/service'
+import { ProviderSnapshots } from './sessions/providerSnapshots'
 import { PLAN_CONTEXT, readStepActivity } from './sessions/stepActivity'
 import { ThreadChanges } from './sessions/threadChanges'
 import { IgnoredInput } from './ignoredInput'
@@ -83,16 +111,10 @@ if (setup) {
  * the Agent is retired); if that ever hangs, the process is forced out after a few seconds so
  * the restart still happens. Settings and threads live on disk and are untouched.
  */
-let restarting = false
-function restart(): void {
-  if (restarting) return
-  restarting = true
-  app.relaunch()
-  setTimeout(() => app.exit(0), 6000).unref()
-  app.quit()
-}
+const restart = restartAction(app)
 
 async function start(): Promise<void> {
+  nativeTheme.themeSource = 'dark'
   const paths = defaultPaths()
   const settings = new SettingsStore(app.getPath('userData'))
   const initial = await settings.load()
@@ -140,11 +162,12 @@ async function start(): Promise<void> {
       .then((size) => (size > 100_000 ? writeFile(scanLog, line) : appendFile(scanLog, line)))
       .catch(() => {})
   }
+  const providerSnapshots = new ProviderSnapshots(() => publish())
   const claudeSessions = new SessionService(
     tracker,
     (snapshot) => {
       letHeldCardsGo(holds, snapshot)
-      if (enabled('claude')) publish()
+      providerSnapshots.update('claude', snapshot)
     },
     reportSlowScan('Claude'),
   )
@@ -177,8 +200,8 @@ async function start(): Promise<void> {
   codexTracker.configure(initial.listWindowHours, initial.maxSessions)
   const codexSessions = new SessionService(
     codexTracker,
-    () => {
-      if (enabled('codex')) publish()
+    (snapshot) => {
+      providerSnapshots.update('codex', snapshot)
     },
     reportSlowScan('Codex'),
   )
@@ -188,22 +211,18 @@ async function start(): Promise<void> {
     changed: () => publish(),
   })
   const sources = { claude: claudeSessions, codex: codexSessions }
-  const polling = new Set<Provider>()
+  let providerPolling: NodeJS.Timeout | null = null
+  let providerRefresh: Promise<void> | null = null
   function syncPolling(ms: number) {
-    for (const provider of PROVIDERS) {
-      if (enabled(provider) && !polling.has(provider)) {
-        sources[provider].start(ms)
-        polling.add(provider)
-      } else if (!enabled(provider) && polling.has(provider)) {
-        sources[provider].stop()
-        polling.delete(provider)
-      }
-    }
+    if (providerPolling) clearInterval(providerPolling)
+    providerPolling = null
+    if (!settings.settings.enabledProviders.length) return
+    void sessions.refresh()
+    providerPolling = setInterval(() => void sessions.refresh(), ms)
   }
-  // Claude and Codex scan separately and rarely finish together. Updates arriving within a
-  // moment of each other go out as one, so both columns appear in the same frame; nothing
-  // waits longer than this for the other source.
+  // Polling commits a complete provider pair. Coalesce independent hook/git updates too.
   let publishTimer: NodeJS.Timeout | null = null
+  let managedQuestions: CommunicationQuestion[] = []
   function publish() {
     if (publishTimer) return
     publishTimer = setTimeout(() => {
@@ -222,8 +241,14 @@ async function start(): Promise<void> {
             combinedSnapshot(
               settings.settings.enabledProviders,
               {
-                claude: excludeAgentChats(claudeSessions.snapshot, agentSessionIds),
-                codex: excludeAgentChats(codexSessions.snapshot, agentSessionIds),
+                claude: withManagedQuestions(
+                  excludeAgentChats(providerSnapshots.snapshots.claude, agentSessionIds),
+                  managedQuestions,
+                ),
+                codex: withManagedQuestions(
+                  excludeAgentChats(providerSnapshots.snapshots.codex, agentSessionIds),
+                  managedQuestions,
+                ),
               },
               settings.settings.maxSessions,
               pinned,
@@ -238,13 +263,28 @@ async function start(): Promise<void> {
     find: (id: string) =>
       enabled(sessionProvider(id)) ? sources[sessionProvider(id)].find(id) : undefined,
     setView: (view: Parameters<SessionService['setView']>[0]) => {
+      let changed = false
       for (const provider of settings.settings.enabledProviders)
-        sources[provider].setView(providerView(settings.settings.enabledProviders, provider, view))
+        changed =
+          sources[provider].setView(
+            providerView(settings.settings.enabledProviders, provider, view),
+            false,
+          ) || changed
+      if (changed) void sessions.refresh()
     },
-    refresh: () =>
-      Promise.all(
-        settings.settings.enabledProviders.map((provider) => sources[provider].refresh()),
-      ),
+    refresh: (): Promise<void> => {
+      // A slow poll must not keep extending a batch and prevent it from ever publishing.
+      providerRefresh ??= providerSnapshots
+        .batch(() =>
+          Promise.all(
+            settings.settings.enabledProviders.map((provider) => sources[provider].refresh()),
+          ),
+        )
+        .finally(() => {
+          providerRefresh = null
+        })
+      return providerRefresh
+    },
     start: syncPolling,
   }
   const invalidateGitForHook = (payload: unknown, provider: Provider) => {
@@ -397,6 +437,9 @@ async function start(): Promise<void> {
   ipcMain.handle(IPC.panelLayout, (event, layout: unknown, animating: unknown) =>
     event.sender === windows.panel.webContents ? windows.setPanelLayout(layout, animating) : null,
   )
+  ipcMain.handle(IPC.workspaceWireGutter, (event, width: unknown) =>
+    event.sender === windows.panel.webContents ? windows.setWorkspaceWireGutter(width) : null,
+  )
   ipcMain.handle(IPC.workspacePanel, (event, on: unknown) =>
     event.sender === windows.panel.webContents && typeof on === 'boolean'
       ? windows.setWorkspacePanel(on)
@@ -488,6 +531,48 @@ async function start(): Promise<void> {
     const session = changeSession(sessionId)
     return session ? threadChanges.changes(session) : null
   })
+  let controlArtifacts: (
+    id: string,
+  ) => Promise<import('../shared/artifacts').ThreadArtifact[]> = async () => []
+  const inspectTimelineImage = registerArtifacts(
+    windows.panel,
+    join(app.getPath('userData'), 'thread-artifacts'),
+    (id) => !!changeSession(id),
+    (id) => {
+      const session = changeSession(id)
+      if (!session?.cwd) return null
+      const provider = sessionProvider(id)
+      const transcript =
+        provider === 'codex' ? codexTracker.transcriptPath(id) : tracker.transcriptPath(id)
+      if (!transcript) return null
+      return {
+        provider,
+        transcript,
+        cwd: session.cwd,
+        transcriptRoots:
+          provider === 'codex'
+            ? [codex.sessions, codex.archivedSessions ?? join(codex.home, 'archived_sessions')]
+            : [paths.projectsDir],
+        roots: [session.cwd, tmpdir(), join(codex.home, 'visualizations')],
+      }
+    },
+    (read) => {
+      controlArtifacts = read
+    },
+  )
+  app.once(
+    'will-quit',
+    registerThreadTimeline(
+      windows.panel,
+      { claude: paths, codex },
+      changeSession,
+      (id) =>
+        sessionProvider(id) === 'codex'
+          ? codexTracker.transcriptPath(id)
+          : tracker.transcriptPath(id),
+      inspectTimelineImage,
+    ),
+  )
   // Worktree actions use the scan's exact Git root and the existing HEAD-based viewer.
   const changedWorktreePath = async (sessionId: unknown, path: unknown) => {
     const root = changeSession(sessionId)?.git?.root
@@ -543,6 +628,25 @@ async function start(): Promise<void> {
       ? codexHolds.answer(id, holdId, answer)
       : { ok: false, reason: 'That Codex card is no longer listed.' },
   )
+  const nativeCodexQuestions = new NativeCodexQuestions(
+    codex.history,
+    join(app.getPath('userData'), 'codex-native-answers'),
+  )
+  ipcMain.handle(
+    IPC.answerNativeCodexQuestion,
+    async (event, id: unknown, reference: unknown, answers: unknown) => {
+      if (
+        event.sender !== windows.panel.webContents ||
+        event.senderFrame !== event.sender.mainFrame ||
+        typeof id !== 'string' ||
+        !codexSessions.find(id)
+      )
+        return { ok: false, reason: 'That Codex card is no longer listed.', retryable: false }
+      const result = await nativeCodexQuestions.answer(id, reference, answers)
+      void codexSessions.refresh()
+      return result
+    },
+  )
 
   // The UI passes only a session id and text; folder, permission mode and model come from
   // Threadlight's own scan, so a misbehaving page cannot choose them.
@@ -564,17 +668,133 @@ async function start(): Promise<void> {
   function publishRelays() {
     const statuses = [...relays.list(), ...codexRelays.list()]
     for (const status of statuses) if (status.attemptId) memoryReceipt?.(status)
-    windows.send(IPC.relaysChanged, statuses)
+    windows.send(IPC.relaysChanged, allRelays())
   }
-  ipcMain.handle(IPC.sendMessage, (event, sessionId: unknown, text: unknown) =>
-    event.sender === windows.panel.webContents &&
-    event.senderFrame === event.sender.mainFrame &&
-    typeof sessionId === 'string' &&
-    typeof text === 'string'
-      ? stopMemory.send(sessionId, text)
-      : { ok: false, reason: 'Invalid message caller.' },
+  const composerAttachments = new ComposerAttachmentStore(
+    join(app.getPath('userData'), 'composer-attachments'),
   )
-  ipcMain.handle(IPC.getRelays, () => [...relays.list(), ...codexRelays.list()])
+  registerComposerAttachments(
+    windows.panel,
+    composerAttachments,
+    (id) => enabled('codex') && !!codexSessions.find(id),
+  )
+  const nativeCodexMessages = new NativeCodexMessages(
+    codex.history,
+    join(app.getPath('userData'), 'codex-native-messages'),
+    () => publishRelays(),
+  )
+  const codexQueue = new CodexQueue(
+    async () => {
+      const cli = await findCodexCli(codex)
+      if (!cli) throw Error('Codex queue is unavailable.')
+      const client = new CodexClient(cli, app.getPath('userData'))
+      try {
+        await client.initialize()
+        return client
+      } catch (error) {
+        client.close()
+        throw error
+      }
+    },
+    join(app.getPath('userData'), 'codex-queue-receipts'),
+    codex.history,
+  )
+  ipcMain.handle(IPC.codexQueue, async (event, key: unknown, command: unknown) => {
+    if (
+      event.sender !== windows.panel.webContents ||
+      event.senderFrame !== event.sender.mainFrame ||
+      typeof key !== 'string' ||
+      !enabled('codex') ||
+      !codexSessions.find(key) ||
+      !isObject(command) ||
+      !['list', 'edit', 'remove', 'steer'].includes(String(command.action)) ||
+      (command.action !== 'list' && typeof command.id !== 'string') ||
+      (command.action === 'edit' && typeof command.text !== 'string')
+    )
+      return { ok: false, reason: 'Invalid queue request.' }
+    return codexQueue.command(key, command as QueueCommand)
+  })
+  const newChatPaths = newThreadPaths(app.getPath('userData'), app.getPath('documents'))
+  const newChats = new NewCodexThreads(newChatPaths.receipts, newChatPaths.workspaces, {
+    bootstrap: async (cwd) => {
+      const cli = await findCodexCli(codex)
+      if (!cli) throw Error('Codex is unavailable')
+      return new CodexClient(cli, cwd)
+    },
+    handoff: (id) => handoffNewCodexThread(id, (url) => shell.openExternal(url)),
+  })
+  ipcMain.handle(IPC.newThread, async (event, input: NewThreadRequest) => {
+    if (event.sender !== windows.panel.webContents || event.senderFrame !== event.sender.mainFrame)
+      return { ok: false, reason: 'Invalid new-thread caller.' }
+    if (!enabled('codex') || input?.provider !== 'codex')
+      return { ok: false, reason: 'New chats are currently available for enabled Codex only.' }
+    const result = await newChats.create(input)
+    if (result.ok || result.sessionId) await codexSessions.refresh()
+    // Preserve the selected page while bringing Threadlight back after the desktop handoff.
+    windows.openPanel({ focus: true, fresh: false })
+    return result
+  })
+  function allRelays() {
+    const native = nativeCodexMessages.list()
+    return [
+      ...relays.list(),
+      ...codexRelays.list().filter((r) => !native.some((n) => n.sessionId === r.sessionId)),
+      ...native,
+    ]
+  }
+  const nativeMessageTimer = setInterval(() => nativeCodexMessages.refresh(), 1000)
+  nativeMessageTimer.unref()
+  app.once('will-quit', () => clearInterval(nativeMessageTimer))
+  ipcMain.handle(
+    IPC.sendMessage,
+    async (
+      event,
+      sessionId: unknown,
+      text: unknown,
+      attachmentIds: unknown = [],
+      mode: unknown = 'queue',
+    ) => {
+      if (
+        event.sender !== windows.panel.webContents ||
+        event.senderFrame !== event.sender.mainFrame ||
+        typeof sessionId !== 'string' ||
+        typeof text !== 'string' ||
+        !Array.isArray(attachmentIds) ||
+        !attachmentIds.every((id) => typeof id === 'string') ||
+        (mode !== 'queue' && mode !== 'steer')
+      )
+        return { ok: false, reason: 'Invalid message caller.' }
+      if (!sessionId.startsWith('codex:'))
+        return attachmentIds.length
+          ? { ok: false, reason: 'Attachments are currently supported for Codex chats.' }
+          : stopMemory.send(sessionId, text)
+      if (!enabled('codex') || !codexSessions.find(sessionId))
+        return { ok: false, reason: 'That Codex chat is unavailable. Your draft is retained.' }
+      try {
+        const files = await composerAttachments.resolve(sessionId, attachmentIds)
+        const result =
+          mode === 'steer'
+            ? await nativeCodexMessages.send(sessionId, text, files)
+            : await codexQueue.add(sessionId, text, files)
+        if (result.ok && files.length) {
+          // A cleanup failure must never turn an acknowledged send into a retryable failure.
+          await composerAttachments
+            .remove(sessionId, attachmentIds)
+            .catch((error) => console.warn('Accepted attachment draft cleanup failed', error))
+        }
+        return result
+      } catch (error) {
+        return {
+          ok: false,
+          reason:
+            error instanceof Error
+              ? error.message
+              : 'Attachments could not be prepared. Your draft is retained.',
+        }
+      }
+    },
+  )
+  ipcMain.handle(IPC.getRelays, () => allRelays())
 
   const memoryRuntime: { current?: import('./communication/claudeRuntime').ClaudeRuntimeInbox } = {}
   const communicationCatalog = new CommunicationCatalog(
@@ -589,6 +809,10 @@ async function start(): Promise<void> {
   const communicationOwners: AgentService[] = []
   const ownedCommunicationRequests = new OwnedRequests(() => communicationOwners)
   const stopMemory = await startMemory(app.getPath('userData'), windows.panel, {
+    questionsChanged: (questions) => {
+      managedQuestions = questions
+      publish()
+    },
     conversationOwner: () => communicationOwners[0]?.current.conversationId ?? undefined,
     destinations: (target, query) => communicationCatalog.find(target, query),
     nativeRequests: () => [
@@ -703,7 +927,84 @@ async function start(): Promise<void> {
   )
   await threadReads.start()
   app.once('will-quit', () => threadReads.close())
-  const agent = new AgentService({
+  let controlCaptureBusy = false
+  let spaces: SpacesService | null = null
+  const control: AppControlService = new AppControlService(
+    {
+      availability: (name) =>
+        name === 'threadlight_create_space' || name === 'threadlight_list_spaces'
+          ? {
+              available: !!spaces,
+              reason: spaces ? undefined : 'Shared Spaces service unavailable.',
+            }
+          : { available: true },
+      settings: () => settings.settings,
+      hasChat: (id) => !!changeSession(id),
+      chatInfo: (id) => {
+        const session = changeSession(id)
+        return session
+          ? { id: session.id, title: session.title.slice(0, 200), provider: sessionProvider(id) }
+          : null
+      },
+      updateSettings: (patch, revision) => updateApplicationSettings(patch, revision),
+      workspaces: () => controlWorkspaces(sessions.snapshot.allWorkspaces),
+      spaces: () => {
+        const snapshot = spaces?.snapshot()
+        return (stopMemory.store()?.snapshot().spaces ?? []).map((s) => ({
+          id: s.id,
+          title: s.title,
+          workspaceId: snapshot?.workspaces.find((w) => w.id === snapshot.spaceOwners[s.id])?.root
+            ? workspaceFolder(
+                snapshot.workspaces.find((w) => w.id === snapshot.spaceOwners[s.id])!.root,
+              )
+            : null,
+        }))
+      },
+      artifacts: (id) => controlArtifacts(id),
+      changes: async (id, scope) => {
+        const session = changeSession(id)
+        if (!session) return null
+        const result =
+          scope === 'thread'
+            ? await threadChanges.changes(session)
+            : session.git?.root
+              ? { branch: session.git.branch, files: await listChanges(session.git.root) }
+              : null
+        return result ? { branch: result.branch, files: result.files.slice(0, 100) } : null
+      },
+      createSpace: async (title, root, id) => {
+        const result = await spaces?.request({ action: 'create_space', title, root, id })
+        return result?.ok ? { ok: true, spaceId: result.spaceId } : { ok: false }
+      },
+      createChat: async (cwd, operationId) => {
+        const result = await newChats.create({ provider: 'codex', cwd, operationId })
+        if (result.ok || result.sessionId) await codexSessions.refresh()
+        return result
+      },
+      busy: () => ({
+        agent: ['starting', 'working', 'waiting'].includes(agent.current.status),
+        otherWork:
+          controlCaptureBusy ||
+          observerActive(app.getAppPath()) ||
+          (!!spaces &&
+            (['starting', 'working', 'waiting', 'stopping'].includes(spaces.agent.current.status) ||
+              !!spaces.agent.current.live)) ||
+          allRelays().some((r) => ['sending', 'sent'].includes(r.state)),
+      }),
+      send: (command) => {
+        windows.openPanel({ focus: true, fresh: false })
+        windows.panel.webContents.send('control:command', command)
+      },
+      restart,
+    },
+    join(app.getPath('userData'), 'agent-control-operations.json'),
+  )
+  const appControl: AppControlServer = new AppControlServer(control)
+  await appControl.start()
+  registerAppControl(windows.panel, control)
+  app.once('will-quit', () => appControl.close())
+  const agent: AgentService = new AgentService({
+    appControl,
     announcements: {
       next: (owner, since) => {
         stopMemory.conversationFeed(owner)
@@ -773,7 +1074,6 @@ async function start(): Promise<void> {
   }
   // Complete previously requested cleanup before allowing a history continuation to race it.
   await agent.retryArchives().catch(() => {})
-  let spaces: SpacesService | null = null
   let spacesIssue = ''
   try {
     const files = spacesPaths(app.getPath('userData'))
@@ -832,6 +1132,8 @@ async function start(): Promise<void> {
       () => sessions.snapshot.allWorkspaces.map((w) => w.id.replace(/^(claude|codex):/, '')),
     )
     communicationOwners.push(spaces.agent)
+    await spaces.start()
+    app.once('will-quit', () => spaces?.contextServer.close())
     await spaces.agent.store.load()
     for (const record of spaces.agent.store.all())
       agentSessionIds.add(
@@ -939,10 +1241,18 @@ async function start(): Promise<void> {
 
   // The talk hotkey drives recording in the (possibly hidden) panel, which does the rest:
   // toggle sends one event per press; press-and-hold sends "down" and, on release, "up".
+  const modifierStepper = new ModifierStepper((stage) => windows.setModifierStage(stage))
   const hotkey = new TalkHotkey({
-    toggle: () => windows.panel.webContents.send(IPC.talkToggle),
-    hold: (phase) => windows.panel.webContents.send(IPC.talkHold, phase),
+    toggle: () => {
+      modifierStepper.yieldToTalk()
+      windows.panel.webContents.send(IPC.talkToggle)
+    },
+    hold: (phase) => {
+      if (phase === 'down') modifierStepper.yieldToTalk()
+      windows.panel.webContents.send(IPC.talkHold, phase)
+    },
   })
+  modifierStepper.start()
   let hotkeyProblem = hotkey.set(initial.talkHotkey) ?? hotkey.setMode(voiceHotkeyMode(initial))
   const reportHotkey = () => windows.panel.webContents.send(IPC.hotkeyProblem, hotkeyProblem)
   windows.panel.webContents.on('did-finish-load', reportHotkey)
@@ -951,9 +1261,11 @@ async function start(): Promise<void> {
   // A pause chosen in the tray wins: capturing never quietly turns the hotkey back on.
   ipcMain.on(IPC.hotkeyCapture, (_event, capturing: unknown) => {
     if (!trayPaused) hotkey.setPaused(capturing === true)
+    modifierStepper.setPaused(trayPaused || capturing === true)
   })
   ipcMain.on(IPC.talkState, (_event, state: unknown) => {
     if (state === 'idle' || state === 'listening' || state === 'transcribing') {
+      controlCaptureBusy = state !== 'idle'
       windows.setTalking(state !== 'idle')
       windows.dot.webContents.send(IPC.talkState, state)
     }
@@ -962,19 +1274,26 @@ async function start(): Promise<void> {
 
   // Settings apply live. The hotkey is checked first: if another app owns the new one, the
   // change is refused and the old hotkey keeps working.
-  const applyLive = (next: Settings) => {
-    tracker.configure(next.listWindowHours, next.maxSessions)
-    codexTracker.configure(next.listWindowHours, next.maxSessions)
+  const applyLive = (next: Settings, previous: Settings) => {
+    if (
+      next.listWindowHours !== previous.listWindowHours ||
+      next.maxSessions !== previous.maxSessions
+    ) {
+      tracker.configure(next.listWindowHours, next.maxSessions)
+      codexTracker.configure(next.listWindowHours, next.maxSessions)
+      void sessions.refresh()
+    }
     publish()
-    void sessions.refresh()
-    void checkProviders()
     windows.send(IPC.settingsChanged, next)
   }
   ipcMain.handle(IPC.getSettings, () => settings.settings)
-  ipcMain.handle(IPC.updateSettings, async (_event, patch: unknown) => {
+  async function updateApplicationSettings(patch: unknown, expectedRevision?: string) {
+    const previousSettings = settings.settings
     const previousProviders = settings.settings.enabledProviders
     const previousVoiceMode = settings.settings.voiceMode
     const result = await settings.update(patch, (next, previous) => {
+      if (expectedRevision && controlSettingsRevision(previous) !== expectedRevision)
+        return 'Settings changed; read the current revision.'
       const hotkeyError =
         next.talkHotkey === previous.talkHotkey ? null : hotkey.set(next.talkHotkey)
       if (hotkeyError) return hotkeyError
@@ -998,10 +1317,11 @@ async function start(): Promise<void> {
       hotkeyProblem = hotkey.setMode(voiceHotkeyMode(result.settings))
       reportHotkey()
       agent.refreshDefaults()
-      applyLive(result.settings)
+      applyLive(result.settings, previousSettings)
     }
     return result
-  })
+  }
+  ipcMain.handle(IPC.updateSettings, (_event, patch: unknown) => updateApplicationSettings(patch))
   // Restore the watcher after an app update, as well as the Windows sign-in entry.
   try {
     setLaunchAtSignIn(initial.launchAtSignIn)
@@ -1019,6 +1339,7 @@ async function start(): Promise<void> {
     setPaused: (paused) => {
       trayPaused = paused
       hotkeyProblem = hotkey.setPaused(paused)
+      modifierStepper.setPaused(paused)
       reportHotkey()
     },
     isPaused: () => trayPaused,
@@ -1048,16 +1369,19 @@ async function start(): Promise<void> {
     })
   })
   app.on('will-quit', () => {
+    if (providerPolling) clearInterval(providerPolling)
     clearInterval(threadDiffPolling)
     void gitStates.close()
     holds.releaseAll() // Claude carries on with every held card itself from here on
     codexHolds.releaseAll()
     hotkey.dispose()
+    modifierStepper.dispose()
     stt.stop()
     tray.destroy()
   })
 
   sessions.start(SCAN_INTERVAL_MS)
+  control.ready()
 
   // Keep a paused dot accessible when both sources are off, so Settings is still one click away.
   const checkProviders = async () => {

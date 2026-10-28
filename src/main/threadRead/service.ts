@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { readCapturedCards } from '../codex/threadStream'
 import {
   findThreadsSchema,
   readThreadSchema,
@@ -60,6 +61,7 @@ type Page = {
   at: number
 }
 export interface ReadScope {
+  permits?: (provider: ThreadProvider, nativeId: string) => boolean
   id: string
   active: boolean
   refs: Set<string>
@@ -80,15 +82,29 @@ export class ThreadReadService {
     private now = Date.now,
     private limits: { sourceDeadlineMs?: number } = {},
   ) {}
-  open(): ReadScope {
+  open(permits?: ReadScope['permits']): ReadScope {
     return {
       id: randomUUID(),
       active: true,
+      permits,
       refs: new Set(),
       observations: new Map(),
       searches: new Map(),
       pages: new Map(),
     }
+  }
+  resolve(scope: ReadScope, ref: string) {
+    const entry = scope.refs.has(ref) ? this.entries.get(ref) : undefined
+    return entry && this.allowed(scope, entry.provider, entry.nativeId)
+      ? { id: entry.provider === 'codex' ? `codex:${entry.nativeId}` : entry.nativeId, entry }
+      : null
+  }
+  async cards(scope: ReadScope, ref: string) {
+    const resolved = this.resolve(scope, ref)
+    if (!resolved) return null
+    if (resolved.entry.provider !== 'codex') return null
+    const cards = await readCapturedCards(resolved.entry.nativeId)
+    return this.resolve(scope, ref) ? cards : null
   }
   close(scope: ReadScope) {
     scope.active = false
@@ -98,7 +114,11 @@ export class ThreadReadService {
     scope.searches.clear()
   }
   private allowed(scope: ReadScope, p: ThreadProvider, id?: string) {
-    return scope.active && this.enabled().includes(p) && (!id || !this.excluded(p, id))
+    return (
+      scope.active &&
+      this.enabled().includes(p) &&
+      (!id || (!this.excluded(p, id) && (!scope.permits || scope.permits(p, id))))
+    )
   }
   private candidate(
     entry: CatalogEntry,

@@ -72,6 +72,10 @@ if (typeof electron === 'string') {
         ),
       )
       const prefix = command.startsWith('"') ? `"${entry.path}"` : entry.path
+      assert.ok(
+        command.length <= 260,
+        `Windows Run command exceeds its 260-character limit (${command.length}).`,
+      )
       assert.equal(command.startsWith(prefix), true)
       const argumentsText = command.slice(prefix.length).trimStart()
       const harness = join(profile, 'invoke registry command.ps1')

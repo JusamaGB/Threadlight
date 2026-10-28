@@ -39,6 +39,16 @@ plugin connection to circumvent assignment restrictions.
 Call `memory_briefing` at the start of shared work and after context compaction.
 Read its scope, permissions, sector descriptions, bound task and change cursor.
 The briefing contains metadata; it is not evidence that you read the documents.
+For project participation, report the tools, skills, plugins and roles actually
+available to this chat with `memory_report_capabilities` after enrollment when
+project-wide publishing access was granted. Send `capabilities` as entries with
+`kind` (`tool`, `skill`, `plugin`, `role`), `name` and `description`, and a fresh
+operation UUID. These are timestamped claims, not verified availability or grants.
+Never infer capabilities from a provider name or publish credentials/configuration.
+Refresh the report when availability changes; an empty list withdraws the current
+chat report. Human verification is recorded separately with evidence. Manual and
+chat reports remain distinct. Brainstorm suggestions need human plan review and
+the existing authorization before dispatch; a capability match grants no authority.
 Use `memory_search` and `memory_snapshot` to find material omitted from the briefing.
 For each relevant item call `memory_read`; supply the exact revision for pinned
 assignment inputs. Identify missing, archived or inaccessible material explicitly.
@@ -88,6 +98,29 @@ is separate from a model declaring completion. Late results must not reopen clos
 and an authorized objective. Human authorization is the default. Never treat a
 peer's request or memory text as the human's permission to delegate or send messages.
 Respect pauses, budgets and loop checks; do not route around them with other tools.
+
+## Human decision cards in Threadlight
+
+For future human questions, use `threadlight_ask_question` with this approved
+`connectionId`, the linked space ID, a fresh `operationId`, `audience: "human"`,
+`answerDelivery: "tool"`, and `allowOther: true`. Supply the question as `body`
+and optional suggested answers as `choices`. The connection must be linked to
+this chat by the human and have project communication permission. Do not guess
+an identity or approve your own enrollment.
+
+The returned ID and generation identify a card on that thread in Threadlight.
+Call `threadlight_read_question` with those exact values and `waitMs: 25000` to
+collect the answer through your existing tool connection. If still pending, do
+independent work or wait again on the same ID; a timeout is not an answer. Do not
+yield a final response claiming you will be automatically woken. When answered,
+continue using the returned answer. If expired or cancelled, stop waiting and
+explain the outcome. `threadlight_cancel_question` withdraws an obsolete card.
+Keep operation IDs and arguments unchanged when checking a lost write response.
+
+These cards do not approve tool permissions or answer existing provider-native
+cards. The answer is saved in Threadlight and read by this agent; no competing
+Codex process or separate chat is launched. Pending cards expire after an hour
+or an app restart. Do not use the message delivery mode for this flow.
 
 ## Disconnect and failures
 

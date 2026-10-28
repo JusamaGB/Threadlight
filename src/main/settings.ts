@@ -14,6 +14,7 @@ import {
 export class SettingsStore {
   private current: Settings = parseSettings({})
   private readonly file: string
+  private writes: Promise<unknown> = Promise.resolve()
 
   constructor(private readonly dir: string) {
     this.file = join(dir, 'settings.json')
@@ -34,9 +35,17 @@ export class SettingsStore {
   }
 
   /** Validates and saves a change. `apply` may refuse it (e.g. a hotkey another app owns). */
-  async update(
+  update(
     patch: unknown,
     apply: (next: Settings, previous: Settings) => string | null = () => null,
+  ): Promise<{ ok: true; settings: Settings } | { ok: false; reason: string }> {
+    const next = this.writes.then(() => this.applyUpdate(patch, apply))
+    this.writes = next.catch(() => {})
+    return next
+  }
+  private async applyUpdate(
+    patch: unknown,
+    apply: (next: Settings, previous: Settings) => string | null,
   ): Promise<{ ok: true; settings: Settings } | { ok: false; reason: string }> {
     const checked = validatePatch(patch)
     if (!checked.ok) return checked
@@ -44,18 +53,15 @@ export class SettingsStore {
     const next = { ...previous, ...(checked.patch as SettingsPatch) }
     const problem = apply(next, previous)
     if (problem) return { ok: false, reason: problem }
+    await this.save(next)
     this.current = next
-    await this.save()
     return { ok: true, settings: next }
   }
 
-  private async save(): Promise<void> {
+  private async save(next: Settings): Promise<void> {
     await mkdir(this.dir, { recursive: true })
     const temporary = `${this.file}.tmp`
-    await writeFile(
-      temporary,
-      JSON.stringify({ version: SETTINGS_VERSION, ...this.current }, null, 2),
-    )
+    await writeFile(temporary, JSON.stringify({ version: SETTINGS_VERSION, ...next }, null, 2))
     await rename(temporary, this.file) // a crash mid-write never leaves a half-written file
   }
 }

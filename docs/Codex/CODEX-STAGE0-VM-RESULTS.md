@@ -2,6 +2,11 @@
 
 Date: 25 October 2026. Research only; no Threadlight integration implementation.
 
+Follow-up: the [28 October current-build authentication proof](CODEX-DESKTOP-AUTH-20261028.md)
+completed and saved its result. The independent authenticated client succeeded;
+the actual desktop omitted credentials and received HTTP 401. That replaces the
+unknown disposition of the earlier timed-out test for the newly tested build.
+
 ## Environment verification
 
 The user restarted the host after enabling Windows Sandbox. The subsequent check found the Sandbox executable installed and no Component Based Servicing pending-reboot flag. The guest launched using an explicit offline configuration.

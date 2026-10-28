@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { capabilitySchema, type CapabilityReport } from './projectParticipants'
 
 const id = z.string().uuid()
 const title = z.string().trim().min(1).max(80)
@@ -7,6 +8,8 @@ export const memoryInput = z
   .object({
     action: z.enum([
       'briefing',
+      'report_capabilities',
+      'verify_capability',
       'reject_connection',
       'snapshot',
       'read',
@@ -39,6 +42,9 @@ export const memoryInput = z
       'reconcile_task',
     ]),
     spaceId: id.optional(),
+    capabilities: z.array(capabilitySchema).max(40).optional(),
+    capabilityIndex: z.number().int().min(0).max(39).optional(),
+    evidence: z.string().trim().min(1).max(1000).optional(),
     id: id.optional(),
     connectionId: id.optional(),
     parentId: id.nullable().optional(),
@@ -192,6 +198,7 @@ export interface MemoryEvent {
   at: number
 }
 export interface MemorySnapshot {
+  capabilityReports?: CapabilityReport[]
   connections?: import('./memoryPlugins').MemoryPluginConnection[]
   subscriptions: MemorySubscription[]
   participants: { label: string; assignee: string; folderId: string | null; spaceId: string }[]
@@ -212,6 +219,7 @@ export function scopeMemory(data: MemorySnapshot, spaceIds: string[]): MemorySna
   const allowed = new Set(spaceIds)
   return {
     ...data,
+    capabilityReports: data.capabilityReports?.filter((r) => allowed.has(r.spaceId)),
     spaces: data.spaces.filter((s) => allowed.has(s.id)),
     folders: data.folders.filter((s) => allowed.has(s.spaceId)),
     items: data.items.filter((s) => allowed.has(s.spaceId)),

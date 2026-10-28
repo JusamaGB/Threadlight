@@ -1,5 +1,6 @@
 /* global window, document, requestAnimationFrame, getComputedStyle */
 import assert from 'node:assert/strict'
+import { selectThreadView } from './header-navigation.mjs'
 
 export async function checkHoverMotion(page, capture) {
   const initial = await page.evaluate(async () => {
@@ -44,8 +45,7 @@ export async function checkHoverMotion(page, capture) {
       name.toLowerCase()
     )
       return
-    await page.locator('[data-thread-view]').click({ button: 'right' })
-    await page.getByRole('menuitem', { name, exact: true }).click()
+    await selectThreadView(page, name.toLowerCase())
   }
   try {
     await page.emulateMedia({ reducedMotion: 'no-preference' })

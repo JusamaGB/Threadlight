@@ -4,6 +4,8 @@ import {
   centreWirePath,
   layoutWorkspaceWires,
   placeCentreWires,
+  routeWorkspaceWires,
+  rightWireGutter,
 } from '../src/shared/workspaceWires'
 
 const span = (key: string, first: number, last: number) => ({ key, first, last })
@@ -63,6 +65,124 @@ describe('workspace wire lanes', () => {
     expect(byKey(layoutWorkspaceWires(input)).b!.x).toBe(12)
     expect(byKey(layoutWorkspaceWires([input[0]!, span('a', -30, 50)])).a!.x).toBe(12)
     expect(input).toEqual([span('b', -40, 10), span('a', -30, 20)])
+  })
+})
+
+describe('workspace wire routing by provider', () => {
+  const m = (y: number, side: -1 | 1) => ({ y, side })
+  const groups = [
+    { key: 'claude', members: [m(20, -1), m(100, -1), m(60, -1)] },
+    { key: 'codex', members: [m(20, 1), m(100, 1), m(60, 1)] },
+    { key: 'shared', members: [m(10, -1), m(110, 1)] },
+  ]
+
+  it('routes one complete group to each of the three zones', () => {
+    const routes = routeWorkspaceWires(groups, true)
+    expect(routes.map(({ key, zone }) => [key, zone])).toEqual([
+      ['claude', 'left'],
+      ['codex', 'right'],
+      ['shared', 'centre'],
+    ])
+    expect(routes.map(({ lane }) => lane)).toEqual([0, 0, 0])
+    expect(routes.map(({ x }) => x)).toEqual([12, 4, CENTRE_HALF])
+    expect(groups[0]!.members.map(({ y }) => y)).toEqual([20, 100, 60])
+  })
+
+  it('reserves only the right rails in use plus their backing stroke', () => {
+    expect(rightWireGutter(routeWorkspaceWires(groups, true))).toBe(6)
+    expect(rightWireGutter(routeWorkspaceWires(groups, false))).toBe(0)
+    expect(
+      rightWireGutter(
+        routeWorkspaceWires(
+          groups.filter((g) => g.key !== 'codex'),
+          true,
+        ),
+      ),
+    ).toBe(0)
+    expect(
+      rightWireGutter(
+        routeWorkspaceWires(
+          [...groups, { key: 'short-codex', members: [m(40, 1), m(80, 1)] }],
+          true,
+        ),
+      ),
+    ).toBe(10)
+    expect(
+      rightWireGutter(
+        routeWorkspaceWires(
+          Array.from({ length: 8 }, (_, i) => ({
+            key: String(i),
+            members: [m(i, 1), m(100 - i, 1)],
+          })),
+          true,
+        ),
+      ),
+    ).toBe(15)
+  })
+
+  it('mirrors outer routes so their endpoints face the card on both sides', () => {
+    const routes = routeWorkspaceWires(groups, true)
+    expect(routes[0]!.path).toBe(
+      'M 16 20 H 15 Q 12 20 12 23 V 97 Q 12 100 15 100 H 16 M 12 60 H 16',
+    )
+    expect(routes[1]!.path).toBe('M 0 20 H 1 Q 4 20 4 23 V 97 Q 4 100 1 100 H 0 M 4 60 H 0')
+  })
+
+  it('allocates overlapping lanes independently of other zones', () => {
+    const routes = routeWorkspaceWires(
+      [
+        ...groups,
+        { key: 'short-left', members: [m(40, -1), m(80, -1)] },
+        { key: 'short-right', members: [m(40, 1), m(80, 1)] },
+        { key: 'short-shared', members: [m(40, -1), m(80, 1)] },
+      ],
+      true,
+    )
+    expect(Object.fromEntries(routes.map(({ key, lane }) => [key, lane]))).toEqual({
+      claude: 0,
+      codex: 0,
+      shared: 0,
+      'short-left': 1,
+      'short-right': 1,
+      'short-shared': -3,
+    })
+  })
+
+  it('reclassifies membership changes and merges all providers into the single left gutter', () => {
+    const changed = groups.map((group) => ({
+      ...group,
+      members: group.members.map((member) => ({ ...member, side: 1 as const })),
+    }))
+    expect(routeWorkspaceWires(changed, true).every(({ zone }) => zone === 'right')).toBe(true)
+    const single = routeWorkspaceWires(groups, false)
+    expect(single).toHaveLength(3)
+    expect(single.every(({ zone }) => zone === 'left')).toBe(true)
+    expect(single.some(({ lane }) => lane > 0)).toBe(true)
+  })
+
+  it('connects shared threads aligned at the same height across the columns', () => {
+    const routes = routeWorkspaceWires([{ key: 'aligned', members: [m(20, -1), m(20, 1)] }], true)
+    expect(routes).toHaveLength(1)
+    expect(routes[0]).toMatchObject({ zone: 'centre', lane: 0 })
+    expect(routes[0]!.path).not.toMatch(/NaN|Infinity/)
+    expect(routes[0]!.path).toContain('M 12 20')
+    expect(routes[0]!.path).toContain('H 20')
+  })
+
+  it('ignores singleton and invalid groups and is stable when the input order changes', () => {
+    expect(
+      routeWorkspaceWires(
+        [
+          { key: 'empty', members: [] },
+          { key: 'singleton', members: [m(1, 1)] },
+          { key: 'invalid', members: [m(1, -1), m(NaN, 1)] },
+        ],
+        true,
+      ),
+    ).toEqual([])
+    expect(routeWorkspaceWires(groups, true)).toEqual(
+      routeWorkspaceWires([...groups].reverse(), true),
+    )
   })
 })
 

@@ -68,13 +68,9 @@ describe('Windows startup', () => {
       path: windowsPowerShell(),
     })
     expect(entry.args).toEqual(
-      expect.arrayContaining([
-        '-WindowStyle',
-        'Hidden',
-        launcherPaths(box.root).script,
-        launcherPaths(box.root).config,
-      ]),
+      expect.arrayContaining(['-WindowStyle', 'Hidden', launcherPaths(box.root).script]),
     )
+    expect(entry.args).not.toContain('-ConfigPath')
     expect(mocks.bootstrap).toHaveBeenCalledWith(entry.path, [...entry.args, '-StartHidden'], {
       windowsHide: true,
       stdio: 'ignore',

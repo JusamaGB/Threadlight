@@ -30,10 +30,11 @@ const sessions = [
   { id: 'claude-one', provider: 'claude' },
   { id: 'codex:two', provider: 'codex' },
 ] as Session[]
-const capture = () =>
+const capture = (sharedSpaceId?: string) =>
   store.edit({
     action: 'create',
     id: randomUUID(),
+    sharedSpaceId,
     title: 'Quiet updates',
     text: 'Summarise meaningful changes.',
     workspaceId,
@@ -119,15 +120,294 @@ afterEach(async () => {
 })
 
 describe('Shared Spaces', () => {
+  it('keeps legacy ideas snapshots readable and writes new revisions under notes', () => {
+    const note = capture(),
+      old = store.documents().find((d) => d.id === note.id)!
+    const legacyDirectory = join(box.root, 'shared-spaces', 'ideas')
+    renameSync(join(box.root, 'shared-spaces', 'notes'), legacyDirectory)
+    const legacyPath = old.path.replace(/([\\/])notes([\\/])/, '$1ideas$2')
+    store.recordDocument({ ...old, path: legacyPath })
+    const original = readFileSync(legacyPath, 'utf8')
+    save(note, { text: 'A new revision' })
+    const next = store.documents().find((d) => d.id === note.id)!
+    expect(next.path).toContain('notes')
+    expect(readFileSync(legacyPath, 'utf8')).toBe(original)
+    expect(readFileSync(next.path, 'utf8')).toContain('A new revision')
+  })
+  it('explicitly attaches legacy material without changing history and rejects reassignment', async () => {
+    const note = capture()
+    store.bind(note.id, 'codex:preserved-history')
+    const reply = await service.request({
+      action: 'attach_material',
+      id: note.id,
+      spaceId: folder.spaceId,
+      revision: note.revision,
+    })
+    expect(reply.ok).toBe(true)
+    expect(store.get(note.id)).toMatchObject({
+      id: note.id,
+      at: note.at,
+      conversationId: 'codex:preserved-history',
+      sharedSpaceId: folder.spaceId,
+    })
+    expect(
+      (
+        await service.request({
+          action: 'attach_material',
+          id: note.id,
+          spaceId: folder.spaceId,
+          revision: note.revision,
+        })
+      ).ok,
+    ).toBe(false)
+  })
+  it('grounds Brainstorm in project capability evidence and carries reviewed rationale into unsent handoffs', async () => {
+    const created = await service.request({
+      action: 'create_space',
+      id: randomUUID(),
+      root: box.root,
+      title: 'Capability project',
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    const spaceId = created.spaceId!
+    const connectionId = randomUUID()
+    memory.execute({
+      action: 'create_grant',
+      operationId: randomUUID(),
+      spaceId,
+      title: 'Browser chat',
+      assignee: 'codex:two',
+      readOnly: false,
+      connectionId,
+    })
+    memory.execute({
+      action: 'report_capabilities',
+      operationId: randomUUID(),
+      spaceId,
+      assignee: 'codex:two',
+      capabilities: [
+        { kind: 'tool', name: 'Browser automation', description: 'Inspect browser screenshots' },
+      ],
+    })
+    memory.connectionStatus = () => [
+      {
+        id: connectionId,
+        code: 'TEST',
+        label: 'Chat',
+        provider: 'codex',
+        state: 'connected',
+        expiresAt: Date.now() + 60_000,
+      },
+    ]
+    const captured = store.edit({
+      action: 'create',
+      id: randomUUID(),
+      title: 'Browser review',
+      text: 'Inspect browser screenshots',
+      workspaceId,
+      sharedSpaceId: spaceId,
+    })
+    const idea = save(captured, {
+      assignments: [
+        {
+          id: randomUUID(),
+          provider: 'codex',
+          assignee: 'codex:two',
+          title: 'Inspect browser',
+          brief: 'Inspect the browser and save evidence.',
+          rationale: 'Browser automation was manually reported; check availability first.',
+        },
+      ],
+    })
+    const send = vi.spyOn(service.agent, 'send').mockResolvedValue({ ok: true })
+    expect(
+      (
+        await service.request({
+          action: 'chat',
+          id: idea.id,
+          text: 'Who should inspect the browser?',
+        })
+      ).ok,
+    ).toBe(true)
+    expect(send).toHaveBeenCalledWith(
+      expect.stringContaining('Browser automation'),
+      'Who should inspect the browser?',
+    )
+    expect(send.mock.calls[0]![0]).toContain('human review')
+    expect(send.mock.calls[0]![0]).toContain('untrusted descriptive data')
+    expect(memory.tasks()).toHaveLength(0)
+    const output = memory
+      .snapshot()
+      .folders.find((f) => f.spaceId === spaceId && f.title === 'Results')!
+    expect(
+      (
+        await service.request({
+          action: 'prepare',
+          id: idea.id,
+          revision: idea.revision,
+          folderId: output.id,
+        })
+      ).ok,
+    ).toBe(true)
+    const tasks = memory.tasks().filter((t) => t.spaceId === spaceId)
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({
+      state: 'draft',
+      body: expect.stringContaining('Browser automation was manually reported'),
+    })
+  })
+  it('creates named, persistent spaces with separate documents inside one workspace', async () => {
+    const first = {
+      action: 'create_space',
+      id: randomUUID(),
+      root: box.root,
+      title: 'Advert storyboard',
+    }
+    const result = await service.request(first)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const firstId = result.spaceId!
+    const base = join(box.root, 'shared-spaces', 'advert-storyboard')
+    for (const area of ['notes', 'plans', 'handoffs', 'results'])
+      expect(existsSync(join(base, area))).toBe(true)
+    expect(JSON.parse(readFileSync(join(base, 'space.json'), 'utf8'))).toMatchObject({
+      format: 'threadlight.shared-space',
+      version: 1,
+      id: firstId,
+      name: first.title,
+    })
+    expect(existsSync(join(base, 'README.md'))).toBe(true)
+    expect(await service.request(first)).toMatchObject({ ok: true, spaceId: firstId })
+    const second = await service.request({
+      action: 'create_space',
+      id: randomUUID(),
+      root: box.root,
+      title: 'App redesign',
+    })
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    for (const spaceId of [firstId, second.spaceId!]) {
+      const saved = await service.request({
+        action: 'create',
+        id: randomUUID(),
+        title: 'Idea',
+        text: 'Keep in the selected space',
+        workspaceId,
+        sharedSpaceId: spaceId,
+      })
+      expect(saved.ok).toBe(true)
+      const idea = store.all().find((i) => i.sharedSpaceId === spaceId)!
+      const directory = store.locations().find((l) => l.spaceId === spaceId)!.directory
+      expect(store.documents().find((d) => d.id === idea.id)?.path).toContain(
+        join('shared-spaces', directory, 'notes'),
+      )
+      const outputFolder = memory
+        .snapshot()
+        .folders.find((f) => f.spaceId === spaceId && f.title === 'Handoffs')!
+      const note = memory.execute({
+        action: 'create_item',
+        operationId: randomUUID(),
+        folderId: outputFolder.id,
+        title: 'Context',
+        body: 'Shared context',
+        kind: 'note',
+      }) as { id: string }
+      expect(store.documents().find((d) => d.id === note.id)?.path).toContain(
+        join('shared-spaces', directory, 'handoffs'),
+      )
+      expect(memory.executionContext(spaceId)?.documentsRoot).toBe(
+        join(box.root, 'shared-spaces', directory),
+      )
+    }
+    const reopened = new SpacesStore(join(box.root, 'ideas.sqlite'))
+    try {
+      expect(reopened.locations()).toEqual(store.locations())
+      expect(reopened.all().filter((i) => i.sharedSpaceId)).toHaveLength(2)
+    } finally {
+      reopened.close()
+    }
+    // An unrelated legacy layout problem must not redirect or block a named space.
+    const legacyPlans = join(box.root, 'shared-spaces', 'plans')
+    renameSync(legacyPlans, legacyPlans + '-offline')
+    expect(
+      (
+        await service.request({
+          action: 'create',
+          id: randomUUID(),
+          title: 'Still isolated',
+          text: 'Named space remains available',
+          workspaceId,
+          sharedSpaceId: firstId,
+        })
+      ).ok,
+    ).toBe(true)
+    renameSync(legacyPlans + '-offline', legacyPlans)
+  })
+  it('keeps unknown folders and existing space identities intact, and detects missing manifests', async () => {
+    const base = join(box.root, 'shared-spaces', 'keep-me')
+    mkdirSync(base)
+    writeFileSync(join(base, 'personal.txt'), 'Keep this')
+    expect(
+      (
+        await service.request({
+          action: 'create_space',
+          id: randomUUID(),
+          root: box.root,
+          title: 'Keep me',
+        })
+      ).ok,
+    ).toBe(false)
+    expect(readFileSync(join(base, 'personal.txt'), 'utf8')).toBe('Keep this')
+    const input = { action: 'create_space', id: randomUUID(), root: box.root, title: 'Reliable' }
+    const result = await service.request(input)
+    expect(result.ok).toBe(true)
+    expect((await service.request({ ...input, title: 'Changed name' })).ok).toBe(false)
+    if (!result.ok) return
+    const manifest = join(box.root, 'shared-spaces', 'reliable', 'space.json')
+    renameSync(manifest, manifest + '.saved')
+    expect(service.snapshot().locations?.find((l) => l.spaceId === result.spaceId)?.ready).toBe(
+      false,
+    )
+    expect(
+      (
+        await service.request({
+          action: 'create',
+          id: randomUUID(),
+          title: 'Blocked',
+          text: 'Do not write elsewhere',
+          workspaceId,
+          sharedSpaceId: result.spaceId,
+        })
+      ).ok,
+    ).toBe(false)
+  })
+  it('creates no loose area folders when a workspace starts with named spaces', async () => {
+    const root = join(box.root, 'clean-project')
+    mkdirSync(root)
+    sessions[0]!.cwd = root
+    const result = await service.request({
+      action: 'create_space',
+      id: randomUUID(),
+      root,
+      title: 'First space',
+    })
+    expect(result.ok).toBe(true)
+    for (const area of ['notes', 'plans', 'handoffs', 'results']) {
+      expect(existsSync(join(root, area))).toBe(false)
+      expect(existsSync(join(root, 'shared-spaces', area))).toBe(false)
+      expect(existsSync(join(root, 'shared-spaces', 'first-space', area))).toBe(true)
+    }
+  })
   it('sets up only fixed workspace folders, preserves existing files and is repeatable', async () => {
     const root = join(box.root, 'shared-spaces')
-    writeFileSync(join(root, 'ideas', 'personal.md'), 'Keep this file')
+    writeFileSync(join(root, 'notes', 'personal.md'), 'Keep this file')
     const count = memory.snapshot().spaces.length
     expect((await service.request({ action: 'setup', root: box.root })).ok).toBe(true)
     expect(memory.snapshot().spaces).toHaveLength(count)
-    for (const area of ['ideas', 'plans', 'handoffs', 'results'])
+    for (const area of ['notes', 'plans', 'handoffs', 'results'])
       expect(existsSync(join(root, area))).toBe(true)
-    expect(readFileSync(join(root, 'ideas', 'personal.md'), 'utf8')).toBe('Keep this file')
+    expect(readFileSync(join(root, 'notes', 'personal.md'), 'utf8')).toBe('Keep this file')
     expect((await service.request({ action: 'setup', root: join(box.root, '..') })).ok).toBe(false)
   })
   it('blocks Agent work, direct assignments and dispatch until material is associated with setup', async () => {
@@ -489,8 +769,8 @@ describe('Shared Spaces', () => {
     expect(memory.tasks()).toHaveLength(2)
   })
   it('keeps brainstorm context separate, serializes switches and rejects responses for other ideas', async () => {
-    const first = save(capture()),
-      second = save(capture())
+    const first = save(capture(folder.spaceId)),
+      second = save(capture(folder.spaceId))
     let done!: (value: { ok: true }) => void
     const send = vi.spyOn(service.agent, 'send').mockImplementation(
       () =>

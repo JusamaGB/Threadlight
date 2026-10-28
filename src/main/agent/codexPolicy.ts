@@ -1,4 +1,6 @@
 import { COMMUNICATION_SERVER, communicationTools } from '../../shared/communication'
+import { APP_CONTROL_SERVER, controlTools } from '../../shared/appControl'
+import { SPACE_CONTEXT_SERVER, SPACE_CONTEXT_TOOLS } from '../../shared/spaceContext'
 import type { AgentApp } from '../../shared/agent'
 import { isObject, type JsonObject } from '../sessions/json'
 import type { CodexTransport } from './codexClient'
@@ -109,6 +111,34 @@ export async function verifyCodexTools(
     threadId,
     detail: 'toolsAndAuthOnly',
   })
+  if (allowed.has(SPACE_CONTEXT_SERVER)) {
+    const server = servers.find((s) => s.name === SPACE_CONTEXT_SERVER)
+    const names =
+      server && isObject(server.tools)
+        ? Object.keys(server.tools)
+        : Array.isArray(server?.tools)
+          ? server.tools.filter(isObject).map((t) => String(t.name))
+          : []
+    if (
+      names.length !== SPACE_CONTEXT_TOOLS.length ||
+      SPACE_CONTEXT_TOOLS.some((t) => !names.some((n) => n === t || n.endsWith(`__${t}`)))
+    )
+      throw Error('Scoped Brainstorm tools unavailable. No message was sent.')
+  }
+  if (allowed.has(APP_CONTROL_SERVER)) {
+    const server = servers.find((s) => s.name === APP_CONTROL_SERVER)
+    const names =
+      server && isObject(server.tools)
+        ? Object.keys(server.tools)
+        : Array.isArray(server?.tools)
+          ? server.tools.filter(isObject).map((t) => String(t.name))
+          : []
+    if (
+      names.length !== controlTools.length ||
+      controlTools.some((t) => !names.some((n) => n === t.name || n.endsWith(`__${t.name}`)))
+    )
+      throw Error('Threadlight control tools are unavailable. No message was sent.')
+  }
   if (allowed.has(THREAD_READ_SERVER)) {
     const server = servers.find((s) => s.name === THREAD_READ_SERVER)
     const names =
