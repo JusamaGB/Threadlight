@@ -1,4 +1,4 @@
-/* global URL, window */
+/* global window */
 // The tour, scene by scene. Each scene sets the app up with the tools in run.mjs and returns
 // the frames it photographed. `beat` is what the viewer should take from the shot and
 // `seconds` is its share of the film (see docs/video/threadlight-tour-storyboard.md).

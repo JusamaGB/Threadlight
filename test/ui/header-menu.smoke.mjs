@@ -96,7 +96,8 @@ export async function checkHeaderMenu(page, capture) {
   await composer.waitFor()
   await page.waitForFunction(() => document.activeElement?.tagName === 'TEXTAREA')
   assert.equal(await composer.inputValue(), '')
-  assert.equal(await page.getByPlaceholder('Ask your agent…').count(), 0)
+  // Navigation retains the Agent draft in a hidden page while the new chat is open.
+  assert.equal(await page.getByPlaceholder('Ask your agent…').isVisible(), false)
   assert.equal(
     await page.evaluate(() => localStorage.getItem('threadlight.new-thread.pending.v1')),
     null,

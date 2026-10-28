@@ -307,3 +307,53 @@ describe('connected header motion', () => {
     expect(colours(0, true)).toEqual(colours(500, true))
   })
 })
+
+describe('provider speech and spatial frequency response', () => {
+  it('uses the selected provider for playback while retaining the idle palette', () => {
+    const mesh = new MotionGeometry()
+    const pose = { ...restingPose(), rest: 0, output: full }
+    for (const [provider, rgb] of [
+      ['claude', [218 / 255, 138 / 255, 98 / 255]],
+      ['codex', [104 / 255, 170 / 255, 1]],
+    ]) {
+      const vertices = mesh.build(342, 36, 1, pose, false, true, false, provider)
+      for (let i = 0; i < vertices.length; i += 6)
+        for (let channel = 0; channel < 3; channel++)
+          expect(vertices[i + 2 + channel]).toBeCloseTo(rgb[channel], 6)
+    }
+    const idle = [...mesh.build(342, 36, 1, restingPose(), false, true)]
+    expect([...mesh.build(342, 36, 1, restingPose(), false, true, false, 'claude')]).toEqual(idle)
+  })
+  it('places bass, mid and treble energy in separate smoothly joined regions', () => {
+    const mesh = new MotionGeometry()
+    const regionHeight = (band, centre) => {
+      const audio = { level: 1, low: 0, mid: 0, high: 0, [band]: 1 }
+      const vertices = mesh.build(
+        342,
+        36,
+        0.8,
+        { ...restingPose(), rest: 0, output: audio },
+        false,
+        true,
+      )
+      let total = 0,
+        count = 0
+      for (let i = 0; i < vertices.length; i += 6) {
+        if (Math.abs(vertices[i] / 342 - centre) < 0.07) {
+          total += Math.abs(vertices[i + 1] - 9)
+          count++
+        }
+      }
+      return total / count
+    }
+    for (const [band, centre] of [
+      ['low', 0.2],
+      ['mid', 0.5],
+      ['high', 0.8],
+    ]) {
+      const own = regionHeight(band, centre)
+      for (const other of ['low', 'mid', 'high'].filter((value) => value !== band))
+        expect(own).toBeGreaterThan(regionHeight(other, centre))
+    }
+  })
+})

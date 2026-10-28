@@ -54,7 +54,20 @@ export function useAppControl(
       }
       const request = pending.current
       const expired = request && request.command.expiresAt <= Date.now()
-      if (request && !expired && (!request.committed || state.current.readiness === 'loading')) {
+      const expected = request?.command.route
+      const routePending =
+        request?.outcome === 'ok' &&
+        expected &&
+        !Object.entries(expected).every(
+          ([key, value]) =>
+            key === 'threadId' ||
+            (state.current.route as unknown as Record<string, unknown>)[key] === value,
+        )
+      if (
+        request &&
+        !expired &&
+        (!request.committed || state.current.readiness === 'loading' || routePending)
+      ) {
         setTimeout(publish, 50)
         return
       }

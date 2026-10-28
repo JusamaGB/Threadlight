@@ -26,30 +26,30 @@ it('keeps separated edits, blank lines and source numbering in their original hu
   expect(hunks.flatMap((hunk) => hunk.groups.flatMap((group) => group.lines))).toEqual(
     lines.filter((line) => line.type !== 'hunk'),
   )
-  expect(hunks[0].indent).toBe('    ')
-  expect(hunks[1].indent).toBe('\t\t')
-  expect(hunks[1].groups[0].lines[0].newLine).toBe(100001)
-  expect(compactDiffText(lines[2].text, hunks[0].indent)).toBe('  before')
-  expect(lines[2].text).toBe('      before')
+  expect(hunks[0]!.indent).toBe('    ')
+  expect(hunks[1]!.indent).toBe('\t\t')
+  expect(hunks[1]!.groups[0]!.lines[0]!.newLine).toBe(100001)
+  expect(compactDiffText(lines[2]!.text, hunks[0]!.indent)).toBe('  before')
+  expect(lines[2]!.text).toBe('      before')
 })
 
 it('preserves indentation-only edits and never confuses tabs with spaces', () => {
   const whitespaceEdit = stackedDiffHunks([
     { type: 'remove', text: '  code', oldLine: 1 },
     { type: 'add', text: '    code', newLine: 1 },
-  ])[0]
+  ])[0]!
   expect(whitespaceEdit.indent).toBe('  ')
-  expect(compactDiffText(whitespaceEdit.groups[0].lines[0].text, whitespaceEdit.indent)).toBe(
+  expect(compactDiffText(whitespaceEdit.groups[0]!.lines[0]!.text, whitespaceEdit.indent)).toBe(
     'code',
   )
-  expect(compactDiffText(whitespaceEdit.groups[1].lines[0].text, whitespaceEdit.indent)).toBe(
+  expect(compactDiffText(whitespaceEdit.groups[1]!.lines[0]!.text, whitespaceEdit.indent)).toBe(
     '  code',
   )
   expect(
     stackedDiffHunks([
       { type: 'remove', text: '\tcode', oldLine: 1 },
       { type: 'add', text: '  code', newLine: 1 },
-    ])[0].indent,
+    ])[0]!.indent,
   ).toBe('')
   expect(compactDiffText(' \tcode', '\t')).toBe(' \tcode')
 })
@@ -61,6 +61,6 @@ it('handles whole-file and whitespace-only patches without requiring hunk header
     { type: 'remove', text: '\t', oldLine: 1 },
     { type: 'add', text: '  ', newLine: 1 },
   ]
-  expect(stackedDiffHunks(lines)[0].indent).toBe('')
-  expect(stackedDiffHunks(lines)[0].groups.flatMap((group) => group.lines)).toEqual(lines)
+  expect(stackedDiffHunks(lines)[0]!.indent).toBe('')
+  expect(stackedDiffHunks(lines)[0]!.groups.flatMap((group) => group.lines)).toEqual(lines)
 })

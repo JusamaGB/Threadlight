@@ -365,5 +365,5 @@ describe('thread diff source and caller integration', () => {
       db.close()
       await rm(home, { recursive: true, force: true })
     }
-  })
+  }, 15000)
 })

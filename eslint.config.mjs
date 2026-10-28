@@ -6,7 +6,17 @@ import tseslint from 'typescript-eslint'
 
 export default defineConfig(
   // .claude/ holds local Claude Code state, including worktrees (full copies of this repo).
-  { ignores: ['out/**', 'dist/**', 'node_modules/**', '.claude/**', 'screenshots-local/**'] },
+  {
+    ignores: [
+      'out/**',
+      'dist/**',
+      '**/node_modules/**',
+      '.claude/**',
+      'screenshots-local/**',
+      'notes-local/**',
+      'tidy-root.mjs',
+    ],
+  },
   js.configs.recommended,
   tseslint.configs.recommended,
   {
@@ -18,13 +28,18 @@ export default defineConfig(
     files: [
       'src/main/**/*.ts',
       'src/preload/**/*.ts',
-      'test/**/*.{ts,mjs}',
+      'test/**/*.{ts,mjs,cjs}',
       'scripts/**/*.mjs',
       'previews/**/*.mjs',
+      'storybook/**/*.mjs',
       'codex-plugin/scripts/**/*.mjs',
       '*.mjs',
     ],
     languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['test/**/*.cjs'],
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   {
     rules: {

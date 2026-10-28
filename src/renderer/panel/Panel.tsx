@@ -1845,7 +1845,12 @@ export function Panel() {
                 >
                   {showVoiceActivity && (
                     <div className={styles.voiceActivity} role="region" aria-label="Voice waveform">
-                      <ElectricMotion source={motion.source} label={motion.label} edgeToEdge />
+                      <ElectricMotion
+                        source={motion.source}
+                        label={motion.label}
+                        provider={agent.provider ?? settings?.agentProvider ?? 'claude'}
+                        edgeToEdge
+                      />
                     </div>
                   )}
                   {showVoiceActivity && inactiveMicrophone && !agentVisible && (
