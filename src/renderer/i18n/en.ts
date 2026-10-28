@@ -140,7 +140,6 @@ export const en = {
     pickOne: 'Pick an answer first.',
     typeOther: 'Type your answer first.',
     otherPlaceholder: 'Type your answer',
-    heldNote: 'Waiting for you here · opening it in Claude answers it there instead',
     approvePlan: 'Approve this plan?',
     approveTool: (tool: string) => `Allow ${tool}?`,
     allow: 'Allow',
