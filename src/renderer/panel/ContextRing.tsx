@@ -15,6 +15,7 @@ interface ContextRingProps {
   active?: boolean
   /** Show the dotted thinking wheel during any reasoning phase, even with known context. */
   thinking?: boolean
+  unread?: boolean
 }
 
 /**
@@ -22,7 +23,13 @@ interface ContextRingProps {
  * clockwise from the top, grey while there is room, then amber, then red. It sits around the
  * row's amber attention marker, or on its own. An unknown reading has only a neutral track.
  */
-export function ContextRing({ used, wide, active = false, thinking = false }: ContextRingProps) {
+export function ContextRing({
+  used,
+  wide,
+  active = false,
+  thinking = false,
+  unread = false,
+}: ContextRingProps) {
   const dotsId = useId()
   const dotted = active && thinking
   const maskProgress = dotted && used !== null
@@ -41,6 +48,7 @@ export function ContextRing({ used, wide, active = false, thinking = false }: Co
       className={styles.contextRing}
       data-active={active || undefined}
       data-thinking={dotted || undefined}
+      data-unread={unread || undefined}
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
@@ -85,6 +93,7 @@ export function ContextRing({ used, wide, active = false, thinking = false }: Co
           />
         )}
       </g>
+      {unread && <circle className={styles.unreadDot} cx={size / 2} cy={size / 2} r="3" />}
     </svg>
   )
 }

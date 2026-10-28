@@ -6,6 +6,8 @@ import { en } from '../i18n/en'
 import styles from './Panel.module.css'
 
 interface WorkspaceTreeProps {
+  maxRoots?: number
+  showAll?: string[]
   workspaces: Workspace[]
   /** "all": every workspace, collapsible. "workspace": just this one, always open. */
   only: { id: string; name: string; ids?: string[] } | null
@@ -22,7 +24,17 @@ interface WorkspaceTreeProps {
 export function WorkspaceTree(props: WorkspaceTreeProps) {
   const { workspaces, only, isOpen, onToggle, onShowMore, renderRow } = props
   const wanted = only ? new Set((only.ids ?? [only.id]).map(folderKey)) : null
-  const shown = wanted ? workspaces.filter((w) => wanted.has(folderKey(w.id))) : workspaces
+  const shown = wanted
+    ? workspaces.filter((w) => wanted.has(folderKey(w.id)))
+    : workspaces.map((workspace) => {
+        if (!props.maxRoots || props.showAll?.includes(workspace.id)) return workspace
+        const threads = workspace.threads.slice(0, props.maxRoots)
+        return {
+          ...workspace,
+          threads,
+          hiddenCount: workspace.hiddenCount + workspace.threads.length - threads.length,
+        }
+      })
 
   if (shown.length === 0) {
     return props.emptyMessage ? (

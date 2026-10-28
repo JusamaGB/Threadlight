@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import type { SttStatus } from '../../shared/stt'
 import type { RelayStatus, Session } from '../../shared/types'
@@ -7,11 +7,17 @@ import type { VoiceState } from '../hooks/useVoice'
 import { en } from '../i18n/en'
 import { ticks } from '../lib/relay'
 import { useComposerDraft } from '../lib/composerDraft'
-import { CODEX_DESKTOP_UNAVAILABLE, MESSAGE_LIMIT } from '../../shared/messaging'
+import { MESSAGE_LIMIT } from '../../shared/messaging'
+import { useComposerAttachments } from '../lib/composerAttachments'
 import styles from './Composer.module.css'
 import { VoiceWave } from './VoiceWave'
+import { QueuedMessages } from './QueuedMessages'
 
 interface ComposerProps {
+  embedded?: boolean
+  hidden?: boolean
+  focusToken?: number
+  micDisabled?: boolean
   session: Session
   relay: RelayStatus | undefined
   stt: SttStatus
@@ -36,48 +42,93 @@ const RING = 2 * Math.PI * 7 // circumference of the countdown ring (r = 7)
 
 /** Claude's composer, trimmed to talking and typing: To line with ticks, the box, send and mic. */
 export function Composer(props: ComposerProps) {
-  const { session, relay, stt, voiceState, level, onMic, heard, voiceError } = props
+  const {
+    session,
+    relay,
+    stt,
+    voiceState,
+    level,
+    onMic,
+    heard,
+    voiceError,
+    embedded = false,
+    hidden = false,
+    focusToken = 0,
+    micDisabled = false,
+  } = props
   const { initialText = '', countdownSeconds, cancelToken, onClose } = props
+  const attachments = useComposerAttachments(session.id)
+  const canAttach = sessionProvider(session.id) === 'codex'
+  const [dragging, setDragging] = useState(false)
+  const [queueRevision, setQueueRevision] = useState(0)
   const draft = useComposerDraft(session.id, initialText)
   const { text, setText } = draft
   const sendLocked = useRef(false)
   const [submitting, setSubmitting] = useState(false)
-  const desktopUnavailable = session.provider === 'codex' && session.live
   const [error, setError] = useState<string | null>(null)
   const [askDownload, setAskDownload] = useState(false)
   const [countdownEnds, setCountdownEnds] = useState<number | null>(() =>
-    countdownSeconds && !desktopUnavailable ? Date.now() + countdownSeconds * 1000 : null,
+    !embedded && countdownSeconds ? Date.now() + countdownSeconds * 1000 : null,
   )
   const [now, setNow] = useState(() => Date.now())
   const countdownInvalidated = useRef(false)
+  const voicePhase = useRef(voiceState)
+  useLayoutEffect(() => {
+    voicePhase.current = voiceState
+    if (voiceState !== 'idle') countdownInvalidated.current = true
+  }, [voiceState])
   const box = useRef<HTMLTextAreaElement>(null)
   const mark = ticks(relay)
-  const busy = submitting || relay?.state === 'sending' || relay?.state === 'sent'
+  const busy =
+    submitting ||
+    relay?.state === 'sending' ||
+    (session.provider !== 'codex' && relay?.state === 'sent')
 
   // Opening the composer puts the cursor in the box (the panel remounts it per thread).
   // A voice send opens the panel without focus, so this only takes effect once clicked.
+  const focusedToken = useRef(0)
   useEffect(() => {
-    if (!draft.loading && !box.current?.hidden) box.current?.focus()
-  }, [draft.loading])
+    if (draft.loading || hidden) return
+    if (!embedded || focusToken > focusedToken.current) box.current?.focus()
+    focusedToken.current = focusToken
+  }, [draft.loading, embedded, hidden, focusToken])
 
   // Grow with the text, up to a few lines, then scroll.
   useEffect(() => {
     const element = box.current
-    if (!element || element.hidden) return
+    if (!element || element.hidden || hidden) return
     element.style.height = 'auto'
     const line = parseFloat(getComputedStyle(element).lineHeight) || 16
     element.style.height = `${Math.min(element.scrollHeight, line * MAX_ROWS)}px`
-  }, [text, voiceState])
+  }, [text, voiceState, hidden])
 
   const send = async (message = text.trim()) => {
-    if (!message || busy || sendLocked.current || draft.loading) return
-    if (desktopUnavailable) return setError(CODEX_DESKTOP_UNAVAILABLE)
+    if (
+      (!message && !attachments.items.length) ||
+      busy ||
+      sendLocked.current ||
+      draft.loading ||
+      attachments.loading ||
+      attachments.busy ||
+      voiceState !== 'idle' ||
+      hidden
+    )
+      return
+    const attachmentIds = attachments.items.map((item) => item.id)
     sendLocked.current = true
     setSubmitting(true)
     try {
       await draft.flush()
-      const result = await window.threadlight.sendMessage(session.id, message)
+      if (voicePhase.current !== 'idle') return
+      const result = await window.threadlight.sendMessage(
+        session.id,
+        message,
+        attachmentIds.length ? attachmentIds : undefined,
+        canAttach ? 'queue' : undefined,
+      )
       if (result.ok) {
+        setQueueRevision((n) => n + 1)
+        attachments.accepted(attachmentIds)
         setText((current) => (current.trim() === message ? '' : current))
         setError(null)
       } else {
@@ -113,12 +164,20 @@ export function Composer(props: ComposerProps) {
     return () => window.clearInterval(timer)
     // send reads the latest text through its closure on each tick
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countdownEnds, text, desktopUnavailable, draft.loading, draft.error])
+  }, [
+    countdownEnds,
+    text,
+    draft.loading,
+    draft.error,
+    attachments.loading,
+    attachments.busy,
+    attachments.items,
+    voiceState,
+  ])
 
   useEffect(() => {
-    if (desktopUnavailable || draft.error || draft.reviewRequired)
-      countdownInvalidated.current = true
-  }, [desktopUnavailable, draft.error, draft.reviewRequired])
+    if (draft.error || draft.reviewRequired) countdownInvalidated.current = true
+  }, [draft.error, draft.reviewRequired])
 
   const cancelCountdown = () => setCountdownEnds(null)
 
@@ -134,11 +193,12 @@ export function Composer(props: ComposerProps) {
     if (!heard || heard.n === lastHeard.current) return
     lastHeard.current = heard.n
     setText((current) => (current.trim() ? `${current.trimEnd()} ${heard.text}` : heard.text))
-    box.current?.focus()
-  }, [heard, setText])
+    if (!hidden) box.current?.focus()
+  }, [heard, setText, hidden])
 
   const toggleMic = () => {
     setError(null)
+    cancelCountdown()
     if (stt.state === 'missing' || stt.state === 'error') return setAskDownload(true)
     if (stt.state === 'ready') onMic()
   }
@@ -147,6 +207,7 @@ export function Composer(props: ComposerProps) {
     if (event.nativeEvent.isComposing) return
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
+      event.stopPropagation()
       cancelCountdown()
       void send()
     } else if (event.key === 'Escape') {
@@ -161,66 +222,99 @@ export function Composer(props: ComposerProps) {
     : voiceState === 'transcribing'
       ? en.voice.transcribing
       : en.composer.placeholder
-  const shownError = error ?? draft.error ?? voiceError
+  const shownError = error ?? draft.error ?? attachments.error ?? voiceError
   const remaining = countdownEnds === null ? 0 : Math.max(0, (countdownEnds - now) / 1000)
 
   return (
     <div
       className={styles.composer}
+      hidden={hidden}
+      data-embedded={embedded || undefined}
+      data-drop={dragging || undefined}
+      onDragOver={(event) => {
+        if (!canAttach || !event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = busy || attachments.busy ? 'none' : 'copy'
+        setDragging(!busy && !attachments.busy)
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false)
+      }}
+      onDrop={(event) => {
+        if (!canAttach) return
+        event.preventDefault()
+        event.stopPropagation()
+        setDragging(false)
+        if (busy || attachments.busy || attachments.loading) return
+        cancelCountdown()
+        void attachments.add(Array.from(event.dataTransfer.files))
+      }}
+      onPaste={(event) => {
+        if (!canAttach || !event.clipboardData.files.length) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (busy || attachments.busy || attachments.loading) return
+        cancelCountdown()
+        void attachments.add(Array.from(event.clipboardData.files))
+      }}
       data-provider={sessionProvider(session.id)}
       role="group"
       aria-label={`${providerName(sessionProvider(session.id))} message composer`}
     >
-      <div className={styles.head}>
-        <span className={styles.to}>{en.composer.to}</span>
-        <span className={styles.target}>{session.title}</span>
-        {countdownEnds !== null && !desktopUnavailable && !draft.error && !draft.reviewRequired ? (
-          <button
-            className={styles.countdown}
-            onClick={cancelCountdown}
-            title={en.voice.cancelSend}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="7" className={styles.ringTrack} />
-              <circle
-                cx="8"
-                cy="8"
-                r="7"
-                className={styles.ring}
-                strokeDasharray={RING}
-                strokeDashoffset={RING * (1 - remaining / (countdownSeconds ?? 1))}
-              />
-            </svg>
-            {en.voice.sendingIn(Math.ceil(remaining))}
-          </button>
-        ) : (
-          mark && (
-            <span className={styles.ticks} data-tone={mark.tone}>
-              {mark.text}
-            </span>
-          )
-        )}
-        <button className={styles.close} onClick={onClose} aria-label={en.composer.close}>
-          ×
-        </button>
-      </div>
+      {(!embedded || (countdownEnds !== null && !draft.error && !draft.reviewRequired)) && (
+        <div className={styles.head}>
+          {!embedded && (
+            <>
+              <span className={styles.to}>{en.composer.to}</span>
+              <span className={styles.target}>{session.title}</span>
+            </>
+          )}
+          {countdownEnds !== null && !draft.error && !draft.reviewRequired ? (
+            <button
+              className={styles.countdown}
+              onClick={cancelCountdown}
+              title={en.voice.cancelSend}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="7" className={styles.ringTrack} />
+                <circle
+                  cx="8"
+                  cy="8"
+                  r="7"
+                  className={styles.ring}
+                  strokeDasharray={RING}
+                  strokeDashoffset={RING * (1 - remaining / (countdownSeconds ?? 1))}
+                />
+              </svg>
+              {en.voice.sendingIn(Math.ceil(remaining))}
+            </button>
+          ) : (
+            !embedded &&
+            mark && (
+              <span className={styles.ticks} data-tone={mark.tone}>
+                {mark.text}
+              </span>
+            )
+          )}
+          {!embedded && (
+            <button className={styles.close} onClick={onClose} aria-label={en.composer.close}>
+              ×
+            </button>
+          )}
+        </div>
+      )}
 
       {shownError && <p className={styles.error}>{shownError}</p>}
-      {desktopUnavailable && (
-        <div className={styles.unavailable}>
-          <span>Sending to this open Codex chat is not connected yet.</span>
-          <button
-            className={styles.primary}
-            disabled={!text.trim() || !session.appId}
-            onClick={() => {
-              cancelCountdown()
-              window.threadlight.copyText(text.trim())
-              if (session.appId) window.threadlight.openInClaude(session.appId)
-            }}
-          >
-            Copy and open Codex
-          </button>
-        </div>
+      {canAttach && (
+        <>
+          <QueuedMessages
+            key={session.id}
+            sessionId={session.id}
+            hidden={hidden}
+            revision={queueRevision}
+          />
+        </>
       )}
 
       {askDownload && stt.state !== 'ready' && (
@@ -248,7 +342,56 @@ export function Composer(props: ComposerProps) {
         </div>
       )}
 
+      {canAttach && attachments.items.length > 0 && (
+        <ul className={styles.attachments} aria-label="Attached files">
+          {attachments.items.map((item) => (
+            <li key={item.id}>
+              <span title={item.name}>
+                {item.kind === 'image' ? '▧' : '▤'} {item.name}
+              </span>
+              <button
+                type="button"
+                disabled={busy || attachments.busy}
+                aria-label={'Remove ' + item.name}
+                onClick={() => {
+                  cancelCountdown()
+                  void attachments.remove(item.id)
+                }}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {attachments.busy && (
+        <p className={styles.attachmentStatus} role="status">
+          Preparing files…
+        </p>
+      )}
       <div className={styles.pill}>
+        {canAttach && (
+          <button
+            type="button"
+            className={styles.attach}
+            aria-label="Attach files"
+            title="Attach files, paste or drop"
+            disabled={busy || attachments.busy || attachments.loading}
+            onClick={() => {
+              cancelCountdown()
+              void attachments.pick()
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path
+                d="M6 1v10M1 6h10"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        )}
         <div className={styles.entry}>
           <textarea
             ref={box}
@@ -267,16 +410,24 @@ export function Composer(props: ComposerProps) {
           />
           {listening && <VoiceWave level={level} />}
         </div>
-        {text.trim().length > 0 && !desktopUnavailable && (
+        {voiceState === 'idle' && (text.trim().length > 0 || attachments.items.length > 0) && (
           <button
             className={styles.send}
             onClick={() => {
               cancelCountdown()
               void send()
             }}
-            disabled={busy || draft.loading || !!draft.error}
-            aria-label={en.composer.send}
-            title={en.composer.send}
+            disabled={
+              busy || draft.loading || !!draft.error || attachments.loading || attachments.busy
+            }
+            aria-label={
+              canAttach && session.state === 'working' ? 'Queue message' : en.composer.send
+            }
+            title={
+              canAttach && session.state === 'working'
+                ? 'Queue after current response'
+                : en.composer.send
+            }
           >
             ↵
           </button>
@@ -285,7 +436,7 @@ export function Composer(props: ComposerProps) {
           className={styles.mic}
           data-state={voiceState}
           onClick={toggleMic}
-          disabled={draft.loading || voiceState === 'transcribing'}
+          disabled={draft.loading || micDisabled || voiceState === 'transcribing'}
           aria-label={listening ? en.voice.stop : en.voice.start}
           title={listening ? en.voice.stop : en.voice.start}
         >

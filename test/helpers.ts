@@ -70,11 +70,11 @@ export const toolCall = (name: string, input: object) => ({
   message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_test', name, input }] },
 })
 
-export const toolResult = () => ({
+export const toolResult = (id = 'toolu_test', content = 'ok') => ({
   type: 'user',
   message: {
     role: 'user',
-    content: [{ type: 'tool_result', tool_use_id: 'toolu_test', content: 'ok' }],
+    content: [{ type: 'tool_result', tool_use_id: id, content }],
   },
 })
 

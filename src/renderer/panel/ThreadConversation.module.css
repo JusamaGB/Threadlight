@@ -1,0 +1,395 @@
+.root {
+  --thread-block-gap: 6px;
+  margin: 0 0 3px;
+  background: var(--raised);
+  border-radius: 5px;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  color: var(--fg);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.plan {
+  margin: 0 14px 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.plan summary,
+.tool summary {
+  cursor: pointer;
+}
+.plan ul {
+  margin: 6px 0;
+  padding-left: 15px;
+}
+.notice,
+.pending {
+  margin: 0;
+  padding: 4px 14px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  height: calc(var(--thread-history-height, 350px) + 53px);
+}
+.body > :not(.scroll) {
+  flex-shrink: 0;
+}
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  scrollbar-width: none;
+  border-top: 1px solid var(--border);
+  /* History stays inside the edge tint; the composer can use the full column width. */
+  padding: 0 10px 6px;
+}
+.older {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.older:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.message {
+  padding-top: var(--thread-block-gap);
+  overflow-wrap: anywhere;
+}
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.meta time {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.message p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.artifactLink {
+  display: inline-block;
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  white-space: normal;
+  vertical-align: baseline;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+.artifactLink:disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
+}
+.userMessage summary {
+  display: block;
+  list-style: none;
+  cursor: pointer;
+  background: var(--hover);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.userMessage summary::-webkit-details-marker {
+  display: none;
+}
+.userMessageText {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+.userMessage[open] .userMessageText {
+  white-space: pre-wrap;
+  overflow: visible;
+  mask-image: none;
+}
+.tool {
+  margin: var(--thread-block-gap) 0 0;
+  padding-left: 7px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.tool summary {
+  white-space: pre-wrap;
+}
+.tool pre {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    10px/1.5 Consolas,
+    monospace;
+  max-height: 160px;
+  overflow-y: auto;
+  color: var(--fg);
+}
+.caret {
+  display: inline-block;
+  width: 4px;
+  height: 10px;
+  margin-left: 3px;
+  vertical-align: baseline;
+  background: var(--green);
+}
+.empty {
+  color: var(--muted);
+  margin: 6px 0;
+}
+.follow {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 3px 13px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+}
+.follow button {
+  border: 0;
+  border-radius: 4px;
+  background: var(--hover);
+  color: var(--fg);
+  font: inherit;
+  padding: 4px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.root button:focus-visible,
+.root summary:focus-visible,
+.scroll:focus-visible {
+  outline: 1px solid var(--green);
+  outline-offset: -1px;
+}
+
+/* Native-style activity groups sit between commentary paragraphs. */
+.meta[data-progress='true'] {
+  display: none;
+}
+.activityGroup,
+.activityEvent {
+  color: var(--muted);
+  margin: var(--thread-block-gap) 0 0;
+  overflow-wrap: anywhere;
+}
+.activityGroup > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  min-width: 0;
+}
+.activityGroup > summary::-webkit-details-marker {
+  display: none;
+}
+.activityGroup > summary > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.activityGroup > summary:hover {
+  color: var(--fg);
+}
+.activityGroup[data-active='true'] > summary {
+  color: var(--fg);
+}
+.activityGroup[data-active='true'] > summary > span:first-of-type {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: linear-gradient(100deg, var(--muted) 35%, var(--fg) 50%, var(--muted) 65%);
+  background-size: 250% 100%;
+  background-clip: text;
+  color: transparent;
+  animation: activityShimmer 2.1s linear infinite;
+}
+@keyframes activityShimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activityGroup[data-active='true'] > summary > span:first-of-type {
+    animation: none;
+    background: none;
+    color: var(--fg);
+  }
+}
+.activityIcon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+}
+.chevron {
+  font-size: 16px;
+  transition: transform 0.12s;
+}
+.activityGroup[open] > summary .chevron {
+  transform: rotate(90deg);
+}
+.activityList {
+  list-style: none;
+  margin: 4px 0 0 6px;
+  padding: 0 0 0 12px;
+  border-left: 1px solid var(--border);
+}
+.activityList li {
+  padding: 3px 0;
+}
+.activityList li[data-failed='true'] {
+  color: var(--fg);
+}
+.activityList p {
+  margin: 0;
+}
+.activityList .tool {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.activityEvent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
+
+.fileCard {
+  margin-top: var(--thread-block-gap);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.fileCard header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  background: var(--hover);
+}
+.fileCard header > svg {
+  width: 18px;
+  height: 20px;
+  flex: 0 0 18px;
+  color: var(--muted);
+}
+.fileHeading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.fileHeading strong {
+  font-weight: 600;
+}
+.fileCard button {
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+}
+.fileCard header button {
+  border: 1px solid var(--border);
+  background: var(--raised);
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 10px;
+}
+.fileCard header button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.fileCounts {
+  display: inline-flex;
+  gap: 5px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fileCounts > :first-child {
+  color: var(--green);
+}
+.fileCounts > :last-child {
+  color: var(--red);
+}
+.fileUnknown {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.imageGallery {
+  margin: 6px 0;
+}
+.imagePreview {
+  margin: 0;
+}
+.imagePreview img {
+  display: block;
+  width: 100%;
+  height: min(170px, 28vh);
+  object-fit: contain;
+  border-radius: 4px;
+  background: var(--bg);
+}
+.imagePreview figcaption {
+  margin-top: 4px;
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.imageNavigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.imageNavigation button {
+  padding: 2px 12px;
+  font-size: 18px;
+}
+.imageNavigation button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.imagePreview > p {
+  height: min(170px, 28vh);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}

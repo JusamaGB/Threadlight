@@ -8,6 +8,7 @@ import { CommunicationStore } from '../communication/store'
 import type { CommunicationService } from '../communication/service'
 import type { CommunicationActor } from '../../shared/communication'
 import { MemoryError } from './errors'
+import type { CapabilityReport } from '../../shared/projectParticipants'
 export { MemoryError } from './errors'
 import {
   memoryInput,
@@ -26,8 +27,18 @@ import {
   type MemorySubscription,
 } from '../../shared/memory'
 
-type Kind = 'space' | 'folder' | 'item' | 'revision' | 'grant' | 'task' | 'message' | 'subscription'
+type Kind =
+  | 'space'
+  | 'folder'
+  | 'item'
+  | 'revision'
+  | 'grant'
+  | 'task'
+  | 'message'
+  | 'subscription'
+  | 'capability_report'
 type RecordValue =
+  | CapabilityReport
   | MemorySubscription
   | MemorySpace
   | MemoryFolder
@@ -51,6 +62,7 @@ const normalName = (s: string) =>
 
 /** One local transactional authority. Provider data is never written by this store. */
 export class MemoryStore {
+  connectionStatus: () => import('../../shared/memoryPlugins').MemoryPluginConnection[] = () => []
   readonly communications: CommunicationStore
   communicationService?: CommunicationService
   private db: DatabaseSync
@@ -481,7 +493,16 @@ export class MemoryStore {
         (!m.itemId || itemIds.has(m.itemId)) &&
         (!grant?.folderId || m.taskId || m.itemId),
     )
-    const entities = new Set([...ids, ...itemIds, ...taskIds, ...messages.map((m) => m.id)])
+    const capabilityReports = this.all<CapabilityReport>('capability_report').filter(
+      (r) => spaces.some((s) => s.id === r.spaceId) && (!grant || grant.folderId === null),
+    )
+    const entities = new Set([
+      ...ids,
+      ...itemIds,
+      ...taskIds,
+      ...messages.map((m) => m.id),
+      ...capabilityReports.map((r) => r.id),
+    ])
     const events = this.db
       .prepare(
         'SELECT seq,space AS spaceId,entity AS entityId,action,author,at FROM events ORDER BY seq DESC LIMIT 500',
@@ -489,6 +510,7 @@ export class MemoryStore {
       .all() as unknown as MemoryEvent[]
     const cursor = Number(this.db.prepare('SELECT COALESCE(MAX(seq),0) AS n FROM events').get()!.n)
     return {
+      capabilityReports,
       subscriptions: this.all<MemorySubscription>('subscription').filter((s) =>
         ids.has(s.folderId),
       ),
@@ -548,6 +570,7 @@ export class MemoryStore {
           }
         : null,
       cursor: s.cursor,
+      capabilityReports: s.capabilityReports,
       spaces: s.spaces.map(({ id, title, description }) => ({ id, title, description })),
       sectors: s.folders
         .filter((f) => !f.archived)
@@ -678,6 +701,67 @@ export class MemoryStore {
     const space = () => required(i.spaceId, 'space')
     const identity = () => required(i.id, 'record ID')
     switch (i.action) {
+      case 'report_capabilities': {
+        const grant = this.grant(actor)
+        if (grant && (grant.readOnly || grant.folderId !== null || !grant.assignee || grant.taskId))
+          fail(
+            'permission_denied',
+            'Capability reporting requires a linked chat with project-wide publishing access.',
+          )
+        const spaceId = grant?.spaceId ?? space()
+        const assignee = grant?.assignee ?? required(i.assignee, 'linked chat')
+        if (
+          grant &&
+          ((i.spaceId && i.spaceId !== spaceId) || (i.assignee && i.assignee !== assignee))
+        )
+          fail(
+            'permission_denied',
+            'Report only this enrolled chat’s capabilities in its own project.',
+          )
+        this.space(spaceId)
+        if (
+          !this.all<MemoryGrant>('grant').some(
+            (g) => g.spaceId === spaceId && g.assignee === assignee && !g.taskId,
+          )
+        )
+          fail(
+            'destination_unavailable',
+            'Connect this chat to the project before recording capabilities.',
+          )
+        const capabilities = required(i.capabilities, 'capabilities')
+        const keys = capabilities.map((c) => `${c.kind}:${normalName(c.name)}`)
+        if (new Set(keys).size !== keys.length)
+          fail('invalid_input', 'List each capability once per category.')
+        const report: CapabilityReport = {
+          ...this.base(spaceId, actor),
+          assignee,
+          source: grant ? 'reported' : 'manual',
+          capabilities,
+          verifications: [],
+        }
+        this.put('capability_report', report)
+        this.event(spaceId, report.id, 'Capabilities reported', actor)
+        return report
+      }
+      case 'verify_capability': {
+        this.human(actor)
+        const report = this.get<CapabilityReport>('capability_report', identity())
+        const index = required(i.capabilityIndex, 'capability index')
+        if (!report.capabilities[index]) fail('invalid_input', 'This capability is unavailable.')
+        const verification = {
+          index,
+          at: this.now(),
+          author: 'human' as const,
+          evidence: required(i.evidence, 'verification evidence'),
+        }
+        const next = {
+          ...report,
+          verifications: [...report.verifications.filter((v) => v.index !== index), verification],
+        }
+        this.put('capability_report', next)
+        this.event(report.spaceId, report.id, 'Capability verified by human', actor)
+        return next
+      }
       case 'create_space': {
         this.human(actor)
         const id = randomUUID()

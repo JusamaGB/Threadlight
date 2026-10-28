@@ -11,6 +11,8 @@ export interface HookRecord {
   transcriptPath: string | null
   updatedAt: number
   completedAt?: number
+  compacting?: boolean
+  beforeCompact?: SessionState
 }
 
 /** Records older than this are dropped: the session is long gone. */
@@ -25,13 +27,21 @@ export class HookStateStore {
     const sessionId = str(payload['session_id'])
     const event = str(payload['hook_event_name'])
     if (!sessionId || !event) return
+    if (['PreCompact', 'PostCompact'].includes(event) && payload['agent_id']) return
 
-    const state = stateForEvent(event, payload)
-    if (!state) return
     const previous = this.records.get(sessionId)
+    const compactFinished =
+      event === 'PostCompact' || (event === 'SessionStart' && payload['source'] === 'compact')
+    const state = compactFinished
+      ? (previous?.beforeCompact ?? previous?.state ?? 'idle')
+      : stateForEvent(event, payload)
+    if (!state) return
     this.records.set(sessionId, {
       sessionId,
       state,
+      compacting: event === 'PreCompact',
+      beforeCompact:
+        event === 'PreCompact' ? (previous?.beforeCompact ?? previous?.state ?? 'idle') : undefined,
       cwd: str(payload['cwd']) ?? previous?.cwd ?? null,
       transcriptPath: str(payload['transcript_path']) ?? previous?.transcriptPath ?? null,
       updatedAt: now,
@@ -65,6 +75,7 @@ function stateForEvent(event: string, payload: Record<string, unknown>): Session
     case 'UserPromptSubmit':
     case 'PreToolUse':
     case 'PostToolUse':
+    case 'PreCompact':
       return 'working'
     case 'Notification': {
       // Permission prompts block the session on the user; the "waiting for input"

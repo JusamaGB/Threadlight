@@ -57,6 +57,9 @@ export const conversationSchema = z
               .optional(),
             question: z
               .object({
+                answerDelivery: z.enum(['message', 'tool']).optional(),
+                allowOther: z.boolean().optional(),
+                expiresAt: z.number().finite().positive().optional(),
                 id: z.string().uuid(),
                 spaceId: z.string().uuid(),
                 taskId: z.string().uuid().optional(),

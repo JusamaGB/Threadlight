@@ -1,4 +1,4 @@
-param([string] $ConfigPath, [switch] $StartHidden)
+param([string] $ConfigPath = (Join-Path $PSScriptRoot 'app-launcher.json'), [switch] $StartHidden)
 
 if ($StartHidden) {
     # Start-Process creates a separate hidden console. A console inherited from

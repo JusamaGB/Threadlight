@@ -27,8 +27,8 @@ function watcherCommand(userData: string) {
       'Bypass', // only this helper process; no saved PowerShell policy is changed
       '-File',
       paths.script,
-      '-ConfigPath',
-      paths.config,
+      // The script loads its sibling config. Repeating the full profile path here
+      // pushes ordinary Windows Run entries past their 260-character limit.
     ],
   }
 }

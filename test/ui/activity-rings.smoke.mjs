@@ -1,3 +1,4 @@
+import { selectThreadView } from './header-navigation.mjs'
 /* global window, getComputedStyle */
 import assert from 'node:assert/strict'
 
@@ -150,7 +151,6 @@ export async function checkActivityRings(page, capture) {
       })
       window.proof.ringSnapshot = await window.threadlight.getSnapshot()
     })
-    await page.locator('header [data-thread-view]').click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+    await selectThreadView(page, 'recent')
   }
 }

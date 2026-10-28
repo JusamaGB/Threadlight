@@ -12,6 +12,7 @@ import { clip } from '../lib/format'
 import { useDraft } from '../lib/drafts'
 import { CodexCard } from './CodexCard'
 import { CodexQuestionCard } from './CodexQuestionCard'
+import { ManagedQuestionCard } from './ManagedQuestionCard'
 import styles from './Panel.module.css'
 
 interface AttentionCardProps {
@@ -38,12 +39,21 @@ export function AttentionCard({
   onCompose,
   onCollapse,
 }: AttentionCardProps) {
+  if (attention.kind === 'question' && attention.managed)
+    return (
+      <ManagedQuestionCard
+        key={`${attention.managed.id}:${attention.managed.generation}`}
+        attention={attention}
+        onCollapse={onCollapse}
+      />
+    )
   if (session.provider === 'codex' && attention.kind === 'question')
     return (
       <CodexQuestionCard
-        key={`${session.id}:${JSON.stringify(attention.questions)}`}
+        key={`${session.id}:${JSON.stringify(attention.nativeCodex)}:${JSON.stringify(attention.questions)}`}
         session={session}
         questions={attention.questions}
+        native={attention.nativeCodex}
         onCollapse={onCollapse}
       />
     )

@@ -1,0 +1,56 @@
+.view {
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+}
+.view p {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 6px 0;
+}
+.view h3,
+.view h4 {
+  font-size: 12px;
+  margin: 6px 0;
+}
+.view article {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 10px;
+}
+.view details {
+  margin: 8px 0;
+  font-size: 11px;
+}
+.view button {
+  display: inline-block;
+  font-size: 11px;
+  padding: 5px 7px;
+  margin: 3px 3px 3px 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--raised);
+}
+.view label {
+  display: block;
+  font-size: 11px;
+  margin: 7px 0;
+}
+.view textarea {
+  display: block;
+  width: 100%;
+  min-height: 55px;
+  resize: vertical;
+  box-sizing: border-box;
+  color: var(--fg);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px;
+  margin-top: 3px;
+}
+.capability {
+  margin: 7px 0;
+  padding: 6px;
+  border-left: 2px solid var(--border);
+}

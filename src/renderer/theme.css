@@ -24,7 +24,7 @@
   font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
   font-size: 12px;
   color: var(--fg);
-  color-scheme: dark;
+  color-scheme: only dark;
 }
 
 button {

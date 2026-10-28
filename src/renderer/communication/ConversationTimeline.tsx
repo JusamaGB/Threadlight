@@ -61,6 +61,7 @@ function Card({
         <Question
           title={card.body}
           choices={card.question.choices}
+          allowOther={card.question.allowOther}
           busy={busy}
           answer={(answer) =>
             call('conversation_answer', { operationId: crypto.randomUUID(), answer })

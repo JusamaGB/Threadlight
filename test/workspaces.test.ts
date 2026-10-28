@@ -64,6 +64,22 @@ const titles = (nodes: ThreadNode[]): unknown[] =>
 const byName = (workspaces: Workspace[], name: string) => workspaces.find((w) => w.name === name)!
 
 describe('workspace tree', () => {
+  it('keeps collapsed rows warm within a budget, prioritizing the selected workspace', async () => {
+    await thread('C:\\demo\\new', 'Newest', { agoMs: HOUR })
+    await thread('C:\\demo\\selected', 'Selected', { agoMs: 2 * HOUR })
+    await thread('C:\\demo\\old', 'Old', { agoMs: 3 * HOUR })
+    const limited = new Tracker({ paths: box.paths, hooks, now: () => NOW, treeBudget: 2 })
+    const snapshot = await limited.snapshot({
+      expanded: ['C:\\demo\\selected'],
+      showAll: [],
+      preload: true,
+    })
+    expect(titles(byName(snapshot.workspaces, 'selected').threads)).toEqual(['Selected'])
+    expect(titles(byName(snapshot.workspaces, 'new').threads)).toEqual(['Newest'])
+    expect(byName(snapshot.workspaces, 'old').threads).toEqual([])
+    const collapsed = await limited.snapshot({ expanded: [], showAll: [], preload: true })
+    expect(titles(byName(collapsed.workspaces, 'selected').threads)).toEqual(['Selected'])
+  })
   it('keeps running rows fixed through messages and permission pauses, then reorders on Stop', async () => {
     const older = await thread('C:\\demo\\stable', 'Older', { agoMs: 2 * HOUR })
     const newer = await thread('C:\\demo\\stable', 'Newer', { agoMs: HOUR })

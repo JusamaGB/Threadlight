@@ -1,4 +1,6 @@
+import type { QueueCommand, QueueResult } from './codexQueue'
 import type { AnnouncementCommand, AnnouncementReply } from './conversationEvents'
+import type { ControlCommand, ControlHello, ControlPublication } from './appControl'
 // The one contract between the UI (renderer) and the Node side (main).
 // Channel names and payload types live here so both sides stay in step.
 
@@ -33,6 +35,11 @@ import type {
 } from './types'
 
 export const IPC = {
+  newThread: 'threads:create',
+  composerAttachments: 'composer:attachments',
+  threadImage: 'thread-timeline:image',
+  threadTimeline: 'thread-timeline:request',
+  threadTimelineChanged: 'thread-timeline:changed',
   artifacts: 'artifacts:request',
   artifactsChanged: 'artifacts:changed',
   artifactPreview: 'artifacts:preview',
@@ -76,6 +83,7 @@ export const IPC = {
   openPanelQuietly: 'panel:open-quietly',
   hotkeyProblem: 'hotkey:problem',
   sendMessage: 'relay:send',
+  codexQueue: 'codex:queue',
   getComposerDraft: 'composer:draft-get',
   saveComposerDraft: 'composer:draft-save',
   getRelays: 'relay:get',
@@ -88,10 +96,13 @@ export const IPC = {
   dotDragEnd: 'dot:drag-end',
   dotHover: 'dot:hover',
   panelOpened: 'panel:opened',
+  panelPeek: 'panel:peek',
+  panelNavigate: 'panel:navigate',
   workspacePanel: 'panel:workspace-layout',
   panelResize: 'panel:resize',
   panelLayout: 'panel:layout',
   workspaceWireRegions: 'panel:wire-regions',
+  workspaceWireGutter: 'panel:wire-gutter',
   panelClose: 'panel:close',
   panelLeave: 'panel:leave',
   panelPointerOutside: 'panel:pointer-outside',
@@ -105,6 +116,7 @@ export const IPC = {
   answerApproval: 'hold:answer-approval',
   answerOffer: 'hold:answer-offer',
   answerCodex: 'codex:answer',
+  answerNativeCodexQuestion: 'codex:answer-native-question',
   releaseHold: 'hold:release',
   copyText: 'clipboard:copy',
   getChanges: 'changes:get',
@@ -150,6 +162,45 @@ export type TalkState = 'idle' | 'listening' | 'transcribing'
 
 /** What the preload script exposes on `window.threadlight`. */
 export interface ThreadlightApi {
+  controlHello: () => Promise<ControlHello | null>
+  controlPublish: (value: ControlPublication) => void
+  controlClaim: (command: ControlCommand) => Promise<boolean>
+  onControlCommand: (listener: (command: ControlCommand) => void) => () => void
+  newThread(
+    input: import('./newThread').NewThreadRequest,
+  ): Promise<import('./newThread').NewThreadResult>
+  composerAttachments(
+    input: import('./composerAttachments').ComposerAttachmentsRequest,
+  ): Promise<import('./composerAttachments').ComposerAttachmentsReply>
+  composerFilePath(file: File): string
+  threadImage(
+    input: import('./threadTimeline').TimelineImageRequest,
+  ): Promise<import('./threadTimeline').TimelineImageReply>
+  threadTimeline(
+    input: import('./threadTimeline').TimelineRequest,
+  ): Promise<import('./threadTimeline').TimelineReply>
+  onThreadTimeline(
+    listener: (timeline: import('./threadTimeline').ThreadTimeline) => void,
+  ): () => void
+  answerNativeCodexQuestion(
+    sessionId: string,
+    reference: import('./codexQuestions').CodexQuestionRef,
+    answers: string[],
+  ): Promise<import('./codexQuestions').CodexQuestionResult>
+  artifactPreview(
+    input: import('./artifacts').ArtifactPreviewRequest,
+  ): Promise<{ ok: boolean; reason?: string }>
+  onArtifactPreviewEvent(
+    listener: (event: import('./artifacts').ArtifactPreviewEvent) => void,
+  ): () => void
+  onArtifactsChanged(
+    listener: (change: { threadId: string; items: import('./artifacts').ThreadArtifact[] }) => void,
+  ): () => void
+  artifacts(
+    threadId: string,
+    action: 'list' | 'link' | 'read' | 'copy',
+    id?: string,
+  ): Promise<import('./artifacts').ArtifactReply>
   communicationRequest(input: {
     action: string
     arguments?: unknown
@@ -188,6 +239,10 @@ export interface ThreadlightApi {
   /** Which workspaces are open; their threads are read and sent in the next snapshot. */
   setTreeView(view: TreeView): void
   onPanelOpened(listener: (info: PanelOpened) => void): () => void
+  onPanelPeek(listener: (peek: boolean) => void): () => void
+  onPanelNavigate(
+    listener: (direction: import('./navigationHistory').NavigationDirection) => void,
+  ): () => void
   /** Workspace can use the whole display work area; returns current available height. */
   setWorkspacePanel(on: boolean): Promise<PanelOpened | null>
 
@@ -206,6 +261,7 @@ export interface ThreadlightApi {
   setWorkspaceWireControl(bounds: { top: number; height: number } | null): void
   /** The thin clickable strips along each wire; everything else in the gutter passes clicks through. */
   setWorkspaceWireRegions(regions: { x: number; y: number; width: number; height: number }[]): void
+  setWorkspaceWireGutter(width: number): Promise<{ cardWidth: number } | null>
   /** Widens or narrows the panel window. Resolves with the card width the layout gives. `animating`
    * keeps the gutter from passing clicks through while the card and rows move. */
   setPanelLayout(layout: 'single' | 'dual', animating?: boolean): Promise<{ cardWidth: number }>
@@ -219,7 +275,10 @@ export interface ThreadlightApi {
   sendMessage(
     sessionId: string,
     text: string,
+    attachmentIds?: string[],
+    mode?: 'queue' | 'steer',
   ): Promise<{ ok: true } | { ok: false; reason: string }>
+  codexQueue(sessionId: string, command: QueueCommand): Promise<QueueResult>
   getRelays(): Promise<RelayStatus[]>
   /**
    * Answers a question card Threadlight is holding, keyed by each question's text (see

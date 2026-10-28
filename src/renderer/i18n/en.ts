@@ -47,12 +47,13 @@ export const en = {
     pinHint: 'Double-click the header to pin this view open.',
     header: {
       views: {
-        active: 'Active: threads that are working or waiting for you right now.',
+        active: 'Active: working threads, threads waiting for you, and unread finished replies.',
         recent: 'Recent: your latest threads, newest first.',
         workspace: 'Workspace: the threads in the workspace you have chosen.',
         all: 'All: every thread, grouped by workspace.',
       },
-      viewHelp: 'Click to switch between Active, Recent and Workspace. Right-click for every view.',
+      viewHelp:
+        'Click to switch between Active, Recent and Workspace. Right-click the header for New, Spaces, Agent and every view.',
       sessionsListed: 'How many threads Recent lists (3 to 25).',
       sources: {
         both: 'Showing Claude and Codex threads together.',
@@ -168,6 +169,17 @@ export const en = {
   },
   changes: {
     title: 'Thread diff',
+    cardTitle: 'Card changes',
+    recordedEdit: 'Recorded edit',
+    addedLabel: 'Added',
+    removedLabel: 'Removed',
+    lines: (n: number) => `${n} ${n === 1 ? 'line' : 'lines'}`,
+    unchangedLines: (n: number) => `${n} unchanged ${n === 1 ? 'line' : 'lines'}`,
+    lineRange: (start: number, end: number) =>
+      start === end ? `Line ${start}` : `Lines ${start}–${end}`,
+    wrapOn: 'Wrap on',
+    wrapOff: 'Wrap off',
+    wrapHint: 'Wrap long lines and shorten shared indentation. Turn off to see original spacing.',
     uncommitted: 'Uncommitted',
     worktreeTitle: 'Worktree diff',
     worktreeNone: 'No uncommitted changes in this worktree.',

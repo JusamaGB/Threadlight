@@ -1,4 +1,6 @@
 import { CommunicationView } from '../communication/CommunicationView'
+import { useNavigationHistory } from '../hooks/useNavigationHistory'
+import type { NavigationDirection } from '../../shared/navigationHistory'
 import {
   useCallback,
   useEffect,
@@ -62,16 +64,24 @@ export function MemoryView({
   onClose,
   navigationRef,
   spaceIds,
+  initialSpaceId,
 }: {
   visible: boolean
   sessions: Session[]
   onClose: () => void
-  navigationRef?: Ref<{ back: () => void; openTask: (id: string) => void }>
+  navigationRef?: Ref<{
+    back: () => void
+    openTask: (id: string) => void
+    navigate?: (direction: NavigationDirection) => boolean
+  }>
   spaceIds?: string[]
+  initialSpaceId?: string
 }) {
   const [rawData, setData] = useState(empty)
   const data = spaceIds ? scopeMemory(rawData, spaceIds) : rawData
-  const [routes, setRoutes] = useState<Route[]>([])
+  const [routes, setRoutes] = useState<Route[]>(
+    initialSpaceId ? [{ kind: 'space', id: initialSpaceId }] : [],
+  )
   const [mode, setMode] = useState<'map' | 'list'>('map')
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
@@ -84,6 +94,22 @@ export function MemoryView({
   const pairing = data.connections?.find((c) => c.id === pairingId)
   const [confirm, setConfirm] = useState<MemoryInput | null>(null)
   const body = useRef<HTMLDivElement>(null)
+  const location = useNavigationHistory(
+    { routes, form, version, connection, confirm, pairingId },
+    (page) => {
+      setRoutes(page.routes)
+      setForm(page.form)
+      setVersion(page.version)
+      setConnection(page.connection)
+      setConfirm(page.confirm)
+      setPairingId(page.pairingId)
+      setRead(null)
+      requestAnimationFrame(() => {
+        if (body.current) body.current.scrollTop = page.routes.at(-1)?.scroll ?? 0
+      })
+    },
+    visible,
+  )
   const route = routes.at(-1)
   const draftKey = `form:${form ?? 'none'}:${route?.id ?? 'root'}${pairingId && form === 'grant' ? ':' + pairingId : ''}`
   const folder = route?.kind === 'folder' ? data.folders.find((f) => f.id === route.id) : undefined
@@ -171,6 +197,10 @@ export function MemoryView({
       return
     }
     if (routes.length) {
+      if (initialSpaceId && routes.length === 1) {
+        onClose()
+        return
+      }
       setRoutes((old) => old.slice(0, -1))
       setRead(null)
       setVersion(undefined)
@@ -178,11 +208,12 @@ export function MemoryView({
         if (body.current) body.current.scrollTop = routes.at(-2)?.scroll ?? 0
       })
     } else onClose()
-  }, [form, connection, confirm, routes, onClose])
+  }, [form, connection, confirm, routes, onClose, initialSpaceId])
   useImperativeHandle(
     navigationRef,
     () => ({
       back,
+      navigate: location.navigate,
       openTask: (id: string) => {
         setRoutes([{ kind: 'task', id }])
         setForm(null)
@@ -191,7 +222,7 @@ export function MemoryView({
         setError('')
       },
     }),
-    [back],
+    [back, location.navigate],
   )
   useEffect(() => {
     if (!visible) return

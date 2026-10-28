@@ -1,3 +1,4 @@
+import { openHeaderPage, selectThreadView } from './header-navigation.mjs'
 /* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 
@@ -10,16 +11,15 @@ export async function checkRecentLimit(page, capture) {
     await page.evaluate(() =>
       window.threadlight.updateSettings({ listMode: 'recent', maxSessions: 10 }),
     )
-    await view.click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Recent', exact: true }).click()
+    await selectThreadView(page, 'recent')
     assert.equal(await view.innerText(), 'Recent')
-    // The view already chosen is not offered again; the others are.
+    // The header menu keeps navigation actions and the workspace shortcut.
     await view.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Workspace', exact: true }).waitFor()
     assert.deepEqual(
       await page.getByRole('menuitem').allTextContents(),
-      ['Active', 'Workspace', 'All'],
-      'the chosen view is left out of the menu',
+      ['New', 'Spaces', 'Agent', 'Workspace'],
+      'list filters are absent from the header menu',
     )
     await page.keyboard.press('Escape')
     assert.equal((await control.innerText()).replace(/\s/g, ''), '−10+')
@@ -89,16 +89,14 @@ export async function checkRecentLimit(page, capture) {
     await view.click()
     await page.locator('header [data-thread-view="active"]').waitFor()
     assert.equal(await control.count(), 0)
-    await view.click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'All', exact: true }).click()
+    await selectThreadView(page, 'all')
     assert.equal(await control.count(), 0)
     console.log(
       'PASS: compact Recent −count+ saves Sessions listed, syncs both ways with Settings, obeys bounds and leaves other views unchanged.',
     )
   } finally {
     await page.evaluate((settings) => window.threadlight.updateSettings(settings), initial)
-    await view.click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Active', exact: true }).click()
+    await selectThreadView(page, 'active')
   }
 }
 
@@ -157,9 +155,12 @@ export async function checkToolbar(page) {
   await view.click()
   await page.locator('header [data-thread-view="active"]').waitFor()
   await view.click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Recent', exact: true }).waitFor()
   await page.getByRole('menuitem', { name: 'Workspace', exact: true }).waitFor()
-  await page.getByRole('menuitem', { name: 'All', exact: true }).click()
+  for (const name of ['Active', 'Recent', 'All']) {
+    assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 0)
+  }
+  await page.keyboard.press('Escape')
+  await selectThreadView(page, 'all')
   await page.locator('header [data-thread-view="all"]').waitFor()
   await page.getByRole('button', { name: /^Claude · shared/ }).waitFor()
   await page.getByRole('button', { name: /^Codex · shared/ }).waitFor()
@@ -237,8 +238,8 @@ export async function checkPagePinning(page, title) {
 
 export async function checkSubpagePinning(page) {
   const header = page.locator('header')
-  assert.equal(await header.getAttribute('tabindex'), null, 'the header never takes keyboard focus')
-  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  assert.equal(await header.getAttribute('tabindex'), '0', 'the header supports its keyboard menu')
+  await openHeaderPage(page, 'Agent')
   await checkPagePinning(page, 'Agent')
   await header.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await header.getByRole('button', { name: /^Choose workspace:/ }).click()
@@ -248,7 +249,7 @@ export async function checkSubpagePinning(page) {
   await checkPagePinning(page, 'Settings')
   await header.getByText('Settings', { exact: true }).dblclick()
   await header.getByRole('button', { name: 'Back to sessions', exact: true }).click()
-  await header.getByRole('button', { name: 'Shared Spaces', exact: true }).click()
+  await openHeaderPage(page, 'Shared Spaces')
   await header.getByText('Shared Spaces', { exact: true }).waitFor()
   const pin = page.locator('[data-card][data-pinned]')
   await pin.waitFor()
@@ -276,15 +277,14 @@ async function checkPinning(page) {
     })
   const leaveCalls = () =>
     page.evaluate(() => window.proof.calls.filter((call) => call[0] === 'leavePanel').length)
-  for (const [mode, label, next] of [
-    ['active', 'Active', 'recent'],
-    ['recent', 'Recent', 'workspace'],
-    ['workspace', 'Workspace', 'active'],
-    ['all', 'All', 'active'],
+  for (const [mode, next] of [
+    ['active', 'recent'],
+    ['recent', 'workspace'],
+    ['workspace', 'active'],
+    ['all', 'active'],
   ]) {
     if ((await view.getAttribute('data-thread-view')) !== mode) {
-      await view.click({ button: 'right' })
-      await page.getByRole('menuitem', { name: label, exact: true }).click()
+      await selectThreadView(page, mode)
     }
     await header.locator(`[data-thread-view="${mode}"]`).waitFor()
     await header.dblclick({ position: await bare() })

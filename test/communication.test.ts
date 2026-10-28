@@ -6,6 +6,7 @@ import { CommunicationStore } from '../src/main/communication/store'
 import type {
   CommunicationActor,
   CommunicationMessage,
+  CommunicationQuestion,
   Destination,
   Workflow,
   NativeCommunicationRequest,
@@ -126,6 +127,170 @@ function fixture() {
 }
 
 describe('Thread communication', () => {
+  it('replays questions recorded before tool delivery fields existed', async () => {
+    const f = fixture(),
+      actor = f.peer(f.b)
+    const input = {
+      operationId: randomUUID(),
+      spaceId: f.spaceId,
+      body: 'Legacy question',
+      audience: 'human',
+      choices: [],
+    }
+    const q: CommunicationQuestion = {
+      id: randomUUID(),
+      spaceId: f.spaceId,
+      sender: actor.id,
+      senderTarget: f.b,
+      audience: 'human',
+      body: input.body,
+      choices: [],
+      generation: randomUUID(),
+      state: 'pending',
+      at: 1000,
+    }
+    f.store.operation(actor.id, input.operationId, { action: 'ask_question', ...input }, () =>
+      f.store.put('question', q, 'Needs input'),
+    )
+    expect(await f.service.execute('ask_question', input, actor)).toEqual(q)
+    expect(f.store.list('question')).toHaveLength(1)
+  })
+  it('returns a human decision to the asking tool without scheduling a provider message', async () => {
+    const f = fixture(),
+      actor = f.peer(f.b)
+    const input = {
+      operationId: randomUUID(),
+      spaceId: f.spaceId,
+      audience: 'human',
+      body: 'Choose a direction',
+      choices: ['Explore', 'Build'],
+      answerDelivery: 'tool',
+      allowOther: true,
+    }
+    const q = (await f.service.execute('ask_question', input, actor)) as CommunicationQuestion
+    const read = { id: q.id, generation: q.generation, waitMs: 1000 }
+    const waiting = f.service.execute('read_question', read, actor)
+    await expect(
+      f.service.execute('read_question', { ...read, waitMs: 0 }, f.peer(f.a)),
+    ).rejects.toThrow('asking connection')
+    await expect(
+      f.service.execute(
+        'answer_request',
+        { operationId: randomUUID(), id: q.id, generation: q.generation, answer: 'Build' },
+        actor,
+      ),
+    ).rejects.toThrow('human')
+    const answer = {
+      operationId: randomUUID(),
+      id: q.id,
+      generation: q.generation,
+      answer: 'Explore first, then build',
+    }
+    await f.service.execute('answer_request', answer, f.human)
+    expect(await waiting).toMatchObject({
+      state: 'answered',
+      answer: answer.answer,
+      senderTarget: f.b,
+    })
+    expect(await f.service.execute('answer_request', answer, f.human)).toMatchObject({
+      state: 'answered',
+    })
+    expect(await f.service.execute('ask_question', input, actor)).toMatchObject({
+      id: q.id,
+      state: 'answered',
+    })
+    await expect(
+      f.service.execute('answer_request', { ...answer, operationId: randomUUID() }, f.human),
+    ).rejects.toThrow('no longer pending')
+    expect(f.store.list('question')).toHaveLength(1)
+    expect(f.store.list('message')).toHaveLength(0)
+    expect(f.deliver).not.toHaveBeenCalled()
+  })
+  it('cancels only the exact generation and rejects cancelled, expired and restarted cards', async () => {
+    const f = fixture(),
+      actor = f.peer(f.b)
+    const ask = () =>
+      f.service.execute(
+        'ask_question',
+        {
+          operationId: randomUUID(),
+          spaceId: f.spaceId,
+          audience: 'human',
+          body: 'Continue?',
+          answerDelivery: 'tool',
+        },
+        actor,
+      ) as Promise<CommunicationQuestion>
+    const q = await ask()
+    await expect(
+      f.service.execute(
+        'cancel_question',
+        { operationId: randomUUID(), id: q.id, generation: 'old' },
+        actor,
+      ),
+    ).rejects.toThrow('generation')
+    const cancel = { operationId: randomUUID(), id: q.id, generation: q.generation }
+    await f.service.execute('cancel_question', cancel, actor)
+    expect(await f.service.execute('cancel_question', cancel, actor)).toMatchObject({
+      state: 'expired',
+    })
+    await expect(
+      f.service.execute(
+        'answer_request',
+        { operationId: randomUUID(), id: q.id, generation: q.generation, answer: 'Yes' },
+        f.human,
+      ),
+    ).rejects.toThrow('no longer pending')
+    const timed = await ask()
+    f.store.transaction(() => f.store.put('question', { ...timed, expiresAt: 999 }, 'Test clock'))
+    expect(
+      await f.service.execute(
+        'read_question',
+        { id: timed.id, generation: timed.generation },
+        actor,
+      ),
+    ).toMatchObject({ state: 'expired' })
+    const restarting = await ask()
+    new CommunicationStore(f.db, () => 1000)
+    expect(f.store.get('question', restarting.id)).toMatchObject({
+      state: 'expired',
+      reason: expect.stringContaining('restarted'),
+    })
+    expect(f.store.list('message')).toHaveLength(0)
+  })
+  it('rechecks permission and connection revocation while a question reader waits', async () => {
+    const f = fixture(),
+      actor = f.peer(f.b)
+    const q = (await f.service.execute(
+      'ask_question',
+      {
+        operationId: randomUUID(),
+        spaceId: f.spaceId,
+        audience: 'human',
+        body: 'Continue?',
+        answerDelivery: 'tool',
+      },
+      actor,
+    )) as CommunicationQuestion
+    const validate = vi.fn()
+    const waiting = f.service.execute(
+      'read_question',
+      { id: q.id, generation: q.generation, waitMs: 1000 },
+      actor,
+      validate,
+    )
+    validate.mockImplementation(() => {
+      throw new Error('Connection revoked')
+    })
+    await expect(waiting).rejects.toThrow('Connection revoked')
+    const waitingAgain = f.service.execute(
+      'read_question',
+      { id: q.id, generation: q.generation, waitMs: 1000 },
+      actor,
+    )
+    f.revoke()
+    await expect(waitingAgain).rejects.toThrow('Revoked')
+  })
   it('persists an addressed multiline DM and exposes it in the recipient inbox without claiming wakeup', async () => {
     const f = fixture(),
       m = await f.send()

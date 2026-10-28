@@ -121,6 +121,28 @@
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/PreCompact; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/PostCompact; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

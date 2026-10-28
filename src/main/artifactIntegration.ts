@@ -8,6 +8,8 @@ import {
   ArtifactDiscovery,
   localArtifactPath,
   referenceAllowed,
+  reference,
+  referenceKind,
   type ArtifactSource,
 } from './artifactReferences'
 
@@ -16,7 +18,8 @@ export function registerArtifacts(
   directory: string,
   hasThread: (id: string) => boolean,
   sourceFor?: (id: string) => ArtifactSource | null,
-): void {
+  exposeCatalog?: (read: (id: string) => Promise<ThreadArtifact[]>) => void,
+): (threadId: string, recordedPath: string) => Promise<string> {
   const store = new ArtifactStore(directory)
   const discovery = new ArtifactDiscovery()
   const catalog = async (threadId: string) => {
@@ -37,6 +40,7 @@ export function registerArtifacts(
     for (const item of found.items) if (!byId.has(item.id)) byId.set(item.id, item)
     return { items: [...byId.values()], notice: found.notice, source, saved }
   }
+  exposeCatalog?.(async (id) => (hasThread(id) ? (await catalog(id)).items : []))
   const read = async (
     threadId: string,
     item: ThreadArtifact,
@@ -147,4 +151,20 @@ export function registerArtifacts(
       }
     }
   })
+  // Called only after the timeline resolves the user's selected native image event.
+  return async (threadId, recordedPath) => {
+    if (!hasThread(threadId)) throw new Error('Thread unavailable.')
+    const local = localArtifactPath(recordedPath, process.cwd())
+    if (!local || referenceKind(local) !== 'image') throw new Error('Image unavailable.')
+    const path = await realpath(local)
+    if (!localArtifactPath(path, process.cwd()) || referenceKind(path) !== 'image')
+      throw new Error('Image unavailable.')
+    const items = store.link(threadId, path)
+    if (!panel.isDestroyed())
+      panel.webContents.send(IPC.artifactsChanged, {
+        threadId,
+        items: (await catalog(threadId)).items,
+      })
+    return items.find((item) => item.id === reference(threadId, path).id)!.id
+  }
 }

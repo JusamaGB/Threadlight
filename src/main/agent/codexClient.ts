@@ -3,6 +3,14 @@ import type { CliCommand } from '../relay'
 import { isObject, type JsonObject } from '../sessions/json'
 
 export type RpcId = number | string
+export class CodexRpcError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+  ) {
+    super(message)
+  }
+}
 export interface CodexTransport {
   request(method: string, params?: JsonObject, timeout?: number): Promise<JsonObject>
   respond(id: RpcId, result: JsonObject): void
@@ -140,10 +148,11 @@ export class CodexClient implements CodexTransport {
         clearTimeout(pending.timer)
         if (isObject(message.error))
           pending.reject(
-            new Error(
+            new CodexRpcError(
               typeof message.error.message === 'string'
                 ? message.error.message.slice(0, 1000)
                 : 'Codex rejected the request.',
+              typeof message.error.code === 'number' ? message.error.code : undefined,
             ),
           )
         else if (isObject(message.result)) pending.resolve(message.result)

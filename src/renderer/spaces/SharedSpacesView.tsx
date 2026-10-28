@@ -1,9 +1,12 @@
-import { CommunicationView } from '../communication/CommunicationView'
+import type { AppliedRoute } from '../../shared/appControl'
+import { BrainstormContext, SourceLinks } from './BrainstormContext'
+import { useNavigationHistory } from '../hooks/useNavigationHistory'
+import type { NavigationDirection } from '../../shared/navigationHistory'
 import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,14 +19,21 @@ import { scopeMemory } from '../../shared/memory'
 import { workspaceFolder } from '../../shared/providers'
 import type { Session } from '../../shared/types'
 import { MemoryView } from '../memory/MemoryView'
+import { ConnectionSetup } from './ConnectionSetup'
+import { ProjectParticipants } from './ProjectParticipants'
+import { projectParticipants, suggestParticipants } from '../../shared/projectParticipants'
 import { AgentRequestCard } from '../panel/AgentRequestCard'
 import { useSettings } from '../hooks/useSettings'
+import { WorkspacePicker } from '../panel/WorkspacePicker'
+import { workspacePath } from '../lib/workspaceExplorer'
 import styles from './SharedSpacesView.module.css'
 
 export interface SpacesNavigation {
+  openControl?: (area: 'library' | 'create' | 'space', id?: string) => boolean
   back: () => void
+  navigate?: (direction: NavigationDirection) => boolean
 }
-type Area = 'handoffs' | 'ideas' | 'brainstorm'
+type Area = 'handoffs' | 'notes' | 'brainstorm' | 'participants'
 const empty: SpacesSnapshot = {
   ideas: [],
   activeId: null,
@@ -32,15 +42,11 @@ const empty: SpacesSnapshot = {
   spaceOwners: {},
   documents: [],
 }
-const rootKey = workspaceFolder
-/** Workspace locations can be drive letters, network shares, or Unix roots in fixtures. */
-const workspaceDrive = (root: string) => {
-  const path = workspaceFolder(root)
-  const drive = /^[a-z]:/i.exec(path)?.[0]
-  if (drive) return drive.toUpperCase()
-  const share = /^\/\/[^/]+\/[^/]+/.exec(path)?.[0]
-  return share ?? (path.startsWith('/') ? '/' : '')
+type DraftView = {
+  scroll: number
+  fields: { name: string; start: number | null; end: number | null }[]
 }
+const rootKey = workspaceFolder
 export function SharedSpacesView({
   visible,
   sessions,
@@ -49,6 +55,7 @@ export function SharedSpacesView({
   workspaces,
   focusedRoot,
   currentRoot = null,
+  onControlRoute,
 }: {
   visible: boolean
   sessions: Session[]
@@ -57,16 +64,32 @@ export function SharedSpacesView({
   workspaces: { id: string; name: string }[]
   focusedRoot: string | null
   currentRoot?: string | null
+  onControlRoute?: (route: Extract<AppliedRoute, { page: 'spaces' }>) => void
 }) {
-  const workspaceId = useId()
-  const [driveFilter, setDriveFilter] = useState<string | null>(null)
   const [area, setArea] = useState<Area>('handoffs')
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [openedSpace, setOpenedSpace] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [spaceName, setSpaceName] = useState('')
+  const creationAttempt = useRef<Extract<SpacesInput, { action: 'create_space' }> | null>(null)
+  const setupNavigation = useRef<{ back: () => void }>(null)
   const [allData, setData] = useState(empty)
   const [allMemory, setMemory] = useState<MemorySnapshot | null>(null)
   const [chosenRoot, setChosenRoot] = useState('')
-  const [unassignedFor, setUnassignedFor] = useState<string | null>(null)
-  const unassigned = focusedRoot ? unassignedFor === focusedRoot : chosenRoot === '@unassigned'
-  const root = unassigned ? '' : (focusedRoot ?? chosenRoot)
+  const [pickingRoot, setPickingRoot] = useState(false)
+  const workspaceChoice = useRef<HTMLButtonElement>(null)
+  const wasPickingRoot = useRef(false)
+  useEffect(() => {
+    if (wasPickingRoot.current && !pickingRoot) workspaceChoice.current?.focus()
+    wasPickingRoot.current = pickingRoot
+  }, [pickingRoot])
+  const ownerId = openedSpace ? allData.spaceOwners[openedSpace] : null
+  const unassigned = !!openedSpace && !ownerId
+  const root = creating
+    ? chosenRoot
+    : (allData.workspaces.find((w) => w.id === ownerId)?.root ?? '')
+  const openedLocation = allData.locations?.find((l) => l.spaceId === openedSpace)
+  const openedTitle = allMemory?.spaces.find((s) => s.id === openedSpace)?.title
   const workspace = useMemo(
     () =>
       allData.workspaces.find((w) =>
@@ -74,7 +97,9 @@ export function SharedSpacesView({
       ),
     [allData.workspaces, root],
   )
-  const workspaceReady = workspace?.ready ?? false
+  const workspaceReady = openedLocation
+    ? openedLocation.ready === true
+    : (workspace?.ready ?? false)
   const workspaceSessions = sessions.filter(
     (s) =>
       workspace &&
@@ -85,19 +110,25 @@ export function SharedSpacesView({
   const spaceIds =
     allMemory?.spaces
       .filter((s) =>
-        unassigned
-          ? !allData.spaceOwners[s.id]
-          : workspace && allData.spaceOwners[s.id] === workspace.id,
+        openedSpace
+          ? s.id === openedSpace
+          : unassigned
+            ? !allData.spaceOwners[s.id]
+            : workspace && allData.spaceOwners[s.id] === workspace.id,
       )
       .map((s) => s.id) ?? []
   const data = {
     ...allData,
     ideas: allData.ideas.filter((i) =>
-      unassigned ? !i.workspaceId : workspace && i.workspaceId === workspace.id,
+      openedLocation
+        ? i.sharedSpaceId === openedSpace
+        : unassigned
+          ? !i.workspaceId
+          : workspace && i.workspaceId === workspace.id && !i.sharedSpaceId,
     ),
   }
   const memory = allMemory ? scopeMemory(allMemory, spaceIds) : null
-  const viewKey = unassigned ? '@unassigned' : (workspace?.id ?? root)
+  const viewKey = openedSpace ?? workspace?.id ?? root
   const choices = [
     ...new Map(
       [
@@ -113,16 +144,6 @@ export function SharedSpacesView({
       ].map((w) => [rootKey(w.id), w]),
     ).values(),
   ]
-  const drives = [
-    ...new Set(choices.map((choice) => workspaceDrive(choice.id)).filter(Boolean)),
-  ].sort()
-  const preferredDrive = workspaceDrive(root || currentRoot || choices[0]?.id || '')
-  const chosenDrive = driveFilter ?? preferredDrive
-  const drive =
-    chosenDrive === '*' || drives.includes(chosenDrive) ? chosenDrive : (drives[0] ?? '*')
-  const listedChoices = choices.filter(
-    (choice) => drive === '*' || workspaceDrive(choice.id) === drive,
-  )
   const [migrationOpen, setMigrationOpen] = useState(false)
   const [migrationWorkspace, setMigrationWorkspace] = useState('')
   const [ideaIds, setIdeaIds] = useState<string[]>([])
@@ -135,10 +156,45 @@ export function SharedSpacesView({
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const captureIds = useRef<Record<string, string>>({})
+  const draftViews = useRef(new Map<string, DraftView>())
   const editorDrafts = useRef(new Map<string, SpaceIdea>())
   const messageDrafts = useRef(new Map<string, string>())
   const handoffs = useRef<SpacesNavigation & { openTask: (id: string) => void }>(null)
-  const idea = data.ideas.find((i) => i.id === selected)
+  const location = useNavigationHistory(
+    { area, selected, chosenRoot, pickingRoot, migrationOpen, setupOpen, openedSpace, creating },
+    (route) => {
+      setArea(route.area)
+      setSelected(route.selected)
+      setChosenRoot(route.chosenRoot)
+      setPickingRoot(route.pickingRoot)
+      setMigrationOpen(route.migrationOpen)
+      setSetupOpen(route.setupOpen)
+      setOpenedSpace(route.openedSpace)
+      setCreating(route.creating)
+    },
+    visible,
+  )
+  const navigateHistory = useCallback(
+    (direction: NavigationDirection) => {
+      if (
+        !creating &&
+        !setupOpen &&
+        area === 'handoffs' &&
+        !migrationOpen &&
+        handoffs.current?.navigate?.(direction)
+      )
+        return true
+      return location.navigate(direction)
+    },
+    [area, creating, migrationOpen, setupOpen, location],
+  )
+  const discussions = (allData.discussions ?? []).filter(
+    (d) =>
+      d.sharedSpaceId === openedSpace ||
+      (!openedLocation && !d.sharedSpaceId && d.workspaceId === workspace?.id),
+  )
+  const records = area === 'brainstorm' ? discussions : data.ideas
+  const idea = records.find((i) => i.id === selected)
   const request = useCallback(async (input: SpacesInput) => {
     setError('')
     setBusy(true)
@@ -184,24 +240,90 @@ export function SharedSpacesView({
     }
   }, [])
   const back = useCallback(() => {
+    if (pickingRoot) {
+      setPickingRoot(false)
+      return
+    }
+    if (creating) {
+      setCreating(false)
+      setError('')
+      return
+    }
+    if (!openedSpace) {
+      onClose()
+      return
+    }
+    if (setupOpen && setupNavigation.current) {
+      setupNavigation.current.back()
+      return
+    }
     if (migrationOpen) {
       setMigrationOpen(false)
       return
     }
     if (!unassigned && !workspaceReady) {
-      onClose()
+      setOpenedSpace(null)
       return
     }
     if (area === 'handoffs') handoffs.current?.back()
     else if (selected) setSelected(null)
-    else onClose()
-  }, [area, selected, onClose, migrationOpen, unassigned, workspaceReady])
-  useImperativeHandle(navigationRef, () => ({ back }), [back])
+    else setOpenedSpace(null)
+  }, [
+    area,
+    selected,
+    onClose,
+    migrationOpen,
+    unassigned,
+    workspaceReady,
+    setupOpen,
+    openedSpace,
+    creating,
+    pickingRoot,
+  ])
+  useImperativeHandle(
+    navigationRef,
+    () => ({
+      back,
+      navigate: navigateHistory,
+      openControl: (target, id) => {
+        if (target === 'space' && !allMemory?.spaces.some((s) => s.id === id)) return false
+        setCreating(target === 'create')
+        setOpenedSpace(target === 'space' ? id! : null)
+        setSetupOpen(false)
+        setMigrationOpen(false)
+        setPickingRoot(false)
+        return true
+      },
+    }),
+    [back, navigateHistory, allMemory],
+  )
   useEffect(() => {
-    if (!visible || (area === 'handoffs' && !migrationOpen && (unassigned || workspaceReady)))
+    onControlRoute?.({
+      page: 'spaces',
+      area: creating ? 'create' : openedSpace ? 'space' : 'library',
+      ...(openedSpace ? { spaceId: openedSpace } : {}),
+    })
+  }, [creating, openedSpace, onControlRoute])
+  useEffect(() => {
+    if (
+      !visible ||
+      (openedSpace &&
+        !creating &&
+        !setupOpen &&
+        area === 'handoffs' &&
+        !migrationOpen &&
+        (unassigned || workspaceReady))
+    )
       return
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (
+          pickingRoot &&
+          e.target instanceof HTMLInputElement &&
+          e.target.type === 'search' &&
+          e.target.value
+        )
+          return
         e.preventDefault()
         e.stopImmediatePropagation()
         back()
@@ -209,23 +331,228 @@ export function SharedSpacesView({
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [visible, area, back, migrationOpen, unassigned, workspaceReady])
-  const move = async (item: SpaceIdea) => {
+  }, [
+    visible,
+    area,
+    back,
+    migrationOpen,
+    unassigned,
+    workspaceReady,
+    setupOpen,
+    openedSpace,
+    creating,
+    pickingRoot,
+  ])
+  const startDiscussion = async (note?: SpaceIdea) => {
+    if (!openedSpace || !workspaceReady) return
     const result = await request({
-      action: 'save',
-      id: item.id,
-      revision: item.revision,
-      title: item.title,
-      text: item.text,
-      stage: 'brainstorm',
-      plan: item.plan,
-      assignments: item.assignments,
+      action: 'create_discussion',
+      id: crypto.randomUUID(),
+      spaceId: openedSpace,
+      title: note?.title ?? 'Space discussion',
+      noteIds: note ? [note.id] : [],
     })
     if (result.ok) {
-      setSelected(item.id)
+      setSelected(result.discussionId ?? null)
       setArea('brainstorm')
     }
   }
+  const move = (item: SpaceIdea) => startDiscussion(item)
+
+  if (creating && pickingRoot)
+    return (
+      <section
+        className={styles.view}
+        hidden={!visible}
+        aria-label="Shared Spaces"
+        data-setup=""
+        data-workspace-picker=""
+      >
+        <WorkspacePicker
+          selectionOnly
+          workspaces={choices}
+          chosen={chosenRoot || null}
+          onPick={(id) => {
+            setChosenRoot(id)
+            creationAttempt.current = null
+            setPickingRoot(false)
+          }}
+        />
+      </section>
+    )
+  if (!openedSpace || creating)
+    return (
+      <section className={styles.view} hidden={!visible} aria-label="Shared Spaces" data-setup="">
+        <div className={styles.body}>
+          <div className={styles.editor}>
+            {creating ? (
+              <>
+                <h3>Create a shared space</h3>
+                <p className={styles.hint}>
+                  Give it a name and choose the workspace where its folders will live.
+                </p>
+                <form
+                  onSubmit={async (event) => {
+                    event.preventDefault()
+                    creationAttempt.current ??= {
+                      action: 'create_space',
+                      id: crypto.randomUUID(),
+                      root: chosenRoot,
+                      title: spaceName.trim(),
+                    }
+                    const result = await request(creationAttempt.current)
+                    if (result.ok && result.spaceId) {
+                      setOpenedSpace(result.spaceId)
+                      setCreating(false)
+                      setSetupOpen(false)
+                      setArea('handoffs')
+                      setSelected(null)
+                      creationAttempt.current = null
+                      setSpaceName('')
+                    }
+                  }}
+                >
+                  <label>
+                    Space name
+                    <input
+                      required
+                      maxLength={80}
+                      value={spaceName}
+                      onChange={(e) => {
+                        setSpaceName(e.target.value)
+                        creationAttempt.current = null
+                      }}
+                      placeholder="For example, Threadlight advert"
+                    />
+                  </label>
+                  <label>
+                    Workspace
+                    <button
+                      ref={workspaceChoice}
+                      type="button"
+                      className={styles.workspaceChoice}
+                      aria-label="Shared Spaces workspace"
+                      title={chosenRoot ? workspacePath(chosenRoot) : undefined}
+                      onClick={() => setPickingRoot(true)}
+                    >
+                      <span>
+                        {choices
+                          .find((w) => rootKey(w.id) === rootKey(chosenRoot))
+                          ?.name.replace(/^(Claude|Codex) · /, '') ?? 'Choose a workspace…'}
+                      </span>
+                      <span aria-hidden="true">▸</span>
+                    </button>
+                  </label>
+                  <details>
+                    <summary>Folder structure</summary>
+                    <pre className={styles.path}>
+                      {
+                        'space-name/\n  space.json\n  README.md\n  notes/\n  plans/\n  handoffs/\n  results/'
+                      }
+                    </pre>
+                    <p className={styles.hint}>
+                      Each space has its own folder and stable identity. Original files are kept in
+                      place.
+                    </p>
+                  </details>
+                  {error && (
+                    <p role="alert" className={styles.error}>
+                      {error}
+                    </p>
+                  )}
+                  <button
+                    className={styles.primary}
+                    disabled={busy || !chosenRoot || !spaceName.trim()}
+                  >
+                    {busy ? 'Creating…' : 'Create space'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setCreating(false)
+                      setError('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <h3>Your shared spaces</h3>
+                {!allMemory?.spaces.length && (
+                  <p className={styles.hint}>
+                    Notes, files and decisions shared between the chats you connect.
+                  </p>
+                )}
+                {!allMemory ? (
+                  <p role="status">Loading spaces…</p>
+                ) : !allMemory.spaces.length ? (
+                  <p role="status">
+                    No shared spaces yet. Create one to choose its name and workspace.
+                  </p>
+                ) : (
+                  allMemory.spaces.map((space) => {
+                    const owner = allData.workspaces.find(
+                      (w) => w.id === allData.spaceOwners[space.id],
+                    )
+                    const location = allData.locations?.find((l) => l.spaceId === space.id)
+                    return (
+                      <button
+                        className={styles.spaceEntry}
+                        key={space.id}
+                        title={
+                          owner
+                            ? `${workspacePath(owner.root)}/shared-spaces/${location ? location.directory + '/' : ''}`
+                            : 'Not assigned to a workspace'
+                        }
+                        onClick={() => {
+                          setOpenedSpace(space.id)
+                          setArea('handoffs')
+                          setSelected(null)
+                          setError('')
+                          setSetupOpen(false)
+                        }}
+                      >
+                        <strong>{space.title}</strong>
+                        {(location?.issue || owner?.issue) && (
+                          <span>{location?.issue ?? owner?.issue}</span>
+                        )}
+                      </button>
+                    )
+                  })
+                )}
+                <button
+                  className={styles.primary}
+                  onClick={() => {
+                    setCreating(true)
+                    const preferred = focusedRoot ?? currentRoot
+                    setChosenRoot(
+                      choices.find((w) => preferred && rootKey(w.id) === rootKey(preferred))?.id ??
+                        '',
+                    )
+                    setError('')
+                  }}
+                >
+                  Create a space
+                </button>
+                {allMemory?.connections?.some((c) => c.state === 'pending') && (
+                  <p className={styles.hint}>
+                    A chat is waiting to connect. Open a space, then choose Connect a chat.
+                  </p>
+                )}
+                {error && (
+                  <p role="alert" className={styles.error}>
+                    {error}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+    )
   return (
     <section
       className={styles.view}
@@ -234,98 +561,66 @@ export function SharedSpacesView({
       data-setup={!migrationOpen && !unassigned && !workspaceReady ? '' : undefined}
     >
       <div className={styles.workspace}>
-        <div className={styles.workspaceHeading}>
-          <label htmlFor={focusedRoot ? undefined : workspaceId}>Workspace</label>
-          <span aria-hidden="true">·</span>
-          {focusedRoot ? (
-            <span>{workspaceDrive(focusedRoot)}</span>
-          ) : (
-            <select
-              className={styles.drive}
-              aria-label="Shared Spaces drive"
-              title="Filter workspaces already known to Threadlight by drive"
-              value={drive}
-              onChange={(event) => {
-                const next = event.target.value
-                setDriveFilter(next)
-                if (next !== '*' && workspaceDrive(root) !== next) {
-                  setChosenRoot('')
-                  setUnassignedFor(null)
-                  setSelected(null)
-                  setError('')
-                  setMigrationOpen(false)
-                }
-              }}
-            >
-              {drives.map((location) => (
-                <option key={location} value={location}>
-                  {location}
-                </option>
-              ))}
-              <option value="*">All drives</option>
-            </select>
-          )}
-        </div>
-        {focusedRoot ? (
-          <strong>
-            {unassigned
-              ? 'Unassigned'
-              : (workspace?.name ??
-                choices.find((w) => rootKey(w.id) === rootKey(focusedRoot))?.name ??
-                focusedRoot)}
-          </strong>
-        ) : (
-          <>
-            <select
-              id={workspaceId}
-              aria-label="Shared Spaces workspace"
-              value={unassigned ? '@unassigned' : (workspace?.root ?? root)}
-              onChange={(e) => {
-                setChosenRoot(e.target.value)
-                setUnassignedFor(e.target.value === '@unassigned' ? focusedRoot : null)
-                setSelected(null)
-                setError('')
-                setMigrationOpen(false)
-              }}
-            >
-              <option value="">Choose a workspace…</option>
-              {listedChoices.map((w) => (
-                <option value={w.id} key={rootKey(w.id)} title={w.id}>
-                  {w.name}
-                </option>
-              ))}
-              <option value="@unassigned">Unassigned</option>
-            </select>
-          </>
-        )}
-        {focusedRoot && (
+        <div className={styles.spaceHeading}>
           <button
             onClick={() => {
-              setUnassignedFor(unassigned ? null : focusedRoot)
-              setSelected(null)
+              setOpenedSpace(null)
+              setSetupOpen(false)
               setMigrationOpen(false)
             }}
           >
-            {unassigned ? 'Return to workspace' : 'Unassigned material'}
+            Spaces
+          </button>
+          <strong title={openedTitle}>{openedTitle}</strong>
+        </div>
+        {!openedLocation &&
+          (allData.ideas.some((i) => !i.workspaceId) ||
+            allMemory?.spaces.some((s) => !allData.spaceOwners[s.id])) && (
+            <details>
+              <summary>Advanced</summary>
+              <button
+                onClick={() => {
+                  setMigrationOpen(true)
+                  setMigrationWorkspace(workspace?.id ?? '')
+                  setMigration(null)
+                  setIdeaIds([])
+                  setLegacySpaceIds([])
+                }}
+              >
+                Assign existing material
+              </button>
+            </details>
+          )}
+        <details>
+          <summary>Location</summary>
+          <p className={styles.path}>
+            {workspace
+              ? `${workspace.root.replaceAll('\\', '/')}/shared-spaces/${openedLocation ? openedLocation.directory + '/' : ''}`
+              : 'Not assigned to a workspace'}
+          </p>
+        </details>
+        {workspaceReady && !unassigned && (
+          <button
+            onClick={() => {
+              setSetupOpen(true)
+              setMigrationOpen(false)
+            }}
+          >
+            Connect a chat
+            {allMemory?.connections?.some((c) => c.state === 'pending') ? ' · Request waiting' : ''}
           </button>
         )}
-        {root && (
-          <p className={styles.path}>
-            {(workspace?.root ?? root).replaceAll('\\', '/')}/shared-spaces/
-          </p>
-        )}
-        {(allData.ideas.some((i) => !i.workspaceId) ||
-          allMemory?.spaces.some((s) => !allData.spaceOwners[s.id])) && (
+        {unassigned && (
           <button
             onClick={() => {
               setMigrationOpen(true)
-              setMigrationWorkspace(workspace?.id ?? '')
+              setMigrationWorkspace('')
               setMigration(null)
               setIdeaIds([])
-              setLegacySpaceIds([])
+              setLegacySpaceIds([openedSpace])
             }}
           >
-            Assign existing material
+            Assign to a workspace
           </button>
         )}
       </div>
@@ -354,7 +649,7 @@ export function SharedSpacesView({
               >
                 <option value="">Choose a configured workspace…</option>
                 {allData.workspaces
-                  .filter((w) => w.ready)
+                  .filter((w) => w.ready && w.layout !== 'named')
                   .map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name}
@@ -459,54 +754,59 @@ export function SharedSpacesView({
             )}
           </div>
         </div>
-      ) : !unassigned && !workspace?.ready ? (
+      ) : !unassigned && !workspaceReady ? (
         <div className={styles.body}>
           <div className={styles.editor}>
-            <h3>
-              {root ? 'Set up Shared Spaces for this project' : 'Keep shared work with its project'}
-            </h3>
-            <p className={styles.hint}>
-              {root
-                ? 'Create folders for this project’s ideas, plans, handoffs and results. Your agents use them to share context and hand work to one another. Existing files are kept.'
-                : 'Choose the project whose ideas, plans, handoffs and results you want to use. Shared Spaces keeps its shared files together in that project’s shared-spaces folder.'}
+            <h3>Space unavailable</h3>
+            <p role="alert" className={styles.error}>
+              {openedLocation?.issue ?? workspace?.issue ?? 'The workspace cannot be reached.'}
             </p>
-            {!root && (
-              <p className={styles.hint}>
-                The list shows workspaces already known to Threadlight. Choose a drive above to
-                filter it. Older material stays available under Unassigned.
-              </p>
-            )}
-            {workspace?.issue && (
-              <p className={styles.error} role="alert">
-                {workspace.issue}
-              </p>
-            )}
-            {root && (
-              <>
-                <p className={styles.path}>
-                  ideas/
-                  <br />
-                  plans/
-                  <br />
-                  handoffs/
-                  <br />
-                  results/
-                </p>
-                <button
-                  className={styles.primary}
-                  disabled={busy}
-                  onClick={() => void request({ action: 'setup', root })}
-                >
-                  {busy ? 'Setting up…' : 'Create Shared Spaces'}
-                </button>
-              </>
-            )}
+            <p className={styles.hint}>
+              Restore the original folder or reconnect its drive, then check again. Your saved
+              records remain available.
+            </p>
+            <button onClick={() => void request({ action: 'list' })}>Check again</button>
           </div>
         </div>
+      ) : setupOpen && memory && !unassigned ? (
+        <ConnectionSetup
+          key={viewKey}
+          data={memory}
+          sessions={workspaceSessions}
+          project={workspace?.name ?? root}
+          onClose={() => setSetupOpen(false)}
+          navigationRef={setupNavigation}
+        />
       ) : (
         <>
+          {!!memory?.grants.some((g) => !g.revoked && g.pluginConnectionId) && (
+            <details className={styles.connections}>
+              <summary>
+                Connected chats ·{' '}
+                {memory.grants.filter((g) => !g.revoked && g.pluginConnectionId).length}
+              </summary>
+              {memory.grants
+                .filter((g) => !g.revoked && g.pluginConnectionId)
+                .map((g) => {
+                  const connection = memory.connections?.find((c) => c.id === g.pluginConnectionId)
+                  return (
+                    <p key={g.id}>
+                      <strong>{sessions.find((s) => s.id === g.assignee)?.title ?? g.label}</strong>
+                      <br />
+                      {connection?.state === 'connected'
+                        ? 'Connected'
+                        : connection?.state === 'approved'
+                          ? 'Approved · waiting for chat'
+                          : 'Reconnect from chat'}{' '}
+                      · {g.readOnly ? 'Read only' : 'Can publish'}
+                    </p>
+                  )
+                })}
+              <p>Review or revoke access inside the space under Agent access.</p>
+            </details>
+          )}
           <div className={styles.tabs} role="tablist" aria-label="Shared Spaces areas">
-            {(['handoffs', 'ideas', 'brainstorm'] as const).map((tab) => (
+            {(['handoffs', 'notes', 'brainstorm', 'participants'] as const).map((tab) => (
               <button
                 key={tab}
                 id={`spaces-${tab}`}
@@ -526,12 +826,18 @@ export function SharedSpacesView({
                   if (tab !== 'brainstorm' || busy) return
                   e.preventDefault()
                   const item = data.ideas.find(
-                    (i) => i.id === e.dataTransfer.getData('application/x-threadlight-idea'),
+                    (i) => i.id === e.dataTransfer.getData('application/x-threadlight-note'),
                   )
                   if (item) void move(item)
                 }}
               >
-                {tab === 'handoffs' ? 'Handoffs' : tab === 'ideas' ? 'Ideas' : 'Brainstorm'}
+                {tab === 'handoffs'
+                  ? 'Handoffs'
+                  : tab === 'notes'
+                    ? 'Notes'
+                    : tab === 'participants'
+                      ? 'Chats'
+                      : 'Brainstorm'}
               </button>
             ))}
           </div>
@@ -553,27 +859,50 @@ export function SharedSpacesView({
               spaceIds={spaceIds}
               visible={visible && area === 'handoffs'}
               sessions={workspaceSessions}
-              onClose={onClose}
+              onClose={() => setOpenedSpace(null)}
+              initialSpaceId={openedLocation ? openedSpace : undefined}
               navigationRef={handoffs}
             />
           </div>
+          {memory && (
+            <div
+              className={styles.body}
+              id="spaces-participants-panel"
+              role="tabpanel"
+              aria-labelledby="spaces-participants"
+              hidden={area !== 'participants'}
+            >
+              <ProjectParticipants
+                key={viewKey}
+                data={memory}
+                sessions={workspaceSessions}
+                spaceId={openedSpace}
+                onUpdated={setMemory}
+                onConnect={() => setSetupOpen(true)}
+              />
+            </div>
+          )}
           <div
             className={styles.body}
-            id={`spaces-${area === 'handoffs' ? 'inactive' : area}-panel`}
+            id={`spaces-${area === 'handoffs' || area === 'participants' ? 'inactive' : area}-panel`}
             role="tabpanel"
             aria-labelledby={`spaces-${area}`}
-            hidden={area === 'handoffs'}
+            hidden={area === 'handoffs' || area === 'participants'}
           >
             {idea ? (
               <IdeaEditor
                 key={idea.id}
                 idea={idea}
                 data={data}
+                comparisonSpaces={(allMemory?.spaces ?? []).filter(
+                  (s) => s.id !== openedSpace && !!allData.spaceOwners[s.id],
+                )}
                 memory={memory}
                 sessions={workspaceSessions}
                 busy={busy}
                 request={request}
                 draftCache={editorDrafts}
+                draftViews={draftViews}
                 messageCache={messageDrafts}
                 onMove={() => void move(idea)}
                 onTask={(id) => {
@@ -584,7 +913,7 @@ export function SharedSpacesView({
               />
             ) : (
               <>
-                {area === 'ideas' ? (
+                {area === 'notes' ? (
                   <form
                     className={styles.compose}
                     onSubmit={async (e) => {
@@ -594,6 +923,7 @@ export function SharedSpacesView({
                         action: 'create',
                         id: (captureIds.current[viewKey] ??= crypto.randomUUID()),
                         workspaceId: workspace?.id ?? null,
+                        sharedSpaceId: openedLocation ? openedSpace : null,
                         title: (text.trim().split('\n')[0] ?? text.trim()).slice(0, 80),
                         text: text.trim(),
                       })
@@ -603,58 +933,101 @@ export function SharedSpacesView({
                       }
                     }}
                   >
-                    <p>Capture a thought. Move it to Brainstorm when you’re ready to develop it.</p>
+                    <p>
+                      Capture notes, decisions or research. Discuss a note in Brainstorm whenever
+                      you need.
+                    </p>
                     <textarea
-                      aria-label="New idea"
+                      aria-label="New note"
                       placeholder="Leave a thought for later…"
                       value={text}
                       maxLength={8000}
                       onChange={(e) => setText(e.target.value)}
                     />
                     <button className={styles.primary} disabled={busy || !text.trim()}>
-                      Save idea
+                      Save note
                     </button>
                   </form>
                 ) : (
                   <p className={styles.hint}>
-                    Develop an idea with your Agent, then review the plan and choose who does what.
+                    Explore this space with your Brainstorm Agent. It reads, tracks and proposes
+                    work for your review.
                   </p>
                 )}
-                {data.ideas
-                  .filter((i) => i.stage === (area === 'ideas' ? 'idea' : 'brainstorm'))
-                  .map((item) => (
-                    <article
-                      className={styles.row}
-                      key={item.id}
-                      draggable={item.stage === 'idea'}
-                      onDragStart={(e) =>
-                        e.dataTransfer.setData('application/x-threadlight-idea', item.id)
-                      }
-                    >
-                      <button className={styles.open} onClick={() => setSelected(item.id)}>
-                        <strong>{item.title}</strong>
-                        <span>
-                          {item.prepared
-                            ? 'Assignments prepared · follow in Handoffs'
-                            : item.stage === 'idea'
-                              ? 'Saved idea'
-                              : 'Plan and discussion'}
-                        </span>
+                {openedSpace &&
+                  workspace &&
+                  [...allData.ideas, ...(allData.discussions ?? [])].some(
+                    (record) => !record.sharedSpaceId && record.workspaceId === workspace.id,
+                  ) && (
+                    <details>
+                      <summary>Assign preserved legacy material to this space</summary>
+                      {[...allData.ideas, ...(allData.discussions ?? [])]
+                        .filter(
+                          (record) => !record.sharedSpaceId && record.workspaceId === workspace.id,
+                        )
+                        .map((record) => (
+                          <div key={record.id}>
+                            <span>
+                              {record.title} ·{' '}
+                              {record.recordKind === 'discussion' ? 'Discussion' : 'Note'}
+                            </span>
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                void request({
+                                  action: 'attach_material',
+                                  id: record.id,
+                                  spaceId: openedSpace,
+                                  revision: record.revision,
+                                })
+                              }
+                            >
+                              Assign to {openedTitle}
+                            </button>
+                          </div>
+                        ))}
+                    </details>
+                  )}
+                {area === 'brainstorm' && (
+                  <button
+                    className={styles.primary}
+                    disabled={busy || !workspaceReady}
+                    onClick={() => void startDiscussion()}
+                  >
+                    New discussion
+                  </button>
+                )}
+                {records.map((item) => (
+                  <article
+                    className={styles.row}
+                    key={item.id}
+                    draggable={item.recordKind !== 'discussion'}
+                    onDragStart={(e) =>
+                      e.dataTransfer.setData('application/x-threadlight-note', item.id)
+                    }
+                  >
+                    <button className={styles.open} onClick={() => setSelected(item.id)}>
+                      <strong>{item.title}</strong>
+                      <span>
+                        {item.prepared
+                          ? 'Assignments prepared · follow in Handoffs'
+                          : item.recordKind !== 'discussion'
+                            ? 'Saved note'
+                            : 'Plan and discussion'}
+                      </span>
+                    </button>
+                    {item.recordKind !== 'discussion' && (
+                      <button disabled={busy} onClick={() => void move(item)}>
+                        Discuss in Brainstorm
                       </button>
-                      {item.stage === 'idea' && (
-                        <button disabled={busy} onClick={() => void move(item)}>
-                          Move to Brainstorm
-                        </button>
-                      )}
-                    </article>
-                  ))}
-                {!data.ideas.some(
-                  (i) => i.stage === (area === 'ideas' ? 'idea' : 'brainstorm'),
-                ) && (
+                    )}
+                  </article>
+                ))}
+                {!records.length && (
                   <p className={styles.hint}>
-                    {area === 'ideas'
-                      ? 'Your saved ideas will appear here. Capturing an idea does not call an Agent.'
-                      : 'Move an idea here from Ideas to start a discussion.'}
+                    {area === 'notes'
+                      ? 'Your saved notes will appear here. Saving a note does not call an Agent.'
+                      : 'Start a space discussion, or discuss a note from Notes.'}
                   </p>
                 )}
               </>
@@ -677,7 +1050,11 @@ function IdeaEditor({
   onTask,
   draftCache,
   messageCache,
+  comparisonSpaces,
+  draftViews,
 }: {
+  draftViews: React.RefObject<Map<string, DraftView>>
+  comparisonSpaces: { id: string; title: string }[]
   idea: SpaceIdea
   data: SpacesSnapshot
   memory: MemorySnapshot | null
@@ -699,7 +1076,38 @@ function IdeaEditor({
     messageCache.current.set(idea.id, value)
     updateMessage(value)
   }
+  const [comparisonIds, setComparisonIds] = useState<string[]>([])
   const [history, setHistory] = useState<AgentItem[]>([])
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null)
+  const editorRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    const views = draftViews.current
+    const prior = views.get(idea.id)
+    if (prior) {
+      if (editor.parentElement) editor.parentElement.scrollTop = prior.scroll
+      for (const field of prior.fields) {
+        const input = editor.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+          `[data-draft-field="${field.name}"]`,
+        )
+        if (input && field.start !== null && field.end !== null)
+          input.setSelectionRange(field.start, field.end)
+      }
+    }
+    return () => {
+      views.set(idea.id, {
+        scroll: editor.parentElement?.scrollTop ?? 0,
+        fields: [
+          ...editor.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-draft-field]'),
+        ].map((input) => ({
+          name: input.dataset.draftField!,
+          start: input.selectionStart,
+          end: input.selectionEnd,
+        })),
+      })
+    }
+  }, [idea.id, draftViews])
   const [historyError, setHistoryError] = useState('')
   const [folderId, setFolderId] = useState(idea.prepared?.folderId ?? '')
   const settings = useSettings()
@@ -708,6 +1116,7 @@ function IdeaEditor({
   const items = active ? agent.items : history
   const frozen = !!idea.prepared && !idea.workflowSpaceId
   const dirty =
+    JSON.stringify(localDraft.noteIds ?? []) !== JSON.stringify(idea.noteIds ?? []) ||
     localDraft.workflowSpaceId !== idea.workflowSpaceId ||
     localDraft.title !== idea.title ||
     localDraft.text !== idea.text ||
@@ -721,8 +1130,10 @@ function IdeaEditor({
       .spacesRequest({ action: 'read', id: idea.id })
       .then((r) => {
         if (live) {
-          if (r.ok) setHistory(r.items ?? [])
-          else setHistoryError(r.reason)
+          if (r.ok) {
+            setHistory(r.items ?? [])
+            setHistoryCursor(r.historyCursor ?? null)
+          } else setHistoryError(r.reason)
         }
       })
       .catch(() => {
@@ -743,10 +1154,20 @@ function IdeaEditor({
       plan: draft.plan,
       assignments: draft.assignments,
       workflowSpaceId: draft.workflowSpaceId,
+      ...(idea.recordKind === 'discussion' ? { noteIds: draft.noteIds ?? [] } : {}),
     })
-    if (result.ok) setDraft(result.snapshot.ideas.find((i) => i.id === idea.id)!)
+    if (result.ok) {
+      const saved = [...result.snapshot.ideas, ...(result.snapshot.discussions ?? [])].find(
+        (i) => i.id === idea.id,
+      )
+      if (saved) setDraft(saved)
+    }
   }
   const latest = [...items].reverse().find((i) => i.kind === 'agent')
+  const participants =
+    memory && (idea.sharedSpaceId ?? idea.workflowSpaceId)
+      ? projectParticipants(memory, sessions, (idea.sharedSpaceId ?? idea.workflowSpaceId)!)
+      : []
   const provider = active
     ? agent.provider
     : idea.conversationId
@@ -755,30 +1176,14 @@ function IdeaEditor({
         : 'claude'
       : settings?.agentProvider
   return (
-    <div className={styles.editor}>
+    <div className={styles.editor} ref={editorRef}>
       <h3>{idea.title}</h3>
-      <label>
-        Project workflow
-        <select
-          value={draft.workflowSpaceId ?? ''}
-          disabled={busy || frozen}
-          onChange={(e) => setDraft({ ...draft, workflowSpaceId: e.target.value || null })}
-        >
-          <option value="">Discussion only</option>
-          {memory?.spaces.map((space) => (
-            <option key={space.id} value={space.id}>
-              {space.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      {idea.workflowSpaceId && (
-        <CommunicationView spaceId={idea.workflowSpaceId} sessions={sessions} />
-      )}
+      {idea.recordKind === 'discussion' && <BrainstormContext discussionId={idea.id} />}
 
       <label>
         Title
         <input
+          data-draft-field="title"
           value={draft.title}
           maxLength={80}
           disabled={frozen}
@@ -786,21 +1191,45 @@ function IdeaEditor({
         />
       </label>
       <label>
-        Original idea
+        {idea.recordKind === 'discussion' ? 'Discussion brief' : 'Note'}
         <textarea
+          data-draft-field="body"
           value={draft.text}
           maxLength={8000}
           disabled={frozen}
           onChange={(e) => setDraft({ ...draft, text: e.target.value })}
         />
       </label>
-      {idea.stage === 'idea' ? (
+      {idea.recordKind === 'discussion' && (
+        <details>
+          <summary>Linked notes ({draft.noteIds?.length ?? 0})</summary>
+          {data.ideas.map((note) => (
+            <label key={note.id}>
+              <input
+                type="checkbox"
+                checked={draft.noteIds?.includes(note.id) ?? false}
+                disabled={frozen || busy}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    noteIds: e.target.checked
+                      ? [...(draft.noteIds ?? []), note.id]
+                      : (draft.noteIds ?? []).filter((id) => id !== note.id),
+                  })
+                }
+              />
+              {note.title}
+            </label>
+          ))}
+        </details>
+      )}
+      {idea.recordKind !== 'discussion' ? (
         <div className={styles.actions}>
           <button disabled={busy || !dirty} onClick={() => void save()}>
             Save changes
           </button>
           <button disabled={busy || dirty} onClick={onMove}>
-            Move to Brainstorm
+            Discuss in Brainstorm
           </button>
         </div>
       ) : (
@@ -814,19 +1243,36 @@ function IdeaEditor({
                 : 'Configured in Agent settings'}
           </p>
           <div className={styles.messages} aria-label="Brainstorm conversation">
+            {historyCursor && !active && (
+              <button
+                onClick={async () => {
+                  const r = await request({ action: 'read', id: idea.id, cursor: historyCursor })
+                  if (r.ok) {
+                    setHistory((old) => [...(r.items ?? []), ...old])
+                    setHistoryCursor(r.historyCursor ?? null)
+                  }
+                }}
+              >
+                Earlier messages
+              </button>
+            )}
             {items.map((item, n) => (
               <div className={styles.message} key={item.id ?? n} data-kind={item.kind}>
                 <strong>
                   {item.kind === 'you' ? 'You' : item.kind === 'agent' ? 'Agent' : 'Activity'}
                 </strong>
                 <p>
-                  {item.kind === 'you' ? item.text.split('\n\nUser message:\n').at(-1) : item.text}
+                  {item.kind === 'you' ? (
+                    item.text.split('\n\nUser message:\n').at(-1)
+                  ) : (
+                    <SourceLinks discussionId={idea.id} text={item.text} />
+                  )}
                 </p>
               </div>
             ))}
             {!items.length && (
               <p className={styles.hint}>
-                Ask your Agent to explore the smallest useful version of this idea.
+                Ask your Agent to explore the notes, conversations and work in this space.
               </p>
             )}
             {active && agentBusy(agent) && (
@@ -871,12 +1317,43 @@ function IdeaEditor({
             onSubmit={async (e) => {
               e.preventDefault()
               if (busy || dirty || agentBusy(agent) || !message.trim()) return
-              const r = await request({ action: 'chat', id: idea.id, text: message })
-              if (r.ok) setMessage('')
+              const r = await request({
+                action: 'chat',
+                id: idea.id,
+                text: message,
+                compareSpaceIds: comparisonIds,
+              })
+              if (r.ok) {
+                setMessage('')
+                setComparisonIds([])
+              }
             }}
           >
+            {!!comparisonSpaces.length && (
+              <details>
+                <summary>Compare with another space for this request</summary>
+                {comparisonSpaces.map((space) => (
+                  <label key={space.id}>
+                    <input
+                      type="checkbox"
+                      checked={comparisonIds.includes(space.id)}
+                      disabled={!comparisonIds.includes(space.id) && comparisonIds.length >= 3}
+                      onChange={(e) =>
+                        setComparisonIds((ids) =>
+                          e.target.checked
+                            ? [...ids, space.id]
+                            : ids.filter((id) => id !== space.id),
+                        )
+                      }
+                    />
+                    {space.title}
+                  </label>
+                ))}
+              </details>
+            )}
             <textarea
               aria-label="Message to Agent"
+              data-draft-field="message"
               value={message}
               maxLength={8000}
               onChange={(e) => setMessage(e.target.value)}
@@ -908,6 +1385,7 @@ function IdeaEditor({
           <label>
             Mini plan
             <textarea
+              data-draft-field="plan"
               value={draft.plan}
               maxLength={16000}
               disabled={frozen}
@@ -936,6 +1414,45 @@ function IdeaEditor({
           {draft.assignments.map((a, index) => (
             <fieldset key={a.id} disabled={frozen || busy}>
               <legend>Assignment {index + 1}</legend>
+              <details>
+                <summary>Suggested chats</summary>
+                {suggestParticipants(`${a.title}\n${a.brief}`, participants).map((suggestion) => (
+                  <div key={suggestion.assignee}>
+                    <strong>{suggestion.title}</strong>
+                    <p className={styles.hint}>{suggestion.rationale}</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          assignments: draft.assignments.map((v) =>
+                            v.id === a.id
+                              ? {
+                                  ...v,
+                                  provider: suggestion.provider,
+                                  assignee: suggestion.assignee,
+                                  rationale: suggestion.rationale,
+                                }
+                              : v,
+                          ),
+                        })
+                      }
+                    >
+                      Use {suggestion.title}
+                    </button>
+                  </div>
+                ))}
+                {!suggestParticipants(`${a.title}\n${a.brief}`, participants).length && (
+                  <p className={styles.hint}>
+                    No connected chat with project publishing access has a matching capability
+                    report. Add or update reports in Chats, or review a destination manually.
+                  </p>
+                )}
+                <p className={styles.hint}>
+                  Suggestions use capability text matches. Review the fit, save your choices and
+                  authorise prepared work in Handoffs.
+                </p>
+              </details>
               <label>
                 Task
                 <input
@@ -961,7 +1478,12 @@ function IdeaEditor({
                       ...draft,
                       assignments: draft.assignments.map((v) =>
                         v.id === a.id
-                          ? { ...v, provider: e.target.value as 'claude' | 'codex', assignee: '' }
+                          ? {
+                              ...v,
+                              provider: e.target.value as 'claude' | 'codex',
+                              assignee: '',
+                              rationale: undefined,
+                            }
                           : v,
                       ),
                     })
@@ -980,7 +1502,9 @@ function IdeaEditor({
                     setDraft({
                       ...draft,
                       assignments: draft.assignments.map((v) =>
-                        v.id === a.id ? { ...v, assignee: e.target.value } : v,
+                        v.id === a.id
+                          ? { ...v, assignee: e.target.value, rationale: undefined }
+                          : v,
                       ),
                     })
                   }
@@ -1002,6 +1526,7 @@ function IdeaEditor({
               <label>
                 Brief and acceptance criteria
                 <textarea
+                  aria-label="Brief and acceptance criteria"
                   maxLength={8000}
                   value={a.brief}
                   onChange={(e) =>
@@ -1012,6 +1537,23 @@ function IdeaEditor({
                       ),
                     })
                   }
+                />
+              </label>
+              <label>
+                Assignment rationale
+                <textarea
+                  aria-label="Assignment rationale"
+                  maxLength={2000}
+                  value={a.rationale ?? ''}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      assignments: draft.assignments.map((v) =>
+                        v.id === a.id ? { ...v, rationale: e.target.value } : v,
+                      ),
+                    })
+                  }
+                  placeholder="Why is this chat suitable for this task?"
                 />
               </label>
               <button

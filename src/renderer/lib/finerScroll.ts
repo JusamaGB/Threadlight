@@ -10,19 +10,28 @@ const NOTCH = 50
 const LINE = 40
 
 type Axis = 'x' | 'y'
+const CONTAINED = Symbol('scroll boundary')
 
-/** The nearest element that can still scroll this way, like the browser's own scroll chaining. */
-function scroller(start: EventTarget | null, axis: Axis, delta: number): HTMLElement | null {
+/** Find a scroll target without crossing the browser's CSS overscroll boundaries. */
+function scroller(
+  start: EventTarget | null,
+  axis: Axis,
+  delta: number,
+): HTMLElement | typeof CONTAINED | null {
   for (let node = start instanceof Element ? start : null; node; node = node.parentElement) {
     const style = getComputedStyle(node)
     const overflow = axis === 'y' ? style.overflowY : style.overflowX
-    if (overflow !== 'auto' && overflow !== 'scroll') continue
-    const [size, view, at] =
-      axis === 'y'
-        ? [node.scrollHeight, node.clientHeight, node.scrollTop]
-        : [node.scrollWidth, node.clientWidth, node.scrollLeft]
-    if (size <= view + 1) continue
-    if (delta < 0 ? at > 0 : at + view < size - 1) return node as HTMLElement
+    const scrollable = overflow === 'auto' || overflow === 'scroll'
+    if (scrollable) {
+      const [size, view, at] =
+        axis === 'y'
+          ? [node.scrollHeight, node.clientHeight, node.scrollTop]
+          : [node.scrollWidth, node.clientWidth, node.scrollLeft]
+      if (size > view + 1 && (delta < 0 ? at > 0 : at + view < size - 1)) return node as HTMLElement
+    }
+    const boundary = axis === 'y' ? style.overscrollBehaviorY : style.overscrollBehaviorX
+    if ((scrollable || overflow === 'hidden') && (boundary === 'contain' || boundary === 'none'))
+      return CONTAINED
   }
   return null
 }
@@ -39,8 +48,9 @@ export function installFinerScroll(target: Window = window): () => void {
     const horizontal = dx ? scroller(event.target, 'x', dx) : null
     if (!vertical && !horizontal) return
     event.preventDefault()
-    vertical?.scrollBy({ top: dy * WHEEL_SCALE, behavior: 'instant' })
-    horizontal?.scrollBy({ left: dx * WHEEL_SCALE, behavior: 'instant' })
+    if (vertical !== CONTAINED) vertical?.scrollBy({ top: dy * WHEEL_SCALE, behavior: 'instant' })
+    if (horizontal !== CONTAINED)
+      horizontal?.scrollBy({ left: dx * WHEEL_SCALE, behavior: 'instant' })
   }
   target.addEventListener('wheel', onWheel, { passive: false })
   return () => target.removeEventListener('wheel', onWheel)

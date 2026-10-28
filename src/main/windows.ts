@@ -16,6 +16,7 @@ import {
 } from '../shared/attentionMotion'
 import { inGutterRegion, parseGutterRegions, type GutterRegion } from '../shared/gutterRegions'
 import type { Session } from '../shared/types'
+import type { ModifierStage } from './modifierStepper'
 
 export { DOT_SIZE }
 export const PANEL_WIDTH = 238 // 236 of content plus a 1 px border each side
@@ -105,10 +106,21 @@ export class WindowManager {
   private wireControl: { top: number; height: number } | null = null
   private wireRegions: GutterRegion[] = []
   private panelLayout: 'single' | 'dual' = 'single'
+  private rightWireGutter = 0
   private layoutAnimation: ReturnType<typeof setTimeout> | null = null
   private workspacePanel = false
   private workspaceTop: number | null = null
   private workspaceDragTop: number | null = null
+  private modifierStage: ModifierStage = 'normal'
+  private beforePeek: {
+    visible: boolean
+    stayOpen: boolean
+    workspace: boolean
+    top: number | null
+    layout: 'single' | 'dual'
+    gutter: number
+    bounds: Rectangle
+  } | null = null
 
   constructor() {
     // The dot never takes focus, so clicking it does not pull focus from a game.
@@ -123,6 +135,57 @@ export class WindowManager {
       this.closeOnPointerLeave()
     })
     this.panel.on('closed', () => this.stopPointerWatch())
+    this.panel.on('app-command', (_event, command) => {
+      if (this.modifierStage === 'peek') return
+      if (command === 'browser-backward' || command === 'browser-forward')
+        this.panel.webContents.send(
+          IPC.panelNavigate,
+          command === 'browser-backward' ? 'back' : 'forward',
+        )
+    })
+  }
+
+  /** A held preview borrows the window; it never changes the saved page, focus or settings. */
+  setModifierStage(stage: ModifierStage): void {
+    if (this.dot.isDestroyed() || this.panel.isDestroyed()) return
+    if (stage === this.modifierStage) return
+    this.modifierStage = stage
+    if (this.beforePeek) {
+      const before = this.beforePeek
+      this.beforePeek = null
+      this.panel.webContents.send(IPC.panelPeek, false)
+      this.panel.setIgnoreMouseEvents(false)
+      this.gutterIgnored = false
+      if (!before.visible) this.closePanel()
+      this.stayOpen = before.stayOpen
+      this.workspacePanel = before.workspace
+      this.workspaceTop = before.top
+      this.panelLayout = before.layout
+      this.rightWireGutter = before.gutter
+      this.panel.setBounds(before.bounds)
+    }
+    if (stage === 'peek') {
+      this.beforePeek = {
+        visible: this.panel.isVisible(),
+        stayOpen: this.stayOpen,
+        workspace: this.workspacePanel,
+        top: this.workspaceTop,
+        layout: this.panelLayout,
+        gutter: this.rightWireGutter,
+        bounds: this.panel.getBounds(),
+      }
+      this.workspacePanel = false
+      this.workspaceTop = null
+      this.panel.webContents.send(IPC.panelPeek, true)
+      this.openPanel({ focus: false, fresh: false })
+      this.panel.setIgnoreMouseEvents(true, { forward: true })
+    } else if (stage === 'hidden') {
+      this.dot.hide()
+      this.attentionWindow?.hide()
+    } else {
+      if (this.claudeRunning && !this.panel.isVisible()) this.dot.showInactive()
+      this.syncAttention()
+    }
   }
 
   /** Every window gets the same broadcasts. */
@@ -136,7 +199,7 @@ export class WindowManager {
     if (running === this.claudeRunning) return
     this.claudeRunning = running
     if (running) {
-      this.dot.showInactive()
+      if (this.modifierStage === 'normal') this.dot.showInactive()
     } else {
       this.closePanel()
       this.dot.hide()
@@ -151,6 +214,7 @@ export class WindowManager {
    */
   keepOnTop(): void {
     if (!this.claudeRunning) return
+    if (this.modifierStage === 'hidden') return
     const win = this.panel.isVisible() ? this.panel : this.dot
     if (!win.isVisible()) win.showInactive()
     win.setAlwaysOnTop(true, 'screen-saver')
@@ -161,6 +225,7 @@ export class WindowManager {
 
   /** Ignore duplicate and delayed hover messages from the dot window being replaced. */
   openFromDot(hover = false): void {
+    if (this.modifierStage !== 'normal') return
     if (this.panel.isVisible()) return
     if (hover) {
       if (!this.dot.isVisible()) return
@@ -213,16 +278,18 @@ export class WindowManager {
   }
 
   closePanel(): void {
+    if (this.modifierStage === 'peek') return
     this.stayOpen = false
     this.stopPointerWatch()
     if (!this.panel.isVisible()) return
-    if (this.claudeRunning) this.dot.showInactive()
+    if (this.claudeRunning && this.modifierStage === 'normal') this.dot.showInactive()
     this.syncAttention(false)
     this.panel.hide()
   }
 
   /** Browser leave events may be stale while replacing or resizing a transparent window. */
   closeOnPointerLeave(): void {
+    if (this.modifierStage === 'peek') return
     if (this.stayOpen || this.dragStart || this.pointerInsidePanel()) return
     this.closePanel()
   }
@@ -249,12 +316,18 @@ export class WindowManager {
       }
       const point = screen.getCursorScreenPoint()
       const bounds = this.panel.getBounds()
+      if (this.modifierStage === 'peek') return
+      const leftGutter = point.x >= bounds.x && point.x < bounds.x + WORKSPACE_GUTTER
+      const rightGutter =
+        this.panelLayout === 'dual' &&
+        point.x >= bounds.x + bounds.width - this.rightWireGutter &&
+        point.x < bounds.x + bounds.width
       const gutter =
-        point.x >= bounds.x &&
-        point.x < bounds.x + WORKSPACE_GUTTER &&
+        (leftGutter || rightGutter) &&
         point.y >= bounds.y &&
         point.y < bounds.y + bounds.height &&
         !(
+          leftGutter &&
           this.wireControl &&
           point.y >= bounds.y + this.wireControl.top &&
           point.y < bounds.y + this.wireControl.top + this.wireControl.height
@@ -311,7 +384,7 @@ export class WindowManager {
     const area = this.workArea()
     return Math.max(
       PANEL_WIDTH,
-      Math.min(PANEL_WIDTH_DUAL, area.width - 2 * MARGIN - WORKSPACE_GUTTER),
+      Math.min(PANEL_WIDTH_DUAL, area.width - 2 * MARGIN - WORKSPACE_GUTTER - this.rightWireGutter),
     )
   }
 
@@ -333,6 +406,22 @@ export class WindowManager {
       this.placePanel(this.panel.getBounds().height)
     }
     return { cardWidth: this.cardWidth() }
+  }
+
+  /** The renderer measures the required outside wire lanes; unused space is not reserved. */
+  setWorkspaceWireGutter(value: unknown): { cardWidth: number } | null {
+    if (
+      typeof value !== 'number' ||
+      !Number.isInteger(value) ||
+      value < 0 ||
+      value > WORKSPACE_GUTTER
+    )
+      return null
+    if (value !== this.rightWireGutter) {
+      this.rightWireGutter = value
+      if (this.panelLayout === 'dual') this.placePanel(this.panel.getBounds().height)
+    }
+    return this.panelLayout === 'dual' ? { cardWidth: this.cardWidth() } : null
   }
 
   resizePanel(height: number): void {
@@ -379,6 +468,7 @@ export class WindowManager {
     const waiting = this.attentionSessions
     if (
       waiting.length === 0 ||
+      this.modifierStage !== 'normal' ||
       !this.claudeRunning ||
       panelVisible ||
       this.openMicLive ||
@@ -433,7 +523,7 @@ export class WindowManager {
   private maxPanelHeight(): number {
     const dot = this.dotBounds()
     const area = this.workArea()
-    if (this.workspacePanel) return Math.max(40, area.height - MARGIN * 2)
+    if (this.workspacePanel) return Math.max(40, area.height)
     if (this.opensDown()) {
       const gap = clamp(dot.y - area.y, 0, MARGIN)
       return area.y + area.height - gap - dot.y
@@ -507,10 +597,11 @@ export class WindowManager {
   private placePanel(height: number): void {
     const dot = this.dotBounds()
     const area = this.workArea()
-    const width = this.cardWidth() + WORKSPACE_GUTTER
-    const x = clamp(dot.x + DOT_SIZE - width, area.x, area.x + area.width - width)
+    const rightGutter = this.panelLayout === 'dual' ? this.rightWireGutter : 0
+    const width = this.cardWidth() + WORKSPACE_GUTTER + rightGutter
+    const x = clamp(dot.x + DOT_SIZE - width + rightGutter, area.x, area.x + area.width - width)
     const y = this.workspacePanel
-      ? clamp(this.workspaceTop ?? dot.y, area.y + MARGIN, area.y + area.height - MARGIN - height)
+      ? clamp(this.workspaceTop ?? dot.y, area.y, area.y + area.height - height)
       : clamp(
           this.opensDown() ? dot.y : dot.y + DOT_SIZE - height,
           area.y,

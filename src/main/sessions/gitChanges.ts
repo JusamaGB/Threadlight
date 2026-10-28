@@ -5,7 +5,9 @@ import { execFile } from 'node:child_process'
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
 
-import type { ChangedFile, DiffLine, FileDiff } from '../../shared/types'
+import type { ChangedFile, FileDiff } from '../../shared/types'
+import { parseUnifiedDiff } from '../../shared/unifiedDiff'
+export { parseUnifiedDiff } from '../../shared/unifiedDiff'
 
 /** Past this, a diff is not drawn in the panel; the file opens in its own app instead. */
 const MAX_DIFF_LINES = 1500
@@ -68,38 +70,6 @@ export async function readFileDiff(root: string, path: string): Promise<FileDiff
   const parsed = parseUnifiedDiff(out)
   if (parsed.length > MAX_DIFF_LINES) return { kind: 'too-big', lines: parsed.length }
   return { kind: 'text', lines: parsed }
-}
-
-/**
- * A unified diff as drawable lines: each hunk's "@@ -a,b +c,d @@" becomes a separator, then
- * its context, removed and added lines with their old and new line numbers.
- */
-export function parseUnifiedDiff(diff: string): DiffLine[] {
-  const out: DiffLine[] = []
-  let oldNo = 0
-  let newNo = 0
-  let inHunk = false
-  for (const raw of diff.split('\n')) {
-    const line = raw.replace(/\r$/, '')
-    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(line)
-    if (hunk) {
-      oldNo = Number(hunk[1])
-      newNo = Number(hunk[2])
-      inHunk = true
-      out.push({ type: 'hunk', text: hunk[3]?.trim() ?? '' })
-      continue
-    }
-    if (!inHunk || line.startsWith('\\')) continue // headers, "\ No newline at end of file"
-    if (line.startsWith('+')) out.push({ type: 'add', text: line.slice(1), newLine: newNo++ })
-    else if (line.startsWith('-'))
-      out.push({ type: 'remove', text: line.slice(1), oldLine: oldNo++ })
-    else if (line.startsWith(' ') || line === '') {
-      out.push({ type: 'context', text: line.slice(1), oldLine: oldNo++, newLine: newNo++ })
-    }
-  }
-  // A trailing empty "context" line is only the diff's final newline.
-  if (out.at(-1)?.type === 'context' && out.at(-1)?.text === '') out.pop()
-  return out
 }
 
 /** Whether a repository-relative path stays inside the repository. */

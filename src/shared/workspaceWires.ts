@@ -38,7 +38,7 @@ export function layoutWorkspaceWires(spans: Span[]) {
 }
 
 /**
- * Beside two columns the rail runs down the divider instead of the card's edge, in three
+ * Shared groups in two columns run down the divider, in three
  * slots 3 px apart: the Claude side, the middle and the Codex side. A group sits on the side
  * its threads are on (the middle when it has both), longer groups choose first, and a group
  * that overlaps one already in its slot takes the next preferred one. When all are taken it
@@ -87,7 +87,7 @@ export function placeCentreWires(spans: CentreSpan[]): { key: string; offset: nu
               : ('left' as const),
       }
     })
-    .filter((s) => Number.isFinite(s.first) && s.last > s.first)
+    .filter((s) => Number.isFinite(s.first) && Number.isFinite(s.last) && s.last >= s.first)
     .sort((a, b) => b.last - b.first - (a.last - a.first) || a.key.localeCompare(b.key))
   const used = new Map<number, typeof ranged>()
   return ranged.map((span) => {
@@ -127,4 +127,74 @@ export function centreWirePath(
   for (const member of sorted.slice(1, -1))
     path += ` M ${x} ${member.y - fillet} Q ${x} ${member.y} ${x + toward(member) * fillet} ${member.y} H ${end(member)}`
   return path
+}
+
+export type WireZone = 'left' | 'centre' | 'right'
+
+/** Outer routes end at the card edge; Codex-only routes mirror the left gutter. */
+export function outerWirePath(members: CentreMember[], rail: number, right = false): string {
+  const sorted = [...members].sort((a, b) => a.y - b.y)
+  const first = sorted[0]!.y
+  const last = sorted.at(-1)!.y
+  const edge = right ? 0 : WORKSPACE_GUTTER
+  const x = right ? WORKSPACE_GUTTER - rail : rail
+  const direction = right ? -1 : 1
+  const r = Math.min(3, WORKSPACE_GUTTER - rail, (last - first) / 2)
+  let path = `M ${edge} ${first} H ${x + direction * r} Q ${x} ${first} ${x} ${first + r} V ${last - r} Q ${x} ${last} ${x + direction * r} ${last} H ${edge}`
+  for (const { y } of sorted.slice(1, -1)) path += ` M ${x} ${y} H ${edge}`
+  return path
+}
+
+/** Classify entire listed groups first, then allocate lanes independently in each zone. */
+export function routeWorkspaceWires(spans: CentreSpan[], dual: boolean) {
+  const groups = spans
+    .map((span) => ({ ...span, members: [...span.members].sort((a, b) => a.y - b.y) }))
+    .filter(
+      ({ members }) =>
+        members.length > 1 &&
+        members.every((member) => Number.isFinite(member.y)) &&
+        members.at(-1)!.y >= members[0]!.y,
+    )
+  const zones: Record<WireZone, CentreSpan[]> = { left: [], centre: [], right: [] }
+  for (const group of groups) {
+    const sides = new Set(group.members.map((member) => member.side))
+    const zone = !dual ? 'left' : sides.size > 1 ? 'centre' : sides.has(1) ? 'right' : 'left'
+    zones[zone].push(group)
+  }
+  const routes: { key: string; zone: WireZone; path: string; lane: number; x: number }[] = []
+  for (const zone of ['left', 'right'] as const) {
+    const members = new Map(zones[zone].map((group) => [group.key, group.members]))
+    for (const { key, lane, x } of layoutWorkspaceWires(
+      zones[zone].map(({ key, members }) => ({
+        key,
+        first: members[0]!.y,
+        last: members.at(-1)!.y,
+      })),
+    ))
+      routes.push({
+        key,
+        zone,
+        path: outerWirePath(members.get(key)!, x, zone === 'right'),
+        lane,
+        x: zone === 'right' ? WORKSPACE_GUTTER - x : x,
+      })
+  }
+  const shared = new Map(zones.centre.map((group) => [group.key, group.members]))
+  for (const { key, offset } of placeCentreWires(zones.centre))
+    routes.push({
+      key,
+      zone: 'centre',
+      path: centreWirePath(shared.get(key)!, offset),
+      lane: offset,
+      x: CENTRE_HALF + offset,
+    })
+  return routes
+}
+
+/** Fit the outside rail plus its 3px backing stroke and half a pixel of breathing room. */
+export function rightWireGutter(routes: ReturnType<typeof routeWorkspaceWires>): number {
+  const right = routes.filter((route) => route.zone === 'right')
+  return right.length
+    ? Math.min(WORKSPACE_GUTTER, Math.ceil(Math.max(...right.map((r) => r.x)) + 2))
+    : 0
 }

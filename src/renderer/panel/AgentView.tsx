@@ -1,5 +1,7 @@
 import { ConversationTimeline } from '../communication/ConversationTimeline'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react'
+import { useNavigationHistory } from '../hooks/useNavigationHistory'
+import type { NavigationHandle } from '../../shared/navigationHistory'
 
 import { agentBusy, type AgentConversation, type AgentItem } from '../../shared/agent'
 import { AgentRequestCard } from './AgentRequestCard'
@@ -9,6 +11,7 @@ import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
 import { AgentIdentity } from './AgentIdentity'
 import { ageText } from '../lib/format'
+import { acceleratorLabel } from '../../shared/accelerator'
 import styles from './Panel.module.css'
 
 /** A past conversation open to read. */
@@ -142,9 +145,6 @@ function Earlier({
             aria-expanded={open}
             onClick={() => setOpen(!open)}
           >
-            <span className={styles.agentChevron} data-open={open || undefined}>
-              ›
-            </span>
             {en.agent.earlier(shown.length)}
           </button>
         )}
@@ -178,12 +178,43 @@ function Earlier({
  * and each step it took, live; a call that changes something waits on an Allow / Deny card; and
  * anything typed once it is done continues the same conversation.
  */
-export function AgentView() {
+export function AgentView({
+  navigationRef,
+  visible = true,
+}: { navigationRef?: Ref<NavigationHandle>; visible?: boolean } = {}) {
   const agent = useAgent()
   const settings = useSettings()
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [reading, setReading] = useState<Reading | null>(null)
+  const read = async (id: string) => {
+    try {
+      const page = await window.threadlight.agentReadPage(id)
+      setError(page.error ?? null)
+      setReading({ id, items: page.items, cursor: page.cursor })
+    } catch {
+      setError('Could not load this earlier conversation.')
+      setReading({ id, items: [], cursor: null })
+    }
+  }
+  const pastPages = useRef(new Map<string, Reading>())
+  useEffect(() => {
+    if (reading) pastPages.current.set(reading.id, reading)
+  }, [reading])
+  const location = useNavigationHistory(
+    { id: reading?.id ?? null },
+    (page) => {
+      if (!page.id) setReading(null)
+      else {
+        const saved = pastPages.current.get(page.id)
+        if (saved) setReading(saved)
+        else void read(page.id)
+      }
+    },
+    true,
+    'agent-reading',
+  )
+  useImperativeHandle(navigationRef, () => location, [location])
   const log = useRef<HTMLDivElement>(null)
   const busy = agentBusy(agent) || !!agent.live
   const [sending, setSending] = useState(false)
@@ -216,6 +247,7 @@ export function AgentView() {
   const following = useRef(true)
   const [unread, setUnread] = useState(false)
   const trackScroll = () => {
+    if (!visible) return
     const element = log.current
     if (!element) return
     following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48
@@ -228,20 +260,14 @@ export function AgentView() {
   }
   useEffect(() => {
     const element = log.current
-    if (!element) return
+    if (!element || !visible) return
     const observer = new MutationObserver(() => {
       if (following.current) element.scrollTo({ top: element.scrollHeight })
       else setUnread(true)
     })
     observer.observe(element, { childList: true, subtree: true, characterData: true })
     return () => observer.disconnect()
-  }, [reading?.id])
-
-  const read = async (id: string) => {
-    const page = await window.threadlight.agentReadPage(id)
-    setError(page.error ?? null)
-    setReading({ id, items: page.items, cursor: page.cursor })
-  }
+  }, [reading?.id, visible])
 
   const carryOn = async () => {
     if (!reading) return
@@ -434,6 +460,11 @@ export function AgentView() {
             if (event.key === 'Enter') void send()
           }}
         />
+        {settings && (
+          <kbd className={styles.agentHotkey} title="Microphone shortcut">
+            {acceleratorLabel(settings.talkHotkey)}
+          </kbd>
+        )}
         {busy && (
           <button
             className={styles.agentEnd}

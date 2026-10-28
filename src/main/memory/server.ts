@@ -39,6 +39,7 @@ export class MemoryServer {
   }
   constructor(private readonly store: MemoryStore) {
     this.connections = new MemoryConnections(store)
+    store.connectionStatus = () => this.connections.list()
     this.runtime = new ClaudeRuntimeInbox(store.communications)
   }
   async start(port = 47618) {
@@ -218,6 +219,15 @@ export class MemoryServer {
                       : this.store.communicationActor(
                           this.store.authenticate(request.headers.authorization!.slice(7)),
                         )),
+                  () => {
+                    if (response.destroyed) throw new Error('Question reader disconnected.')
+                    const token = request.headers.authorization!.slice(7)
+                    if (communicationOnly) {
+                      if (!this.ownedCommunication.has(token))
+                        throw new Error('Communication connection expired.')
+                    } else if (connection) this.connections.authenticate(connection, token)
+                    else this.store.authenticate(token)
+                  },
                 )
                 return finish(200, {
                   jsonrpc: '2.0',

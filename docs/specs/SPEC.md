@@ -81,7 +81,8 @@ navigation row starts with a centred, left-pointing back arrow without a visible
 button border; the top level has no arrow.
 
 Workspace grows with its content up to a saved maximum, defaulting to the full
-display work area with small edge margins and the taskbar left clear. Empty and
+display work area with the taskbar left clear. Dragging can place it flush with the
+work-area top or bottom; there is no forced screen margin in Workspace. Empty and
 short workspaces shrink to their contents; longer lists scroll at the limit. Only
 Workspace lets the existing usage bars resize the panel,
 with no extra strip, button or icon. The whole bottom usage strip shows the resize cursor
@@ -130,8 +131,8 @@ leave, panel resizing, and the existing voice-command caller.
 
 All five panel subpages (Agent, Settings, Shared Spaces, workspace picker and
 Changes) keep their title centered and place the existing back chevron on the
-right. In Agent, inactive microphone text follows the activity status, such as
-"Ready - No active Mic". Other pages keep "no active Mic" on the header's left
+right. In Agent, the activity status stands alone, such as "Ready".
+Other pages keep "no active Mic" on the header's left
 while voice activity is visible and the microphone is off. Listening/speaking
 activity already indicates an active microphone, so it has no additional label.
 Header controls retain their existing navigation and pinning behavior.
@@ -262,7 +263,10 @@ item is not offered. There is no drag handle and no keyboard shortcut.
 
 Dual widens the native window leftwards from the dot's corner (inside the work area) to a
 475px card: two 236px columns and a 1px divider, so a row is the same width as in the
-single column and never reflows as it moves. The card's right edge does not move.
+single column and never reflows as it moves. The card's right edge stays aligned with
+the dot where space permits; a wire gutter extends beyond it only as far as the
+right-side lanes require, including 2px for their backing stroke. With no right-side
+wires the gutter is zero. The complete window is clamped inside the work area.
 Expanding runs in order: the window widens, the card grows, the Claude rows slide left
 with their gaps still open, then every row closes up the gaps, leaving Claude on the left
 and Codex on the right, each stacked from the top. Collapsing reverses it: the gaps open,
@@ -283,11 +287,12 @@ threads) and All stay one column. Switching to one of those narrows the panel ba
 single column without changing the saved choice, and returning to Recent or Workspace
 restores it. In Workspace each column repeats the workspace headers and lists only that
 provider's threads (Claude left, Codex right); a workspace that is collapsed keeps its
-header in both columns, and either one opens it. The workspace wires
-hang off the card's left edge, so they are not drawn while the columns are split; the clip
-remains.
+header in both columns, and either one opens it. Workspace wires for Claude-only groups
+run outside the card on the left; Codex-only groups run outside it on the right; shared
+groups run down the centre divider. Each zone allocates its own lanes. See
+[workspace wire routing](WORKSPACE-WIRES-SPEC.md) for geometry and validation.
 
-The 16px gutter beside the card is click-through. While the layout animates it is not,
+The outside wire gutters beside the card are click-through. While the layout animates they are not,
 because the card is moving.
 
 Context circles spin for the full `working` state, including thinking, tools and
@@ -527,7 +532,7 @@ Stored as JSON in `%APPDATA%/Threadlight/settings.json` (with a `version`), vali
 
 Tokens (from the Pascal-style dark theme the prototype used), defined once in `theme.css`:
 `--bg #171717  --raised #1e1e1e  --hover #212121  --border rgba(255,255,255,.10)  --fg #fafafa  --muted #a1a1a1  --faint #6b6b6b  --green #2ecc71  --red #e74c3c  --amber #f0ad4e  --accent #7fb2ff  --purple #a371f7  --radius 10px`.
-Composer mirrors Claude's: `#2f2f2f` pill, `#454545` edge, blue mic disc. Font stack: `"Segoe UI Variable", "Segoe UI", system-ui`. Animations respect `prefers-reduced-motion`. Tight spacing: 10 px gutters, 3 px total vertical thread row padding.
+Composer mirrors Claude's: `#2f2f2f` pill, `#454545` edge, blue mic disc. Font stack: `"Segoe UI Variable", "Segoe UI", system-ui`. Animations respect `prefers-reduced-motion`. Tight spacing: 10 px gutters, 2 px total vertical thread row padding, with 15px title and 14px Now line heights. Needs your input occupies the right end of the Now line and replaces the branch tracker and task timer while attention is present. Every thread reserves a compact third line below those two text lines for centred attachment chips, so collapsed containers stay the same height whether attachments are present, absent or loading.
 
 ## 12. Public-repo hygiene checklist
 

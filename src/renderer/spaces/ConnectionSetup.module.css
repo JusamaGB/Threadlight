@@ -1,0 +1,118 @@
+.guide {
+  padding: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  font-size: 12px;
+}
+.content {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+.footer {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+}
+.breadcrumb {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.steps {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  padding: 12px 0;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--muted);
+}
+.steps li {
+  flex: 1;
+}
+.steps [aria-current] {
+  color: var(--accent);
+}
+.guide h3 {
+  margin: 14px 0 8px;
+  font-size: 14px;
+}
+.guide h4 {
+  margin-bottom: 6px;
+}
+.guide p {
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.guide label {
+  display: block;
+  margin: 12px 0;
+}
+.guide select,
+.guide input:not([type='checkbox']) {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 7px;
+  color: var(--fg);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+}
+.guide .check {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  line-height: 1.5;
+}
+.check input {
+  margin-top: 3px;
+}
+.guide button {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 7px 9px;
+  margin: 8px 8px 8px 0;
+}
+.guide button:hover {
+  background: var(--hover);
+}
+.guide button:disabled {
+  opacity: 0.45;
+}
+.guide .primary {
+  color: var(--accent);
+  background: var(--raised);
+}
+.guide fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.guide details {
+  margin: 10px 0;
+  font-size: 11px;
+}
+.code {
+  display: block;
+  color: var(--fg);
+  letter-spacing: 1px;
+  margin-top: 6px;
+  user-select: text;
+}
+.selectable {
+  user-select: text;
+}
+.guide .error {
+  color: var(--amber);
+}

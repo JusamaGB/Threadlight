@@ -1,3 +1,4 @@
+import { openHeaderPage } from './header-navigation.mjs'
 /* global window, document, AudioContext */
 import assert from 'node:assert/strict'
 import { checkVoiceTarget } from './voice-target.smoke.mjs'
@@ -162,8 +163,7 @@ export async function checkVoiceRouting(page) {
   await codexRow.getByText('Review Threadlight', { exact: true }).waitFor()
   // A misheard first title must not choose the Agent, even with its view already open.
   for (const fromAgent of [false, true]) {
-    if (fromAgent)
-      await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+    if (fromAgent) await openHeaderPage(page, 'Agent')
     await open()
     await say('Open review thread lines.')
     await page.locator('[data-mic-mode="commands"]').waitFor()

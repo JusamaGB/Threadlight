@@ -51,6 +51,8 @@ const responseSchema = z.discriminatedUnion('action', [
   }),
 ])
 interface Options {
+  spaceContext?: () => import('../threadRead/server').ThreadReadConnection
+  appControl?: import('../appControl/server').AppControlServer
   announcements?: {
     next: (owner: string, since: number) => Announcement | undefined
     commit: (a: Announcement) => boolean
@@ -80,6 +82,10 @@ interface Options {
 
 /** The sole owner of the active Agent, independent of the monitored applications. */
 export class AgentService {
+  private controlDecisions = new Map<
+    string,
+    { view: import('../../shared/agent').AgentRequest; decide: (allow: boolean) => void }
+  >()
   private announcement?: Announcement
   private announcementSend?: Promise<AnnouncementReply>
   private voiceStartedAt = 0
@@ -263,6 +269,15 @@ export class AgentService {
 
   respond(id: unknown, response: unknown): AgentResult {
     const parsed = responseSchema.safeParse(response)
+    if (typeof id === 'string' && parsed.success && parsed.data.action !== 'answer') {
+      const pending = this.controlDecisions.get(id)
+      if (pending) {
+        this.controlDecisions.delete(id)
+        pending.decide(parsed.data.action === 'allow')
+        this.publish(this.run?.current ?? this.state)
+        return { ok: true }
+      }
+    }
     if (typeof id !== 'string' || !parsed.success || !this.run)
       return { ok: false, reason: 'Invalid agent response.' }
     return this.run.respond(id, parsed.data as AgentResponse)
@@ -276,6 +291,8 @@ export class AgentService {
     return this.run ? await this.run.interrupt() : { ok: true }
   }
   close(): Promise<void> {
+    for (const decision of this.controlDecisions.values()) decision.decide(false)
+    this.controlDecisions.clear()
     this.voiceSession = null
     this.operation++
     const operation = this.operation
@@ -443,6 +460,8 @@ export class AgentService {
       const previous = this.run
       this.run = null
       await previous?.close()
+      for (const decision of this.controlDecisions.values()) decision.decide(false)
+      this.controlDecisions.clear()
       if (operation !== this.operation) {
         await next.close()
         throw new Error('The conversation was ended.')
@@ -491,6 +510,32 @@ export class AgentService {
     const provider = record?.provider ?? settings.agentProvider
     let run: Run
     const communicationOwner = record?.id ?? `agent:${crypto.randomUUID()}`
+    const appControl = this.options.appControl
+      ? (reader?: import('../threadRead/server').ThreadReadConnection) =>
+          this.options.appControl!.connect({
+            active: true,
+            owner: () =>
+              run?.current.conversationId ??
+              (run?.current.sessionId
+                ? `${provider}:${run.current.sessionId}`
+                : communicationOwner),
+            resolve: (ref) =>
+              reader ? (this.options.threadReads?.resolve(reader, ref) ?? null) : null,
+            cards: async (ref) =>
+              reader ? ((await this.options.threadReads?.cards(reader, ref)) ?? null) : null,
+            approve: (id, title, detail, decide) => {
+              if (this.run !== run) {
+                decide(false)
+                return
+              }
+              this.controlDecisions.set(id, {
+                view: { id, title, detail, kind: 'approval', canAllow: true },
+                decide,
+              })
+              this.publish(run.current)
+            },
+          })
+      : undefined
     const communication = this.options.communication
       ? () =>
           this.options.communication!(() => ({
@@ -525,6 +570,10 @@ export class AgentService {
       : undefined
     const onChange = (state: AgentState) => {
       if (this.run !== run) return
+      if (state.ended) {
+        for (const decision of this.controlDecisions.values()) decision.decide(false)
+        this.controlDecisions.clear()
+      }
       const speech = state.live
         ? [...state.items]
             .reverse()
@@ -577,6 +626,8 @@ export class AgentService {
     await mkdir(this.options.workspace, { recursive: true })
     if (provider === 'codex')
       run = new CodexAgentRun({
+        spaceContext: this.options.spaceContext,
+        appControl,
         communication,
         threadReads,
         client: () => this.connect(),
@@ -587,7 +638,8 @@ export class AgentService {
         store: this.store,
         record,
         items,
-        briefing: () => briefing(this.options.snapshot()),
+        briefing: () =>
+          `${briefing(this.options.snapshot())}\n<threadlight-app-state>${JSON.stringify(this.options.appControl?.service.orientation() ?? null)}</threadlight-app-state>`,
         lifetimeMinutes: () => this.options.settings().agentLifetimeMinutes,
         onChange,
         onLive: this.options.onLive,
@@ -596,6 +648,8 @@ export class AgentService {
       const cli = await this.options.cli('claude')
       if (!cli) throw new Error('Claude Code was not found on this PC.')
       run = new AgentRun({
+        spaceContext: this.options.spaceContext,
+        appControl,
         communication,
         threadReads,
         cli,
@@ -604,7 +658,8 @@ export class AgentService {
         workerModel: () => record?.worker ?? settings.agentWorker,
         blockedApps: () => record?.appsOff ?? settings.agentAppsOff,
         onChange,
-        briefing: () => briefing(this.options.snapshot()),
+        briefing: () =>
+          `${briefing(this.options.snapshot())}\n<threadlight-app-state>${JSON.stringify(this.options.appControl?.service.orientation() ?? null)}</threadlight-app-state>`,
         readable: () => readableFolders(this.options.snapshot()),
         lifetimeMinutes: () => this.options.settings().agentLifetimeMinutes,
         onRateLimit: this.options.onRateLimit,
@@ -614,7 +669,14 @@ export class AgentService {
   }
 
   private publish(state: AgentState): void {
-    this.state = { ...state, revision: this.state.revision + 1 }
+    this.state = {
+      ...state,
+      requests: [
+        ...state.requests.filter((r) => !r.id.startsWith('control:')),
+        ...[...this.controlDecisions.values()].map((d) => d.view),
+      ],
+      revision: this.state.revision + 1,
+    }
     this.options.onConversation?.(this.current, this.options.communicationProject?.())
     this.options.onChange(this.current)
   }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { ipcMain, session, WebContentsView, type BrowserWindow, type Rectangle } from 'electron'
 import { IPC } from '../shared/ipc'
+import { ARTIFACT_THEME_CSS } from '../shared/artifacts'
 import { isObject } from './sessions/json'
 
 // Response headers apply even to a complete HTML document with its own head/CSP.
@@ -27,7 +28,7 @@ const BOOTSTRAP = `<!doctype html><script>
 for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection']) {
   Object.defineProperty(globalThis, name, { value: undefined, writable: false, configurable: false });
 }
-</script>`
+</script><style>${ARTIFACT_THEME_CSS}</style>`
 
 /** One memory-only browser session, no preload or access to the app's session. */
 export function registerArtifactPreview(

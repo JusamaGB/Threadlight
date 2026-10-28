@@ -1,4 +1,5 @@
-import { useId } from 'react'
+import { useId, useRef, useState } from 'react'
+import type { CodexQuestionRef } from '../../shared/codexQuestions'
 import type { CardQuestion, Session } from '../../shared/types'
 import { useDraft } from '../lib/drafts'
 import styles from './CodexQuestionCard.module.css'
@@ -8,18 +9,25 @@ interface Answer {
   text: string
 }
 
-/** Native questions are completed in Codex; choosing here prepares the clipboard only. */
+/** Current desktop async cards are answered through Codex's owning window. */
 export function CodexQuestionCard({
   session,
   questions,
+  native,
   onCollapse,
 }: {
   session: Session
   questions: CardQuestion[]
+  native?: CodexQuestionRef
   onCollapse: () => void
 }) {
   const id = useId()
-  const key = `${session.id}:questions:${JSON.stringify(questions)}`
+  const key = `${session.id}:questions:${JSON.stringify(native)}:${JSON.stringify(questions)}`
+  const sending = useRef(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [blocked, setBlocked] = useState(false)
+  const [sent, setSent] = useState(false)
   const [index, setIndex] = useDraft(`${key}:page`, 0)
   const [answers, setAnswers] = useDraft<Answer[]>(
     `${key}:answers`,
@@ -58,6 +66,29 @@ export function CodexQuestionCard({
         : questions.map((item, i) => `${item.question}\n${values[i]}`).join('\n\n'),
     )
     open()
+  }
+  const submit = async () => {
+    if (!native) return copyAndOpen()
+    if (!ready || sending.current || blocked || sent) return
+    sending.current = true
+    setBusy(true)
+    setError('')
+    try {
+      const result = await window.threadlight.answerNativeCodexQuestion(session.id, native, values)
+      if (result.ok) {
+        setSent(true)
+        onCollapse()
+      } else {
+        setError(result.reason)
+        setBlocked(!result.retryable)
+      }
+    } catch {
+      setError('Confirmation was lost. Check Codex before sending again.')
+      setBlocked(true)
+    } finally {
+      sending.current = false
+      setBusy(false)
+    }
   }
   return (
     <section className={styles.card} aria-label="Codex question">
@@ -103,6 +134,7 @@ export function CodexQuestionCard({
                 type={question.multiSelect ? 'checkbox' : 'radio'}
                 name={`${id}-${index}`}
                 checked={selected}
+                disabled={busy || sent || blocked}
                 onChange={() => pick(option.label)}
               />
               <span className={styles.number} aria-hidden="true">
@@ -115,7 +147,7 @@ export function CodexQuestionCard({
                 )}
               </span>
               <span className={styles.arrow} aria-hidden="true">
-                {selected ? (question.multiSelect ? '✓' : '→') : ''}
+                {selected ? '✓' : ''}
               </span>
             </label>
           )
@@ -138,27 +170,37 @@ export function CodexQuestionCard({
           placeholder="Or write your own response"
           rows={1}
           value={answer.text}
+          disabled={busy || sent || blocked}
           onChange={(event) => update({ ...answer, text: event.target.value })}
           onKeyDown={(event) => {
             if (event.ctrlKey && event.key === 'Enter') {
               event.preventDefault()
-              copyAndOpen()
+              void submit()
             }
           }}
         />
       </div>
       <div className={styles.footer}>
-        <span className={styles.note}>Finish answering in Codex</span>
+        <span className={styles.note} role={error ? 'alert' : 'status'}>
+          {error ||
+            (native ? (sent ? 'Answer sent' : 'Sends to Codex') : 'Finish answering in Codex')}
+        </span>
+        {(!native || error) && (
+          <button
+            className={styles.open}
+            disabled={!session.appId}
+            onClick={open}
+            title="Open without copying an answer"
+          >
+            Open ↗
+          </button>
+        )}
         <button
-          className={styles.open}
-          disabled={!session.appId}
-          onClick={open}
-          title="Open without copying an answer"
+          className={styles.submit}
+          disabled={!ready || !session.appId || busy || sent || blocked}
+          onClick={() => void submit()}
         >
-          Open ↗
-        </button>
-        <button className={styles.submit} disabled={!ready || !session.appId} onClick={copyAndOpen}>
-          Copy &amp; open
+          {native ? (busy ? 'Sending…' : sent ? 'Sent' : 'Send answer') : 'Copy & open'}
         </button>
       </div>
     </section>

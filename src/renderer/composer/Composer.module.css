@@ -12,6 +12,28 @@
   background-repeat: no-repeat;
 }
 
+.composer[data-embedded] {
+  background-image: none;
+  padding: 2px 2px 3px;
+}
+
+.composer[data-embedded] .pill {
+  min-height: 28px;
+  padding: 3px 5px;
+  border-radius: 8px;
+  gap: 4px;
+}
+.composer[data-embedded] .entry {
+  min-height: 20px;
+  justify-content: center;
+}
+.composer[data-embedded] .attach,
+.composer[data-embedded] .mic {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
 .composer[data-provider='claude'] {
   --composer-tint: var(--provider-claude);
 }
@@ -275,4 +297,113 @@
   .mic[data-state='listening'] {
     animation: none;
   }
+}
+
+.composer[data-drop] .pill {
+  border-color: var(--accent);
+}
+.attach {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+.attach:disabled {
+  opacity: 0.4;
+}
+.attachments {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 5px;
+  max-height: 76px;
+  overflow: auto;
+}
+.attachments li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 10px;
+}
+.attachments li span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.attachments button {
+  flex: none;
+  padding: 0 3px;
+}
+.attachmentStatus {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.queue {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border, #444);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.queueHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+}
+.queueSteer {
+  opacity: 0;
+  pointer-events: none;
+}
+.queuedMessage:hover .queueSteer,
+.queuedMessage:focus-within .queueSteer {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .queueSteer {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.queuedMessage {
+  padding: 6px 0;
+  border-top: 1px solid var(--border, #444);
+}
+.queuedMessage p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 3px 0;
+  max-height: 70px;
+  overflow-y: auto;
+}
+.queuedMessage textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 55px;
+  color: inherit;
+  background: var(--surface, #252525);
+}
+.queue button {
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border, #444);
+  border-radius: 4px;
+  padding: 3px 6px;
+  margin-right: 4px;
+  cursor: pointer;
+}
+.queue button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

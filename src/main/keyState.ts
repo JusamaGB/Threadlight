@@ -1,7 +1,7 @@
 // Asks Windows whether one key is held down right now (user32 GetAsyncKeyState, through koffi),
 // and which window is in front (for letting a held question card go, see questionHolds.ts).
-// Press-and-hold only checks the talk hotkey's own key, only while it is held: no keyboard hook,
-// so Threadlight never sees anything else you type.
+// Talk hold checks its own key while held; the modifier stepper checks Control and Alt.
+// Neither installs a keyboard hook or reads typed characters.
 
 interface User32 {
   keyState: (virtualKey: number) => number

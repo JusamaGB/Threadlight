@@ -14,6 +14,9 @@ import { TaskTimer } from './TaskTimer'
 import { Tip } from './Tip'
 import { providerName, sessionProvider, workspaceFolder } from '../../shared/providers'
 import { CodexPlan } from './CodexPlan'
+import { ArtifactStrip } from './ArtifactStrip'
+import { useThreadTimeline } from '../hooks/useThreadTimeline'
+import { liveThreadActivity } from '../../shared/threadActivity'
 
 interface SessionRowProps {
   striped?: boolean
@@ -30,6 +33,8 @@ interface SessionRowProps {
   onCompose: () => void
   /** Opens only this thread's recorded changes. */
   onShowChanges: () => void
+  onOpenArtifact: (id: string) => void
+  onRead: () => void
 }
 
 /** The badge and opened viewer share this chat's recorded diff, never its worktree total. */
@@ -76,10 +81,18 @@ function ThreadCount({ diff, onOpen }: { diff: ThreadDiffSummary; onOpen: () => 
 
 export function SessionRow(props: SessionRowProps) {
   const { session, relay, composing, now, expanded, onToggle, onContextMenu, onCompose } = props
-  // A message in flight, or a fresh reply, replaces the stage line for a while.
-  const line = relayLine(relay, now)
+  // Delivery ticks must not replace the live activity or the latest reply.
+  const line = relay?.state === 'failed' ? relayLine(relay, now) : null
   const appId = session.appId
   const attention = session.attention
+  const timelineSupported =
+    typeof window.threadlight.threadTimeline === 'function' &&
+    typeof window.threadlight.onThreadTimeline === 'function'
+  const timelineState = useThreadTimeline(
+    session.id,
+    timelineSupported && !attention && (session.state === 'working' || expanded),
+  )
+  const activity = liveThreadActivity(session, timelineState.timeline)
   const titleClass = [styles.title, composing && styles.composing].filter(Boolean).join(' ')
   return (
     <div
@@ -88,6 +101,7 @@ export function SessionRow(props: SessionRowProps) {
       data-striped={props.striped || undefined}
       data-workspace-folder={workspaceFolder(session.git?.root || session.cwd) || undefined}
       data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
+      data-unread={session.unread || undefined}
     >
       {/* Provider-tinted top and bottom edges frame the open chat between its neighbours. */}
       {expanded && props.showProvider && (
@@ -115,20 +129,23 @@ export function SessionRow(props: SessionRowProps) {
             data-workspace-anchor=""
             className={styles.dotSlot}
             text={
-              session.contextUsed !== null
-                ? contextLabel(session.contextUsed)
-                : session.state === 'working'
-                  ? 'Context unavailable'
-                  : ''
+              session.unread
+                ? `${session.contextUsed !== null ? contextLabel(session.contextUsed) + ' · ' : ''}Finished · Unread reply`
+                : session.contextUsed !== null
+                  ? contextLabel(session.contextUsed)
+                  : session.state === 'working'
+                    ? 'Context unavailable'
+                    : ''
             }
             tourHelp="The ring shows the thread's context usage and animates while the thread is active."
           >
-            {(session.contextUsed !== null || session.state === 'working') && (
+            {(session.contextUsed !== null || session.state === 'working' || session.unread) && (
               <ContextRing
                 used={session.contextUsed}
                 wide={attention !== null}
                 active={session.state === 'working'}
                 thinking={session.thinking}
+                unread={session.unread}
               />
             )}
             {(session.state === 'waiting' || attention) && (
@@ -153,27 +170,25 @@ export function SessionRow(props: SessionRowProps) {
           {session.threadDiff && (
             <ThreadCount diff={session.threadDiff} onOpen={props.onShowChanges} />
           )}
-          {/* A long title fades out behind this, so it always shows. */}
-          {attention && (
-            <Tip
-              className={styles.needsYou}
-              data-ignored={session.ignored || undefined}
-              text=""
-              tourOnly
-              tourHelp="This thread is waiting for an answer or approval. Open the thread to respond."
-            >
-              {en.attention.needsYou}
-            </Tip>
-          )}
           {/* Keep space for Open ↗, drawn outside this button on expanded rows. */}
           {expanded && appId && <span className={styles.openSpace} aria-hidden="true" />}
         </span>
         <span className={styles.rowBottom}>
           <PullRequestBadge pullRequests={session.pullRequests} />
-          <span className={styles.stage} data-tone={line?.tone}>
-            {line?.text ?? (attention && attentionLine(attention)) ?? session.stage}
+          <span
+            className={styles.stage}
+            data-tone={line?.tone}
+            data-compacting={(session.compacting && session.state === 'working') || undefined}
+          >
+            {session.compacting && session.state === 'working'
+              ? session.stage
+              : (line?.text ??
+                (attention && attentionLine(attention)) ??
+                activity ??
+                session.stage)}
           </span>
-          {session.git && (
+          {/* Needs your input owns the bottom right; branch and task details give way. */}
+          {session.git && !attention && (
             <Tip
               data-git-tracker=""
               className={styles.diff}
@@ -189,13 +204,31 @@ export function SessionRow(props: SessionRowProps) {
               )}
             </Tip>
           )}
-          {!(expanded && appId) && session.backgroundTasks.length > 0 && (
+          {!(expanded && appId) && !attention && session.backgroundTasks.length > 0 && (
             <TaskTimer tasks={session.backgroundTasks} />
+          )}
+          {attention && (
+            <Tip
+              className={styles.needsYou}
+              data-ignored={session.ignored || undefined}
+              text=""
+              tourOnly
+              tourHelp="This thread is waiting for an answer or approval. Open the thread to respond."
+            >
+              {en.attention.needsYou}
+            </Tip>
           )}
         </span>
       </Tip>
+      <ArtifactStrip threadId={session.id} onOpen={props.onOpenArtifact} />
       {expanded && appId && (
-        <button className={styles.rowOpen} onClick={() => window.threadlight.openInClaude(appId)}>
+        <button
+          className={styles.rowOpen}
+          onClick={() => {
+            props.onRead()
+            window.threadlight.openInClaude(appId)
+          }}
+        >
           {en.detail.open}
         </button>
       )}
@@ -220,7 +253,13 @@ export function SessionRow(props: SessionRowProps) {
             />
           </div>
         ) : (
-          <SessionDetail session={session} relay={relay} now={now} />
+          <SessionDetail
+            session={session}
+            relay={relay}
+            now={now}
+            timelineState={timelineState}
+            onOpenArtifact={props.onOpenArtifact}
+          />
         ))}
     </div>
   )

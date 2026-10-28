@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-28",
+  "desktopVersion": "26.1023.6123.0",
+  "cliVersion": "codex-cli 0.165.0-alpha.1.2",
+  "desktopArchiveSha256": "773eaad4039291c80217d62c97711bb0e4b941fcf4429aaeeb3b04856c4e83ab",
+  "cliSha256": "5c1b55966bf9f757dcbf00065c9a6cb862ead55d34b015f1be1939ff18e43943",
+  "environment": "Offline Windows Sandbox; guest-local generated transport token; no account sign-in",
+  "independentWithoutToken": "401 Unauthorized",
+  "independentWrongToken": "401 Unauthorized",
+  "independentCorrectToken": "101 Switching Protocols; JSON-RPC initialize succeeded",
+  "desktopAttempts": 6,
+  "desktopAuthorizationHeaderPresent": false,
+  "desktopResult": "401 Unauthorized on every observed attempt",
+  "integrationEligible": false,
+  "nativeQuestionResponse": "Not reached: actual desktop did not authenticate"
+}

@@ -8,14 +8,34 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
-import type { SpaceIdea, SpaceWorkspace } from '../../shared/spaces'
+import type { SpaceIdea, SpaceWorkspace, SpaceLocation } from '../../shared/spaces'
 import type { MemoryStore } from '../memory/store'
 import type { SpacesStore } from './store'
 
-export const areas = ['ideas', 'plans', 'handoffs', 'results'] as const
+export const areas = ['notes', 'plans', 'handoffs', 'results'] as const
 export const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 export const pathKey = (path: string) =>
   resolve(path).replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()
+export function documentsRoot(workspace: SpaceWorkspace) {
+  if (workspace.spaceDirectory && !/^[a-z0-9][a-z0-9-]{0,95}$/.test(workspace.spaceDirectory))
+    throw new Error('Invalid shared space folder name.')
+  return join(
+    workspace.root,
+    'shared-spaces',
+    ...(workspace.spaceDirectory ? [workspace.spaceDirectory] : []),
+  )
+}
+export function spaceFolderName(title: string) {
+  const slug = title
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 70)
+  if (!slug) throw new Error('Use a space name containing letters or numbers.')
+  return /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(slug) ? `space-${slug}` : slug
+}
 export function canonicalRoot(root: string): string {
   if (!isAbsolute(root)) throw new Error('Choose an absolute workspace directory.')
   const canonical = realpathSync.native(root)
@@ -29,7 +49,20 @@ export function checkFolders(workspace: SpaceWorkspace, create = false) {
     )
   for (const path of [
     join(workspace.root, 'shared-spaces'),
-    ...areas.map((area) => join(workspace.root, 'shared-spaces', area)),
+    ...(workspace.spaceDirectory ? [documentsRoot(workspace)] : []),
+    ...(!workspace.layout || workspace.spaceDirectory
+      ? areas.map((area) =>
+          join(
+            documentsRoot(workspace),
+            area === 'notes' &&
+              !create &&
+              !existsSync(join(documentsRoot(workspace), 'notes')) &&
+              existsSync(join(documentsRoot(workspace), 'ideas'))
+              ? 'ideas'
+              : area,
+          ),
+        )
+      : []),
   ]) {
     if (create && !existsSync(path)) mkdirSync(path)
     if (!existsSync(path))
@@ -44,6 +77,39 @@ export function checkFolders(workspace: SpaceWorkspace, create = false) {
       )
   }
 }
+export function checkSpace(workspace: SpaceWorkspace, location: SpaceLocation, create = false) {
+  const selected = { ...workspace, spaceDirectory: location.directory }
+  checkFolders(selected, create)
+  const manifest = join(documentsRoot(selected), 'space.json')
+  const expected = {
+    format: 'threadlight.shared-space',
+    version: 1,
+    id: location.spaceId,
+    workspaceId: workspace.id,
+    name: location.title,
+    directory: location.directory,
+  }
+  if (create && !existsSync(manifest))
+    writeFileSync(manifest, JSON.stringify(expected, null, 2) + '\n', { flag: 'wx' })
+  if (
+    !existsSync(manifest) ||
+    lstatSync(manifest).isSymbolicLink() ||
+    !lstatSync(manifest).isFile() ||
+    lstatSync(manifest).size > 16384
+  )
+    throw new Error('The shared space identity file is missing or unavailable.')
+  const actual = JSON.parse(readFileSync(manifest, 'utf8'))
+  if (Object.entries(expected).some(([key, value]) => actual?.[key] !== value))
+    throw new Error('The shared space identity file changed. Restore space.json before continuing.')
+  const readme = join(documentsRoot(selected), 'README.md')
+  if (create && !existsSync(readme))
+    writeFileSync(
+      readme,
+      `# ${location.title}\n\nA Threadlight shared space in this workspace.\n\n- notes/: saved notes\n- plans/: reviewed plans\n- handoffs/: shared context and assignments\n- results/: saved outcomes\n- space.json: stable space identity and format version\n\nThreadlight keeps revision history, access permissions and conversations in its local database. Markdown files here are immutable snapshots; edit shared content in Threadlight. Original attachments stay in their existing storage.\n`,
+      { flag: 'wx' },
+    )
+  return selected
+}
 export interface DocumentDraft {
   id: string
   area: (typeof areas)[number]
@@ -53,7 +119,7 @@ export function ideaDocuments(idea: SpaceIdea): DocumentDraft[] {
   const docs: DocumentDraft[] = [
     {
       id: idea.id,
-      area: 'ideas',
+      area: 'notes',
       body: `# ${idea.title}\n\nDocument ID: ${idea.id}\nRevision: ${idea.revision}\n\n${idea.text}\n`,
     },
   ]
@@ -61,7 +127,7 @@ export function ideaDocuments(idea: SpaceIdea): DocumentDraft[] {
     docs.push({
       id: `plan-${idea.id}`,
       area: 'plans',
-      body: `# ${idea.title}\n\nIdea ID: ${idea.id}\nRevision: ${idea.revision}\n\n${idea.plan}\n\n## Assignments\n\n${idea.assignments.map((a) => `### ${a.title}\n\nProvider: ${a.provider}\nChat: ${a.assignee}\n\n${a.brief}`).join('\n\n')}\n`,
+      body: `# ${idea.title}\n\nNote or discussion ID: ${idea.id}\nRevision: ${idea.revision}\n\n${idea.plan}\n\n## Assignments\n\n${idea.assignments.map((a) => `### ${a.title}\n\nProvider: ${a.provider}\nChat: ${a.assignee}\n\n${a.brief}${a.rationale ? `\n\nAssignment rationale:\n${a.rationale}` : ''}`).join('\n\n')}\n`,
     })
   return docs
 }
@@ -118,7 +184,7 @@ export class SpaceDocuments {
   }
   target(workspace: SpaceWorkspace, doc: DocumentDraft) {
     if (!/^[a-z0-9-]+$/i.test(doc.id)) throw new Error('Invalid document ID.')
-    return join(workspace.root, 'shared-spaces', doc.area, `${doc.id}-${digest(doc.body)}.md`)
+    return join(documentsRoot(workspace), doc.area, `${doc.id}-${digest(doc.body)}.md`)
   }
   conflicts(workspace: SpaceWorkspace, docs: DocumentDraft[]): string[] {
     const errors: string[] = []
@@ -147,6 +213,9 @@ export class SpaceDocuments {
   publish(workspace: SpaceWorkspace, docs: DocumentDraft[]) {
     const conflicts = this.conflicts(workspace, docs)
     if (conflicts.length) throw new Error(conflicts.join('\n'))
+    const notes = join(documentsRoot(workspace), 'notes')
+    if (docs.some((doc) => doc.area === 'notes') && !existsSync(notes)) mkdirSync(notes)
+    checkFolders(workspace)
     for (const doc of docs) {
       const path = this.target(workspace, doc)
       checkFolders(workspace)

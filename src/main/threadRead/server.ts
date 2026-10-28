@@ -23,10 +23,31 @@ export class ThreadReadServer {
     { scope: ReadScope; receipt: (r: ThreadToolReceipt) => void }
   >()
   constructor(private service: ThreadReadService) {}
-  connect(receipt: (r: ThreadToolReceipt) => void): ThreadReadConnection {
+  resolve(connection: ThreadReadConnection, ref: string) {
+    const caller = this.connections.get(connection.token)
+    return caller ? this.service.resolve(caller.scope, ref) : null
+  }
+  async cards(connection: ThreadReadConnection, ref: string) {
+    const caller = this.connections.get(connection.token)
+    return caller ? this.service.cards(caller.scope, ref) : null
+  }
+  find(connection: ThreadReadConnection, input: unknown) {
+    const caller = this.connections.get(connection.token)
+    if (!caller) throw Error('Reader connection expired.')
+    return this.service.find(caller.scope, input)
+  }
+  read(connection: ThreadReadConnection, input: unknown) {
+    const caller = this.connections.get(connection.token)
+    if (!caller) throw Error('Reader connection expired.')
+    return this.service.read(caller.scope, input)
+  }
+  connect(
+    receipt: (r: ThreadToolReceipt) => void,
+    permits?: ReadScope['permits'],
+  ): ThreadReadConnection {
     if (!this.endpoint) throw new Error('Thread reader is not listening.')
     const token = randomBytes(32).toString('hex'),
-      scope = this.service.open()
+      scope = this.service.open(permits)
     this.connections.set(token, { scope, receipt })
     return {
       endpoint: this.endpoint,

@@ -1,3 +1,4 @@
+import { openHeaderPage } from './header-navigation.mjs'
 // Real renderer and Web Audio, synthetic IPC and tones; no accounts or microphone access.
 /* global window, document, AudioContext, HTMLCanvasElement, RTCPeerConnection */
 import assert from 'node:assert/strict'
@@ -102,6 +103,7 @@ try {
       }
       window.threadlight = new Proxy(
         {
+          controlHello: undefined,
           getSettings: async () => settings,
           getSnapshot: async () => snapshot,
           getSessions: async () => [],
@@ -220,10 +222,10 @@ try {
     if (screenshots) await locator.screenshot({ path: join(screenshots, `${name}.local.png`) })
   }
   await page.goto(url + '/?view=panel')
-  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).waitFor()
+  await page.locator('header').waitFor()
   await page.evaluate(() => window.motionProof.settings({ enabledProviders: ['codex'] }))
   await page.locator('[class*="usageTrack"]').waitFor()
-  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  await openHeaderPage(page, 'Agent')
   await page.getByRole('region', { name: 'Voice waveform', exact: true }).waitFor()
   assert.equal(await page.locator('[class*="usageTrack"]').count(), 1)
   await page.waitForTimeout(500)
@@ -239,7 +241,7 @@ try {
   )
   await activity
     .getByRole('status')
-    .filter({ hasText: /^Ready - No active Mic$/ })
+    .filter({ hasText: /^Ready$/ })
     .waitFor()
   assert.equal(
     await page
@@ -266,7 +268,7 @@ try {
   assert.equal(await stage.locator('canvas').count(), 0)
   const ribbonBounds = await ribbon.boundingBox()
   const cardBounds = await page.locator('[data-card]').boundingBox()
-  const headerBounds = await page.locator('[data-card] > header').boundingBox()
+  const headerBounds = await page.locator('header[aria-label="Panel header"]').boundingBox()
   assert.equal(ribbonBounds.height, 36)
   assert.equal(ribbonBounds.width, cardBounds.width - 2)
   assert.equal(ribbonBounds.y + 9, headerBounds.y + headerBounds.height - 1)
@@ -290,7 +292,7 @@ try {
   assert.ok(speechPixels.bottom - speechPixels.top > 6, 'speech opens visibly around the divider')
   assert.ok(speechPixels.top >= 0, 'upper crests remain inside their header band')
   await capture('thread-view-speaking', page.locator('[data-card]'))
-  await page.getByRole('button', { name: 'Agent: ask it to do something', exact: true }).click()
+  await openHeaderPage(page, 'Agent')
   assert.equal(await page.locator('[data-card] canvas').count(), 1)
   assert.equal(await stage.locator('canvas').count(), 0)
   await capture('agent-view-speaking', page.locator('[data-card]'))

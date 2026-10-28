@@ -13,6 +13,8 @@ export interface MenuItem {
   /** The choice already in force. The control that opened the menu shows it, so it is not listed. */
   current?: boolean
   onSelect: () => void
+  /** Replaces this item with a compact set of choices, without closing the menu. */
+  choices?: { label: string; disabled?: boolean; help?: string; onSelect: () => void }[]
 }
 
 interface ContextMenuProps {
@@ -41,6 +43,7 @@ export function ContextMenu({
   onMouseLeave,
 }: ContextMenuProps) {
   const menu = useRef<HTMLDivElement>(null)
+  const [choosing, setChoosing] = useState<string | null>(null)
   // The option already chosen is on the control that opened the menu, so it is not offered again.
   const items = allItems.filter((item) => !item.current)
   const { opensDown, extra, reserve } = usePanelRoom()
@@ -76,7 +79,7 @@ export function ContextMenu({
       ),
       maxHeight: Math.max(0, bottom - top - 8),
     })
-  }, [x, y, anchor, opensDown, extra, reserve])
+  }, [x, y, anchor, opensDown, extra, reserve, choosing])
   const release = useRef(reserve)
   useEffect(() => {
     release.current = reserve
@@ -88,6 +91,12 @@ export function ContextMenu({
         menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? menu.current
       )?.focus()
   }, [modal])
+  useEffect(() => {
+    if (choosing)
+      menu.current
+        ?.querySelector<HTMLButtonElement>('[role="group"] button:not(:disabled)')
+        ?.focus()
+  }, [choosing])
 
   if (items.length === 0) return null
   return createPortal(
@@ -118,7 +127,10 @@ export function ContextMenu({
             onClose()
             return
           }
-          if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+          if (
+            !['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
+          )
+            return
           event.preventDefault()
           const buttons = [
             ...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
@@ -129,21 +141,60 @@ export function ContextMenu({
               ? 0
               : event.key === 'End'
                 ? buttons.length - 1
-                : (index + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length
+                : (index +
+                    (['ArrowDown', 'ArrowRight'].includes(event.key) ? 1 : buttons.length - 1)) %
+                  buttons.length
           buttons[next]?.focus()
         }}
       >
         {items.map((item) => {
           const choose = () => {
+            if (item.disabled) return
+            if (item.choices) {
+              setChoosing(item.label)
+              return
+            }
             onClose()
             item.onSelect()
           }
+          if (item.choices && choosing === item.label)
+            return (
+              <div
+                key={item.label}
+                className={styles.providerPill}
+                role="group"
+                aria-label="New thread provider"
+              >
+                {item.choices.map((choice, index) => (
+                  <span key={choice.label} className={styles.providerChoice}>
+                    {index > 0 && (
+                      <span aria-hidden="true" className={styles.providerSlash}>
+                        /
+                      </span>
+                    )}
+                    <button
+                      role="menuitem"
+                      disabled={choice.disabled}
+                      title={choice.help}
+                      onClick={() => {
+                        onClose()
+                        choice.onSelect()
+                      }}
+                    >
+                      {choice.label}
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )
           return item.help ? (
             <Tip
               key={item.label}
               as="button"
               className={styles.menuItem}
               role="menuitem"
+              aria-disabled={item.disabled || undefined}
+              aria-haspopup={item.choices ? 'menu' : undefined}
               text={item.help}
               onClick={choose}
             >
@@ -155,6 +206,7 @@ export function ContextMenu({
               className={styles.menuItem}
               role="menuitem"
               disabled={item.disabled}
+              aria-haspopup={item.choices ? 'menu' : undefined}
               onClick={choose}
             >
               {item.label}

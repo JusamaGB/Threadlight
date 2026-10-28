@@ -1,3 +1,4 @@
+import { selectThreadView } from './header-navigation.mjs'
 // Playwright/Electron native-window test with isolated, deterministic screen coordinates.
 /* global window, document, requestAnimationFrame */
 import assert from 'node:assert/strict'
@@ -169,6 +170,145 @@ try {
   await app.evaluate(() => globalThis.hoverProof.windows.setStayOpen(false))
   await pause(80)
   assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.isVisible()), false)
+  // Exercise real native bounds and click-through on both sides of the production dual card.
+  await app.evaluate(() => {
+    const { windows } = globalThis.hoverProof
+    windows.openPanel()
+    windows.setStayOpen(true)
+  })
+  await panel.evaluate(() =>
+    window.threadlight.updateSettings({
+      enabledProviders: ['claude', 'codex'],
+      panelLayout: 'dual',
+      listMode: 'recent',
+      workspaceWires: true,
+    }),
+  )
+  await selectThreadView(panel, 'recent')
+  await panel.waitForFunction(
+    () => Math.round(document.querySelector('[data-card]').getBoundingClientRect().width) === 475,
+  )
+  await pause(1100)
+  const dual = await app.evaluate(() => globalThis.hoverProof.windows.panel.getBounds())
+  assert.equal(dual.width, 491, 'empty lists reserve no right gutter')
+  const card = await panel.locator('[data-card]').boundingBox()
+  assert.equal(card.x, 16)
+  assert.equal(dual.width - card.x - card.width, 0)
+  await app.evaluate(() => globalThis.hoverProof.wireGroup(true))
+  await panel.locator('[data-wire-zone="right"]').waitFor()
+  await pause(100)
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.getBounds().width), 497)
+  const wiredCard = await panel.locator('[data-card]').boundingBox()
+  assert.equal(497 - wiredCard.x - wiredCard.width, 6, 'right gutter fits one rail and its backing')
+  for (const [x, y, ignored] of [
+    [8, 50, true],
+    [494, 50, true],
+    [30, 50, false],
+  ]) {
+    await app.evaluate(
+      (_electron, { x, y }) => {
+        const { windows, move } = globalThis.hoverProof
+        const bounds = windows.panel.getBounds()
+        move(bounds.x + x, bounds.y + y)
+      },
+      { x, y },
+    )
+    await pause(50)
+    assert.equal(await app.evaluate(() => globalThis.hoverProof.mouseIgnored), ignored)
+  }
+  await app.evaluate(() => globalThis.hoverProof.wireGroup(false))
+  await panel.locator('[data-wire-zone="right"]').waitFor({ state: 'detached' })
+  await pause(100)
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.getBounds().width), 491)
+  await panel.locator('[data-thread-view]').click({ button: 'right' })
+  await panel.getByRole('menuitem', { name: 'Workspace', exact: true }).click()
+  await pause(100)
+  const workAreaTop = await app.evaluate(({ screen }) => {
+    const { windows } = globalThis.hoverProof
+    windows.dragDot(0, -5000)
+    windows.endDrag()
+    return screen.getDisplayMatching(windows.panel.getBounds()).workArea.y
+  })
+  await pause(100)
+  assert.equal(
+    await app.evaluate(() => globalThis.hoverProof.windows.panel.getBounds().y),
+    workAreaTop,
+  )
+  assert.equal(
+    (await panel.locator('[data-card]').boundingBox()).y,
+    0,
+    'Workspace card reaches the native top edge',
+  )
+  await panel.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'single' }))
+  await panel.waitForFunction(
+    () => Math.round(document.querySelector('[data-card]').getBoundingClientRect().width) === 238,
+  )
+  await pause(1100)
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.getBounds().width), 254)
+  await app.evaluate(() => {
+    const { windows, move } = globalThis.hoverProof
+    windows.setStayOpen(false)
+    windows.closePanel()
+    move(50, 50)
+    globalThis.hoverProof.modifiers(true, false)
+  })
+  await pause(80)
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.dot.isVisible()), false)
+  await app.evaluate(() => globalThis.hoverProof.windows.keepOnTop())
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.dot.isVisible()), false)
+  await app.evaluate(() => globalThis.hoverProof.modifiers(true, true))
+  await panel.getByRole('region', { name: 'Temporary Active threads' }).waitFor()
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.mouseIgnored), true)
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.isFocused()), false)
+  await app.evaluate(() => globalThis.hoverProof.modifiers(true, false))
+  await pause(80)
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.isVisible()), false)
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.dot.isVisible()), false)
+  await app.evaluate(() => globalThis.hoverProof.modifiers(false, false))
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (await app.evaluate(() => globalThis.hoverProof.windows.dot.isVisible())) break
+    await pause(20)
+  }
+  assert.equal(
+    await app.evaluate(() => globalThis.hoverProof.windows.dot.isVisible()),
+    true,
+    JSON.stringify(
+      await app.evaluate(() => {
+        const windows = globalThis.hoverProof.windows
+        return {
+          stage: windows.modifierStage,
+          panel: windows.panel.isVisible(),
+          running: windows.claudeRunning,
+        }
+      }),
+    ),
+  )
+  await app.evaluate(() => {
+    const { windows } = globalThis.hoverProof
+    windows.openPanel()
+    windows.setStayOpen(true)
+  })
+  await panel.getByRole('button', { name: 'Settings', exact: true }).click()
+  await app.evaluate(() => globalThis.hoverProof.modifiers(true, true))
+  await panel.getByRole('region', { name: 'Temporary Active threads' }).waitFor()
+  await app.evaluate(() => globalThis.hoverProof.modifiers(false, true))
+  await panel.getByRole('button', { name: 'Back to sessions', exact: true }).waitFor()
+  assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.isVisible()), true)
+  await app.evaluate(() => globalThis.hoverProof.modifiers(false, false))
+  await app.evaluate(() =>
+    globalThis.hoverProof.windows.panel.emit('app-command', {}, 'browser-backward'),
+  )
+  await panel.locator('[data-thread-view]').waitFor()
+  await app.evaluate(() =>
+    globalThis.hoverProof.windows.panel.emit('app-command', {}, 'browser-forward'),
+  )
+  await panel.getByRole('button', { name: 'Back to sessions', exact: true }).waitFor()
+  console.log(
+    'PASS: real modifier polling hides the native dot, keeps it hidden through keep-on-top, opens an unfocused click-through Active peek, handles both releases, restores Settings, and accepts native mouse app commands.',
+  )
+  console.log(
+    'PASS: real Electron fits/removes the right wire gutter, preserves click-through and card input, lets Workspace reach the screen top, and restores single width.',
+  )
   console.log(
     JSON.stringify({
       failures,
