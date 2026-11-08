@@ -36,7 +36,8 @@ async function powershell(body: string) {
   const result = await run(
     windowsPowerShell(),
     ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', file],
-    { windowsHide: true, timeout: 10_000 },
+    // A hosted Windows runner can take over ten seconds to start its first PowerShell process.
+    { windowsHide: true, timeout: 25_000 },
   )
   return JSON.parse(result.stdout.trim())
 }
