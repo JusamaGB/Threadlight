@@ -6,6 +6,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- GPT Live can speak a short progress acknowledgment while the Agent checks the editor. Repeated events share one readout. The next proposal or answer waits for playback, and Stop or a new turn cancels queued narration.
+
 - Agent Settings has a keyboard-accessible **Voice pace** slider. Its five choices apply to the next GPT Live call or spoken screen reply, and the setting survives restarts.
 
 - Live Coach clears stale guide highlights quietly during typing. A known exact line edit can trigger a fresh check automatically. Natural done or next requests also check the current buffer.

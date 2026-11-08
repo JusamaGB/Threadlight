@@ -180,6 +180,8 @@ Open the gear immediately left of **Back** for Agent settings and **Earlier** co
 Smart Thread and Agent use the same assistant reply text size and line spacing. Use the two-card Copy icon on a code block to copy its contents. A pinned block copies the version on screen. Drag the grip below the conversation to resize the reading area,
 or focus it and use the arrow keys. Threadlight remembers the height.
 
+GPT Live can read a brief acknowledgment that the Agent is checking or reading something while the tools run. Its spoken caption stays with the written update. Code guidance waits until the editor confirms that the relevant location is visible.
+
 For delegated answers, GPT Live can speak a complete opening sentence while the
 Agent continues writing. When Live confirms that opening finished, it can speak the
 remaining prose once. If playback is uncertain, choose **Read remaining** in the

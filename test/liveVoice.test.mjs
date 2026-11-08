@@ -113,6 +113,30 @@ it('silences just the interrupted narration and plays the next distinct response
   expect(playback.muted).toBe(false)
   expect(api.livePlaybackBoundary).toHaveBeenCalledWith(connection.id, 'assistant', 'two')
 })
+it('passes the native words on the completed playback boundary for the active assistant turn', async () => {
+  const peer = await ready()
+  connection.listen()
+  const send = (type, id, transcript) =>
+    peer.channel.onmessage({
+      data: JSON.stringify({ type, turn: { id, role: 'assistant', transcript } }),
+    })
+  send('turn.created', 'progress')
+  send('turn.done', 'stale', 'An unrelated completion.')
+  expect(api.livePlaybackBoundary).not.toHaveBeenCalledWith(
+    connection.id,
+    'done',
+    'stale',
+    expect.anything(),
+  )
+  send('turn.done', 'progress', 'I’ll check the current buffer.')
+  expect(api.livePlaybackBoundary).toHaveBeenCalledWith(
+    connection.id,
+    'done',
+    'progress',
+    'I’ll check the current buffer.',
+  )
+})
+
 it('sends silence during composer dictation while keeping remote audio and the connection active', async () => {
   const peer = await ready()
   connection.listen()

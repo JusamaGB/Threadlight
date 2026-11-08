@@ -2,11 +2,12 @@ import { VOICE_PACE, type VoicePace } from '../../shared/voicePace'
 import { timing } from '../../shared/liveTiming'
 import { recordLiveTiming } from './liveTiming'
 import { randomUUID } from 'node:crypto'
+import { matchesSpeech } from '../../shared/speechCaption'
 import { LeadPlayback } from './leadPlayback'
 import { SpeechHandoffs } from './speechHandoffs'
 import type { PlaybackBoundary } from '../../shared/liveVoice'
 import { spokenProse } from '../../shared/spokenProse'
-import { completedSpeech, spokenLead } from './spokenLead'
+import { completedSpeech, progressAcknowledgment, spokenLead } from './spokenLead'
 import { PIN_INSTRUCTIONS } from '../../shared/appControl'
 import { communicationInstructions } from '../../shared/communication'
 import { COACH_INSTRUCTIONS } from '../../shared/editorCoach'
@@ -64,6 +65,9 @@ export class CodexLive {
   private inputRevision?: string
   private turnStarted = 0
   private progressTimer?: ReturnType<typeof setTimeout>
+  private commentaryIds = new Set<string>()
+  private pendingCommentary?: { turn: string; itemId: string; text: string }
+  private progressAck?: { turn: string; itemId: string; text: string; gate: LeadPlayback }
   private statusSent = false
   private progressText = ''
   private progressRequest?: symbol
@@ -156,6 +160,7 @@ ${communicationInstructions}`
     this.turnStarted = Date.now()
     this.inputRevision = undefined
     this.statusSent = false
+    this.commentaryIds.clear()
     this.clearProgress()
     this.deferredLead = undefined
     this.clearRemainder()
@@ -167,6 +172,8 @@ ${communicationInstructions}`
   }
 
   private retireHandoffs() {
+    this.progressAck?.gate.retire()
+    this.progressAck = undefined
     this.handoffs.retire()
     for (const item of this.items.values()) {
       if (item.liveComplete || !item.narrationOf) continue
@@ -176,8 +183,83 @@ ${communicationInstructions}`
   }
 
   private clearProgress() {
+    this.pendingCommentary = undefined
     if (this.progressTimer) clearTimeout(this.progressTimer)
     this.progressTimer = undefined
+  }
+
+  completedCommentary(turn: string | null, item: JsonObject) {
+    const id = str(item.id)
+    if (
+      !turn ||
+      turn !== this.backingTurn ||
+      !id ||
+      item.type !== 'agentMessage' ||
+      item.phase !== 'commentary' ||
+      typeof item.text !== 'string' ||
+      this.commentaryIds.has(id)
+    )
+      return
+    this.commentaryIds.add(id)
+    const text = progressAcknowledgment(item.text)
+    if (
+      !text ||
+      this.ended ||
+      this.early ||
+      this.guideActive ||
+      this.protectedTurn === turn ||
+      this.narratedTurn === turn ||
+      this.suppressedTurn === turn
+    )
+      return
+    this.pendingCommentary = { turn, itemId: id, text }
+    this.sendPendingCommentary()
+  }
+
+  private sendPendingCommentary() {
+    const item = this.pendingCommentary
+    if (!item || this.progressAck || this.speaker || this.waitingForPlayback || this.waiting) return
+    this.clearProgress()
+    if (
+      item.turn !== this.backingTurn ||
+      this.ended ||
+      this.early ||
+      this.guideActive ||
+      this.protectedTurn === item.turn ||
+      this.suppressedTurn === item.turn
+    )
+      return
+    this.statusSent = true
+    const gate = new LeadPlayback()
+    const ack = (this.progressAck = { turn: item.turn, itemId: item.itemId, text: item.text, gate })
+    // The progress utterance has its own caption and playback identity. Its
+    // completion can release a queued proposal or opening, never an answer tail.
+    const deadline = Date.now() + 30_000
+    gate.onUncertain = () => {
+      if (Date.now() >= deadline) gate.retire()
+    }
+    void gate.wait().then(() => {
+      if (this.progressAck !== ack) return
+      this.progressAck = undefined
+      this.resumePlayback()
+    })
+    const delivery = this.speakAnswer(item.text, {
+      sessionId: this.sessionId,
+      turnId: item.turn,
+      itemId: item.itemId,
+    })
+    this.progressRequest = this.speechRequest
+    void delivery.catch(() => gate.retire())
+  }
+
+  private resumePlayback() {
+    if (this.progressAck || this.speaker || this.waitingForPlayback) return
+    const deferred = this.deferredLead
+    this.deferredLead = undefined
+    this.waiting?.resume()
+    if (deferred && !this.waitingForPlayback)
+      this.streamFinal(deferred.turn, deferred.itemId, deferred.lead + '\n')
+    this.sendPendingCommentary()
   }
 
   delegatedInput(turn: string | null, input: string) {
@@ -222,6 +304,10 @@ ${communicationInstructions}`
 
   editorActivity(turn: string | null, action: string | null, complete: boolean, item: JsonObject) {
     if (!turn || turn !== this.backingTurn) return null
+    if (action === 'capabilities' || action === 'proposal_status' || action === 'guide_status') {
+      if (!complete) this.scheduleProgress(turn, 'I’m checking the editor status.')
+      return complete ? 'Agent is still working' : 'Checking the editor status'
+    }
     if (action !== 'context' && action !== 'review') {
       this.protectGuide(turn)
       return complete ? 'Agent is still working' : 'Waiting for the editor'
@@ -258,6 +344,7 @@ ${communicationInstructions}`
 
   private progressOwnsPlayback() {
     return (
+      !!this.progressAck ||
       (this.waitingForPlayback &&
         this.progressRequest === this.speechRequest &&
         !!this.progressRequest) ||
@@ -279,10 +366,11 @@ ${communicationInstructions}`
       this.early?.playback.retire()
       this.clearRemainder()
     }
+    if (active) this.clearProgress()
     this.guideActive = active
   }
 
-  playbackBoundary(kind: PlaybackBoundary, turn: string) {
+  playbackBoundary(kind: PlaybackBoundary, turn: string, transcript?: string) {
     if (this.ended) return
     if (kind === 'user' || kind === 'assistant' || kind === 'done')
       recordLiveTiming(
@@ -294,6 +382,7 @@ ${communicationInstructions}`
     if (kind === 'assistant') {
       if (this.boundaries.has(turn)) return
       this.boundaries.add(turn)
+      this.progressAck?.gate.start(turn)
       this.early?.playback.start(turn)
       this.handoffs.boundary(turn)
       for (const [id, nativeTurn] of this.nativeTurns)
@@ -311,12 +400,15 @@ ${communicationInstructions}`
     } else if (kind === 'done') {
       if (turn !== this.speaker) return
       this.early?.playback.end(turn)
+      const ack = this.progressAck
+      // Some native sessions supply the final caption only on the WebRTC turn.
+      // Use its words as evidence for this progress ticket, without adding a second transcript item.
+      if (ack && transcript?.trim()) {
+        ack.gate.caption('playback:' + turn, matchesSpeech(ack.text, transcript), true, turn)
+      }
+      ack?.gate.end(turn)
       this.speaker = null
-      const deferred = this.deferredLead
-      this.deferredLead = undefined
-      this.waiting?.resume()
-      if (deferred && !this.waitingForPlayback)
-        this.streamFinal(deferred.turn, deferred.itemId, deferred.lead + '\n')
+      this.resumePlayback()
     } else {
       this.suppressedByUser =
         kind === 'user' && !(this.suppressedTurn === this.latestTurn && !this.suppressedByUser)
@@ -357,7 +449,7 @@ ${communicationInstructions}`
       return
     const lead = spokenLead(text)
     if (!lead) return
-    if (this.speaker || this.waitingForPlayback) {
+    if (this.speaker || this.waitingForPlayback || this.progressAck) {
       if (this.progressOwnsPlayback()) this.deferredLead = { turn, itemId, lead }
       return
     }
@@ -383,7 +475,7 @@ ${communicationInstructions}`
     if (this.ended || this.latestTurn !== turn || (turn && this.suppressedTurn === turn))
       return required ? Promise.reject(Error('The voice turn ended.')) : Promise.resolve()
     if (this.waiting) return Promise.reject(Error('Another speech handoff is waiting.'))
-    if (!this.speaker && !this.waitingForPlayback) return speak()
+    if (!this.progressAck && !this.speaker && !this.waitingForPlayback) return speak()
     return new Promise((resolve, reject) => {
       const clear = () => {
         clearTimeout(timer)
@@ -615,6 +707,14 @@ ${communicationInstructions}`
     )
     const early = this.early
     const nativeTurn = this.nativeTurns.get(id)
+    const ack = this.progressAck
+    if (ack && item.text.trim() && (!nativeTurn || this.boundaries.has(nativeTurn)))
+      ack.gate.caption(
+        id,
+        origin?.turnId === ack.turn && origin.itemId === ack.itemId,
+        item.liveComplete === true,
+        nativeTurn,
+      )
     if (early && item.text.trim() && (!nativeTurn || this.boundaries.has(nativeTurn)))
       early.playback.caption(
         id,

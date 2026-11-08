@@ -105,7 +105,7 @@ export class LiveVoiceConnection {
     // early session.started cannot be missed, and gate the opening on that signal.
     this.channel.onmessage = ({ data }) => {
       if (this.cancelled) return
-      let event: { type?: string; turn?: { role?: string; id?: string } }
+      let event: { type?: string; turn?: { role?: string; id?: string; transcript?: string } }
       try {
         event = JSON.parse(data)
       } catch {
@@ -146,7 +146,12 @@ export class LiveVoiceConnection {
         event.turn.id === this.assistantTurn
       ) {
         this.assistantOpen = false
-        window.threadlight?.livePlaybackBoundary?.(this.id, 'done', event.turn.id)
+        window.threadlight?.livePlaybackBoundary?.(
+          this.id,
+          'done',
+          event.turn.id,
+          event.turn.transcript,
+        )
       }
       if (event.type === 'session.started') {
         this.sessionStarted = true

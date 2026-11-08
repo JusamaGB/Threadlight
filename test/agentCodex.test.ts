@@ -1399,7 +1399,71 @@ describe('native Live voice', () => {
     expect(methods.indexOf('thread/realtime/stop')).toBeLessThan(methods.indexOf('thread/archive'))
   })
 
-  it('hands each completed delegated answer to Live once, without speaking commentary or interrupted work', async () => {
+  it('speaks the completed editor-check acknowledgment once while read-only tools proceed', async () => {
+    const { run, fake } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    const turnId = 'resumed-editor'
+    const text =
+      'I still have the code change we were preparing. I’ll check whether the VS Code coach is available again and confirm the current buffer.'
+    const ack = { type: 'agentMessage', id: 'acknowledgment', phase: 'commentary', text }
+    const spoken = () => fake.calls.filter((c) => c.method === 'thread/realtime/appendSpeech')
+    let acknowledge!: () => void
+    fake.handler = async (method) => {
+      if (method === 'thread/realtime/appendSpeech' && spoken().length === 1) {
+        await new Promise<void>((resolve) => {
+          acknowledge = resolve
+        })
+        return {}
+      }
+    }
+    fake.emit('turn/started', { turn: { id: turnId } })
+    fake.emit('item/completed', { turnId, item: ack })
+    fake.emit('item/completed', { turnId, item: ack })
+    expect(spoken()).toHaveLength(1)
+    expect(spoken()[0]?.params.text).toContain(JSON.stringify(text))
+    for (const action of ['capabilities', 'context', 'proposal_status', 'review']) {
+      const tool = {
+        type: 'mcpToolCall',
+        id: action,
+        tool: 'threadlight_editor_coach',
+        arguments: { action },
+      }
+      fake.emit('item/started', { turnId, item: tool })
+      expect(run.current.progress).toMatch(/editor/i)
+      fake.emit('item/completed', {
+        turnId,
+        item: { ...tool, result: { content: [{ text: '{"outcome":"ok"}' }] } },
+      })
+    }
+    expect(spoken()).toHaveLength(1)
+    acknowledge()
+    run.playbackBoundary('assistant', 'opening-status')
+    fake.emit('thread/realtime/item/completed', {
+      item: { type: 'transcriptSegment', id: 'caption', role: 'assistant', text },
+    })
+    const rows = agentTranscript(run.current.items, [], false)
+    const row = rows.find((row) => row.key === ack.id)
+    expect(row?.kind === 'message' && row.item.spokenDetails).toEqual([text])
+    expect(rows.some((row) => row.key === 'live:caption')).toBe(false)
+    const shown = run.coachStep('Keep the update inside the first case.', true, true)
+    expect(spoken()).toHaveLength(1)
+    run.playbackBoundary('done', 'opening-status')
+    await shown
+    expect(spoken()).toHaveLength(2)
+    expect(spoken()[1]?.params.text).toContain('Keep the update')
+    fake.emit('turn/completed', {
+      turn: {
+        id: turnId,
+        status: 'completed',
+        items: [ack, { ...ack, id: 'final', phase: 'final_answer', text: 'The line is ready.' }],
+      },
+    })
+    expect(spoken()).toHaveLength(2)
+    await run.stopLive()
+  })
+
+  it('hands each completed delegated answer to Live once, without speaking filler or interrupted work', async () => {
     const { run, fake } = await fixture()
     connect(fake)
     await run.startLive(voiceId, offer)

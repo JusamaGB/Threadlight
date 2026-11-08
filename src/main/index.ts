@@ -1655,7 +1655,7 @@ async function start(): Promise<void> {
   ipcMain.on(IPC.liveTiming, (event, mark) => {
     if (trustedAgentInput(event)) recordLiveTiming(mark)
   })
-  ipcMain.on(IPC.livePlaybackBoundary, (event, id, kind, turn) => {
+  ipcMain.on(IPC.livePlaybackBoundary, (event, id, kind, turn, transcript) => {
     if (
       !trustedAgentInput(event) ||
       typeof id !== 'string' ||
@@ -1664,8 +1664,12 @@ async function start(): Promise<void> {
       !['assistant', 'done', 'user', 'skip'].includes(kind)
     )
       return
-    agent.playbackBoundary(id, kind, turn)
-    spaces?.agent.playbackBoundary(id, kind, turn)
+    const words =
+      kind === 'done' && typeof transcript === 'string' && transcript.length <= 32000
+        ? transcript
+        : undefined
+    agent.playbackBoundary(id, kind, turn, words)
+    spaces?.agent.playbackBoundary(id, kind, turn, words)
   })
   ipcMain.on(IPC.agentLiveStop, (event, id: unknown) => {
     if (trustedAgentInput(event) && typeof id === 'string') void agent.stopLive(id)

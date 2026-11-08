@@ -145,8 +145,8 @@ const api: ThreadlightApi = {
   agentLiveOpen: (id, text) => ipcRenderer.invoke(IPC.agentLiveOpen, id, text),
   readLiveRemainder: (session, token) => ipcRenderer.invoke(IPC.liveRemainder, session, token),
   reportLiveTiming: (event) => ipcRenderer.send(IPC.liveTiming, event),
-  livePlaybackBoundary: (id, kind, turn) =>
-    ipcRenderer.send(IPC.livePlaybackBoundary, id, kind, turn),
+  livePlaybackBoundary: (id, kind, turn, transcript) =>
+    ipcRenderer.send(IPC.livePlaybackBoundary, id, kind, turn, transcript),
   agentLiveStop: (id) => ipcRenderer.send(IPC.agentLiveStop, id),
   onAgentLive: (listener) => subscribe<LiveVoiceEvent>(IPC.agentLiveEvent, listener),
   onAgent: (listener) => subscribe<AgentState>(IPC.agentChanged, listener),

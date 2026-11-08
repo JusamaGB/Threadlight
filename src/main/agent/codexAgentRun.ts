@@ -443,8 +443,12 @@ export class CodexAgentRun {
     await this.live.announce(text)
   }
 
-  playbackBoundary(kind: import('../../shared/liveVoice').PlaybackBoundary, turn: string) {
-    this.live?.playbackBoundary(kind, turn)
+  playbackBoundary(
+    kind: import('../../shared/liveVoice').PlaybackBoundary,
+    turn: string,
+    transcript?: string,
+  ) {
+    this.live?.playbackBoundary(kind, turn, transcript)
   }
 
   async readRemaining(token: string): Promise<AgentResult> {
@@ -874,8 +878,10 @@ export class CodexAgentRun {
         if (progress && this.turn === turnId && !this.requests.size)
           this.update({ status: 'working', progress })
       }
-      if (method === 'item/completed')
-        this.live?.completedItem(str(params.turnId) ?? this.turn, params.item)
+      if (method === 'item/completed') {
+        if (!this.requests.size) this.live?.completedCommentary(turnId, params.item)
+        this.live?.completedItem(turnId, params.item)
+      }
       const item = codexAgentItem(params.item, turnId)
       if (item) {
         this.putItem(item)
