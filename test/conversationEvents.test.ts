@@ -1,7 +1,11 @@
 import { DatabaseSync } from 'node:sqlite'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
 import { ConversationEventService } from '../src/main/communication/conversationEvents'
+import { readerCards } from '../src/main/communication/cardHistory'
 import { CommunicationStore } from '../src/main/communication/store'
 import { OwnedRequests } from '../src/main/communication/ownedRequests'
 import { IDLE_AGENT } from '../src/shared/agent'
@@ -69,6 +73,80 @@ function fixture() {
   const project = () => feed.project(owner, snapshot, () => 'UI')
   return { db, store, feed, owner, other, target, snapshot, message, request, project }
 }
+it('reopens two recorded Allows and an independent pending card across the native 100-item history page', () => {
+  const f = fixture(),
+    dir = mkdtempSync(join(tmpdir(), 'tl-card-history-')),
+    file = join(dir, 'history.sqlite')
+  close.push(() => rmSync(dir, { recursive: true, force: true }))
+  const history = new DatabaseSync(file),
+    thread = f.owner.slice(6)
+  history.exec(
+    'CREATE TABLE thread_items(thread_id TEXT,item_id TEXT,rollout_ordinal INTEGER); CREATE TABLE thread_realtime_items(thread_id TEXT,item_id TEXT,item_type TEXT,rollout_ordinal INTEGER)',
+  )
+  const insert = history.prepare('INSERT INTO thread_items VALUES(?,?,?)')
+  insert.run(thread, 'failed-settings', 10)
+  const live = history.prepare(
+    "INSERT INTO thread_realtime_items VALUES(?,?,'transcript_segment',?)",
+  )
+  const requests = [0, 1, 2].map((n) => ({
+    ...f.request,
+    id: randomUUID(),
+    generation: 'g' + n,
+    title: 'update settings',
+  }))
+  for (const [n, request] of requests.entries()) {
+    live.run(thread, 'spoken' + n, 20 + n * 10)
+    live.run('different-thread', 'wrong-speaker', 21 + n * 10)
+    insert.run(thread, 'call' + n, 22 + n * 10)
+    f.feed.register(f.owner, f.owner, undefined, 'call' + n)
+    f.snapshot.nativeRequests = requests.slice(0, n + 1)
+    f.project()
+    if (n < 2) {
+      const message = {
+        ...f.message,
+        id: randomUUID(),
+        rootId: request.id,
+        kind: 'answer' as const,
+        body: 'Response to update settings\n{"action":"allow"}',
+        deliveries: [
+          {
+            ...f.message.deliveries[0]!,
+            generation: request.generation,
+            phase: 'completed' as const,
+          },
+        ],
+      }
+      f.store.transaction(() => f.store.put('message', message, 'Answer received'))
+    }
+  }
+  for (let i = 0; i < 100; i++) insert.run(thread, 'later' + i, 100 + i)
+  const page = (offset: number) =>
+    history
+      .prepare(
+        'SELECT item_id FROM thread_items WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 100 OFFSET ?',
+      )
+      .all(thread, offset)
+      .map((r) => r.item_id)
+  expect(page(0)).not.toContain('call0')
+  expect(page(100)).toEqual(['call2', 'call1', 'call0', 'failed-settings'])
+  history.close()
+  f.snapshot.nativeRequests = [requests[2]!]
+  const open = () => f.feed.project(f.owner, f.snapshot, () => 'Agent', file)
+  const first = open()
+  expect(first.cards.map((c) => [c.anchor, c.afterLiveItem, c.state, c.recordedAnswer])).toEqual([
+    ['call0', 'live:spoken0', 'answered-here', 'Allowed'],
+    ['call1', 'live:spoken1', 'answered-here', 'Allowed'],
+    ['call2', undefined, 'pending', undefined],
+  ])
+  expect(open()).toEqual(first)
+  expect(f.feed.get(f.owner).cards.every((c) => !c.recordedAnswer && !c.afterLiveItem)).toBe(true)
+  expect(f.feed.card(f.owner, first.cards[2]!.id, first.cards[2]!.revision).requestId).toBe(
+    requests[2]!.id,
+  )
+  expect(() => f.feed.card(f.owner, first.cards[0]!.id, first.cards[0]!.revision)).toThrow(
+    /changed/,
+  )
+})
 it('scopes questions to the originating conversation and retains identity across updates', () => {
   const f = fixture()
   f.snapshot.nativeRequests = [f.request]
@@ -107,6 +185,46 @@ it('does not attach an ambiguous native request to one of multiple originating c
   )
   f.snapshot.nativeRequests = [f.request]
   expect(f.project().cards).toEqual([])
+})
+
+it('keeps an originally unplaced card unplaced when a later message becomes current', () => {
+  const f = fixture(),
+    owner = 'codex:' + randomUUID()
+  f.feed.register(owner, f.target)
+  f.snapshot.nativeRequests = [f.request]
+  const read = () => f.feed.project(owner, f.snapshot, () => 'Agent')
+  expect(read().cards[0]?.anchor).toBeUndefined()
+  f.feed.register(owner, f.target, undefined, 'later-code-example')
+  f.snapshot.nativeRequests = []
+  expect(read().cards[0]).toMatchObject({ state: 'unavailable' })
+  expect(read().cards[0]?.anchor).toBeUndefined()
+})
+
+it('shows a historical answer only for a completed response to that exact generation and destination', () => {
+  const f = fixture()
+  f.snapshot.nativeRequests = [f.request]
+  const card = { ...f.project().cards[0]!, state: 'answered-here' }
+  const receipt: CommunicationMessage = {
+    ...f.message,
+    rootId: f.request.id,
+    kind: 'answer',
+    body: 'Response to Which layout?\n{"action":"deny"}',
+    deliveries: [
+      { ...f.message.deliveries[0]!, phase: 'completed', generation: f.request.generation },
+    ],
+  }
+  const answer = (m: CommunicationMessage) =>
+    readerCards('', undefined, [card], [m])[0]!.recordedAnswer
+  expect(answer(receipt)).toBe('Denied')
+  expect(answer({ ...receipt, body: 'Spoken words\n{"action":"allow"}' })).toBeUndefined()
+  for (const patch of [
+    { generation: 'earlier' },
+    { target: f.other },
+    { phase: 'unknown' as const },
+  ])
+    expect(
+      answer({ ...receipt, deliveries: [{ ...receipt.deliveries[0]!, ...patch }] }),
+    ).toBeUndefined()
 })
 it('requires explicit question correlation when conversations have no project subscription', () => {
   const f = fixture()

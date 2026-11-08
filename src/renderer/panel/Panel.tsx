@@ -85,7 +85,12 @@ import { WorkspacePicker } from './WorkspacePicker'
 import { sameFolder, WorkspaceTree } from './WorkspaceTree'
 import { motionMode, SILENT_AUDIO } from '../../shared/motion'
 import { useMotion } from '../hooks/useMotion'
-import { latestSpokenReply, type SpokenReply } from '../../shared/spokenReply'
+import {
+  latestSpokenReply,
+  spokenExample,
+  type SpokenExample,
+  type SpokenReply,
+} from '../../shared/spokenReply'
 import { VoicePresence } from '../motion/VoicePresence'
 import type { AgentClient } from '../lib/agentClient'
 import type { LiveVoicePort } from '../lib/liveVoice'
@@ -1437,6 +1442,10 @@ export function Panel() {
   useEffect(() => window.threadlight.setOpenMicLive(anyOpenMicListening), [anyOpenMicListening])
   const earlierCaptionIds = useRef(new Set<string>())
   const publishedReply = useRef<string | null>(null)
+  const activeExample = useRef<SpokenExample | null>(null)
+  const exampleScope = useRef<string | null>(null)
+  const oldExampleSources = useRef(new Set<string>())
+  const previousItems = useRef<typeof agent.items>([])
   useEffect(() => {
     const active = micLive && gptLive && !voiceDestination && agent.live === 'active'
     if (!active) {
@@ -1444,17 +1453,34 @@ export function Panel() {
         agent.items.flatMap((item) => (item.id?.startsWith('live:') ? [item.id] : [])),
       )
     }
+    const scope = JSON.stringify([agent.conversationId, agent.coachGuideToken])
+    if (!active || exampleScope.current !== scope) {
+      activeExample.current = null
+      const previous = active ? previousItems.current : agent.items
+      oldExampleSources.current = new Set(
+        previous.flatMap((item) =>
+          item.kind === 'agent' && item.id && !item.id.startsWith('live:') ? [item.id] : [],
+        ),
+      )
+      exampleScope.current = scope
+    }
+    previousItems.current = agent.items
     const current =
       active && anyOpenMicListening && settings?.spokenReplyCompanion
         ? latestSpokenReply(agent.items, earlierCaptionIds.current)
         : null
+    const selection =
+      current && !(current.sourceId && oldExampleSources.current.has(current.sourceId))
+        ? spokenExample(activeExample.current, current, replyCodeBlocks(current.source))
+        : null
+    activeExample.current = selection?.example ?? null
     const reply: SpokenReply | null = current && {
       id: current.id,
       captionIds: current.captionIds,
       awaitingLink: current.awaitingLink,
       userItemId: current.userItemId,
       text: current.text,
-      blocks: replyCodeBlocks(current.source),
+      blocks: selection?.blocks ?? [],
     }
     const signature = reply && JSON.stringify(reply)
     if (signature !== publishedReply.current) {
@@ -1468,6 +1494,8 @@ export function Panel() {
     gptLive,
     voiceDestination,
     anyOpenMicListening,
+    agent.conversationId,
+    agent.coachGuideToken,
     settings?.spokenReplyCompanion,
   ])
   useEffect(() => window.threadlight.onStopOpenMic(endCall), [endCall])

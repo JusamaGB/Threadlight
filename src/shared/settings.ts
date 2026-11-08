@@ -3,6 +3,7 @@
 // Settings are controlled through the panel and its settings view.
 
 import { z } from 'zod'
+import { VOICE_PACES } from './voicePace'
 import { DEFAULT_KIMI_SETUP, kimiSetupSchema } from './kimi'
 import { DEFAULT_ENABLED_PROVIDERS, PROVIDERS } from './providers'
 import { chatSource, conversationFilter } from './accountChats'
@@ -90,6 +91,7 @@ export const settingsSchema = z.object({
    * message starts a fresh one (the old one stays on disk). 0: until it is ended by hand.
    */
   spokenReplyCompanion: z.boolean().default(false),
+  agentVoicePace: z.enum(VOICE_PACES).default('normal'),
   agentLifetimeMinutes: z.number().int().min(0).max(1440).default(60),
   /** The model that does the agent's real work (the conversation itself stays on Haiku). */
   agentWorker: z.enum(['opus', 'sonnet']).default('opus'),

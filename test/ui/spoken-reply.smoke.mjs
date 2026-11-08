@@ -104,11 +104,10 @@ export async function checkSpokenReply(page, url) {
   const reply = {
     id: 'caption:one',
     captionIds: ['one'],
-    text: 'Add the prices for tea, coffee and a muffin. This function returns their total, which is 9.',
+    text: 'Each entry is an item name. Use it to look up the price, then print both together.',
     blocks: [],
   }
-  const code =
-    'def receipt_total(prices):\n    return sum(prices)\n\nprint(receipt_total([2, 3, 4]))'
+  const code = 'for entry in order:\n    print(entry, inv[entry])'
   await resetSizes()
   await publish(reply)
   await settle(296, 'open')
@@ -209,6 +208,12 @@ export async function checkSpokenReply(page, url) {
     ),
     false,
   )
+  await publish({
+    ...updated,
+    id: reply.id,
+    blocks: [{ language: 'python', value: 'print(entry, inv[entry])', start: 0 }],
+  })
+  assert.equal(await box.count(), 0, 'late backing code cannot reopen an already dismissed caption')
   await publish({ ...updated, id: 'pending-tail', captionIds: ['tail'], awaitingLink: true })
   assert.equal(await box.count(), 0, 'an unresolved tail cannot reopen the dismissed turn')
   await publish({
@@ -245,6 +250,44 @@ export async function checkSpokenReply(page, url) {
   await publish(null)
   await settle(92, 24)
   assert.equal(await box.count(), 0)
+  const frameDir = process.env.THREADLIGHT_ANIMATION_FRAMES
+  if (frameDir) {
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.mouse.move(330, 320)
+    await page.evaluate(() =>
+      Object.assign(document.querySelector('#root').style, {
+        position: 'absolute',
+        left: '50%',
+        top: '24px',
+        margin: '0',
+        width: 'max-content',
+        transform: 'translateX(-50%)',
+      }),
+    )
+    for (let i = 0; i < 61; i++) {
+      if (i === 4) await publish(reply)
+      if (i === 19) await publish(updated)
+      if (i === 45) await publish(null)
+      if ([4, 13, 20, 30, 37, 44].includes(i)) {
+        const amplitude = [4, 20, 37].includes(i) ? 0.32 : 0
+        await page.evaluate(
+          (level) =>
+            window.proof.emit('onMotion', {
+              mode: 'listening',
+              provider: 'codex',
+              input: { level: 0, low: 0, mid: 0, high: 0 },
+              output: { level, low: level * 0.8, mid: level, high: level * 0.5 },
+            }),
+          amplitude,
+        )
+      }
+      await page.screenshot({
+        path: join(frameDir, 'frame-' + String(i).padStart(3, '0') + '.png'),
+        clip: { x: 0, y: 0, width: 344, height: 256 },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+  }
   await page.evaluate(() => window.proof.emit('onOpenMicLive', false))
   await pill.waitFor({ state: 'detached' })
 }

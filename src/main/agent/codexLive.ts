@@ -1,3 +1,4 @@
+import { VOICE_PACE, type VoicePace } from '../../shared/voicePace'
 import { timing } from '../../shared/liveTiming'
 import { recordLiveTiming } from './liveTiming'
 import { randomUUID } from 'node:crypto'
@@ -91,8 +92,8 @@ export class CodexLive {
     private onReadout?: (pending: { session: string; token: string } | null) => void,
   ) {}
 
-  async start(sdp: string, playbackOnly = false): Promise<string> {
-    const prompt = playbackOnly
+  async start(sdp: string, playbackOnly = false, pace: VoicePace = 'normal'): Promise<string> {
+    const opening = playbackOnly
       ? 'You are the Threadlight voice. Stay silent until a speech request arrives, then read the supplied answer aloud. Do not use tools or start a new conversation.'
       : `${OPENING_INSTRUCTIONS}
 ${SCREEN_HELP}
@@ -100,6 +101,7 @@ ${this.editorCoaching ? 'For help with a pinned file, delegate to this backing A
 ${this.editorCoaching ? COACH_INSTRUCTIONS : ''}
 ${THREAD_READ_INSTRUCTIONS}
 ${communicationInstructions}`
+    const prompt = [opening, VOICE_PACE[pace].instruction].filter(Boolean).join('\n')
     const answer = new Promise<string>((resolve, reject) => {
       this.resolve = resolve
       this.reject = reject

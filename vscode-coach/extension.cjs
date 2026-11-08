@@ -143,8 +143,14 @@ function activate(context) {
       line: p.paused ? undefined : p.steps[p.index].line,
     }
   }
-  function pausePlan() {
-    if (!plan || plan.paused) return
+  function pausePlan(invalidate = false) {
+    if (!plan) return
+    clearTimeout(plan.verifyTimer)
+    if (plan.paused && !invalidate && !plan.refreshRequested && !plan.observedWhilePaused) return
+    plan.observedWhilePaused = false
+    plan.refreshRequested = false
+    plan.resumeSnapshot = undefined
+    plan.verifiedVersion = undefined
     plan.paused = true
     plan.token = randomUUID()
     plan.pending = false
@@ -154,10 +160,48 @@ function activate(context) {
     updateStatus()
     send({ guideEvent: state() })
   }
+  function checkExpectedEdit(p) {
+    clearTimeout(p.verifyTimer)
+    if (!p.watchExpected || !p.paused || p.narratedIndex !== p.index || p.refreshRequested) return
+    const step = p.steps[p.index],
+      doc = p.editor.document
+    if (doc.lineAt(step.line - 1).text !== step.expectedLine) return
+    const token = p.token,
+      version = doc.version,
+      owner = client
+    // Only debounce a proven match. A quiet but incomplete edit never starts this timer.
+    p.verifyTimer = setTimeout(() => {
+      if (
+        p !== plan ||
+        p.token !== token ||
+        p.refreshRequested ||
+        owner !== client ||
+        !client ||
+        client.destroyed ||
+        !ownsWindow() ||
+        !vscode.workspace.isTrusted ||
+        vscode.window.activeTextEditor !== p.editor ||
+        doc.isClosed ||
+        doc.version !== version
+      )
+        return
+      let fresh
+      try {
+        fresh = getContext()
+      } catch {
+        return
+      }
+      if (!fresh.lines.some((line) => line.line === step.line && line.text === step.expectedLine))
+        return
+      p.verifiedVersion = version
+      void transition(token, 'next', 'verified_edit').catch(() => {})
+    }, 180)
+  }
   function clearPlan(outcome = 'cancelled', origin = 'editor') {
     if (!plan) return
     trace.clear()
     const old = plan
+    clearTimeout(old.verifyTimer)
     plan = undefined
     if (vscode.window.visibleTextEditors.includes(old.editor))
       old.editor.setDecorations(decoration, [])
@@ -231,8 +275,10 @@ function activate(context) {
       first: first + 1,
       last: first + lines.length,
     }
-    if (plan?.paused && plan.refreshRequested && plan.editor.document === doc)
-      plan.resumeSnapshot = snapshot.id
+    if (plan?.paused && plan.editor.document === doc) {
+      plan.observedWhilePaused = true
+      if (plan.refreshRequested) plan.resumeSnapshot = snapshot.id
+    }
     return {
       snapshot: snapshot.id,
       file: basename(doc.fileName),
@@ -270,6 +316,10 @@ function activate(context) {
       throw Error('Return to the source file and request fresh coaching.')
     const range = p.editor.document.lineAt(p.steps[p.index].line - 1).range
     p.pending = true
+    const step = p.steps[p.index]
+    p.watchExpected =
+      typeof step.expectedLine === 'string' &&
+      p.editor.document.lineAt(step.line - 1).text !== step.expectedLine
     p.editor.setDecorations(decoration, [range])
     lenses.fire()
     updateStatus()
@@ -300,6 +350,7 @@ function activate(context) {
       return {
         version: context.extension.packageJSON.version,
         actions: coachActions,
+        verifiedGuideEdits: true,
         python: python.describe(),
       }
     if (command.action === 'context') return getContext()
@@ -345,7 +396,14 @@ function activate(context) {
         command.steps.length > 8 ||
         !command.steps.every(
           (step) =>
-            inExcerpt(s, step.line) && typeof step.hint === 'string' && step.hint.length <= 1000,
+            inExcerpt(s, step.line) &&
+            typeof step.hint === 'string' &&
+            step.hint.length <= 1000 &&
+            (step.expectedLine === undefined ||
+              (typeof step.expectedLine === 'string' &&
+                step.expectedLine.length > 0 &&
+                step.expectedLine.length <= 12000 &&
+                !/[\r\n]/.test(step.expectedLine))),
         )
       )
         throw Error('A guide step is outside the observed excerpt.')
@@ -427,15 +485,33 @@ function activate(context) {
       pausePlan()
       throw Error('Return to the guide’s original source tab, then refresh the guide.')
     }
-    if (p.editor.document.version !== p.version) pausePlan()
+    if (!p.paused && p.editor.document.version !== p.version) pausePlan()
     if (p.token !== token) return { ...state(), applied: false }
     if (intent === 'next' && origin === 'voice' && !trace.checked())
       throw Error('Read fresh context and check the learner’s current trace before continuing.')
-    proposals.clear()
-    trace.clear()
+    if (
+      intent === 'finish' &&
+      p.verifiedVersion !== undefined &&
+      (!snapshot || snapshot.id !== p.resumeSnapshot || snapshot.version !== p.verifiedVersion)
+    )
+      throw Error('Read fresh context for the verified edit before finishing.')
+    if (intent === 'next' && origin === 'voice' && !p.paused && p.watchExpected) {
+      return {
+        ...state(),
+        applied: false,
+        instruction: 'Check fresh context: the target line is not complete. Coach this step.',
+      }
+    }
+    if (origin !== 'verified_edit') {
+      proposals.clear()
+      trace.clear()
+    }
     if (intent === 'finish' || (!p.paused && p.index + 1 === p.steps.length)) {
       const outcome =
-        intent === 'finish' && (p.paused || p.index + 1 < p.steps.length) ? 'ended' : 'completed'
+        intent === 'finish' &&
+        ((p.paused && p.verifiedVersion === undefined) || p.index + 1 < p.steps.length)
+          ? 'ended'
+          : 'completed'
       clearPlan(outcome, origin)
       return { ...state(p, outcome), applied: true }
     }
@@ -517,6 +593,7 @@ function activate(context) {
                 value: {
                   version: context.extension.packageJSON.version,
                   actions: coachActions,
+                  verifiedGuideEdits: true,
                 },
               })
               return
@@ -536,8 +613,11 @@ function activate(context) {
               return
             }
             if (msg.narrated) {
-              if (plan && msg.narrated.plan === plan.id && msg.narrated.index === plan.index)
+              if (plan && msg.narrated.plan === plan.id && msg.narrated.index === plan.index) {
                 plan.pending = false
+                plan.narratedIndex = plan.index
+                checkExpectedEdit(plan)
+              }
               return
             }
             try {
@@ -626,7 +706,10 @@ function activate(context) {
     }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       review.clear()
-      if (plan && editor?.document !== plan.editor.document) pausePlan()
+      if (plan && editor !== plan.editor) {
+        plan.watchExpected = false
+        pausePlan(true)
+      }
       if (snapshot && snapshot.editor !== editor) {
         snapshot.selection = undefined
         snapshot.traceEligible = false
@@ -659,9 +742,27 @@ function activate(context) {
         ])
       }
     }),
-    vscode.workspace.onDidChangeTextDocument(({ document }) => {
-      if (plan && document === plan.editor.document && document.version !== plan.version)
-        pausePlan()
+    vscode.workspace.onDidChangeTextDocument(({ document, contentChanges }) => {
+      const p = plan
+      if (
+        !p ||
+        document !== p.editor.document ||
+        document.version === p.version ||
+        !contentChanges.length
+      )
+        return
+      const line = p.steps[p.index].line - 1
+      if (
+        contentChanges.some(
+          (change) =>
+            change.range.start.line !== line ||
+            change.range.end.line !== line ||
+            /[\r\n]/.test(change.text),
+        )
+      )
+        p.watchExpected = false
+      pausePlan()
+      checkExpectedEdit(p)
     }),
   )
 }

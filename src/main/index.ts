@@ -1463,6 +1463,7 @@ async function start(): Promise<void> {
   const regionSpeech = new ScreenReplySpeech(
     join(app.getAppPath(), 'resources', 'screen-reply.ps1'),
     notifyRegion,
+    () => settings.settings.agentVoicePace,
   )
   const screenVoice = new ScreenReplyVoice(
     () => agent.connectCodex(),
@@ -1470,6 +1471,7 @@ async function start(): Promise<void> {
       if (!windows.panel.isDestroyed()) windows.panel.webContents.send(IPC.screenVoiceEvent, event)
     },
     notifyRegion,
+    () => settings.settings.agentVoicePace,
   )
   const outsideHelp = new ScreenRegionHelp({
     available: () => agent.canStartRegion && !spaces?.agent.current.live,

@@ -1,4 +1,5 @@
 import { ConversationEventService } from '../communication/conversationEvents'
+import { codexPaths } from '../sessions/paths'
 import { z } from 'zod'
 import { join } from 'node:path'
 import { backup } from 'node:sqlite'
@@ -215,6 +216,7 @@ export async function startMemory(
           a.owner,
           communication.snapshot(actor),
           (id) => delivery.find(id)?.title ?? id,
+          input.action === 'conversation_feed' ? codexPaths().history : undefined,
         )
         if (input.action === 'conversation_feed') value = feed
         else if (input.action === 'conversation_catchup') {

@@ -73,6 +73,30 @@
   padding: 1px 0;
 }
 
+.voicePaceRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  font-size: 12px;
+}
+.voicePaceRow input {
+  flex: 1;
+  min-width: 36px;
+  max-width: 100px;
+  accent-color: var(--accent);
+}
+.voicePaceRow :is(span, button) {
+  font-size: 11px;
+  color: var(--faint);
+}
+.voicePaceRow button {
+  padding: 1px 3px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
 /* A single-line row only as tall as its control. */
 .rowSlim {
   min-height: 20px;

@@ -23,11 +23,11 @@
   outline-offset: -2px;
 }
 .content {
-  padding: 4px 8px 8px;
+  padding: 0 6px 8px;
 }
 .content p {
   margin: 0;
-  padding-inline: 18px;
+  padding-inline: 16px;
   text-align: center;
   min-height: 18px;
   white-space: pre-wrap;
@@ -46,15 +46,15 @@
 }
 .close {
   position: absolute;
-  top: 0;
-  right: 4px;
+  top: -7px;
+  right: 1px;
   display: grid;
   place-items: center;
   width: 22px;
   height: 22px;
   border-radius: 4px;
   color: var(--muted);
-  background: var(--composer-bg);
+  background: transparent;
 }
 .close:hover {
   color: var(--fg);

@@ -70,6 +70,87 @@ checks: try {
   await panel.locator('[data-card]').waitFor({ state: 'attached' })
   for (const page of pages) page.on('pageerror', (error) => failures.push(error.message))
   const pause = (ms) => new Promise((done) => setTimeout(done, ms))
+  if (process.env.THREADLIGHT_UI_FOCUS === 'spoken-pill-motion') {
+    await panel.evaluate(() => window.threadlight.setOpenMicLive(true))
+    await dot.getByRole('group', { name: 'Microphone is open' }).waitFor()
+    await app.evaluate(() => {
+      const h = globalThis.hoverProof
+      h.move(-200, -200)
+      h.motionFrames = []
+      h.windows.dot.on('resize', () => h.motionFrames.push(h.windows.dot.getBounds()))
+    })
+    const publish = (reply) =>
+      panel.evaluate((reply) => window.threadlight.publishSpokenReply(reply), reply)
+    const size = () => app.evaluate(() => globalThis.hoverProof.windows.dot.getBounds())
+    const frames = () => app.evaluate(() => globalThis.hoverProof.motionFrames.splice(0))
+    await pause(200)
+    const resting = await size()
+    await frames()
+    const long = {
+      id: 'receipt',
+      text: 'The item name is already in the order. Look up its price in inventory.',
+      blocks: [],
+    }
+    await publish(long)
+    await pause(1000)
+    const opened = await size(),
+      entry = await frames()
+    assert.ok(opened.width === 296 && opened.height > resting.height, JSON.stringify(opened))
+    assert.ok(
+      entry.filter((b) => b.width > 92 && b.width < 296 && b.height === resting.height).length >= 3,
+      JSON.stringify(entry),
+    )
+    assert.ok(
+      entry.every((b) => b.height === resting.height || b.width === 296),
+      JSON.stringify(entry),
+    )
+    await publish({
+      ...long,
+      text: long.text + ' Print the item name and its price on the same line.',
+      blocks: [
+        {
+          language: 'python',
+          start: 1,
+          value: 'for entry in order:\n    print(entry, inv[entry])',
+        },
+      ],
+    })
+    await pause(900)
+    const streamed = await size(),
+      growing = await frames()
+    assert.ok(
+      streamed.height > opened.height &&
+        growing.filter((b) => b.height > opened.height && b.height < streamed.height).length >= 3,
+      JSON.stringify(growing),
+    )
+    await publish(null)
+    await pause(1000)
+    const closed = await size(),
+      exit = await frames()
+    assert.equal(closed.height, resting.height)
+    assert.equal(closed.width, 92)
+    assert.ok(
+      exit.every((b) => b.width === 296 || b.height === resting.height),
+      JSON.stringify(exit),
+    )
+    assert.ok(
+      exit.filter((b) => b.height > resting.height && b.height < streamed.height).length >= 3,
+    )
+    assert.ok(exit.filter((b) => b.width > 92 && b.width < 296).length >= 3)
+    assert.deepEqual(failures, [])
+    console.log(
+      'PASS native pill resize samples:',
+      JSON.stringify({
+        open: entry.length,
+        stream: growing.length,
+        close: exit.length,
+        opened,
+        streamed,
+        closed,
+      }),
+    )
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'live-hover-handoff') {
     await app.evaluate(({ screen }) => {
       const h = globalThis.hoverProof

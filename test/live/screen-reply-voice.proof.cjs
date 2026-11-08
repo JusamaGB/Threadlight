@@ -1,4 +1,4 @@
-/* global window, RTCPeerConnection */
+/* global window, RTCPeerConnection, AudioContext, MediaStream */
 // Opt-in. Uses the existing Codex sign-in, an ephemeral thread and muted Chrome output.
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -15,6 +15,12 @@ const { ScreenReplyVoice } = require('../../src/main/agent/screenReplyVoice.ts')
 async function run() {
   if (process.env.THREADLIGHT_LIVE_SMOKE !== '1')
     return console.log('Skipped signed-in speaker check.')
+  const pace = process.env.THREADLIGHT_TEST_VOICE_PACE || 'normal'
+  const measure = !!process.env.THREADLIGHT_TEST_VOICE_PACE
+  const { VOICE_PACES } = require('../../src/shared/voicePace.ts')
+  assert.ok(VOICE_PACES.includes(pace))
+  const passage =
+    'The amber lantern is ready. Look at the first line of the function. Now follow the value down to the return statement. Each step uses the result of the previous step. Which line would you like to look at next?'
   const { chromium } = require(process.env.THREADLIGHT_PLAYWRIGHT || 'playwright')
   const browser = await chromium.launch({
     executablePath: process.env.THREADLIGHT_CHROMIUM,
@@ -45,6 +51,7 @@ async function run() {
       (error) => {
         failure = error
       },
+      () => pace,
     )
     await page.exposeFunction('command', async (id, action, sdp) => {
       if (action === 'offer') assert.match(sdp, /a=sendrecv/)
@@ -56,7 +63,7 @@ async function run() {
     await page.exposeFunction('transcript', (t) => {
       transcript = t
     })
-    await page.evaluate(() => {
+    await page.evaluate((measure) => {
       window.exports = {}
       window.micRequests = 0
       navigator.mediaDevices.getUserMedia = async () => {
@@ -65,6 +72,28 @@ async function run() {
       }
       const create = RTCPeerConnection.prototype.createDataChannel
       RTCPeerConnection.prototype.createDataChannel = function (...args) {
+        if (measure)
+          this.addEventListener(
+            'track',
+            ({ track }) => {
+              if (track.kind !== 'audio') return
+              const clock = new AudioContext()
+              const source = clock.createMediaStreamSource(new MediaStream([track]))
+              const analyser = clock.createAnalyser()
+              analyser.fftSize = 512
+              source.connect(analyser)
+              const samples = new Float32Array(analyser.fftSize)
+              void clock.resume()
+              window.measureTimer = setInterval(() => {
+                analyser.getFloatTimeDomainData(samples)
+                if (samples.some((value) => Math.abs(value) > 0.005)) {
+                  window.firstSound ??= clock.currentTime
+                  window.lastSound = clock.currentTime
+                }
+              }, 10)
+            },
+            { once: true },
+          )
         const channel = create.apply(this, args)
         channel.addEventListener('message', ({ data }) => {
           const e = JSON.parse(data)
@@ -73,7 +102,7 @@ async function run() {
         })
         return channel
       }
-    })
+    }, measure)
     await page.addScriptTag({
       content: transpile(path.resolve(__dirname, '../../src/renderer/lib/screenReplyPlayback.ts')),
     })
@@ -86,7 +115,9 @@ async function run() {
         screenVoiceCommand: window.command,
       }),
     )
-    service.speak('The amber lantern is ready. Which window should we look at next?')
+    service.speak(
+      measure ? passage : 'The amber lantern is ready. Which window should we look at next?',
+    )
     const deadline = Date.now() + 75000
     while (!failure && !finished && Date.now() < deadline)
       await new Promise((r) => setTimeout(r, 250))
@@ -95,6 +126,16 @@ async function run() {
     assert.match(transcript, /amber lantern/i)
     assert.match(transcript, /next/i)
     assert.equal(await page.evaluate(() => window.micRequests), 0)
+    if (measure) {
+      const seconds = await page.evaluate(() => {
+        clearInterval(window.measureTimer)
+        return window.lastSound - window.firstSound
+      })
+      const words = (value) => value.toLowerCase().match(/[a-z]+/g)
+      assert.deepEqual(words(transcript), words(passage))
+      assert.ok(seconds > 2)
+      console.log(JSON.stringify({ pace, decodedSpeechSpanSeconds: seconds }))
+    }
     console.log(
       'PASS signed-in GPT voice, expected spoken question, output audio drained, zero mic requests',
     )

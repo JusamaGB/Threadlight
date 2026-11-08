@@ -1,15 +1,9 @@
 import type { TalkState } from '../../shared/ipc'
 import type { Provider } from '../../shared/types'
 import { en } from '../i18n/en'
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { IDLE_MOTION, type MotionSnapshot } from '../../shared/motion'
+import { usePillSize } from './usePillSize'
 import { useDotDrag } from '../hooks/useDotDrag'
 import { SpokenReplyBody, usePillReply } from './SpokenReply'
 import { ContextMenu } from '../panel/ContextMenu'
@@ -163,27 +157,7 @@ function LiveMicPill({ micLevel, motion }: { micLevel: number; motion: MotionSna
       previous.width === width && previous.height === height ? previous : { width, height },
     )
   }, [])
-  const [renderedWidth, setRenderedWidth] = useState(92)
-  useLayoutEffect(() => {
-    const el = pill.current
-    if (!el || menu) return
-    const size = () => {
-      const { width, height } = el.getBoundingClientRect()
-      setRenderedWidth(width)
-      window.threadlight.setSpokenReplySize(width, height)
-    }
-    size()
-    const observer = new ResizeObserver(size)
-    observer.observe(el)
-    const restoreSize = () => {
-      if (!document.hidden) size()
-    }
-    document.addEventListener('visibilitychange', restoreSize)
-    return () => {
-      observer.disconnect()
-      document.removeEventListener('visibilitychange', restoreSize)
-    }
-  }, [menu])
+  usePillSize(pill, body, expanded, !!menu)
   const closeMenu = useCallback(() => {
     request.current++
     menuPending.current = false
@@ -224,7 +198,6 @@ function LiveMicPill({ micLevel, motion }: { micLevel: number; motion: MotionSna
         ref={pill}
         className={styles.micPill}
         data-unfolded={expanded || undefined}
-        data-full-width={Math.abs(renderedWidth - body.width) < 0.5 || undefined}
         data-menu={!!menu || undefined}
         data-agent-working={motion.agentWorking || undefined}
         data-provider={motion.provider}
@@ -233,8 +206,6 @@ function LiveMicPill({ micLevel, motion }: { micLevel: number; motion: MotionSna
           {
             left: menu?.x,
             top: menu?.y,
-            '--reply-height': body.height + 'px',
-            '--reply-width': body.width + 'px',
             '--speech-level': Math.min(1, motion.output.level * 3),
           } as CSSProperties
         }

@@ -74,7 +74,9 @@ function Card({
       <div className={styles.cardMeta}>
         <span>{provider(card.source)}</span>
         {card.request && card.title !== card.request.title && <span>{card.title}</span>}
-        <span className={styles.state}>{historical ? 'Earlier' : stateLabel(card.state)}</span>
+        <span className={styles.state}>
+          {historical && card.state === 'pending' ? 'Earlier' : stateLabel(card.state)}
+        </span>
       </div>
       {card.state === 'pending' && !historical && card.request ? (
         <NativeRequest
@@ -101,6 +103,7 @@ function Card({
       ) : card.body !== (card.request?.title ?? card.title) ? (
         <AgentMessageContent text={card.body} />
       ) : null}
+      {card.recordedAnswer && <p style={{ whiteSpace: 'pre-wrap' }}>{card.recordedAnswer}</p>}
       <details className={styles.cardDetails}>
         <summary>Details</summary>
         <p>
@@ -189,18 +192,33 @@ export function ConversationTimeline({
   }, [owner])
   const cards = feed?.owner === owner ? feed.cards : []
   const pendingSpeech = cards.filter((card) => card.speech === 'pending').length
-  const rows = agentTranscript(items, cards, historical)
+  const visible = new Set(items.map((item, index) => item.id ?? 'line:' + index))
+  const anchored: ConversationCard[] = [],
+    pending: ConversationCard[] = [],
+    saved: ConversationCard[] = []
+  for (const card of cards) {
+    if (!historical && card.state === 'pending' && (card.request || card.question))
+      pending.push(card)
+    else if (card.anchor && visible.has(card.anchor)) anchored.push(card)
+    else if (card.afterLiveItem && visible.has(card.afterLiveItem))
+      anchored.push({ ...card, anchor: card.afterLiveItem })
+    else saved.push(card)
+  }
+  // Several off-page decisions may share the same surviving transcript segment.
+  anchored.sort((a, b) => a.at - b.at)
+  saved.sort((a, b) => a.at - b.at)
+  const renderCard = (card: ConversationCard) => (
+    <Card
+      key={'card:' + card.id}
+      card={card}
+      owner={owner ?? 'new'}
+      historical={historical}
+      target={target}
+    />
+  )
+  const rows = agentTranscript(items, anchored, historical)
   const content = rows.map((row) => {
-    if (row.kind === 'card')
-      return (
-        <Card
-          key={row.key}
-          card={row.card}
-          owner={owner ?? 'new'}
-          historical={historical}
-          target={target}
-        />
-      )
+    if (row.kind === 'card') return renderCard(row.card)
     if (row.kind === 'activity')
       return (
         <ActivityDisclosure key={row.key} label={row.items.at(-1)!.text} active={false}>
@@ -209,6 +227,7 @@ export function ConversationTimeline({
       )
     return <Fragment key={'message:' + row.key}>{lines([row.item], row.key)}</Fragment>
   })
+  content.push(...pending.map(renderCard))
   content.push(<Fragment key="tail">{tail}</Fragment>)
   const selectedText = () => {
     const selection = window.getSelection()
@@ -265,6 +284,12 @@ export function ConversationTimeline({
             </button>
           </Tip>
         </div>
+      )}
+      {saved.length > 0 && (
+        <details className={styles.cardDetails}>
+          <summary>Saved cards ({saved.length})</summary>
+          {saved.map(renderCard)}
+        </details>
       )}
       {content}
       {copyMenu && (

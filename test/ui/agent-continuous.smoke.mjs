@@ -126,10 +126,11 @@ export async function checkAgentContinuous(page, capture) {
         }
       if (input.action === 'conversation_answer') {
         window.proof.calls.push(['group-answer', input.arguments])
-        window.proof.groupedCards = window.proof.groupedCards.map((c) => ({
-          ...c,
-          state: 'answered-here',
-        }))
+        window.proof.groupedCards = window.proof.groupedCards.map((c) =>
+          c.id === input.arguments.cardId
+            ? { ...c, state: 'answered-here', recordedAnswer: 'Allowed' }
+            : c,
+        )
         window.proof.emit('onCommunication')
         return { ok: true }
       }
@@ -150,7 +151,14 @@ export async function checkAgentContinuous(page, capture) {
     window.threadlight.agentReadPage = async (_id, cursor) =>
       cursor
         ? {
-            items: [{ id: 'previous', kind: 'you', text: 'Older historical request' }],
+            items: [
+              { id: 'previous', kind: 'you', text: 'Older historical request' },
+              ...[1, 2, 3].map((n) => ({
+                id: 'settings-' + n,
+                kind: 'step',
+                text: 'Update settings ' + n,
+              })),
+            ],
             cursor: null,
           }
         : {
@@ -527,7 +535,8 @@ export async function checkAgentContinuous(page, capture) {
         state: 'pending',
         title: 'Start Perplexity chat',
         body: 'Opening message',
-        anchor: 'a1',
+        anchor: 'pending-approval-on-earlier-page',
+        afterLiveItem: 'live:original',
         request: {
           id: 'request',
           generation: 'one',
@@ -543,14 +552,41 @@ export async function checkAgentContinuous(page, capture) {
         },
       },
     ]
+    for (const n of [1, 2, 3]) {
+      const card = window.proof.groupedCards[0]
+      window.proof.groupedCards.push({
+        ...card,
+        id: 'old-settings-' + n,
+        anchor: 'settings-' + n,
+        afterLiveItem: n === 1 ? 'live:original' : undefined,
+        state: 'answered-here',
+        recordedAnswer: 'Allowed',
+        request: { ...card.request, id: 'old-request-' + n, title: 'Update settings ' + n },
+      })
+    }
     window.proof.emit('onCommunication')
   })
   await first.getByRole('button', { name: 'Allow once', exact: true }).waitFor()
+  const follows = async (before, after) =>
+    chat.evaluate(
+      (el, [a, b]) =>
+        !!(
+          el.querySelector(a).compareDocumentPosition(el.querySelector(b)) &
+          window.Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+      [before, after],
+    )
+  assert.ok(await follows('[data-message-id="a2"]', '[data-card-id="group-decision"]'))
+  assert.ok(await follows('[data-card-id="old-settings-1"]', '[data-message-id="a2"]'))
+  assert.equal(await first.getByText('Saved cards (2)', { exact: true }).count(), 1)
+  await page.evaluate(() => window.proof.emit('onCommunication'))
+  assert.equal(await first.locator('[data-card-id^="old-settings-"]').count(), 3)
   assert.equal(
-    await chat
-      .locator('[data-card-id="group-decision"]')
-      .evaluate((el) => el.previousElementSibling.dataset.messageId),
-    'a1',
+    await first
+      .locator('[data-card-id^="old-settings-"] button')
+      .filter({ hasText: 'Allow once' })
+      .count(),
+    0,
   )
   const linePosition = () =>
     reader.evaluate(
@@ -573,7 +609,10 @@ export async function checkAgentContinuous(page, capture) {
     ),
     { action: 'allow' },
   )
-  await first.locator('[data-card-state="answered-here"]').waitFor({ state: 'attached' })
+  await first
+    .locator('[data-card-id="group-decision"][data-card-state="answered-here"]')
+    .waitFor({ state: 'attached' })
+  assert.ok(await follows('[data-card-id="group-decision"]', '[data-message-id="a2"]'))
   // New turns and partial replies leave the preceding messages accessible.
   await page.evaluate(() =>
     window.proof.agent({
@@ -679,7 +718,9 @@ export async function checkAgentContinuous(page, capture) {
   await capture('agent-continuous-reply')
   // Historical pending cards remain readable but cannot answer an old request.
   await page.evaluate(() => {
-    window.proof.groupedCards = window.proof.groupedCards.map((c) => ({ ...c, state: 'pending' }))
+    window.proof.groupedCards = window.proof.groupedCards.map((c) =>
+      c.id === 'group-decision' ? { ...c, state: 'pending', recordedAnswer: undefined } : c,
+    )
     window.proof.emit('onCommunication')
   })
   await page.getByRole('button', { name: 'Agent settings', exact: true }).click()
@@ -703,6 +744,19 @@ export async function checkAgentContinuous(page, capture) {
   assert.ok(await historicalRecords.first().isVisible())
   await chat.getByRole('button', { name: 'Load earlier messages' }).click()
   await chat.getByText('Older historical request', { exact: true }).waitFor()
+  assert.equal(await chat.getByText('Saved cards (2)', { exact: true }).count(), 0)
+  assert.equal(await chat.locator('[data-card-id^="old-settings-"]').count(), 3)
+  for (const n of [1, 2, 3]) {
+    const card = chat.locator(`[data-card-id="old-settings-${n}"]`)
+    assert.equal(await card.getByText('Allowed', { exact: true }).count(), 1)
+    assert.ok(
+      await card.evaluate(
+        (el, n) => el.previousElementSibling?.textContent.includes('Update settings ' + n),
+        n,
+      ),
+    )
+  }
+  assert.ok(await follows('[data-card-id="old-settings-3"]', '[data-message-id="a1"]'))
   assert.ok(await historicalRecords.first().isVisible())
   assert.equal(await chat.locator('[data-agent-turn]').count(), 0)
   await chat.getByRole('button', { name: 'Back', exact: true }).click()
@@ -782,6 +836,6 @@ export async function checkAgentContinuous(page, capture) {
     saved + 'px',
   )
   console.log(
-    'PASS: persistent pointer/keyboard footer sizing in both anchor directions with pins and bounded space, continuous messages, copyable Audio received disclosure, recent diamond, anchored pending decisions, source line retained on insertion, rich safe replies, code/selection copy, draft retention, historical safety and source routing; no live provider sends.',
+    'PASS: persistent footer sizing, continuous messages, three answered cards in history, off-page pending approval, older-page placement, source line and draft retention, historical safety and source routing; no live provider sends.',
   )
 }

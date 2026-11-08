@@ -52,6 +52,97 @@ async function checkGuideLifecycle({ coach, session, descriptor, EditorCoach }) 
       ...extra,
     })
   try {
+    // Reproduce the receipt walkthrough using only a disposable editor.
+    const beforeCheck = spoken.length
+    const target = 'for entry in order:'
+    const replaceLine = (text) => editor.edit((edit) => edit.replace(doc.lineAt(0).range, text))
+    await replaceLine('for enrty in order')
+    const exercise = () =>
+      guide({
+        steps: [
+          {
+            line: 1,
+            hint: 'Spell entry and end with a colon.',
+            explanation: 'Check the loop header.',
+            expectedLine: target,
+          },
+        ],
+      })
+    await exercise()
+    await replaceLine('for enrty in order:')
+    await delay(260)
+    assert.equal((await status()).status, 'paused')
+    assert.equal(
+      receipts.some((e) => e.origin === 'verified_edit'),
+      false,
+    )
+    assert.equal(spoken.length, beforeCheck + 1)
+    // A transient exact match must not complete if typing continues.
+    await replaceLine(target)
+    await replaceLine('for entry in order')
+    await delay(240)
+    assert.equal(
+      receipts.some((e) => e.origin === 'verified_edit'),
+      false,
+    )
+    await replaceLine(target)
+    await waitFor(() => receipts.some((e) => e.origin === 'verified_edit'))
+    const verified = receipts.find((e) => e.origin === 'verified_edit')
+    assert.equal(verified.status, 'refresh_requested')
+    await assert.rejects(
+      run({ action: 'progress', intent: 'finish', token: verified.token }),
+      /fresh context/,
+    )
+    const checkedHeader = await run({ action: 'context' })
+    assert.equal(checkedHeader.lines[0].text, target)
+    await replaceLine('for enrty in order:')
+    assert.equal(
+      (await run({ action: 'progress', intent: 'finish', token: verified.token })).applied,
+      false,
+    )
+    await assert.rejects(
+      run({ action: 'guide', resume: verified.token, snapshot: checkedHeader.snapshot, steps }),
+      /refresh|changed/i,
+    )
+    // A natural done/check request follows the explicit fresh-context and token path.
+    const current = await status()
+    await run({ action: 'context' })
+    const recheck = await run({ action: 'progress', intent: 'next', token: current.token })
+    await guide({
+      resume: recheck.token,
+      steps: [
+        { line: 1, hint: 'Check the spelling.', explanation: 'Check entry.', expectedLine: target },
+      ],
+    })
+    await replaceLine(target)
+    const ending = await status()
+    await run({ action: 'progress', intent: 'cancel', token: ending.token })
+    await delay(260)
+    assert.equal(
+      receipts.filter((e) => e.origin === 'verified_edit').length,
+      1,
+      'cancel invalidates pending check',
+    )
+    await replaceLine('for enrty in order')
+    await exercise()
+    await replaceLine('for enrty in order:')
+    await replaceLine(target)
+    await waitFor(() => receipts.filter((e) => e.origin === 'verified_edit').length === 2)
+    const secondVerified = await status()
+    const confirmed = await run({ action: 'context' })
+    assert.equal(confirmed.lines[0].text, target)
+    const nextGuide = await run({
+      action: 'guide',
+      resume: secondVerified.token,
+      snapshot: confirmed.snapshot,
+      steps: [{ line: 3, hint: 'Print the values.', explanation: 'Now print the values.' }],
+    })
+    assert.equal(nextGuide.line, 3)
+    assert.equal(spoken.at(-1), 'Now print the values.')
+    await run({ action: 'progress', intent: 'finish', token: nextGuide.token })
+    await replaceLine('a = 1')
+    receipts.length = 0
+    spoken.length = 0
     const first = await guide()
     const firstLens = await lens()
     assert.equal(first.status, 'shown')
@@ -166,7 +257,7 @@ async function checkGuideLifecycle({ coach, session, descriptor, EditorCoach }) 
     bridge.close()
     await waitFor(() => receipts.some((e) => e.status === 'disconnected'))
     console.log(
-      'PASS real guide voice-command transition, stale click/token replay, final click acknowledgement, edit during speech, fresh-source refresh, file switch, cancellation and disconnection.',
+      'PASS real exact-line completion, quiet partial/typo edits, fresh-context continuation, stale and cancelled match protection, guide voice-command transition, stale click/token replay, final click acknowledgement, edit during speech, fresh-source refresh, file switch, cancellation and disconnection.',
     )
   } finally {
     bridge.close()

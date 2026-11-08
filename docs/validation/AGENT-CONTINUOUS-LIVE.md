@@ -81,3 +81,23 @@ The recent Agent SVG follows the concave four-point silhouette from the left hea
 The isolated Settings view showed the HAAIL attribution and supplied version. Agent and Smart Thread code cards exposed the keyboard-accessible two-card Copy icon. The pinned-code fixture copied the older visible revision and announced a simulated clipboard failure.
 
 The primary app restarted at 17:34:54 local time after the 17:32:08 combined build. All 33 existing conversation IDs and their previously recorded live items were present afterward. Desktop control remained released during this verification.
+
+## Answered Agent cards, November 8
+
+Read-only inspection of the saved coaching conversation found three native
+settings calls. The first failed and has no matching approval. The other two
+had completed Allow receipts. Their saved anchors were native items 173 and
+341 in rollout order, both outside the newest 100-item page.
+
+Replaying that page put both answered cards in the last two of 229 displayed
+rows. The corrected reader places them beside earlier saved Live segments while
+the native items are off-page. When those items are loaded, the cards follow the
+original calls. The renderer shows an unresolved approval below the latest
+message and keeps historical views read-only. If neither an exact anchor nor a
+known preceding Live segment is available, the card is readable in **Saved cards**.
+
+The isolated renderer exercised three answered cards, a separate pending
+approval, repeated feed refreshes, reopening, and loading the earlier page.
+Each answer appeared once after its original activity when that page was
+available. The focused event, transcript, native-question and dismissal suites
+passed all 38 tests. The regular app was not restarted for this check.

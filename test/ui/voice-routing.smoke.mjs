@@ -321,6 +321,110 @@ export async function checkVoiceRouting(page) {
   const spoken = await page.evaluate(() => window.proof.spokenReply)
   assert.equal(spoken.blocks[0].value, 'print(42)')
   assert.ok(!JSON.stringify(spoken).includes('Unspoken explanation'))
+  // Real receipt regression: the caption existed before its fenced backing item was available.
+  await page.evaluate(() => {
+    const user = {
+      kind: 'you',
+      id: 'live:receipt-request',
+      text: 'Show me the Python',
+      voiceDelegationIds: [],
+    }
+    const request = {
+      kind: 'you',
+      id: 'receipt-envelope',
+      backingTurnId: 'receipt-turn',
+      text: 'Show me the Python',
+    }
+    const caption = {
+      kind: 'agent',
+      id: 'live:receipt-caption',
+      liveAfter: 'receipt-answer',
+      liveComplete: true,
+      text: 'Here it is: order contains names like "apple". The loop puts each name into entry, then inv[entry] looks up its price.',
+    }
+    window.proof.receiptItems = [user, request, caption]
+    window.proof.agent({ coachGuideToken: 'receipt-guide', items: window.proof.receiptItems })
+  })
+  await page.waitForFunction(() => window.proof.spokenReply?.id === 'live:receipt-caption')
+  assert.equal(await page.evaluate(() => window.proof.spokenReply.blocks.length), 0)
+  await page.evaluate(() => {
+    const [user, request, caption] = window.proof.receiptItems
+    const py = 'for entry in order:\n    print(entry, inv[entry])'
+    const fence = String.fromCharCode(96).repeat(3)
+    const answer = {
+      kind: 'agent',
+      id: 'receipt-answer',
+      backingTurnId: 'receipt-turn',
+      timingSession: 'test-call',
+      text:
+        'Here it is:\n\n' +
+        fence +
+        'python\n' +
+        py +
+        '\n' +
+        fence +
+        '\n\norder contains names like "apple". The loop puts each name into entry, then inv[entry] looks up its price.',
+    }
+    window.proof.receiptItems = [user, request, answer, caption]
+    window.proof.agent({ items: window.proof.receiptItems })
+  })
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)),
+      ),
+  )
+  assert.equal(await page.evaluate(() => window.proof.spokenReply.blocks.length), 0)
+  await page.evaluate(() => {
+    const [user, ...rest] = window.proof.receiptItems
+    window.proof.receiptItems = [{ ...user, voiceDelegationIds: ['receipt-envelope'] }, ...rest]
+    window.proof.agent({ items: window.proof.receiptItems })
+  })
+  await page.waitForFunction(() =>
+    window.proof.spokenReply.blocks[0]?.value.includes('print(entry, inv[entry])'),
+  )
+  await page.evaluate(() => {
+    const answer = {
+      kind: 'agent',
+      id: 'receipt-followup',
+      timingSession: 'test-call',
+      backingTurnId: 'followup-turn',
+      text:
+        'The print expression ' +
+        String.fromCharCode(96) +
+        'print(entry, inv[entry])' +
+        String.fromCharCode(96) +
+        ' is correct.',
+    }
+    const caption = {
+      kind: 'agent',
+      id: 'live:followup',
+      text: 'The print expression is correct.',
+      liveComplete: true,
+      narrationOf: { sessionId: 'test-call', turnId: 'followup-turn', itemId: answer.id },
+    }
+    window.proof.followupItems = [...window.proof.receiptItems, answer, caption]
+    window.proof.agent({ items: [...window.proof.receiptItems, caption] })
+  })
+  await page.waitForFunction(
+    () =>
+      window.proof.spokenReply?.id.includes('receipt-followup') &&
+      window.proof.spokenReply.blocks.length === 0,
+  )
+  await page.evaluate(() => {
+    window.proof.agent({ items: window.proof.followupItems })
+  })
+  await page.waitForFunction(
+    () =>
+      window.proof.spokenReply?.text === 'The print expression is correct.' &&
+      window.proof.spokenReply.blocks.length === 1,
+  )
+  await page.evaluate(() => window.proof.agent({ coachGuideToken: 'invalidated-receipt-guide' }))
+  await page.waitForFunction(
+    () =>
+      window.proof.spokenReply?.text === 'The print expression is correct.' &&
+      window.proof.spokenReply.blocks.length === 0,
+  )
   await page.evaluate(async (state) => {
     await window.threadlight.updateSettings({ spokenReplyCompanion: false })
     window.proof.agent({ live: state.live, items: state.items })

@@ -1,3 +1,4 @@
+import { VOICE_PACE, type VoicePace } from '../shared/voicePace'
 import { randomUUID } from 'node:crypto'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { AgentState } from '../shared/agent'
@@ -12,6 +13,7 @@ export class ScreenReplySpeech {
   constructor(
     private script: string,
     private onError: (message: string) => void,
+    private pace: () => VoicePace = () => 'normal',
   ) {}
   stop() {
     this.replies = []
@@ -29,7 +31,16 @@ export class ScreenReplySpeech {
     if (!text) return
     const child = spawn(
       windowsPowerShell(),
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', this.script],
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        this.script,
+        '-Rate',
+        String(VOICE_PACE[this.pace()].windowsRate),
+      ],
       { windowsHide: true, stdio: 'pipe' },
     )
     this.child = child

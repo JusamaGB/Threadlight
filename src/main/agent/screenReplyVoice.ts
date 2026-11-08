@@ -1,3 +1,4 @@
+import type { VoicePace } from '../../shared/voicePace'
 import { randomUUID } from 'node:crypto'
 import { validVoiceOffer, type ScreenVoiceEvent } from '../../shared/liveVoice'
 import { isObject, str } from '../sessions/json'
@@ -22,6 +23,7 @@ export class ScreenReplyVoice {
     private connect: () => Promise<CodexTransport>,
     private emit: (event: ScreenVoiceEvent) => void,
     private notify: (message: string) => void,
+    private pace: () => VoicePace = () => 'normal',
   ) {}
 
   speak(text: string) {
@@ -69,7 +71,7 @@ export class ScreenReplyVoice {
         client.onEvent = (method, params) => {
           job.live?.event(method, params)
         }
-        return { ok: true, sdp: await job.live.start(sdp, true) } as const
+        return { ok: true, sdp: await job.live.start(sdp, true, this.pace()) } as const
       }
       if (action === 'speak' && job.live && !job.speaking) {
         job.speaking = true

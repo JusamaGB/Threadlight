@@ -1,4 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
+import { createInterface } from 'node:readline'
+import { EditorCoach } from '../src/main/editorCoach'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -1175,13 +1178,170 @@ describe('native Live voice', () => {
       ])
     }
     expect(fake.calls.some((c) => c.method === 'turn/start')).toBe(false)
+    const speechCalls = () =>
+      fake.calls.filter(
+        (c) =>
+          c.method === 'thread/realtime/appendText' || c.method === 'thread/realtime/appendSpeech',
+      ).length
+    const beforeEdit = speechCalls()
+    await run.coachEvent({ ...event, status: 'paused' })
+    expect(speechCalls()).toBe(beforeEdit)
     await run.coachEvent({ ...event, status: 'refresh_requested', origin: 'voice' })
     expect(fake.calls.some((c) => c.method === 'turn/start')).toBe(false)
     await run.coachEvent({ ...event, status: 'refresh_requested' })
     expect(fake.calls.filter((c) => c.method === 'turn/start')).toHaveLength(1)
+    const beforeVerified = speechCalls()
+    await run.coachEvent({ ...event, status: 'refresh_requested', origin: 'verified_edit' })
+    expect(speechCalls()).toBe(beforeVerified)
+    expect(fake.calls.filter((c) => c.method === 'turn/steer').at(-1)?.params.input).toEqual([
+      expect.objectContaining({
+        text: expect.stringContaining('editor observed the exact target line'),
+      }),
+    ])
     await run.stopLive()
     await expect(run.coachEvent(event)).rejects.toThrow('Live has closed')
     await run.close()
+  })
+
+  it.each(['paused', 'cancelled', 'shown', 'source', 'caption'] as const)(
+    'checks an in-flight verified refresh after a %s event',
+    async (status) => {
+      const { run, fake } = await fixture()
+      connect(fake)
+      await run.startLive(voiceId, offer)
+      const event = {
+        guideId: crypto.randomUUID(),
+        plan: crypto.randomUUID(),
+        token: crypto.randomUUID(),
+        step: 1,
+        total: 2,
+        goal: 'Receipt',
+        hint: 'Fix the loop',
+      }
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      fake.handler = async (method) => {
+        if (method === 'thread/inject_items') {
+          fake.handler = undefined
+          await gate
+        }
+        return undefined
+      }
+      let currentSource = true
+      const pending = run.coachEvent({
+        ...event,
+        status: 'refresh_requested',
+        origin: 'verified_edit',
+        isCurrentSource: () => currentSource,
+      })
+      if (status === 'source') currentSource = false
+      else if (status === 'caption') {
+        fake.emit('thread/realtime/item/completed', {
+          item: {
+            type: 'transcriptSegment',
+            role: 'user',
+            id: 'ordinary-user-caption',
+            text: 'I see the line.',
+          },
+        })
+        expect(run.current.items.some((item) => item.text === 'I see the line.')).toBe(true)
+      } else
+        await run.coachEvent({
+          ...event,
+          status,
+          origin: 'editor',
+          token: crypto.randomUUID(),
+          guideId: status === 'shown' ? crypto.randomUUID() : event.guideId,
+        })
+      release()
+      await pending
+      expect(
+        fake.calls.filter((c) => c.method === 'turn/start' || c.method === 'turn/steer'),
+      ).toHaveLength(status === 'caption' ? 1 : 0)
+      await run.close()
+    },
+  )
+
+  it('invalidates a verified dispatch while its editor notification still owns the delivery queue', async () => {
+    const { run, fake, folder } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    const address = crypto.randomUUID()
+    const file = join(folder, 'editor.json')
+    await writeFile(file, JSON.stringify({ id: address, token: 'a'.repeat(64) }))
+    let send!: (value: unknown) => void
+    let plan = ''
+    const token = crypto.randomUUID()
+    const server = createServer((socket) => {
+      send = (value) => {
+        socket.write(JSON.stringify(value) + '\n')
+      }
+      createInterface({ input: socket }).on('line', (line) => {
+        const { id, command } = JSON.parse(line)
+        if (!command) return
+        if (command.action === 'hello')
+          send({ id, value: { actions: ['progress'], verifiedGuideEdits: true } })
+        if (command.action === 'guide') {
+          plan = command.plan
+          send({ id, value: plan })
+        }
+        if (command.action === 'guide_status') send({ id, value: { token } })
+      })
+    })
+    const pipe = '\\\\.\\pipe\\threadlight-coach-' + address
+    await new Promise<void>((resolve) => server.listen(pipe, resolve))
+    const bridge = new EditorCoach(
+      () => 'owner',
+      async () => {},
+      file,
+      (_id, event) => run.coachEvent(event),
+    )
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    try {
+      await bridge.run('owner', {
+        action: 'guide',
+        snapshot: crypto.randomUUID(),
+        steps: [{ line: 1, hint: 'Receipt', explanation: 'Fix the loop' }],
+      })
+      const event = {
+        plan,
+        guideId: crypto.randomUUID(),
+        token,
+        step: 1,
+        total: 1,
+        hint: 'Fix loop',
+        goal: 'Receipt',
+      }
+      fake.handler = async (method) => {
+        if (method === 'thread/inject_items') await blocked
+        return undefined
+      }
+      send({ guideEvent: { ...event, status: 'refresh_requested', origin: 'verified_edit' } })
+      await expect.poll(() => fake.calls.some((c) => c.method === 'thread/inject_items')).toBe(true)
+      send({
+        guideEvent: { ...event, status: 'paused', origin: 'editor', token: crypto.randomUUID() },
+      })
+      // A subsequent socket reply is a barrier: the receive loop has consumed the pause,
+      // but its serialized notification cannot reach the run until injection finishes.
+      await bridge.run('owner', { action: 'guide_status' })
+      release()
+      await expect
+        .poll(() => fake.calls.filter((c) => c.method === 'thread/inject_items').length)
+        .toBe(2)
+      expect(
+        fake.calls.filter((c) => c.method === 'turn/start' || c.method === 'turn/steer'),
+      ).toHaveLength(0)
+    } finally {
+      release()
+      bridge.close()
+      server.close()
+      await run.close()
+    }
   })
 
   it('prepares without sending, sends the opening once, retains voice history, and stops before archiving', async () => {

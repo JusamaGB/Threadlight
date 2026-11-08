@@ -365,6 +365,8 @@ function may require Fn on compact keyboards. Ctrl+Break is a separate Windows
 interrupt. Use Ctrl+Alt+M or the microphone button on keyboards without Pause. Stop speaking skips playback of the current
 reply and leaves the next reply audible. Hanging up keeps the chat available
 for typing or resuming voice. In the Agent bar, the new-chat icon starts fresh and the bin closes the current conversation. Both preserve history in Earlier. Unsent text remains available when the reply box is reopened. Active work and decisions must finish first.
+**Voice pace** in Agent Settings has five steps from Slower to Faster. The next GPT Live call or spoken screen reply uses your saved preference. The middle step restores Normal. GPT requests a speaking style, and Windows screen replies set the local synthesizer rate.
+
 When a backing reply streams explicitly final prose, Live can read one stable
 opening sentence while the remaining text and examples arrive, then speak the remaining prose once after the matching opening playback finishes. **Read remaining** requests the rest when the automatic handoff is uncertain. Related captions are available under **Spoken reply**. Other answers use the completion handoff. Fenced code stays available to read and copy. The current working indicator remains below the reader even while browsing earlier lines. An extended editor read can give one short spoken progress update. Linked voice delegation records appear in the original user message’s Audio received details.
 Threadlight preserves direct Live replies and records the association when it

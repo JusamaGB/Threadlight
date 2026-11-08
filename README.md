@@ -171,8 +171,12 @@ Open **Audio received** to read or copy the original voice delegation. Use
 **Reply** at the top of the Agent to open the message composer at the bottom, or
 use the green phone beside it to speak in the same chat. **New updates** returns to the latest message and **Needs input**
 takes you to a pending decision.
+Unanswered Agent questions and approvals appear below the latest message.
+Answered cards return to their place in history with the recorded response.
+If the original message is off-page, **Load earlier messages** in Earlier shows
+it when available. **Saved cards** keeps decisions readable when their position is unknown.
 Hover over the waveform or focus it and press **Enter** to return to the ongoing conversation. Moving away can collapse the panel while the call continues; other pages offer **Return to call**.
-Open the gear immediately left of **Back** for Agent settings and **Earlier** conversations. Enable **Show spoken replies in waveform pill** to follow the latest Agent reply while a GPT Live call is collapsed. The waveform centers the caption and widens as the words arrive, up to 296px before wrapping. Linked code stays left-aligned beneath it. Use the × to dismiss just that reply. The next reply opens automatically. The setting is off by default.
+Open the gear immediately left of **Back** for Agent settings and **Earlier** conversations. Enable **Show spoken replies in waveform pill** to follow the latest Agent reply while a GPT Live call is collapsed. The waveform centers the caption and widens as the words arrive, up to 296px before wrapping. Linked code stays left-aligned beneath it. A requested example can appear when its backing answer arrives, and a follow-up can refer to that same example without reopening the panel. Use the × to dismiss just that reply. The next reply opens automatically. The setting is off by default.
 Smart Thread and Agent use the same assistant reply text size and line spacing. Use the two-card Copy icon on a code block to copy its contents. A pinned block copies the version on screen. Drag the grip below the conversation to resize the reading area,
 or focus it and use the arrow keys. Threadlight remembers the height.
 
@@ -183,6 +187,8 @@ Agent. Expand **Spoken reply** beneath the written answer to read the actual cap
 The full answer and code stay in the thread. A spoken request has one
 **Audio received** disclosure for its delegation records. A working indicator
 stays below the conversation while the Agent is waiting on the editor. [Timing and validation](docs/validation/AGENT-CONTINUOUS-LIVE.md)
+
+In **Agent Settings → Voice pace**, choose Slower, Slightly slower, Normal, Slightly faster or Faster. The choice applies to the next call or spoken screen reply. GPT Live uses a speaking-style instruction and Windows screen replies use the synthesizer’s rate. Normal is the default.
 
 GPT Live gives a brief cue once the microphone and connection are ready; speaker mute silences it. Opening the call still buffers early speech while the native session connects.
 
@@ -196,8 +202,7 @@ After upgrading the companion, reload the connected VS Code window and run
 Place the cursor near your code, start foreground GPT Live and ask for a walkthrough.
 Findings start with a verified line number where available and a brief explanation.
 Ask “Could you show me one step at a time?” to walk through the issue just discussed.
-Say “what’s next?” or click **Next step** to advance. If you edit the source,
-say “continue” or click **Refresh guide** to reassess it. **Finish guide** closes
+Typing clears the old highlight quietly. With a companion that supports verified guide edits, a step with one declared exact target line requests a fresh source check when that line matches. For open-ended steps or partial edits, say “I’m done,” “check this,” or “what’s next?” to have the coach check your work. **Next step** and **Refresh guide** are also available. **Finish guide** closes
 the last step and confirms completion in Live. To practise typing the next
 line, ask “Could you fill that line for me?” **Trace** places ghost text at a
 verified insertion point without requiring a selection. Type along, use Tab

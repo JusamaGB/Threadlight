@@ -7,6 +7,7 @@ import type {
 } from '../../shared/conversationEvents'
 import type { CommunicationSnapshot } from '../../shared/communication'
 import { CommunicationStore } from './store'
+import { readerCards } from './cardHistory'
 
 /** Projection of the existing durable communication journal. It never starts work. */
 export class ConversationEventService {
@@ -58,6 +59,7 @@ export class ConversationEventService {
     owner: string,
     snapshot: CommunicationSnapshot,
     title: (target: string) => string,
+    readerHistory?: string,
   ): ConversationFeed {
     const record = this.find(owner)
     if (!record) return { owner, cards: [], cursor: this.store.cursor() }
@@ -89,7 +91,7 @@ export class ConversationEventService {
         ...card,
         order:
           old?.order ?? Math.max(0, ...record.cards.map((c) => c.order ?? 0)) + candidates.size + 1,
-        anchor: old?.anchor ?? record.anchor,
+        anchor: old ? old.anchor : record.anchor,
         at: old?.at ?? card.at,
         revision: (old?.revision ?? 0) + (changed ? 1 : 0),
         updatedAt: changed ? this.now() : old!.updatedAt,
@@ -253,7 +255,12 @@ export class ConversationEventService {
     )
     record.cards = all.filter((c) => retained.has(c.id))
     if (JSON.stringify(record) !== before) this.save(record, 'Conversation cards updated')
-    return { owner, cards: record.cards as ConversationCard[], cursor: this.store.cursor() }
+    const cards = record.cards as ConversationCard[]
+    return {
+      owner,
+      cards: readerHistory ? readerCards(readerHistory, record.target, cards, messages) : cards,
+      cursor: this.store.cursor(),
+    }
   }
   get(owner: string): ConversationFeed {
     return {

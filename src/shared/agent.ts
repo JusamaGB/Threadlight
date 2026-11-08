@@ -83,6 +83,8 @@ export interface AgentApproval {
 }
 
 export interface AgentState {
+  /** Changes when the connected editor invalidates or replaces its highlighted step. */
+  coachGuideToken?: string
   recent?: RecentAgentConversation
   pendingReadout?: { session: string; token: string } | null
   live?: 'connecting' | 'ready' | 'active' | null

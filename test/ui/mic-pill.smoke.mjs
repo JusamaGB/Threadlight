@@ -115,6 +115,39 @@ export async function checkMicPill(page, capture) {
       }
     }
   }
+  const level = (value) =>
+    page.evaluate(
+      (value) =>
+        window.proof.emit('onMotion', {
+          mode: 'listening',
+          provider: 'codex',
+          input: { level: 0, low: 0, mid: 0, high: 0 },
+          output: { level: value, low: value, mid: value, high: value },
+        }),
+      value,
+    )
+  const glow = () => pill.evaluate((el) => Number(window.getComputedStyle(el, '::before').opacity))
+  for (const speech of [0.25, 0.18]) {
+    await level(speech)
+    await page.waitForFunction((target) => {
+      const opacity = Number(
+        window.getComputedStyle(document.querySelector('[data-speaking]'), '::before').opacity,
+      )
+      return opacity > 0 && opacity < target
+    }, speech * 3)
+    await page.waitForTimeout(190)
+    assert.ok(Math.abs((await glow()) - speech * 3) < 0.01)
+    await level(0)
+    await page.waitForFunction((target) => {
+      const opacity = Number(
+        window.getComputedStyle(document.querySelector('[data-provider="codex"]'), '::before')
+          .opacity,
+      )
+      return opacity > 0 && opacity < target
+    }, speech * 3)
+    await page.waitForTimeout(290)
+    assert.equal(await glow(), 0)
+  }
   for (const working of [true, false]) {
     await page.evaluate(
       (working) =>

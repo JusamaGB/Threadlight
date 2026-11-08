@@ -248,7 +248,7 @@ export class AgentService {
       }
       if (!(next instanceof CodexAgentRun)) throw new Error('Live requires the Codex Agent.')
       this.run = next
-      const answer = await next.startLive(id, sdp)
+      const answer = await next.startLive(id, sdp, this.options.settings().agentVoicePace)
       if (operation !== this.operation || this.voiceSession !== id)
         throw new Error('Live was cancelled.')
       return { ok: true, sdp: answer }

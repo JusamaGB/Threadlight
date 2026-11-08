@@ -6,6 +6,13 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Agent Settings has a keyboard-accessible **Voice pace** slider. Its five choices apply to the next GPT Live call or spoken screen reply, and the setting survives restarts.
+
+- Live Coach clears stale guide highlights quietly during typing. A known exact line edit can trigger a fresh check automatically. Natural done or next requests also check the current buffer.
+- The live pill can display code from the learner’s verified delegated turn as soon as the backing answer arrives, and retain the current example when its follow-up identifies it.
+
+- Answered Agent questions and approvals stay with the conversation that prompted them. Only pending decisions appear beneath the latest message, including when the request is on an earlier history page.
+
 - GPT Live gives one brief connection cue after the microphone and native session are ready. Speaker mute silences it, and cancelled startup never signals success. Live Coach 0.6.2 lets native ghost text follow typing without repeatedly requesting VS Code’s inline-suggestion sound. Guide continuation still waits for the learner.
 
 - The Agent bar uses compact icons for composing, calling, starting fresh and closing the current conversation. Toggling the reply box preserves its draft, and closed chats remain in Earlier.

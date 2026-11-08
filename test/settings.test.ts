@@ -17,6 +17,18 @@ let box: Sandbox
 beforeEach(async () => (box = await sandbox()))
 afterEach(() => box.cleanup())
 
+it('keeps the voice pace across restarts and uses Normal for older or invalid settings', async () => {
+  const store = new SettingsStore(box.root)
+  expect((await store.load()).agentVoicePace).toBe('normal')
+  expect((await store.update({ agentVoicePace: 'slightly-slower' })).ok).toBe(true)
+  expect((await new SettingsStore(box.root).load()).agentVoicePace).toBe('slightly-slower')
+  expect(validatePatch({ agentVoicePace: '1.5x' }).ok).toBe(false)
+  expect(parseSettings({ agentVoicePace: 1, maxSessions: 12 })).toMatchObject({
+    agentVoicePace: 'normal',
+    maxSessions: 12,
+  })
+})
+
 describe('Kimi settings compatibility', () => {
   it('defaults old files and isolates an invalid Kimi value from other settings', () => {
     expect(parseSettings({ maxSessions: 17 }).kimiSetup).toEqual(DEFAULT_KIMI_SETUP)

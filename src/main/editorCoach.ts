@@ -20,6 +20,7 @@ type Session = {
   version?: string
   traceSupported?: boolean
   lifecycle?: boolean
+  verifiedGuideEdits?: boolean
   delivery: Promise<void>
   visibleProposal?: string
   proposalToken?: string
@@ -164,12 +165,17 @@ export class EditorCoach {
     // Through 0.3.1 all versions replied true, including versions that could review.
     if (hello !== true) {
       const info = z
-        .object({ version: z.string().optional(), actions: z.array(z.string()) })
+        .object({
+          version: z.string().optional(),
+          actions: z.array(z.string()),
+          verifiedGuideEdits: z.boolean().optional(),
+        })
         .parse(hello)
       session.actions = info.actions
       session.version = info.version
       session.reviewSupported = info.actions.includes('review')
       session.lifecycle = info.actions.includes('progress')
+      session.verifiedGuideEdits = info.verifiedGuideEdits === true
       session.traceSupported = info.actions.includes('trace')
     }
     return session
@@ -195,11 +201,29 @@ export class EditorCoach {
   private deliver(session: Session, event: GuideEvent) {
     session.delivery = session.delivery
       .then(async () => {
+        if (event.origin === 'verified_edit') {
+          if (this.session !== session || session.plan?.event?.token !== event.token) return
+          const visible = (await this.request(session, { action: 'guide_status' })) as {
+            token?: string
+          }
+          if (visible.token !== event.token || session.plan?.event?.token !== event.token) return
+        }
         if (
           this.current() === session.id &&
           (this.session === session || event.status === 'disconnected')
         )
-          await this.notify?.(session.id, event)
+          await this.notify?.(
+            session.id,
+            event.origin === 'verified_edit'
+              ? {
+                  ...event,
+                  isCurrentSource: () =>
+                    this.session === session &&
+                    this.current() === session.id &&
+                    session.plan?.event === event,
+                }
+              : event,
+          )
       })
       .catch(() => {
         if (this.session === session)
@@ -312,7 +336,11 @@ export class EditorCoach {
         const shown = await this.request(session, {
           ...command,
           plan,
-          steps: command.steps.map(({ line, hint }) => ({ line, hint })),
+          steps: command.steps.map(({ line, hint, expectedLine }) => ({
+            line,
+            hint,
+            ...(session.verifiedGuideEdits && expectedLine !== undefined && { expectedLine }),
+          })),
         })
         if (
           this.session !== session ||
@@ -325,10 +353,13 @@ export class EditorCoach {
         return {
           shown: session.plan.event?.status !== 'paused',
           ...session.plan.event,
+          ...(command.steps.some((step) => step.expectedLine !== undefined) && {
+            automaticLineCheck: !!session.verifiedGuideEdits,
+          }),
           instruction:
             session.plan.event?.status === 'paused'
-              ? 'The source changed during narration. Wait for an explicit refresh.'
-              : 'The visible step was sent to Live speech. Wait for the learner to click or ask to continue.',
+              ? 'The source changed. Keep quiet while the learner types; read fresh context when checking the step.'
+              : 'The visible step was sent to Live speech. Let the learner work quietly until an editor-verified refresh or a request to check their code.',
         }
       } catch (error) {
         if (this.session === session && session.plan?.id === plan && !session.plan.event)

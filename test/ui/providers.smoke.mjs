@@ -661,6 +661,27 @@ checks: try {
     assert.deepEqual(errors, [])
     break checks
   }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'voice-pace') {
+    await openHeaderPage(page, 'Agent')
+    await page.getByRole('button', { name: 'Agent settings', exact: true }).click()
+    const slider = page.getByRole('slider', { name: 'Voice pace' })
+    assert.equal(await slider.getAttribute('aria-valuetext'), 'Normal')
+    await slider.focus()
+    await slider.press('ArrowLeft')
+    await page.waitForFunction(
+      async () => (await window.threadlight.getSettings()).agentVoicePace === 'slightly-slower',
+    )
+    assert.equal(await slider.getAttribute('aria-valuetext'), 'Slightly slower')
+    await page.getByRole('button', { name: 'Reset voice pace to Normal' }).click()
+    await page.waitForFunction(
+      async () => (await window.threadlight.getSettings()).agentVoicePace === 'normal',
+    )
+    console.log(
+      'PASS: Agent voice pace changed by keyboard, displayed the persisted choice and reset to Normal.',
+    )
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'spoken-reply') {
     await checkSpokenReply(page, url)
     assert.deepEqual(errors, [])
