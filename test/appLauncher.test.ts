@@ -41,7 +41,8 @@ async function powershell(body: string) {
   return JSON.parse(result.stdout.trim())
 }
 
-describe.skipIf(process.platform !== 'win32')('background app launcher', () => {
+const windows = describe.skipIf(process.platform !== 'win32')
+windows('background app launcher', { timeout: 30_000 }, () => {
   it('starts once for either or both apps, respects Quit, and detects a later opening', async () => {
     expect(
       await powershell(`

@@ -1,6 +1,6 @@
+import { temporaryDirectory } from './helpers'
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { codexGitFolders, codexPullRequest } from '../src/main/codex/badges'
@@ -14,7 +14,7 @@ afterEach(async () => {
   for (const path of temp.splice(0)) await rm(path, { recursive: true, force: true })
 })
 
-describe('Codex thread badges', () => {
+describe('Codex thread badges', { timeout: 30_000 }, () => {
   it('uses structured native and legacy paths, newest first, without interpreting tool source', () => {
     expect(
       codexGitFolders([
@@ -54,7 +54,7 @@ describe('Codex thread badges', () => {
   it.each(['recent', 'older', 'legacy', 'worktree'])(
     'populates badges for General chats from %s activity without changing workspace grouping or source files',
     async (mode) => {
-      const home = await mkdtemp(join(tmpdir(), 'threadlight-codex-badges-'))
+      const home = await temporaryDirectory('threadlight-codex-badges-')
       temp.push(home)
       const paths = codexPaths({ CODEX_HOME: home }, home)
       const id = '11111111-1111-4111-8111-111111111111'

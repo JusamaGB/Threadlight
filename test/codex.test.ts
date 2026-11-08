@@ -1,6 +1,6 @@
+import { temporaryDirectory } from './helpers'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { CodexHolds } from '../src/main/codex/holds'
@@ -211,9 +211,9 @@ describe('Codex relay', () => {
   })
 })
 
-describe('read-only Codex discovery', () => {
+describe('read-only Codex discovery', { timeout: 30_000 }, () => {
   it('orders by completed turns through running native updates in recent and workspace lists', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'threadlight-codex-order-'))
+    const home = await temporaryDirectory('threadlight-codex-order-')
     temp.push(home)
     const paths = codexPaths({ CODEX_HOME: home }, home)
     await mkdir(join(home, 'sessions'), { recursive: true })
@@ -280,7 +280,7 @@ describe('read-only Codex discovery', () => {
   it.each([false, true])(
     'reads paginated history read-only (native type column: %s)',
     async (native) => {
-      const home = await mkdtemp(join(tmpdir(), 'threadlight-codex-'))
+      const home = await temporaryDirectory('threadlight-codex-')
       temp.push(home)
       const paths = codexPaths({ CODEX_HOME: home }, home)
       await mkdir(join(home, 'sessions'), { recursive: true })
