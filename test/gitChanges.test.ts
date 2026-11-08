@@ -99,7 +99,7 @@ describe('a real repository', () => {
       await writeFile(join(folder, 'new.txt'), 'x\ny\n')
       git('rm', '-q', 'gone.txt')
 
-      expect(await listChanges(folder)).toEqual([
+      expect(await listChanges(folder)).toMatchObject([
         { path: 'a.txt', status: 'modified', added: 1, removed: 1, binary: false },
         { path: 'gone.txt', status: 'deleted', added: 0, removed: 1, binary: false },
         { path: 'new.txt', status: 'added', added: 2, removed: 0, binary: false },

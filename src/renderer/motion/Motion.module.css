@@ -29,6 +29,10 @@
   border-bottom: 1px solid var(--border);
 }
 
+.presence:empty {
+  padding: 0;
+  border: 0;
+}
 .presence[data-compact] {
   padding-block: 2px;
 }

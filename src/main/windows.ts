@@ -1,12 +1,21 @@
 // The two windows: the dot, and the panel that opens in its place.
 
 import { join } from 'node:path'
+import { squareOverlay } from '../shared/canvas'
 
 import { BrowserWindow, screen, shell, type Rectangle } from 'electron'
 
+import type { SpokenReply } from '../shared/spokenReply'
 import { IPC, type PanelOpened } from '../shared/ipc'
 import { loadDotPosition, saveDotPosition, type Point } from './windowState'
-import { DOT_SIZE, micIndicatorBounds } from '../shared/micIndicator'
+import {
+  boundsAtDot,
+  DOT_SIZE,
+  MIC_PILL_WIDTH,
+  MIC_PILL_HEIGHT,
+  micIndicatorBounds,
+} from '../shared/micIndicator'
+import { MAX_ATTENTION_DRIPS } from '../shared/dripSchedule'
 import {
   attentionThreads,
   attentionProvider,
@@ -17,6 +26,8 @@ import {
 import { inGutterRegion, parseGutterRegions, type GutterRegion } from '../shared/gutterRegions'
 import type { Session } from '../shared/types'
 import type { ModifierStage } from './modifierStepper'
+import { isKeyDown } from './keyState'
+import { referencePlacement } from './referencePlacement'
 
 export { DOT_SIZE }
 export const PANEL_WIDTH = 238 // 236 of content plus a 1 px border each side
@@ -43,7 +54,7 @@ export function cornerPosition(corner: Corner, area: Rectangle): Point {
   }
 }
 
-type View = 'dot' | 'panel' | 'attention'
+type View = 'dot' | 'panel' | 'attention' | 'reference'
 
 /** Shared hardening for every window: no navigation away, no pop-ups, links open in the browser. */
 function harden(win: BrowserWindow): void {
@@ -54,7 +65,12 @@ function harden(win: BrowserWindow): void {
   })
 }
 
-function createWindow(view: View, size: { width: number; height: number }, focusable: boolean) {
+function createWindow(
+  view: View,
+  size: { width: number; height: number },
+  focusable: boolean,
+  load = true,
+) {
   const win = new BrowserWindow({
     ...size,
     frame: false,
@@ -82,30 +98,262 @@ function createWindow(view: View, size: { width: number; height: number }, focus
   // 'screen-saver' keeps it above full-screen windows such as borderless games.
   win.setAlwaysOnTop(true, 'screen-saver')
   harden(win)
-  const devServer = process.env['ELECTRON_RENDERER_URL']
-  if (devServer) void win.loadURL(`${devServer}?view=${view}`)
-  else void win.loadFile(join(__dirname, '../renderer/index.html'), { query: { view } })
+  if (load) void loadRenderer(win, view)
   return win
 }
 
+function loadRenderer(win: BrowserWindow, view: View): Promise<void> {
+  const devServer = process.env['ELECTRON_RENDERER_URL']
+  return devServer
+    ? win.loadURL(`${devServer}?view=${view}`)
+    : win.loadFile(join(__dirname, '../renderer/index.html'), { query: { view } })
+}
+
+/** Unfold down from the resting waveform, moving upward only at the work-area edge. */
+export function spokenReplyBounds(
+  anchor: Point,
+  area: Rectangle,
+  width: number,
+  height: number,
+): Rectangle {
+  const w = Math.min(area.width, clamp(Math.ceil(width), 92, 296))
+  const h = Math.min(area.height, clamp(Math.ceil(height), 24, 256))
+  const pill = micIndicatorBounds(anchor, area, true)
+  return {
+    x: clamp(Math.round(pill.x + (pill.width - w) / 2), area.x, area.x + area.width - w),
+    y: clamp(pill.y, area.y, area.y + area.height - h),
+    width: w,
+    height: h,
+  }
+}
+
 export class WindowManager {
+  private rendererLoad?: Promise<void>
+  /** Call only after every renderer IPC handler and startup service is registered. */
+  loadRenderers(): Promise<void> {
+    return (this.rendererLoad ??= Promise.all([
+      loadRenderer(this.dot, 'dot'),
+      loadRenderer(this.panel, 'panel'),
+    ]).then(() => {}))
+  }
   readonly dot: BrowserWindow
   readonly panel: BrowserWindow
   private dragStart: Point | null = null
+  private liveDragBounds: Rectangle | null = null
+  private liveDragEndedAt = -Infinity
   private claudeRunning = false
   /** The panel is kept up (the active list or the full list pinned open), so clicking elsewhere must not close it. */
   private stayOpen = false
   private dotPosition: Point
   private openMicLive = false
+  /** Briefly ignore stale leave events while the pill is replaced by the panel. */
+  private micOpenGraceUntil = 0
   private pointerWatch: ReturnType<typeof setInterval> | null = null
   private attentionWindow: BrowserWindow | null = null
   private attentionSessions: Session[] = []
+  private agentAttention: AttentionMotion['provider'] | null = null
   private attentionState: AttentionMotion = NO_ATTENTION
   private talking = false
   private gutterIgnored = false
+  private micMenuShown = false
+  private spokenReply: SpokenReply | null = null
+  private replySize = { width: 92, height: 24 }
+
+  setSpokenReply(reply: SpokenReply | null) {
+    this.spokenReply = reply
+    this.syncSpokenReply()
+  }
+
+  getSpokenReply(sender: Electron.WebContents) {
+    return sender === this.dot.webContents &&
+      this.openMicLive &&
+      !this.panel.isVisible() &&
+      this.modifierStage === 'normal' &&
+      !this.micMenuShown
+      ? this.spokenReply
+      : null
+  }
+
+  setSpokenReplySize(sender: Electron.WebContents, width: number, height: number) {
+    if (
+      sender !== this.dot.webContents ||
+      !this.openMicLive ||
+      this.micMenuShown ||
+      this.panel.isVisible() ||
+      !Number.isFinite(width) ||
+      !Number.isFinite(height)
+    )
+      return
+    this.replySize = { width, height }
+    this.placeDot()
+  }
+
+  private syncSpokenReply() {
+    if (this.overlayClosed) return
+    this.dot.webContents.send(IPC.spokenReply, this.getSpokenReply(this.dot.webContents))
+  }
+
+  private reference?: BrowserWindow
+  private hasReferences = false
+  private referenceReady = false
+  private referenceHeight = 300
+  codeWindow(sender: Electron.WebContents) {
+    return sender === this.panel.webContents
+      ? this.panel
+      : sender === this.reference?.webContents
+        ? this.reference
+        : undefined
+  }
+  pinsChanged(state: import('../shared/pinnedCode').PinState) {
+    for (const win of [this.panel, this.reference]) {
+      if (win && !win.isDestroyed()) win.webContents.send(IPC.pinsChanged, state)
+    }
+  }
+  setPinnedCode(visible: boolean, height: number) {
+    const removed = this.hasReferences && !visible
+    this.hasReferences = visible
+    this.referenceHeight = clamp(Math.round(height), 160, 540)
+    this.syncReference()
+    this.syncSpokenReply()
+    if (removed && !this.indicatorAvailable && !this.panel.isVisible()) this.dot.hide()
+  }
+  private syncReference() {
+    if (this.overlayClosed || !this.hasReferences || this.panel.isVisible()) {
+      if (
+        this.reference &&
+        !this.dot.isDestroyed() &&
+        this.dot.getParentWindow() === this.reference
+      )
+        this.dot.setParentWindow(null)
+      this.reference?.hide()
+      return
+    }
+    if (!this.reference) {
+      const win = (this.reference = createWindow(
+        'reference',
+        { width: PANEL_WIDTH, height: this.referenceHeight },
+        true,
+        false,
+      ))
+      win.on('blur', () => {
+        if (this.panning?.window === win) this.endCodePan()
+      })
+      win.on('closed', () => {
+        this.reference = undefined
+        this.referenceReady = false
+      })
+      void loadRenderer(win, 'reference')
+        .then(() => {
+          if (this.reference === win) {
+            this.referenceReady = true
+            this.syncReference()
+            this.syncSpokenReply()
+          }
+        })
+        .catch(() => {
+          if (!win.isDestroyed()) win.close()
+        })
+    }
+    const win = this.reference
+    if (!this.referenceReady) return
+    const { bounds, anchor } = referencePlacement(
+      this.dotBounds(),
+      this.dot.getBounds(),
+      this.workArea(),
+      PANEL_WIDTH,
+      this.referenceHeight,
+    )
+    win.setBounds(bounds)
+    win.webContents.send(IPC.referenceAnchor, anchor)
+    if (!win.isVisible()) win.showInactive()
+    if (this.modifierStage === 'normal') {
+      // Keep the logo over the full background even after the reference takes focus.
+      if (this.dot.getParentWindow() !== win) this.dot.setParentWindow(win)
+      if (!this.dot.isVisible()) this.dot.showInactive()
+      this.dot.moveTop()
+    }
+  }
+  private panning?: { id: string; last: Point; timer: NodeJS.Timeout; window: BrowserWindow }
+  codePan(id: string, active: boolean, win = this.panel) {
+    if (!active) {
+      if (this.panning?.id === id && this.panning.window === win) this.endCodePan()
+      return
+    }
+    if (
+      this.overlayClosed ||
+      win.isDestroyed() ||
+      !win.isVisible() ||
+      this.panning ||
+      !this.keyHeld(0x11) ||
+      !this.keyHeld(0x01)
+    ) {
+      if (!this.overlayClosed)
+        win.webContents.send(IPC.codePanMotion, { id, dx: 0, dy: 0, end: true })
+      return
+    }
+    if (win === this.panel && this.gutterIgnored) {
+      this.panel.setIgnoreMouseEvents(false)
+      this.gutterIgnored = false
+    }
+    const pan = (this.panning = {
+      id,
+      window: win,
+      last: screen.getCursorScreenPoint(),
+      timer: setInterval(() => {
+        if (
+          this.overlayClosed ||
+          win.isDestroyed() ||
+          !win.isVisible() ||
+          !this.keyHeld(0x11) ||
+          !this.keyHeld(0x01)
+        )
+          return this.endCodePan()
+        const point = screen.getCursorScreenPoint()
+        const bounds = screen.getDisplayNearestPoint(point).bounds
+        const dx = pan.last.x - point.x,
+          dy = pan.last.y - point.y
+        // Continue in the drag direction while the mouse is held against a display edge.
+        const edgeX = point.x <= bounds.x ? 4 : point.x >= bounds.x + bounds.width - 1 ? -4 : 0
+        const edgeY = point.y <= bounds.y ? 4 : point.y >= bounds.y + bounds.height - 1 ? -4 : 0
+        pan.last = point
+        if (dx || dy || edgeX || edgeY)
+          win.webContents.send(IPC.codePanMotion, { id, dx: dx || edgeX, dy: dy || edgeY })
+      }, 16),
+    })
+  }
+  private endCodePan() {
+    const pan = this.panning
+    if (!pan) return
+    this.panning = undefined
+    clearInterval(pan.timer)
+    if (!pan.window.isDestroyed())
+      pan.window.webContents.send(IPC.codePanMotion, { id: pan.id, end: true, dx: 0, dy: 0 })
+  }
   private wireControl: { top: number; height: number } | null = null
   private wireRegions: GutterRegion[] = []
   private panelLayout: 'single' | 'dual' = 'single'
+  private canvasRestore: Rectangle | null = null
+
+  setCanvasExpanded(on: unknown): { width: number; height: number } | null {
+    if (typeof on !== 'boolean') return null
+    if (on) {
+      this.canvasRestore ??= this.panel.getBounds()
+      this.placePanel(this.canvasRestore.height)
+      const bounds = this.panel.getBounds()
+      return { width: bounds.width, height: bounds.height }
+    }
+    const before = this.canvasRestore
+    this.canvasRestore = null
+    if (before) {
+      this.placePanel(before.height)
+      this.panel.webContents.send(IPC.panelOpened, {
+        maxHeight: this.maxPanelHeight(),
+        opensDown: this.opensDown(),
+        fresh: false,
+      })
+    }
+    return null
+  }
   private rightWireGutter = 0
   private layoutAnimation: ReturnType<typeof setTimeout> | null = null
   private workspacePanel = false
@@ -122,19 +370,53 @@ export class WindowManager {
     bounds: Rectangle
   } | null = null
 
-  constructor() {
+  constructor(private keyHeld = isKeyDown) {
     // The dot never takes focus, so clicking it does not pull focus from a game.
-    this.dot = createWindow('dot', { width: DOT_SIZE, height: DOT_SIZE }, false)
+    this.dot = createWindow('dot', { width: DOT_SIZE, height: DOT_SIZE }, false, false)
     const [x, y] = this.initialDotPosition()
     this.dotPosition = { x, y }
     this.placeDot()
     // The panel is created up front (hidden) so it opens instantly.
-    this.panel = createWindow('panel', { width: PANEL_WIDTH + WORKSPACE_GUTTER, height: 120 }, true)
-    this.panel.on('blur', () => {
-      // A showInactive/resize handoff can deliver a delayed blur while still hovered.
-      this.closeOnPointerLeave()
+    this.panel = createWindow(
+      'panel',
+      { width: PANEL_WIDTH + WORKSPACE_GUTTER, height: 120 },
+      true,
+      false,
+    )
+    const syncCompanions = () => {
+      this.syncReference()
+      this.syncSpokenReply()
+    }
+    this.panel.on('hide', syncCompanions)
+    this.panel.on('show', () => {
+      if (this.openMicLive) {
+        this.replySize = { width: 92, height: 24 }
+        this.placeDot()
+      }
+      syncCompanions()
     })
-    this.panel.on('closed', () => this.stopPointerWatch())
+    this.panel.on('blur', () => {
+      if (this.panning?.window === this.panel) this.endCodePan()
+      // A showInactive/resize handoff can deliver a delayed blur while still hovered.
+      if (this.openMicLive) this.panel.webContents.send(IPC.panelPointerOutside)
+      else this.closeOnPointerLeave()
+    })
+    const updateDisplay = () => {
+      if ((!this.hasReferences && !this.spokenReply) || this.overlayClosed) return
+      const area = this.workArea()
+      this.dotPosition = {
+        x: clamp(this.dotPosition.x, area.x, area.x + area.width - DOT_SIZE),
+        y: clamp(this.dotPosition.y, area.y, area.y + area.height - DOT_SIZE),
+      }
+      this.placeDot()
+    }
+    screen.on('display-metrics-changed', updateDisplay)
+    screen.on('display-removed', updateDisplay)
+    this.panel.on('closed', () => {
+      this.stopPointerWatch()
+      screen.off('display-metrics-changed', updateDisplay)
+      screen.off('display-removed', updateDisplay)
+    })
     this.panel.on('app-command', (_event, command) => {
       if (this.modifierStage === 'peek') return
       if (command === 'browser-backward' || command === 'browser-forward')
@@ -150,6 +432,10 @@ export class WindowManager {
     if (this.dot.isDestroyed() || this.panel.isDestroyed()) return
     if (stage === this.modifierStage) return
     this.modifierStage = stage
+    this.syncSpokenReply()
+    if (stage === 'peek') this.endCodePan()
+    this.panel.webContents.send(IPC.panelControlHeld, stage === 'hidden')
+    this.reference?.webContents.send(IPC.panelControlHeld, stage === 'hidden')
     if (this.beforePeek) {
       const before = this.beforePeek
       this.beforePeek = null
@@ -183,23 +469,33 @@ export class WindowManager {
       this.dot.hide()
       this.attentionWindow?.hide()
     } else {
-      if (this.claudeRunning && !this.panel.isVisible()) this.dot.showInactive()
+      if (this.indicatorAvailable && !this.panel.isVisible()) this.dot.showInactive()
       this.syncAttention()
     }
   }
 
-  /** Every window gets the same broadcasts. */
   send(channel: string, ...args: unknown[]): void {
-    for (const win of [this.dot, this.panel]) {
+    const targets = [this.dot, this.panel]
+    if (channel === IPC.settingsChanged && this.reference) targets.push(this.reference)
+    for (const win of targets) {
       if (!win.isDestroyed()) win.webContents.send(channel, ...args)
     }
   }
 
   setClaudeRunning(running: boolean): void {
+    if (this.dot.isDestroyed() || this.panel.isDestroyed()) return
     if (running === this.claudeRunning) return
     this.claudeRunning = running
-    if (running) {
-      if (this.modifierStage === 'normal') this.dot.showInactive()
+    this.syncIndicatorVisibility()
+  }
+
+  private get indicatorAvailable(): boolean {
+    return this.claudeRunning || this.openMicLive || !!this.agentAttention || this.hasReferences
+  }
+
+  private syncIndicatorVisibility(): void {
+    if (this.indicatorAvailable) {
+      if (this.modifierStage === 'normal' && !this.panel.isVisible()) this.dot.showInactive()
     } else {
       this.closePanel()
       this.dot.hide()
@@ -213,21 +509,34 @@ export class WindowManager {
    * until it is raised again. Raising never takes focus.
    */
   keepOnTop(): void {
-    if (!this.claudeRunning) return
+    if (this.dot.isDestroyed() || this.panel.isDestroyed()) return
+    if (!this.indicatorAvailable) return
     if (this.modifierStage === 'hidden') return
     const win = this.panel.isVisible() ? this.panel : this.dot
     if (!win.isVisible()) win.showInactive()
     win.setAlwaysOnTop(true, 'screen-saver')
     win.moveTop()
     this.syncAttention()
-    if (this.attentionWindow?.isVisible()) this.attentionWindow.moveTop()
+    if (
+      this.attentionWindow &&
+      !this.attentionWindow.isDestroyed() &&
+      this.attentionWindow.isVisible()
+    )
+      this.attentionWindow.moveTop()
   }
 
   /** Ignore duplicate and delayed hover messages from the dot window being replaced. */
   openFromDot(hover = false): void {
+    if (this.dot.isDestroyed() || this.panel.isDestroyed()) return
     if (this.modifierStage !== 'normal') return
     if (this.panel.isVisible()) return
+    if (this.openMicLive && (this.dragStart || this.micMenuShown)) return
     if (hover) {
+      if (
+        this.openMicLive &&
+        (Date.now() - this.liveDragEndedAt < 200 || this.keyHeld(0x01) || this.keyHeld(0x02))
+      )
+        return
       if (!this.dot.isVisible()) return
       const point = screen.getCursorScreenPoint()
       const bounds = this.dot.getBounds()
@@ -235,9 +544,14 @@ export class WindowManager {
         point.x < bounds.x ||
         point.x >= bounds.x + bounds.width ||
         point.y < bounds.y ||
-        point.y >= bounds.y + bounds.height
+        point.y >= bounds.y + (this.openMicLive ? MIC_PILL_HEIGHT : bounds.height)
       )
         return
+    }
+    if (this.openMicLive) {
+      this.micOpenGraceUntil = Date.now() + 300
+      this.openPanel({ focus: !hover, fresh: false, fromMic: true })
+      return
     }
     this.openPanel({ focus: !hover, fresh: true })
   }
@@ -247,7 +561,11 @@ export class WindowManager {
    * opens it without focus (so a full-screen game is not minimised) and keeps the panel's
    * state, because the panel has just filled in the composer itself.
    */
-  openPanel({ focus = true, fresh = focus }: { focus?: boolean; fresh?: boolean } = {}): void {
+  openPanel({
+    focus = true,
+    fresh = focus,
+    fromMic = false,
+  }: { focus?: boolean; fresh?: boolean; fromMic?: boolean } = {}): void {
     if (fresh) {
       this.stayOpen = false
       this.workspacePanel = false
@@ -257,6 +575,7 @@ export class WindowManager {
       maxHeight: this.maxPanelHeight(),
       opensDown: this.opensDown(),
       fresh,
+      ...(fromMic && { fromMic: true }),
     }
     this.panel.webContents.send(IPC.panelOpened, info)
     this.placePanel(Math.min(this.panel.getBounds().height, info.maxHeight))
@@ -278,19 +597,29 @@ export class WindowManager {
   }
 
   closePanel(): void {
+    if (this.panning?.window === this.panel) this.endCodePan()
+    if (this.overlayClosed) return
     if (this.modifierStage === 'peek') return
+    this.micOpenGraceUntil = 0
     this.stayOpen = false
     this.stopPointerWatch()
     if (!this.panel.isVisible()) return
-    if (this.claudeRunning && this.modifierStage === 'normal') this.dot.showInactive()
+    if (this.indicatorAvailable && this.modifierStage === 'normal') this.dot.showInactive()
     this.syncAttention(false)
     this.panel.hide()
   }
 
   /** Browser leave events may be stale while replacing or resizing a transparent window. */
   closeOnPointerLeave(): void {
-    if (this.modifierStage === 'peek') return
-    if (this.stayOpen || this.dragStart || this.pointerInsidePanel()) return
+    if (this.overlayClosed || this.modifierStage === 'peek') return
+    if (
+      this.panning?.window === this.panel ||
+      Date.now() < this.micOpenGraceUntil ||
+      this.stayOpen ||
+      this.dragStart ||
+      this.pointerInsidePanel()
+    )
+      return
     this.closePanel()
   }
 
@@ -305,20 +634,26 @@ export class WindowManager {
     )
   }
 
+  private get overlayClosed(): boolean {
+    return this.dot.isDestroyed() || this.panel.isDestroyed()
+  }
+
   private startPointerWatch(): void {
     if (this.pointerWatch) return
     // Showing the panel beneath the pointer can miss Chromium's enter/leave handoff.
     // The renderer still applies its pin, microphone and countdown protections.
     this.pointerWatch = setInterval(() => {
-      if (!this.panel.isVisible()) {
+      if (this.overlayClosed || !this.panel.isVisible()) {
         this.stopPointerWatch()
         return
       }
+      if (this.panning?.window === this.panel) return
       const point = screen.getCursorScreenPoint()
       const bounds = this.panel.getBounds()
       if (this.modifierStage === 'peek') return
       const leftGutter = point.x >= bounds.x && point.x < bounds.x + WORKSPACE_GUTTER
       const rightGutter =
+        !this.canvasRestore &&
         this.panelLayout === 'dual' &&
         point.x >= bounds.x + bounds.width - this.rightWireGutter &&
         point.x < bounds.x + bounds.width
@@ -339,7 +674,12 @@ export class WindowManager {
         this.gutterIgnored = gutter
         this.panel.setIgnoreMouseEvents(gutter, { forward: true })
       }
-      if (!this.stayOpen && !this.dragStart && !this.pointerInsidePanel())
+      if (
+        Date.now() >= this.micOpenGraceUntil &&
+        !this.stayOpen &&
+        !this.dragStart &&
+        !this.pointerInsidePanel()
+      )
         this.panel.webContents.send(IPC.panelPointerOutside)
     }, 16)
     this.pointerWatch.unref()
@@ -348,7 +688,7 @@ export class WindowManager {
   private stopPointerWatch(): void {
     if (this.pointerWatch) clearInterval(this.pointerWatch)
     this.pointerWatch = null
-    if (this.gutterIgnored) this.panel.setIgnoreMouseEvents(false)
+    if (this.gutterIgnored && !this.panel.isDestroyed()) this.panel.setIgnoreMouseEvents(false)
     this.gutterIgnored = false
   }
 
@@ -441,10 +781,19 @@ export class WindowManager {
   }
 
   setOpenMicLive(live: boolean): void {
+    if (this.dot.isDestroyed() || this.panel.isDestroyed()) return
     if (this.openMicLive === live) return
     this.openMicLive = live
+    if (!live) {
+      this.micOpenGraceUntil = 0
+      this.micMenuShown = false
+      this.replySize = { width: 92, height: 24 }
+      this.setSpokenReply(null)
+    }
+    this.dot.setFocusable(live)
+    this.dot.setSkipTaskbar(true)
     this.placeDot()
-    this.syncAttention()
+    this.syncIndicatorVisibility()
   }
 
   get attentionMotion(): AttentionMotion {
@@ -453,6 +802,15 @@ export class WindowManager {
   setAttention(sessions: Session[]): void {
     this.attentionSessions = attentionThreads(sessions)
     this.syncAttention()
+  }
+  setAgentAttention(provider: AttentionMotion['provider'] | null) {
+    if (this.agentAttention === provider || this.overlayClosed) return
+    this.agentAttention = provider
+    // Clearing an Agent question while composing must not dismiss the open panel.
+    if (!provider && !this.indicatorAvailable && this.panel.isVisible()) {
+      this.dot.hide()
+      this.syncAttention()
+    } else this.syncIndicatorVisibility()
   }
   setTalking(on: boolean): void {
     this.talking = on
@@ -464,12 +822,17 @@ export class WindowManager {
     this.dot.webContents.send(IPC.attentionMotion, state)
     this.attentionWindow?.webContents.send(IPC.attentionMotion, state)
   }
-  private syncAttention(panelVisible = this.panel.isVisible()): void {
-    const waiting = this.attentionSessions
+  private syncAttention(panelVisible?: boolean): void {
+    if (this.dot.isDestroyed() || this.panel.isDestroyed()) return
+    if (this.attentionWindow?.isDestroyed()) return
+    panelVisible ??= this.panel.isVisible()
+    const providers = this.attentionSessions.map(attentionProvider)
+    if (this.agentAttention) providers.unshift(this.agentAttention)
+    providers.splice(MAX_ATTENTION_DRIPS)
     if (
-      waiting.length === 0 ||
+      providers.length === 0 ||
       this.modifierStage !== 'normal' ||
-      !this.claudeRunning ||
+      (!this.claudeRunning && !this.agentAttention) ||
       panelVisible ||
       this.openMicLive ||
       this.talking
@@ -494,7 +857,6 @@ export class WindowManager {
     }
     if (JSON.stringify(this.attentionWindow.getBounds()) !== JSON.stringify(bounds))
       this.attentionWindow.setBounds(bounds)
-    const providers = waiting.map(attentionProvider)
     this.broadcastAttention({
       active: true,
       provider: providers[0]!,
@@ -512,8 +874,45 @@ export class WindowManager {
     return { ...this.dotPosition, width: DOT_SIZE, height: DOT_SIZE }
   }
 
+  setMicMenu(open: boolean) {
+    this.micMenuShown = open && this.openMicLive && this.dot.isVisible()
+    if (this.micMenuShown) this.replySize = { width: 92, height: 24 }
+    this.syncSpokenReply()
+    if (!open || !this.openMicLive || !this.dot.isVisible()) {
+      this.placeDot()
+      return null
+    }
+    const area = this.workArea()
+    const pill = micIndicatorBounds(this.dotPosition, area, true)
+    const bounds = boundsAtDot(this.dotPosition, area, 148, 108)
+    this.dot.setBounds(bounds)
+    this.dot.focus()
+    return {
+      x: pill.x - bounds.x,
+      y: pill.y - bounds.y,
+      menuY: pill.y > bounds.y ? 2 : pill.height + 2,
+    }
+  }
+
   private placeDot(): void {
-    this.dot.setBounds(micIndicatorBounds(this.dotPosition, this.workArea(), this.openMicLive))
+    if (this.micMenuShown) return
+    const bounds = this.openMicLive
+      ? spokenReplyBounds(
+          this.dotPosition,
+          this.workArea(),
+          this.replySize.width,
+          this.replySize.height,
+        )
+      : micIndicatorBounds(this.dotPosition, this.workArea(), false)
+    const previous = this.dot.getBounds()
+    if (
+      bounds.x !== previous.x ||
+      bounds.y !== previous.y ||
+      bounds.width !== previous.width ||
+      bounds.height !== previous.height
+    )
+      this.dot.setBounds(bounds)
+    if (this.referenceReady) this.syncReference()
   }
 
   /**
@@ -561,7 +960,18 @@ export class WindowManager {
       this.workspaceTop = this.workspaceDragTop + dy
     // Kept inside the screen's work area, just as the panel is.
     const target = { x: Math.round(this.dragStart.x + dx), y: Math.round(this.dragStart.y + dy) }
-    const area = screen.getDisplayNearestPoint(target).workArea
+    let area = screen.getDisplayNearestPoint(target).workArea
+    if (this.openMicLive && !this.panel.isVisible()) {
+      // Use the visible pill, including its reply and any screen-edge clamping, as the drag origin.
+      this.liveDragBounds ??= this.dot.getBounds()
+      const center = this.liveDragBounds.x + this.liveDragBounds.width / 2 + dx
+      const top = this.liveDragBounds.y + dy
+      area = screen.getDisplayNearestPoint({ x: Math.round(center), y: Math.round(top) }).workArea
+      const right = center > area.x + area.width / 2
+      const bottom = top + MIC_PILL_HEIGHT / 2 > area.y + area.height / 2
+      target.x = Math.round(center + (right ? MIC_PILL_WIDTH / 2 - DOT_SIZE : -MIC_PILL_WIDTH / 2))
+      target.y = Math.round(top + (bottom ? MIC_PILL_HEIGHT - DOT_SIZE : 0))
+    }
     this.dotPosition = {
       x: clamp(target.x, area.x, area.x + area.width - DOT_SIZE),
       y: clamp(target.y, area.y, area.y + area.height - DOT_SIZE),
@@ -575,6 +985,8 @@ export class WindowManager {
   endDrag(): void {
     if (!this.dragStart) return
     this.dragStart = null
+    if (this.liveDragBounds) this.liveDragEndedAt = Date.now()
+    this.liveDragBounds = null
     this.workspaceDragTop = null
     saveDotPosition(this.dotPosition)
   }
@@ -595,6 +1007,19 @@ export class WindowManager {
    * half its bottom-right corner does, growing up.
    */
   private placePanel(height: number): void {
+    if (this.canvasRestore && this.modifierStage !== 'peek') {
+      const bounds = squareOverlay(this.workArea(), this.dotPosition)
+      const before = this.panel.getBounds()
+      this.panel.setBounds(bounds)
+      if (before.width !== bounds.width || before.height !== bounds.height)
+        this.panel.webContents.send(IPC.panelOpened, {
+          maxHeight: bounds.height,
+          opensDown: true,
+          fresh: false,
+          canvasSize: { width: bounds.width, height: bounds.height },
+        })
+      return
+    }
     const dot = this.dotBounds()
     const area = this.workArea()
     const rightGutter = this.panelLayout === 'dual' ? this.rightWireGutter : 0

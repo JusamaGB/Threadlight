@@ -25,7 +25,7 @@ export function AgentIdentity({
   hasConversation: boolean
   settings: Settings | null
   onError: (message: string | null) => void
-  appearance?: 'footer' | 'settings'
+  appearance?: 'footer' | 'settings' | 'agent-settings'
   saveSettings?: (patch: SettingsPatch) => Promise<boolean>
 }) {
   const [menu, setMenu] = useState<Menu | null>(null)

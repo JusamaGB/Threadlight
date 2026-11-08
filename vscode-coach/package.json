@@ -1,0 +1,178 @@
+{
+  "name": "threadlight-live-coach",
+  "displayName": "Threadlight Live Coach",
+  "description": "In-place file proposals, optional Python suggestions and voice-paced coaching for Threadlight Live.",
+  "publisher": "threadlight",
+  "version": "0.6.2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JusamaGB/Threadlight.git",
+    "directory": "vscode-coach"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "main": "./extension.cjs",
+  "files": [
+    "extension.cjs",
+    "inlinePreview.cjs",
+    "trace.cjs",
+    "wholeFileReview.cjs",
+    "README.md",
+    "LICENSE",
+    "proposals.cjs",
+    "pythonSuggestions.cjs"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "threadlight.coach.start",
+        "title": "Threadlight: Start Live Coaching"
+      },
+      {
+        "command": "threadlight.coach.stop",
+        "title": "Threadlight: Stop Editor Coaching"
+      },
+      {
+        "command": "threadlight.coach.next",
+        "title": "Threadlight: Next Coaching Hint"
+      },
+      {
+        "command": "threadlight.coach.cancelGuide",
+        "title": "Threadlight: Cancel Current Guide"
+      },
+      {
+        "command": "threadlight.coach.accept",
+        "title": "Threadlight: Accept Inline Change",
+        "enablement": "threadlight.coach.preview"
+      },
+      {
+        "command": "threadlight.coach.dismiss",
+        "title": "Threadlight: Dismiss Inline Change",
+        "enablement": "threadlight.coach.preview"
+      },
+      {
+        "command": "threadlight.coach.previous",
+        "title": "Threadlight: Previous Inline Version",
+        "enablement": "threadlight.coach.alternatives"
+      },
+      {
+        "command": "threadlight.coach.following",
+        "title": "Threadlight: Next Inline Version",
+        "enablement": "threadlight.coach.alternatives"
+      },
+      {
+        "command": "threadlight.coach.dismissTrace",
+        "title": "Threadlight: Dismiss Trace",
+        "enablement": "threadlight.coach.trace"
+      },
+      {
+        "command": "threadlight.coach.acceptProposal",
+        "title": "Threadlight: Accept Proposed Change",
+        "enablement": "threadlight.coach.proposal"
+      },
+      {
+        "command": "threadlight.coach.skipProposal",
+        "title": "Threadlight: Skip Proposed Change",
+        "enablement": "threadlight.coach.proposal"
+      },
+      {
+        "command": "threadlight.coach.nextProposal",
+        "title": "Threadlight: Next Proposed Change",
+        "enablement": "threadlight.coach.proposal || threadlight.coach.remaining"
+      },
+      {
+        "command": "threadlight.coach.dismissProposals",
+        "title": "Threadlight: Dismiss Proposed Changes",
+        "enablement": "threadlight.coach.proposal || threadlight.coach.remaining"
+      },
+      {
+        "command": "threadlight.coach.showPredicted",
+        "title": "Threadlight: Preview Predicted Python Edit"
+      },
+      {
+        "command": "threadlight.coach.choosePythonModel",
+        "title": "Threadlight: Choose Python Completion Model"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "threadlight.coach.accept",
+        "key": "tab",
+        "when": "threadlight.coach.preview && editorTextFocus && !editorTabMovesFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible"
+      },
+      {
+        "command": "threadlight.coach.dismiss",
+        "key": "escape",
+        "when": "threadlight.coach.preview && editorTextFocus && !editorTabMovesFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible"
+      },
+      {
+        "command": "threadlight.coach.previous",
+        "key": "left",
+        "when": "threadlight.coach.alternatives && editorTextFocus && !editorTabMovesFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible"
+      },
+      {
+        "command": "threadlight.coach.following",
+        "key": "right",
+        "when": "threadlight.coach.alternatives && editorTextFocus && !editorTabMovesFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible"
+      },
+      {
+        "key": "escape",
+        "command": "threadlight.coach.dismissTrace",
+        "when": "threadlight.coach.trace && editorTextFocus && !inSnippetMode && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "key": "tab",
+        "command": "tab",
+        "when": "threadlight.coach.trace && editorTextFocus && !inSnippetMode && !suggestWidgetVisible && !renameInputVisible && !editorTabMovesFocus && inlineSuggestionVisible"
+      },
+      {
+        "command": "threadlight.coach.acceptProposal",
+        "key": "tab",
+        "when": "threadlight.coach.proposal && editorTextFocus && !editorTabMovesFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible && !inlineSuggestionVisible"
+      },
+      {
+        "command": "threadlight.coach.skipProposal",
+        "key": "alt+backspace",
+        "when": "threadlight.coach.proposal && editorTextFocus && !editorTabMovesFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible"
+      },
+      {
+        "command": "threadlight.coach.nextProposal",
+        "key": "alt+]",
+        "when": "(threadlight.coach.proposal || threadlight.coach.remaining) && editorTextFocus && !editorTabMovesFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible"
+      },
+      {
+        "command": "threadlight.coach.dismissProposals",
+        "key": "escape",
+        "when": "(threadlight.coach.proposal || threadlight.coach.remaining) && editorTextFocus && !editorTabMovesFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible && !inlineSuggestionVisible"
+      },
+      {
+        "command": "threadlight.coach.showPredicted",
+        "key": "alt+]",
+        "when": "threadlight.coach.predicted && !threadlight.coach.proposal && editorTextFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible"
+      }
+    ],
+    "configuration": {
+      "title": "Threadlight Coach",
+      "properties": {
+        "threadlight.coach.pythonSuggestions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show automatic suggestions in trusted Python files when Threadlight Settings follows the VS Code setting."
+        }
+      }
+    }
+  },
+  "activationEvents": [
+    "onLanguage:python"
+  ]
+}

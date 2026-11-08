@@ -1,4 +1,18 @@
 // Converting a key press into an Electron accelerator ("Control+Alt+Q") and back into a label.
+export const BRAINSTORM_HOTKEY = 'Control+Alt+B'
+export const LIVE_MUTE_KEYS = ['Pause', 'Control+Alt+M'] as const
+export type LiveMuteKey = (typeof LIVE_MUTE_KEYS)[number]
+
+export function sameAccelerator(first: string, second: string) {
+  const normalize = (key: string) =>
+    key
+      .toLowerCase()
+      .replace(/commandorcontrol|cmdorctrl|ctrl/g, 'control')
+      .split('+')
+      .sort()
+      .join('+')
+  return normalize(first) === normalize(second)
+}
 
 export interface KeyPress {
   key: string
@@ -113,5 +127,6 @@ export function mainVirtualKey(accelerator: string): number | null {
 
 /** "Control+Alt+Q" → "Ctrl+Alt+Q" for display. */
 export function acceleratorLabel(accelerator: string): string {
-  return accelerator.replace('Control', 'Ctrl').replace('Super', 'Win')
+  if (accelerator === 'Pause') return 'Pause/Break'
+  return accelerator.replace(/CommandOrControl|CmdOrCtrl|Control/i, 'Ctrl').replace('Super', 'Win')
 }

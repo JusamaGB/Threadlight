@@ -1,0 +1,99 @@
+.section {
+  color: var(--fg);
+  padding: 2px 0;
+  font-size: 12px;
+}
+.section > summary {
+  cursor: pointer;
+  font-weight: 500;
+  line-height: 22px;
+}
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 5px 0;
+  min-width: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.row > strong {
+  margin-right: auto;
+  font-weight: 500;
+}
+.content p {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+.muted {
+  color: var(--muted);
+  font-size: 10px;
+}
+.list {
+  max-height: 220px;
+  overflow-y: auto;
+  min-width: 0;
+}
+.list details {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+.list summary {
+  cursor: pointer;
+}
+.list summary > span {
+  display: inline-block;
+  max-width: 70%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+.list small {
+  color: var(--muted);
+  margin-left: 6px;
+}
+.preview {
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.transcript {
+  max-height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+  padding: 5px;
+  background: var(--raised);
+  border-radius: 5px;
+}
+.content button {
+  width: fit-content;
+  font: inherit;
+  font-size: 11px;
+}
+.content select {
+  max-width: min(100%, 240px);
+}
+.content button,
+.content select {
+  color: var(--fg);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.content button:disabled {
+  opacity: 0.5;
+}
+.content textarea {
+  color: var(--fg);
+}
+.section :focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}

@@ -137,6 +137,32 @@ void app.whenReady().then(async () => {
       catalog = read
     },
   )
+  const comparisonCalls: unknown[][] = []
+  const comparison = async (id: string, scope: string, lens = 'git-current', rootId?: string) => {
+    comparisonCalls.push([id, scope, lens, rootId])
+    return {
+      branch: 'fixture',
+      files: [],
+      complete: true,
+      lens,
+      revision: `${rootId ?? 'primary'}:${lens}`,
+      groups:
+        scope === 'thread'
+          ? [
+              {
+                rootId: 'secondary',
+                root: 'C:/fixture/secondary',
+                lens: 'git-current',
+                files: 0,
+                added: 0,
+                removed: 0,
+                complete: true,
+                available: true,
+              },
+            ]
+          : undefined,
+    }
+  }
   const decisions: ((allow: boolean) => void)[] = []
   let restartCount = 0
   const service = new AppControlService(
@@ -149,7 +175,7 @@ void app.whenReady().then(async () => {
       workspaces: () => [{ id: directory, name: 'Fixture', path: directory, parentId: null }],
       spaces: () => [{ id: spaceId, title: 'Design', workspaceId: directory }],
       artifacts: (id) => catalog(id),
-      changes: async () => ({ files: [] }),
+      changes: comparison,
       createSpace: async () => ({ ok: true, spaceId }),
       createChat: async () => ({ ok: true, sessionId: thread.id }),
       busy: () => ({ agent: true, otherWork: false }),
@@ -189,10 +215,14 @@ void app.whenReady().then(async () => {
   }
   for (const channel of Object.values(IPC))
     if (![IPC.artifacts, IPC.artifactPreview].includes(channel as never))
-      ipcMain.handle(channel, (_event, value) =>
-        channel === IPC.panelLayout
-          ? { cardWidth: value === 'dual' ? 475 : 300 }
-          : (replies[channel] ?? null),
+      ipcMain.handle(channel, (_event, value, lens, rootId) =>
+        channel === IPC.getWorktreeChanges
+          ? comparison(value, 'worktree', lens, rootId)
+          : channel === IPC.getChanges
+            ? comparison(value, 'thread')
+            : channel === IPC.panelLayout
+              ? { cardWidth: value === 'dual' ? 475 : 300 }
+              : (replies[channel] ?? null),
       )
   Object.assign(globalThis, {
     controlProof: {
@@ -205,6 +235,7 @@ void app.whenReady().then(async () => {
       settings,
       catalog,
       restartCount: () => restartCount,
+      comparisonCalls,
     },
   })
   await panel.loadFile(join(__dirname, '../renderer/index.html'), { query: { view: 'panel' } })

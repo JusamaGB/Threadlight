@@ -1,3 +1,4 @@
+import { memoryFixture } from './memory-transport.fixture.mjs'
 // Run with Electron, opt in explicitly. Uses existing local speech weights; never downloads.
 /* global window */
 import { app, utilityProcess } from 'electron'
@@ -137,6 +138,7 @@ if (process.env.THREADLIGHT_RECORDED_READ_PROOF !== '1' || !root) {
       }
       server = new ThreadReadServer(
         new ThreadReadService([new CodexReadAdapter(codexPaths())], () => ['codex']),
+        memoryFixture(join(root, 'reader')),
       )
       await server.start()
       reader = new AgentService({ ...options, threadReads: server })

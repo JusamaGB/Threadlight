@@ -1,5 +1,7 @@
 # Conversation cards and background return events
 
+> Public copy: local proof paths and native identifiers are generalised; raw evidence remains private.
+
 Status: implemented locally, 26 October 2026; validation and remaining human
 acceptance are recorded below. Wednesday's provider
 acceptance and additional-destination work is recorded in

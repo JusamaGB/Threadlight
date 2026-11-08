@@ -1,3 +1,4 @@
+import { memoryPurpose, saverSchema } from '../../shared/memory'
 import { DatabaseSync } from 'node:sqlite'
 import { statSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
@@ -5,6 +6,7 @@ import { dirname, basename, join, relative, sep, isAbsolute } from 'node:path'
 import { z } from 'zod'
 import { communicationRecordSchemas } from '../../shared/communication'
 import { capabilityReportSchema } from '../../shared/projectParticipants'
+import { validateGraph, parseProcessRun } from '../../shared/workflowGraph'
 
 export async function exportDestination(file: string, privateDirectory: string) {
   const root = await realpath(privateDirectory)
@@ -44,6 +46,8 @@ const schemas = {
     redirectId: id.optional(),
   }),
   item: base.extend({
+    purpose: memoryPurpose.optional(),
+    saver: saverSchema.optional(),
     title,
     folderId: id,
     kind: z.enum(['note', 'document', 'image', 'decision', 'scratchpad', 'reference']),
@@ -52,6 +56,9 @@ const schemas = {
     archived: z.boolean(),
   }),
   revision: base.extend({
+    purpose: memoryPurpose.optional(),
+    saver: saverSchema.optional(),
+    title: title.optional(),
     itemId: id,
     revision: number.positive(),
     body: z.string().max(10 * 1024 * 1024),
@@ -231,7 +238,14 @@ export function readBackup(file: string) {
               .object({
                 seq: number,
                 id,
-                kind: z.enum(['message', 'question', 'assignment', 'workflow', 'conversation']),
+                kind: z.enum([
+                  'message',
+                  'question',
+                  'assignment',
+                  'workflow',
+                  'conversation',
+                  'process',
+                ]),
                 space: id.nullable(),
                 action: z.string().max(500),
                 at: number,
@@ -242,7 +256,27 @@ export function readBackup(file: string) {
     if (communicationOperations.length > 200000 || communicationEvents.length > 1000000)
       throw new Error('Communication history exceeds the backup limit.')
     for (const op of communicationOperations) JSON.parse(op.result)
-    return { records, blobs, events, communication, communicationOperations, communicationEvents }
+    const processTable = (name: 'process_definitions' | 'process_runs') =>
+      source.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name)
+        ? source
+            .prepare(`SELECT data FROM ${name} LIMIT 10001`)
+            .all()
+            .map((r) => JSON.parse(String(r.data)))
+        : []
+    const processDefinitions = processTable('process_definitions').map(validateGraph)
+    const processRuns = processTable('process_runs').map(parseProcessRun)
+    if (processDefinitions.length > 10000 || processRuns.length > 10000)
+      throw new Error('Workflow backup exceeds record limit.')
+    return {
+      records,
+      blobs,
+      events,
+      communication,
+      communicationOperations,
+      communicationEvents,
+      processDefinitions,
+      processRuns,
+    }
   } finally {
     source.close()
   }

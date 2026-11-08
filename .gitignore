@@ -5,6 +5,19 @@ __pycache__/
 dist/
 build/
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+coverage/
+release-local/
+vscode-coach/*.vsix
 *.log
 
 screenshots/
@@ -17,6 +30,8 @@ screenshots/
 *.gif
 *.bmp
 *.webp
+!threadlight-public-web/public/assets/*.webp
+!threadlight-public-web/public/assets/*.jpg
 
 screenshots-local/
 *.local.*

@@ -1,4 +1,7 @@
 import { request } from 'node:http'
+import { randomBytes } from 'node:crypto'
+import { openHook, sealHook } from '../src/main/hookAuth'
+const authKey = randomBytes(32)
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -9,7 +12,7 @@ let events: unknown[]
 
 beforeEach(async () => {
   events = []
-  server = await startHookServer({ port: 0, onEvent: (payload) => events.push(payload) })
+  server = await startHookServer({ port: 0, authKey, onEvent: (payload) => events.push(payload) })
 })
 afterEach(() => server.close())
 
@@ -21,6 +24,11 @@ function send(options: {
   body?: string
 }) {
   return new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const wire = sealHook(authKey, `POST:${options.path ?? '/hook/PreToolUse'}`, {
+      time: Date.now(),
+      body: options.body ?? '{"session_id":"session-a","hook_event_name":"PreToolUse"}',
+    })
+    const nonce = JSON.parse(wire).iv
     const req = request(
       {
         host: '127.0.0.1',
@@ -32,11 +40,24 @@ function send(options: {
       (res) => {
         let body = ''
         res.on('data', (chunk) => (body += chunk))
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, body }))
+        res.on('end', () => {
+          if (res.statusCode === 200 && options.method !== 'GET') {
+            try {
+              resolve(
+                openHook(authKey, 'response:' + nonce, body).value as {
+                  status: number
+                  body: string
+                },
+              )
+            } catch (error) {
+              reject(error)
+            }
+          } else resolve({ status: res.statusCode ?? 0, body })
+        })
       },
     )
     req.on('error', reject)
-    req.end(options.body ?? '{"session_id":"session-a","hook_event_name":"PreToolUse"}')
+    req.end(wire)
   })
 }
 
@@ -69,6 +90,7 @@ describe('hook server', () => {
     await server.close()
     server = await startHookServer({
       port: 0,
+      authKey,
       onEvent: () => {},
       status: () => ({ hookEvents: 3 }),
     })
@@ -85,6 +107,7 @@ describe('hook server', () => {
     let replyTo: ((body: string | null) => void) | undefined
     server = await startHookServer({
       port: 0,
+      authKey,
       onEvent: () => {},
       onAsk: (_payload, reply) => {
         replyTo = reply
@@ -107,6 +130,7 @@ describe('hook server', () => {
     const seen: string[] = []
     server = await startHookServer({
       port: 0,
+      authKey,
       onEvent: () => {},
       onAsk: () => (seen.push('ask'), false),
       onStop: (_payload, reply) => (seen.push('stop'), reply('{"decision":"block"}'), true),
@@ -121,7 +145,7 @@ describe('hook server', () => {
   it('answers /ask with nothing at once when there is nothing to hold, or no handler', async () => {
     expect(await send({ path: '/ask', body: '{}' })).toEqual({ status: 404, body: '' })
     await server.close()
-    server = await startHookServer({ port: 0, onEvent: () => {}, onAsk: () => false })
+    server = await startHookServer({ port: 0, authKey, onEvent: () => {}, onAsk: () => false })
     expect(await send({ path: '/ask', body: '{}' })).toEqual({ status: 204, body: '' })
     expect((await send({ path: '/ask', headers: { Origin: 'https://example.com' } })).status).toBe(
       403,
@@ -129,7 +153,7 @@ describe('hook server', () => {
   })
 
   it('ignores other methods, paths and broken JSON', async () => {
-    expect((await send({ method: 'GET' })).status).toBe(404)
+    expect((await send({ method: 'GET' })).status).toBe(403)
     expect((await send({ path: '/send' })).status).toBe(404)
     expect((await send({ path: '/hook/../x' })).status).toBe(404)
     expect((await send({ body: '{broken' })).status).toBe(204)

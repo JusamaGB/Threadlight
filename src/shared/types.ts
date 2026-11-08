@@ -123,6 +123,10 @@ export interface DiffStat {
 
 /** Where a thread's git folder stands (see gitDiff.ts). */
 export interface GitState extends DiffStat {
+  stale?: boolean
+  complete?: boolean
+  revision?: string
+  hasOtherLensChanges?: boolean | null
   /** Root/branch are ready; repository counts have not completed yet. */
   pending?: boolean
   /** The repository's top folder. */
@@ -142,12 +146,18 @@ export interface GitState extends DiffStat {
 
 /** One file in the Changes view. */
 export interface ChangedFile {
+  /** In grouped results path is an opaque request key; displayPath is the root-relative name. */
+  displayPath?: string
+  rootId?: string
   /** Relative to the repository's top folder, with forward slashes. */
   path: string
   status: 'added' | 'modified' | 'deleted'
   added: number
   removed: number
   binary: boolean
+  /** Numeric fields above are known subtotals when text counts are incomplete. */
+  countsComplete?: boolean
+  reason?: string
 }
 
 /** One line of a drawn diff: a hunk's separator, or a context, added or removed line. */
@@ -163,21 +173,35 @@ export type FileDiff =
   | { kind: 'text'; lines: DiffLine[] }
   | { kind: 'binary' }
   | { kind: 'too-big'; lines: number }
-  | { kind: 'unavailable' }
+  | { kind: 'unavailable'; reason?: string }
 
 /** What the Changes view lists for a thread. */
 export interface Changes {
+  groups?: import('./changes').ChangeRootGroup[]
+  attributionCoverage?: import('./changes').ChangeCoverage
   branch: string | null
   files: ChangedFile[]
   /** False when recorded ownership cannot cover all potentially relevant pending edits. */
   complete?: boolean
+  revision?: string
+  lens?: import('./changes').ChangeLens
+  coverage?: import('./changes').MetricCoverage
+  hasOtherLensChanges?: boolean | null
+  stale?: boolean
 }
 
 /** Uncommitted Git changes attributable to this chat's recorded edits. */
 export interface ThreadDiffSummary extends DiffStat {
+  mixedLenses?: boolean
+  groups?: import('./changes').ChangeRootGroup[]
+  coverage?: import('./changes').ChangeCoverage
+  lens?: import('./changes').ChangeLens
   files: number
   revision: string
   complete: boolean
+  stale?: boolean
+  hasOtherLensChanges?: boolean | null
+  evidenceScope?: 'available-recorded-operations'
 }
 
 /** A linked pull request; Codex attachments do not expose its current remote state. */
@@ -245,6 +269,7 @@ export interface Session {
    * is not held in Recent and it does not drip. Nothing changes in Claude or Codex.
    */
   ignored?: boolean
+  questionDismissed?: boolean
   permissionMode: string | null
   model: string | null
   /** Oldest first, so the last one is the latest. */

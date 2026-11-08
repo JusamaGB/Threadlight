@@ -3,7 +3,7 @@
 // it, and people can too. Every step says what it does; running it again changes nothing that
 // is already right; uninstalling removes only what this script added (see install.json).
 //
-//   node scripts/install.mjs [--providers claude,codex] [--hotkey Control+Alt+Q] [--talk-mode toggle|hold]
+//   node scripts/install.mjs [--providers claude,codex,perplexity] [--hotkey Control+Alt+Q] [--talk-mode toggle|hold]
 //                            [--countdown 1-10] [--corner top-right|top-left|bottom-right|bottom-left]
 //                            [--autostart | --no-autostart] [--no-start]
 //   node scripts/install.mjs --check                 diagnose only; changes nothing
@@ -78,8 +78,8 @@ function parseArgs(argv) {
     switch (arg) {
       case '--providers':
         options.providers = [...new Set(value().split(','))]
-        if (!options.providers.every((name) => ['claude', 'codex'].includes(name)))
-          fail('Choose claude or codex, separated by commas.')
+        if (!options.providers.every((name) => ['claude', 'codex', 'perplexity'].includes(name)))
+          fail('Choose claude, codex or perplexity, separated by commas.')
         options.explicitProviders = true
         break
       case '--check':
@@ -462,7 +462,7 @@ function preflight({ strict, providers }) {
     if (!commands.codex) problem('Install the native Codex CLI and open a new terminal.')
     else ok('Codex CLI')
   }
-  {
+  if (providers.includes('claude') || providers.includes('codex')) {
     const curl = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'curl.exe')
     if (!existsSync(curl)) problem('curl.exe is missing from Windows; the hooks need it.')
     else ok('curl.exe (used by the hooks)')
@@ -476,6 +476,8 @@ function preflight({ strict, providers }) {
     else ok('Claude Code CLI')
     commands.claude = cli
   }
+  if (providers.includes('perplexity'))
+    say('  Open and sign in to the Perplexity Windows app to verify chats.')
   return commands
 }
 
@@ -546,8 +548,17 @@ async function installSteps(options, cli, added) {
   const changes = {
     ...(!existing &&
       options.explicitProviders && {
-        enabledProviders: options.providers,
+        shownProviders: options.providers,
+        enabledProviders: options.providers.filter((name) => name !== 'perplexity'),
         agentProvider: options.providers.includes('codex') ? 'codex' : 'claude',
+        chatSources: options.providers.flatMap((name) =>
+          name === 'codex' ? ['chatgpt'] : name === 'perplexity' ? ['perplexity'] : [],
+        ),
+        ...(options.providers.length === 1 &&
+          options.providers[0] === 'perplexity' && {
+            conversationFilter: 'chat',
+            listMode: 'recent',
+          }),
       }),
     ...(options.hotkey && { talkHotkey: options.hotkey }),
     ...(options.talkMode && { talkMode: options.talkMode }),

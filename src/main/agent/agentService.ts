@@ -29,6 +29,8 @@ import { discoverModels } from './agentModels'
 import { codexPolicy } from './codexPolicy'
 import { connectedApps } from './agentApps'
 import { briefing, readableFolders } from './briefing'
+import { screenRegionCaption } from '../../shared/screenRegion'
+import { RegionReceipts, type RegionResult } from '../regionReceipts'
 import { archiveAgentConversation } from './agentArchive'
 import type { ThreadReadServer } from '../threadRead/server'
 import { ThreadEvidenceStore } from './threadEvidenceStore'
@@ -51,6 +53,14 @@ const responseSchema = z.discriminatedUnion('action', [
   }),
 ])
 interface Options {
+  editorCoach?: (
+    session: string,
+    command: import('../../shared/editorCoach').CoachCommand,
+  ) => Promise<unknown>
+  foregroundWindow?: (
+    id: string,
+    inspect: boolean,
+  ) => Promise<import('../liveScreen').WindowObservation | null>
   spaceContext?: () => import('../threadRead/server').ThreadReadConnection
   appControl?: import('../appControl/server').AppControlServer
   announcements?: {
@@ -174,6 +184,46 @@ export class AgentService {
     if (!this.run || this.state.ended) this.publish({ ...this.state })
   }
 
+  get activeLiveSession(): string | null {
+    return this.state.live === 'ready' || this.state.live === 'active' ? this.voiceSession : null
+  }
+  interruptProposal(id: string) {
+    if (this.activeLiveSession === id && this.run instanceof CodexAgentRun)
+      this.run.interruptProposal()
+  }
+  async speakCoachStep(id: string, text: string, first: boolean, proposal = false) {
+    if (this.activeLiveSession !== id || !(this.run instanceof CodexAgentRun))
+      throw new Error('Live has closed.')
+    await this.run.coachStep(text, first, proposal)
+  }
+  async coachEvent(id: string, event: import('../../shared/editorCoach').GuideEvent) {
+    if (this.activeLiveSession !== id || !(this.run instanceof CodexAgentRun))
+      throw new Error('Live has closed.')
+    await this.run.coachEvent(event)
+  }
+  private liveReceipts?: { id: string; receipts: RegionReceipts }
+  async shareLiveRegion(
+    id: string,
+    image: import('../liveScreen').ScreenImage,
+  ): Promise<RegionResult> {
+    if (this.activeLiveSession !== id || !(this.run instanceof CodexAgentRun))
+      return { ok: false, reason: 'This Live conversation has closed.' }
+    if (this.liveReceipts?.id !== id) this.liveReceipts = { id, receipts: new RegionReceipts() }
+    const receipts = this.liveReceipts.receipts
+    const { key, skip } = receipts.claim(image)
+    if (skip) return skip
+    const result = await this.run.shareRegion(image).catch((): RegionResult => ({
+      ok: false,
+      reason: 'Live region delivery is unconfirmed.',
+      uncertain: true,
+    }))
+    receipts.finish(key, result)
+    return result
+  }
+  liveScreenError(id: string, reason: string) {
+    if (this.activeLiveSession === id && this.run instanceof CodexAgentRun)
+      this.run.screenError(reason)
+  }
   async startLive(id: unknown, sdp: unknown): Promise<LiveVoiceResult> {
     if (!validVoiceSession(id) || !validVoiceOffer(sdp))
       return { ok: false, reason: 'Invalid Live connection.' }
@@ -210,6 +260,19 @@ export class AgentService {
     }
   }
 
+  readRemaining(id: string, token: string) {
+    if (id === this.voiceSession && this.run instanceof CodexAgentRun)
+      return this.run.readRemaining(token)
+  }
+  playbackBoundary(
+    id: string,
+    kind: import('../../shared/liveVoice').PlaybackBoundary,
+    turn: string,
+  ) {
+    if (id === this.voiceSession && this.run instanceof CodexAgentRun)
+      this.run.playbackBoundary(kind, turn)
+  }
+
   async openLive(id: unknown, text: unknown): Promise<AgentResult> {
     if (!validVoiceSession(id) || id !== this.voiceSession || !(this.run instanceof CodexAgentRun))
       return { ok: false, reason: 'This Live session is closed.' }
@@ -234,7 +297,20 @@ export class AgentService {
     } else if (id === undefined) await this.voiceRetirement
   }
 
-  async send(value: unknown, humanText?: string): Promise<AgentResult> {
+  get canStartRegion(): boolean {
+    return (
+      !this.voiceSession && !this.locked && !agentBusy(this.state) && !this.state.requests.length
+    )
+  }
+  startRegion(region: import('../liveScreen').RegionRequest): Promise<RegionResult> {
+    if (!this.canStartRegion) return Promise.resolve({ ok: false, reason: 'The Agent is busy.' })
+    return this.send(screenRegionCaption(region.image.application), undefined, region)
+  }
+  async send(
+    value: unknown,
+    humanText?: string,
+    region?: import('../liveScreen').RegionRequest,
+  ): Promise<RegionResult> {
     if (typeof value !== 'string' || !value.trim() || value.length > 32_000)
       return { ok: false, reason: 'Enter a message up to 32,000 characters.' }
     if (this.locked || agentBusy(this.state))
@@ -244,8 +320,10 @@ export class AgentService {
     try {
       await this.store.load()
       await Promise.all([this.retirement, this.voiceRetirement])
-      if (!this.run || this.state.ended) {
+      if (region || !this.run || this.state.ended) {
+        // Retire the previous owned run normally. Archived history still opens from Earlier.
         await this.run?.close()
+        if (operation !== this.operation) throw new Error('The conversation was ended.')
         this.run = null
         this.publish({ ...IDLE_AGENT, status: 'starting' })
         const next = await this.create()
@@ -256,8 +334,12 @@ export class AgentService {
         this.run = next
       }
       if (operation !== this.operation) throw new Error('The conversation was ended.')
-      this.humanInput = { id: crypto.randomUUID(), text: humanText ?? value, at: Date.now() }
-      return await this.run.send(value)
+      if (this.run instanceof AgentRun) await this.run.ready()
+      if (operation !== this.operation) throw new Error('The conversation was ended.')
+      this.humanInput = region
+        ? undefined
+        : { id: crypto.randomUUID(), text: humanText ?? value, at: Date.now() }
+      return await this.run.send(value, region)
     } catch (error) {
       if (operation === this.operation)
         this.publish({ ...this.state, status: 'error', error: (error as Error).message })
@@ -290,6 +372,37 @@ export class AgentService {
   async interrupt(): Promise<AgentResult> {
     return this.run ? await this.run.interrupt() : { ok: true }
   }
+  async finishCallChat(id: unknown, choice: unknown): Promise<AgentResult> {
+    await this.voiceRetirement
+    const current = this.current
+    if (
+      typeof id !== 'string' ||
+      current.conversationId !== id ||
+      current.ended ||
+      (choice !== 'archive' && choice !== 'fresh')
+    )
+      return { ok: false, reason: 'This conversation is no longer the current chat.' }
+    if (
+      this.locked ||
+      this.voiceSession ||
+      current.live ||
+      agentBusy(current) ||
+      current.requests.length ||
+      current.approval ||
+      this.store.get(id)?.pending
+    )
+      return {
+        ok: false,
+        reason: 'Finish the active work or decision first. Your chat is still open.',
+      }
+    const closing = this.close(),
+      operation = this.operation
+    await closing
+    if (this.current.error) return { ok: false, reason: this.current.error }
+    if (choice === 'fresh' && operation === this.operation && !this.run)
+      this.publish({ ...IDLE_AGENT, provider: current.provider })
+    return { ok: true }
+  }
   close(): Promise<void> {
     for (const decision of this.controlDecisions.values()) decision.decide(false)
     this.controlDecisions.clear()
@@ -304,6 +417,14 @@ export class AgentService {
         if (operation === this.operation && run.current.error)
           this.publish({ ...this.state, error: run.current.error })
       })
+    void this.retirement.catch(() => {
+      if (operation === this.operation)
+        this.publish({
+          ...this.state,
+          error:
+            'Agent process cleanup could not be confirmed. Restart Threadlight before starting another conversation.',
+        })
+    })
     this.publish({
       ...previous,
       status: 'idle',
@@ -316,13 +437,18 @@ export class AgentService {
     return this.retirement
   }
 
-  /** Only previously requested retirements are retried; unrelated chats are never archived. */
+  /** Recover requested retirements and settled, explicitly owned crops left by an interrupted exit. */
   async retryArchives(): Promise<void> {
     await this.store.load()
     for (const record of this.store.all()) {
-      if (record.provider !== 'codex' || record.archiveState !== 'pending') continue
+      if (record.provider !== 'codex' || record.id === this.run?.current.conversationId) continue
+      if (
+        record.archiveState !== 'pending' &&
+        !(record.standaloneRegion && !record.pending && !record.archiveState)
+      )
+        continue
       try {
-        await archiveAgentConversation(this.store, record.id, () => this.connect())
+        await archiveAgentConversation(this.store, record.id, () => this.connectCodex())
       } catch {
         this.publish({
           ...this.state,
@@ -334,13 +460,13 @@ export class AgentService {
   }
 
   async models() {
-    const client = await this.connect()
+    const client = await this.connectCodex()
     try {
       return { models: await discoverModels(client), error: null }
     } catch (error) {
       return { models: [], error: (error as Error).message }
     } finally {
-      client.close()
+      await client.close()
     }
   }
   async apps(provider: AgentProvider): Promise<AgentApp[]> {
@@ -350,13 +476,13 @@ export class AgentService {
         ? connectedApps(cli)
         : [{ name: 'Claude', status: 'Claude Code was not found.', unavailable: true }]
     }
-    const client = await this.connect()
+    const client = await this.connectCodex()
     try {
       return (
         await codexPolicy(client, this.options.workspace, this.options.settings().agentCodexAppsOff)
       ).apps
     } finally {
-      client.close()
+      await client.close()
     }
   }
 
@@ -391,7 +517,7 @@ export class AgentService {
       await this.store.load()
       const record = this.store.get(id)
       if (record?.provider === 'codex') {
-        const client = await this.connect()
+        const client = await this.connectCodex()
         try {
           const page = await readCodexHistory(client, record.providerId, cursor as string | null)
           if (!cursor && record.liveItems?.length) {
@@ -406,7 +532,7 @@ export class AgentService {
           if (!cursor) page.items.push(...(await this.savedEvidence(id)))
           return page
         } finally {
-          client.close()
+          await client.close()
         }
       }
       const raw = id.startsWith('claude:') ? id.slice(7) : ''
@@ -434,7 +560,7 @@ export class AgentService {
         throw new Error(page.error ?? 'That conversation is gone.')
       let record = this.store.get(id)
       if (record?.archiveState === 'pending') {
-        await archiveAgentConversation(this.store, record.id, () => this.connect())
+        await archiveAgentConversation(this.store, record.id, () => this.connectCodex())
         record = this.store.get(id)
       }
       if (!record && !id.startsWith('claude:')) throw new Error('Unknown conversation.')
@@ -477,7 +603,7 @@ export class AgentService {
     }
   }
 
-  private async connect(): Promise<CodexTransport> {
+  async connectCodex(): Promise<CodexTransport> {
     if (this.options.codexClient) return this.options.codexClient()
     const cli = await this.options.cli('codex')
     if (!cli) throw new Error('Codex CLI was not found. Install and sign in to Codex first.')
@@ -487,7 +613,7 @@ export class AgentService {
       await client.initialize()
       return client
     } catch (error) {
-      client.close()
+      await client.close()
       throw error
     }
   }
@@ -514,6 +640,18 @@ export class AgentService {
       ? (reader?: import('../threadRead/server').ThreadReadConnection) =>
           this.options.appControl!.connect({
             active: true,
+            editorCoach: async (command) => {
+              const id = this.activeLiveSession
+              if (!id || this.run !== run || !this.options.editorCoach)
+                throw new Error('Start a foreground GPT Live conversation to coach in VS Code.')
+              return this.options.editorCoach(id, command)
+            },
+            foregroundWindow: async (inspect) => {
+              const id = this.activeLiveSession
+              return this.run === run && id
+                ? ((await this.options.foregroundWindow?.(id, inspect)) ?? null)
+                : null
+            },
             owner: () =>
               run?.current.conversationId ??
               (run?.current.sessionId
@@ -595,6 +733,7 @@ export class AgentService {
       if (provider === 'claude' && state.sessionId) {
         const id = `claude:${state.sessionId}`
         const previous = this.store.get(id)
+        const opening = state.items.find((i) => i.kind === 'you')
         const entry: AgentRecord = {
           id,
           provider,
@@ -605,7 +744,7 @@ export class AgentService {
           appsOff: record?.appsOff ?? settings.agentAppsOff,
           title:
             previous?.title ??
-            state.items.find((i) => i.kind === 'you')?.text.slice(0, 160) ??
+            (opening?.screenPreview ? 'Shared screen region' : opening?.text.slice(0, 160)) ??
             'Agent conversation',
           createdAt: previous?.createdAt ?? previous?.at ?? Date.now(),
           at: Date.now(),
@@ -630,7 +769,7 @@ export class AgentService {
         appControl,
         communication,
         threadReads,
-        client: () => this.connect(),
+        client: () => this.connectCodex(),
         workspace: this.options.workspace,
         model: settings.agentCodexModel,
         reasoning: settings.agentCodexReasoning,

@@ -1,3 +1,4 @@
+import { isSourceFile, SOURCE_LIMIT } from '../../shared/sourceReview'
 import { MemoryError } from './errors'
 
 export function attachmentMime(data: Buffer, name: string): string {
@@ -6,6 +7,29 @@ export function attachmentMime(data: Buffer, name: string): string {
   if (data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP')
     return 'image/webp'
   if (data.toString('ascii', 0, 5) === '%PDF-') return 'application/pdf'
+  if (isSourceFile(name)) {
+    if (data.length > SOURCE_LIMIT || data.includes(0))
+      throw new MemoryError(
+        'invalid_input',
+        'Choose a UTF-8 source file of 32 KiB or less without binary data.',
+      )
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(data)
+    } catch {
+      throw new MemoryError('invalid_input', 'Source files must use UTF-8.')
+    }
+    if (
+      data
+        .toString('utf8')
+        .split(/\r\n|\r|\n/)
+        .some((line) => line.length > 4000)
+    )
+      throw new MemoryError(
+        'invalid_input',
+        'Choose a source file with lines no longer than 4,000 characters.',
+      )
+    return 'text/plain'
+  }
   if (/\.(?:md|txt)$/i.test(name) && !data.includes(0)) {
     try {
       new TextDecoder('utf-8', { fatal: true }).decode(data)
@@ -16,6 +40,6 @@ export function attachmentMime(data: Buffer, name: string): string {
   }
   throw new MemoryError(
     'invalid_input',
-    'Choose a PNG, JPEG, WebP, PDF, Markdown or UTF-8 text file.',
+    'Choose a supported source file, PNG, JPEG, WebP, PDF, Markdown or UTF-8 text file.',
   )
 }

@@ -12,6 +12,8 @@ import { useComposerAttachments } from '../lib/composerAttachments'
 import styles from './Composer.module.css'
 import { VoiceWave } from './VoiceWave'
 import { QueuedMessages } from './QueuedMessages'
+import { ComposerInput } from './ComposerInput'
+import { ComposerMic } from './ComposerMic'
 
 interface ComposerProps {
   embedded?: boolean
@@ -37,7 +39,6 @@ interface ComposerProps {
   onClose: () => void
 }
 
-const MAX_ROWS = 4
 const RING = 2 * Math.PI * 7 // circumference of the countdown ring (r = 7)
 
 /** Claude's composer, trimmed to talking and typing: To line with ticks, the box, send and mic. */
@@ -93,15 +94,6 @@ export function Composer(props: ComposerProps) {
     focusedToken.current = focusToken
   }, [draft.loading, embedded, hidden, focusToken])
 
-  // Grow with the text, up to a few lines, then scroll.
-  useEffect(() => {
-    const element = box.current
-    if (!element || element.hidden || hidden) return
-    element.style.height = 'auto'
-    const line = parseFloat(getComputedStyle(element).lineHeight) || 16
-    element.style.height = `${Math.min(element.scrollHeight, line * MAX_ROWS)}px`
-  }, [text, voiceState, hidden])
-
   const send = async (message = text.trim()) => {
     if (
       (!message && !attachments.items.length) ||
@@ -124,7 +116,7 @@ export function Composer(props: ComposerProps) {
         session.id,
         message,
         attachmentIds.length ? attachmentIds : undefined,
-        canAttach ? 'queue' : undefined,
+        canAttach ? 'auto' : undefined,
       )
       if (result.ok) {
         setQueueRevision((n) => n + 1)
@@ -205,12 +197,8 @@ export function Composer(props: ComposerProps) {
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      event.stopPropagation()
-      cancelCountdown()
-      void send()
-    } else if (event.key === 'Escape') {
+    if (event.key === 'Enter' && !event.shiftKey) cancelCountdown()
+    if (event.key === 'Escape') {
       event.stopPropagation() // closes the composer, not the whole panel
       onClose()
     }
@@ -369,83 +357,70 @@ export function Composer(props: ComposerProps) {
           Preparing files…
         </p>
       )}
-      <div className={styles.pill}>
-        {canAttach && (
-          <button
-            type="button"
-            className={styles.attach}
-            aria-label="Attach files"
-            title="Attach files, paste or drop"
-            disabled={busy || attachments.busy || attachments.loading}
-            onClick={() => {
-              cancelCountdown()
-              void attachments.pick()
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path
-                d="M6 1v10M1 6h10"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        )}
-        <div className={styles.entry}>
-          <textarea
-            ref={box}
-            className={styles.input}
-            hidden={listening && !text.trim()}
-            rows={1}
-            disabled={draft.loading}
-            maxLength={MESSAGE_LIMIT}
-            value={text}
-            placeholder={placeholder}
-            onChange={(event) => {
-              cancelCountdown() // typing means you have taken over
-              setText(event.target.value)
-            }}
-            onKeyDown={onKeyDown}
+      <ComposerInput
+        inputRef={box}
+        embedded={embedded}
+        input={{
+          hidden: listening && !text.trim(),
+          disabled: draft.loading,
+          maxLength: MESSAGE_LIMIT,
+          value: text,
+          placeholder,
+          onChange: (event) => {
+            cancelCountdown()
+            setText(event.target.value)
+          },
+          onKeyDown,
+        }}
+        entryContent={listening && <VoiceWave level={level} />}
+        sendVisible={
+          voiceState === 'idle' && (text.trim().length > 0 || attachments.items.length > 0)
+        }
+        sendDisabled={
+          busy || draft.loading || !!draft.error || attachments.loading || attachments.busy
+        }
+        sendLabel={canAttach && session.state === 'working' ? 'Queue message' : en.composer.send}
+        sendTitle={
+          canAttach && session.state === 'working'
+            ? 'Queue after current response'
+            : en.composer.send
+        }
+        onSend={() => {
+          cancelCountdown()
+          void send()
+        }}
+        leading={
+          canAttach && (
+            <button
+              type="button"
+              className={styles.attach}
+              aria-label="Attach files"
+              title="Attach files, paste or drop"
+              disabled={busy || attachments.busy || attachments.loading}
+              onClick={() => {
+                cancelCountdown()
+                void attachments.pick()
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path
+                  d="M6 1v10M1 6h10"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )
+        }
+        trailing={
+          <ComposerMic
+            state={voiceState}
+            onClick={toggleMic}
+            disabled={draft.loading || micDisabled}
           />
-          {listening && <VoiceWave level={level} />}
-        </div>
-        {voiceState === 'idle' && (text.trim().length > 0 || attachments.items.length > 0) && (
-          <button
-            className={styles.send}
-            onClick={() => {
-              cancelCountdown()
-              void send()
-            }}
-            disabled={
-              busy || draft.loading || !!draft.error || attachments.loading || attachments.busy
-            }
-            aria-label={
-              canAttach && session.state === 'working' ? 'Queue message' : en.composer.send
-            }
-            title={
-              canAttach && session.state === 'working'
-                ? 'Queue after current response'
-                : en.composer.send
-            }
-          >
-            ↵
-          </button>
-        )}
-        <button
-          className={styles.mic}
-          data-state={voiceState}
-          onClick={toggleMic}
-          disabled={draft.loading || micDisabled || voiceState === 'transcribing'}
-          aria-label={listening ? en.voice.stop : en.voice.start}
-          title={listening ? en.voice.stop : en.voice.start}
-        >
-          <svg width="12" height="14" viewBox="0 0 12 14" aria-hidden="true">
-            <rect x="3.5" y="0.75" width="5" height="8" rx="2.5" />
-            <path d="M1.25 6.5a4.75 4.75 0 0 0 9.5 0M6 11.25v2" fill="none" />
-          </svg>
-        </button>
-      </div>
+        }
+      />
     </div>
   )
 }

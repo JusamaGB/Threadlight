@@ -4,6 +4,7 @@ import { PassThrough } from 'node:stream'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentState } from '../src/shared/agent'
+import { SCREEN_REGION_GUIDANCE } from '../src/shared/screenRegion'
 import { THREADLIGHT_AGENT_IDENTITY } from '../src/shared/agentIdentity'
 import { AgentRun, onlyLooks, readable, toolLabel } from '../src/main/agent/agentRun'
 
@@ -12,7 +13,12 @@ function fakeClaude() {
   const stdin = new PassThrough()
   const stdout = new PassThrough()
   const stderr = new PassThrough()
-  const child = Object.assign(new EventEmitter(), { stdin, stdout, stderr, kill: () => true })
+  const child = Object.assign(new EventEmitter(), {
+    stdin,
+    stdout,
+    stderr,
+    kill: vi.fn(() => true),
+  })
   const written: unknown[] = []
   stdin.setEncoding('utf8').on('data', (chunk: string) => {
     for (const line of chunk.split('\n').filter(Boolean)) written.push(JSON.parse(line))
@@ -51,6 +57,72 @@ const canUse = (id: string, tool: string, input: object) => ({
 })
 
 describe('AgentRun', () => {
+  it('submits a screen region as an image in the Claude user turn without starting voice', async () => {
+    const agent = new AgentRun({
+      cli: { command: 'fake', prefixArgs: [] },
+      workspace: 'agent',
+      model: 'fake',
+      start: (_command, argv) => {
+        expect(argv[argv.indexOf('--append-system-prompt') + 1]).toContain(SCREEN_REGION_GUIDANCE)
+        return fake.child as never
+      },
+      onChange: () => {},
+    })
+    expect(
+      agent.send('Explain the function', {
+        id: 'region',
+        image: { jpeg: 'pixels', thumbnail: 'preview' },
+      }).ok,
+    ).toBe(true)
+    expect(fake.written).toContainEqual({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Explain the function' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'pixels' } },
+        ],
+      },
+    })
+    expect(agent.current.items[0]?.screenPreview).toBe('preview')
+    await agent.close()
+  })
+  it('retires the process and scoped connections on a broken input stream, then closes idempotently', async () => {
+    const close = vi.fn()
+    const agent = new AgentRun({
+      cli: { command: 'fake', prefixArgs: [] },
+      workspace: 'agent',
+      model: 'fake',
+      start: () => fake.child as never,
+      onChange: () => {},
+      threadReads: () => ({ close, mcp: { command: 'fake', args: [] } }) as never,
+    })
+    agent.send('Start')
+    fake.child.stdin.emit('error', new Error('broken pipe'))
+    await agent.ready()
+    expect(fake.child.kill).toHaveBeenCalledTimes(1)
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(agent.current.status).toBe('error')
+    await agent.close()
+    expect(fake.child.kill).toHaveBeenCalledTimes(1)
+  })
+
+  it('revokes acquired context if launching the CLI fails synchronously', async () => {
+    const close = vi.fn()
+    const agent = new AgentRun({
+      cli: { command: 'fake', prefixArgs: [] },
+      workspace: 'agent',
+      model: 'fake',
+      onChange: () => {},
+      threadReads: () => ({ close, mcp: { command: 'fake', args: [] } }) as never,
+      start: () => {
+        throw Error('launch failed')
+      },
+    })
+    expect(agent.send('Start').ok).toBe(false)
+    await agent.close()
+    expect(close).toHaveBeenCalledTimes(1)
+  })
   it('keeps concurrent requests queued and ignores an older child after replacement', async () => {
     run.send('Synthetic actions')
     fake.say(canUse('one', 'Write', { file_path: 'one.txt' }))

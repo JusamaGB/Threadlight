@@ -141,7 +141,7 @@ export async function checkToolbar(page) {
   assert.equal(await page.locator('[data-session-id]').count(), 1)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   assert.equal(
-    await page.getByRole('switch', { name: 'Codex', exact: true }).getAttribute('aria-checked'),
+    await page.getByRole('switch', { name: 'OpenAI', exact: true }).getAttribute('aria-checked'),
     'true',
   )
   assert.equal(

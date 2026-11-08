@@ -1,3 +1,4 @@
+import { memoryFixture } from './memory-transport.fixture.mjs'
 // Installed Codex runtime, production communication service/MCP, isolated test project.
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
@@ -27,7 +28,8 @@ const { codexCommunicationAdmitted } = require('../../src/main/communication/adm
 const paths = codexPaths(),
   root = mkdtempSync(join(tmpdir(), 'threadlight-workflow-proof-')),
   memory = new MemoryStore(join(root, 'memory.sqlite')),
-  server = new MemoryServer(memory)
+  transportAuth = memoryFixture(root),
+  server = new MemoryServer(memory, transportAuth)
 const report = { root, checks: [] },
   human = { id: 'human', kind: 'human' }
 let service

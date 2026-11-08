@@ -1,17 +1,17 @@
 {
-  "description": "Report session activity to Threadlight on 127.0.0.1. Each hook pipes the event JSON to the local app and always exits 0, so a closed Threadlight never disturbs a session. The question-card hook, the session-offer hook, the PermissionRequest hook and the second Stop hook (when a turn ends on a question) wait for an answer given in Threadlight and pass it on, until it is answered or let go (opening the thread in Claude lets it go); with Threadlight closed, nothing asked, or the card let go, they return nothing at once and Claude carries on as usual. A second SessionStart hook asks Threadlight what a starting session should be told (that each plan step should name its files and why); with Threadlight closed it adds nothing. Written to run unchanged in both Git Bash and PowerShell, the two shells Claude Code uses on Windows.",
+  "description": "Authenticated and encrypted local Threadlight hooks. Requires the matching app and plugin version. Missing credentials, unavailable app or invalid replies produce no decision. Review and trust updated hook definitions.",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/SessionStart; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /hook/SessionStart 1; exit 0",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "curl.exe -s -m 2 --data-binary '@-' http://127.0.0.1:47615/context; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /context 2; exit 0",
             "timeout": 5
           }
         ]
@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/UserPromptSubmit; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /hook/UserPromptSubmit 1; exit 0",
             "timeout": 5
           }
         ]
@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/PreToolUse; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /hook/PreToolUse 1; exit 0",
             "timeout": 5
           }
         ]
@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/ask; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /ask 43200; exit 0",
             "timeout": 43260
           }
         ]
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/offer; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /offer 43200; exit 0",
             "timeout": 43260
           }
         ]
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/permission; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /permission 43200; exit 0",
             "timeout": 43260
           }
         ]
@@ -78,7 +78,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/PostToolUse; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /hook/PostToolUse 1; exit 0",
             "timeout": 5
           }
         ]
@@ -89,7 +89,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/Notification; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /hook/Notification 1; exit 0",
             "timeout": 5
           }
         ]
@@ -100,12 +100,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/Stop; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /hook/Stop 1; exit 0",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "curl.exe -s -m 43200 --data-binary '@-' http://127.0.0.1:47615/stop; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /stop 43200; exit 0",
             "timeout": 43260
           }
         ]
@@ -116,7 +116,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/SessionEnd; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /hook/SessionEnd 1; exit 0",
             "timeout": 5
           }
         ]
@@ -127,7 +127,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/PreCompact; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /hook/PreCompact 1; exit 0",
             "timeout": 5
           }
         ]
@@ -138,7 +138,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl.exe -s -m 1 --data-binary '@-' http://127.0.0.1:47615/hook/PostCompact; exit 0",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT,'scripts/hook-client.mjs')).href).then(m=>m.run()).catch(()=>{})\" -- 47615 /hook/PostCompact 1; exit 0",
             "timeout": 5
           }
         ]

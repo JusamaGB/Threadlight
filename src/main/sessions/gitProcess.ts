@@ -24,21 +24,30 @@ export class WorkQueue {
 }
 
 const commands = new WorkQueue(4)
-export function runGit(folder: string, args: string[]): Promise<string> {
+export function runGit(folder: string, args: string[], input?: string): Promise<string> {
   return commands.run(
     () =>
       new Promise((resolve, reject) => {
-        execFile(
+        const child = execFile(
           'git',
-          ['-C', folder, '-c', 'core.quotepath=false', ...args],
+          ['-C', folder, '-c', 'core.quotepath=false', '-c', 'core.fsmonitor=false', ...args],
           {
             windowsHide: true,
             timeout: 10_000,
             maxBuffer: 16 * 1024 * 1024,
-            env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+            env: {
+              ...process.env,
+              GIT_OPTIONAL_LOCKS: '0',
+              GIT_NO_LAZY_FETCH: '1',
+              GIT_TERMINAL_PROMPT: '0',
+            },
           },
           (error, stdout) => (error ? reject(error) : resolve(stdout)),
         )
+        child.stdin?.on('error', () => {
+          /* Process completion reports the command error. */
+        })
+        child.stdin?.end(input)
       }),
   )
 }

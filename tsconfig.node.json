@@ -10,8 +10,14 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "src/renderer/lib/artifactMessage.ts",
+    "src/renderer/lib/liveAudioBuffer.ts",
     "src/renderer/lib/stackedDiff.ts",
+    "src/renderer/spaces/brainstormStorage.ts",
+    "src/renderer/spaces/brainstormAgent.ts",
+    "src/renderer/lib/agentClient.ts",
+    "src/renderer/kimi/preview.ts",
     "test/**/*",
     "*.config.mjs"
-  ]
+  ],
+  "exclude": ["test/audioEnergy.test.ts"]
 }

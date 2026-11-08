@@ -108,26 +108,82 @@ export async function setupCommunication(
   })
   return { service, feed, destinations, native, human, close: () => service.close() }
 }
-export async function checkCommunication(page, proof, memory, capture) {
+export async function checkCommunication(page, proof, memory, capture, rolesOnly = false) {
   await openHeaderPage(page, 'Shared Spaces')
   await setupLegacySpace(page)
   const handoffs = page.getByRole('region', { name: 'Handoffs', exact: true })
   await handoffs.getByRole('button', { name: /shared Workspace collaboration/ }).click()
   const view = page.getByRole('region', { name: 'Thread communication' })
-  await view.getByText('Workflow configuration', { exact: true }).click()
-  await view.getByRole('button', { name: 'Find all chats for roles' }).click()
+  assert.equal(await view.getByText('Workflow configuration', { exact: true }).count(), 0)
+  await page.getByRole('tab', { name: 'Workflow', exact: true }).click()
+  const workflowView = page.getByRole('tabpanel', { name: 'Workflow', exact: true })
+  assert.equal(await workflowView.getByLabel('Message', { exact: true }).count(), 0)
+  await workflowView.getByText('Workflow configuration', { exact: true }).click()
+  await workflowView.getByRole('button', { name: 'Find all chats for roles' }).click()
   for (let i = 0; i < 2; i++) {
-    await view.getByRole('button', { name: 'Add role', exact: true }).click()
-    const row = view.locator('fieldset').nth(i)
+    await workflowView.getByRole('button', { name: 'Add role', exact: true }).click()
+    const row = workflowView.locator('fieldset').nth(i)
     await row.getByLabel('Role', { exact: true }).fill(i ? 'Review' : 'Build')
     await row.getByLabel('Chat', { exact: true }).selectOption(proof.destinations[i].id)
     await row.getByLabel('Allow project DMs', { exact: true }).check()
     await row.getByLabel('Allow requests for work', { exact: true }).check()
   }
-  await view.getByLabel('Pause new dispatches', { exact: true }).uncheck()
-  await view.getByRole('button', { name: 'Save workflow', exact: true }).click()
+  await workflowView.getByLabel('Pause new dispatches', { exact: true }).uncheck()
+  await page.getByRole('tab', { name: 'Notes', exact: true }).click()
+  await page.getByRole('tab', { name: 'Workflow', exact: true }).click()
+  assert.equal(
+    await workflowView.getByLabel('Pause new dispatches', { exact: true }).isChecked(),
+    false,
+  )
+  await workflowView.getByRole('button', { name: 'Save workflow', exact: true }).click()
   const workflow = memory.communications.list('workflow')[0]
   assert.ok(workflow)
+  // Ordinary chat roles share the selector but retain their native model and no tool authority.
+  const chat = {
+    ...proof.destinations[1],
+    id: `chatgpt:${randomUUID()}`,
+    provider: 'chatgpt',
+    title: 'Thinking chat',
+    model: undefined,
+    workspace: '',
+    transport: 'account-chat',
+  }
+  proof.destinations.push(chat)
+  await workflowView.getByText('Workflow configuration', { exact: true }).click()
+  await workflowView.getByRole('button', { name: 'Find all chats for roles' }).click()
+  await workflowView.getByRole('button', { name: 'Add role', exact: true }).click()
+  const accountRow = workflowView.locator('fieldset').nth(2)
+  await accountRow.getByLabel('Role', { exact: true }).fill('Think')
+  await accountRow.getByLabel('Chat', { exact: true }).selectOption(chat.id)
+  assert.equal(
+    await accountRow.getByLabel('Model', { exact: true }).inputValue(),
+    'Current native model',
+  )
+  assert.equal(await accountRow.getByLabel('Model', { exact: true }).getAttribute('readonly'), '')
+  assert.equal(
+    await accountRow.getByLabel('Allow requests for work', { exact: true }).isDisabled(),
+    true,
+  )
+  await accountRow.getByLabel('Allow project DMs', { exact: true }).check()
+  await workflowView.getByRole('button', { name: 'Save workflow', exact: true }).click()
+  assert.equal(memory.communications.list('workflow')[0].participants[2].modelPolicy, 'current')
+  await capture('dedicated-workflow')
+  if (rolesOnly) {
+    await workflowView.getByText('Workflow configuration', { exact: true }).click()
+    const saved = workflowView.locator('fieldset').nth(2)
+    assert.equal(await saved.getByLabel('Chat', { exact: true }).inputValue(), chat.id)
+    assert.equal(
+      await saved.getByLabel('Model', { exact: true }).inputValue(),
+      'Current native model',
+    )
+    await saved.scrollIntoViewIfNeeded()
+    await capture('account-chat-workflow-role')
+    console.log(
+      'PASS: provider-neutral role discovery, account-chat identity, current-model policy, disabled unsupported authority and persisted configuration.',
+    )
+    return
+  }
+  await page.getByRole('tab', { name: 'Handoffs', exact: true }).click()
   await view.getByLabel('DM recipient', { exact: true }).selectOption(proof.destinations[1].id)
   await view
     .getByLabel('Message', { exact: true })
@@ -203,6 +259,7 @@ export async function checkCommunication(page, proof, memory, capture) {
   await page.reload()
   await openHeaderPage(page, 'Shared Spaces')
   await openSpace(page)
+  await page.getByRole('tab', { name: 'Handoffs', exact: true }).click()
   await page
     .getByRole('region', { name: 'Handoffs', exact: true })
     .getByRole('button', { name: /shared Workspace collaboration/ })
@@ -294,11 +351,13 @@ export async function checkConversationEvents(page, proof, memory, capture) {
   await second.waitFor()
   await first.getByRole('radio', { name: 'Wide', exact: true }).check()
   await first.getByRole('button', { name: 'Submit', exact: true }).click()
+  await first.getByText('Answered', { exact: true }).waitFor()
+  await first.locator(':scope > details > summary').click()
   await first.getByText(/answered here/).waitFor()
   assert.equal(await second.getByRole('button', { name: 'Submit', exact: true }).isEnabled(), true)
   proof.native.length = 0
   await page.evaluate(() => window.proof.emit('onCommunication'))
-  await second.getByText(/unavailable/).waitFor()
+  await second.getByText('Unavailable', { exact: true }).waitFor()
   const result = memory.communications.list('message').find((m) => m.sender === owner)
   result.deliveries[0].phase = 'completed'
   result.deliveries[0].reply = 'Actual returned result'

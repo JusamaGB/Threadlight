@@ -17,11 +17,16 @@ const { NativeCodexQuestions, nativeQuestionRef } = loadSource(
   '../../src/main/codex/nativeQuestions.ts',
 )
 const root = path.resolve(import.meta.dirname, '../..')
-const threadId = 'eca91ec8-c3fc-5f90-ae47-2251ba237c1f'
+const threadId = process.env.THREADLIGHT_NATIVE_TEST_CHAT
 const history = path.join(process.env.USERPROFILE, '.codex', 'thread_history_1.sqlite')
 const output = path.join(root, 'notes-local/native-cards-investigation')
 async function main() {
   assert.equal(process.env.THREADLIGHT_NATIVE_PROOF, '1', 'Explicit live test opt-in required')
+  assert.match(
+    threadId ?? '',
+    /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i,
+    'Set THREADLIGHT_NATIVE_TEST_CHAT to an explicitly authorised disposable chat',
+  )
   const db = new DatabaseSync(history, { readOnly: true })
   db.exec('PRAGMA query_only=ON')
   try {

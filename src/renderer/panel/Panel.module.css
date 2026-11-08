@@ -59,6 +59,23 @@
 .peekRow {
   box-sizing: border-box;
 }
+.pinnedActive {
+  flex: none;
+  max-height: var(--pinned-active-height, 180px);
+  border-top: 1px solid var(--border);
+}
+.pinnedActive .header {
+  min-height: 20px;
+  cursor: default;
+}
+.pinnedActive[data-reader-open] {
+  max-height: var(--pinned-reader-height);
+  --thread-history-height: max(64px, calc(var(--pinned-reader-height) - 140px));
+}
+.pinnedActive .peekList:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
 
 .panelStage[data-dual] .card {
   width: var(--dual-card-width, 475px);
@@ -104,7 +121,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 3px 0 10px;
+  padding: 0 3px 0 5px;
   min-height: 24px;
   border-bottom: 1px solid var(--border);
   flex: none;
@@ -173,6 +190,16 @@
   font-size: 11px;
 }
 
+.sourceWorkspace [data-thread-filter] {
+  mask-image: linear-gradient(to right, #000, transparent 85%);
+}
+
+.sourceWorkspace:hover [data-thread-filter],
+.sourceWorkspace:focus-within [data-thread-filter],
+.sourceWorkspace[data-menu-open] [data-thread-filter] {
+  mask-image: none;
+}
+
 .sourceControl {
   flex: none;
 }
@@ -181,7 +208,12 @@
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/* Keep a bare header target for pinning, dragging and its context menu. */
+.sourceWorkspace + .gear {
+  flex: none;
+  margin-left: 16px;
 }
 
 .viewControl:hover,
@@ -196,6 +228,12 @@
 }
 
 /* Nudge the small header icons down one pixel for optical alignment with the text. */
+.agentSettingsGear {
+  position: absolute;
+  top: 3px;
+  right: 25px;
+  z-index: 1;
+}
 .gear svg {
   position: relative;
   top: 1px;
@@ -249,6 +287,16 @@
   text-overflow: ellipsis;
 }
 
+.header:has(> .projectHeading) {
+  border-bottom: 0;
+  min-height: 22px;
+}
+
+.projectHeading {
+  left: 24px;
+  right: 24px;
+}
+
 .microphoneStatus {
   flex: none;
   color: var(--faint);
@@ -259,10 +307,41 @@
   left: 100px;
   right: 100px;
 }
+.header[data-voice] .agentHeading {
+  left: 44px;
+  right: 44px;
+}
+.header[data-voice] .projectHeading {
+  left: 24px;
+  right: 24px;
+}
 
 /* The agent is working while another page shows: purple, with a blue shimmer about once a second. */
 .gear.agentBusy {
   color: var(--purple);
+}
+.gear.recentAgent {
+  flex: none;
+  color: var(--purple);
+}
+.gear.recentAgent svg {
+  fill: currentColor;
+  filter: drop-shadow(0 0 2px currentColor);
+}
+.gear.recentAgent[data-awaiting] svg {
+  animation: agentQuestionPulse 1.8s ease-in-out infinite;
+}
+@keyframes agentQuestionPulse {
+  50% {
+    color: #fff;
+    filter: drop-shadow(0 0 4px #fff);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gear.recentAgent[data-awaiting] svg {
+    animation: none;
+    color: #fff;
+  }
 }
 
 .gear.agentBusy svg {
@@ -686,18 +765,7 @@
   position: relative;
 }
 
-/* Every thread reserves a compact third line beneath the title and Now text. Its buttons
-   are siblings of the row button, so activating a tile never expands the thread. */
-.artifactStrip {
-  margin: 0 6px;
-  height: 6px;
-  display: flex;
-  justify-content: center;
-  gap: 1px;
-  z-index: 3;
-  pointer-events: none;
-}
-
+/* Compact navigation marks inside the artifact viewer. */
 .artifactTile {
   position: relative;
   flex: 0 1 12px;
@@ -715,11 +783,6 @@
   inset: 2px 0 1px;
   background: #9da9b8;
   opacity: 0.7;
-}
-
-.artifactStrip .artifactTile > span:first-child {
-  top: 1px;
-  bottom: 2px;
 }
 
 .artifactTile:nth-child(even) > span:first-child {
@@ -927,11 +990,23 @@
   overflow: hidden;
   white-space: nowrap;
   /* A long title fades out before whatever sits beside it, rather than ending in "…". */
-  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+
   /* Closes part of the row's gap, so the fade ends close to the label beside it. */
   margin-right: -3px;
 }
 
+.title,
+.agent[data-resizable] > .agentLog[data-scrolled] {
+  mask-image: linear-gradient(
+    var(--fade-direction, to right),
+    #000 calc(100% - var(--fade-length, 14px)),
+    transparent
+  );
+}
+.agent[data-resizable] > .agentLog[data-scrolled] {
+  --fade-direction: to top;
+  --fade-length: 6px;
+}
 .composing {
   color: var(--accent);
 }
@@ -1770,21 +1845,95 @@ span.planStep {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 3px 10px 4px;
+  padding: 3px 4px 4px;
   gap: 4px;
 }
 
+.callControls {
+  align-items: center;
+  gap: 3px;
+  padding-inline: 4px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  padding-block: 0;
+}
+.callControls > small {
+  grid-column: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+.returnToCall {
+  align-self: center;
+  font-size: 11px;
+  color: var(--accent);
+  padding: 2px 6px;
+}
+.callButtons {
+  grid-column: 2;
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.callReplySlot {
+  display: contents;
+}
+.callControls button,
+.startCall {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 23px;
+  border-radius: 4px;
+}
+.callControls button:hover,
+.startCall:hover {
+  background: var(--raised);
+}
+.callControls button[aria-pressed='true'],
+.endCall {
+  color: var(--red);
+}
+.startCall {
+  color: var(--green);
+}
+.callControls small {
+  color: var(--muted);
+  font-size: 10px;
+}
 .agentLog {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  max-height: 360px;
+  max-height: 420px;
   overflow-y: auto;
   font-size: 11px;
 }
 
 .agentLog:empty {
   display: none;
+}
+
+.agentRequest {
+  flex-shrink: 0;
+}
+
+.agentRequest .qHead {
+  padding: 6px 8px;
+}
+
+.agentRequest .qButtons {
+  flex-direction: row;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+}
+
+.agentRequest .qButtons button {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 0 8px;
 }
 
 .agentEmpty {
@@ -1865,14 +2014,6 @@ span.planStep {
 .agentInput .qOther:focus {
   outline: 1px solid var(--accent);
   outline-offset: 2px;
-}
-
-.agentHotkey {
-  flex: none;
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 10px;
-  white-space: nowrap;
 }
 
 .agentEnd {
@@ -2031,6 +2172,30 @@ span.planStep {
   z-index: 2;
 }
 
+.providerErrors {
+  flex: none;
+  max-height: 96px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 3px 6px;
+  color: var(--fg);
+  font-size: 11px;
+}
+.providerErrors button {
+  font: inherit;
+  color: inherit;
+}
+.errorLight {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #fa6262;
+}
+.errorLight[data-paused] {
+  background: var(--amber);
+}
 .hoverMessage {
   position: relative;
   flex: none;
@@ -2163,8 +2328,8 @@ span.planStep {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--border);
-  margin: 2px -10px -4px;
-  padding: 2px 10px;
+  margin: 2px -4px -4px;
+  padding: 2px 4px;
 }
 
 .agentEarlierHead {
@@ -2351,6 +2516,93 @@ span.planStep {
   min-height: 16px;
   line-height: 16px;
 }
+.agent[data-resizable] {
+  flex-shrink: 100;
+  min-height: min(var(--agent-reader-min, 0px), var(--panel-room));
+}
+.agent[data-resizable] > :not(.agentLog) {
+  flex-shrink: 0;
+}
+.readerUpdates {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.agentTop {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  min-height: 20px;
+}
+.agentTop > button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  width: 24px;
+  height: 20px;
+  border-radius: 4px;
+}
+.agentTop > button:hover {
+  background: var(--raised);
+}
+.agentTop > button:disabled {
+  opacity: 0.5;
+}
+.agentTop button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.agentTop .secondaryAction {
+  color: var(--muted);
+}
+.agentInput > [data-composer-input] {
+  flex: 1;
+  min-width: 0;
+}
+.agentFooter button {
+  white-space: nowrap;
+}
+.agent[data-resizable]:has(> .agentGrip) {
+  padding-bottom: 0;
+}
+.agent > .agentGrip {
+  flex: none;
+  height: 12px;
+  margin-top: -3px;
+}
+.agentGrip {
+  flex: 1 0 14px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+.agentInput:has(> .agentGrip) > button {
+  height: 20px;
+}
+.agent[data-resizable]:has(> .agentInput > .agentGrip) {
+  padding-bottom: 1px;
+}
+.agentGrip::after {
+  content: '';
+  width: min(24px, 85%);
+  height: 2px;
+  background: var(--muted);
+  opacity: 0.55;
+}
+.agentGrip:hover::after,
+.agentGrip:focus-visible::after,
+.agentGrip[data-agent-resizing]::after {
+  opacity: 1;
+}
+.agentGrip:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
 .agentQuestion {
   border: 0;
   padding: 6px 0;
@@ -2363,4 +2615,34 @@ span.planStep {
   gap: 6px;
   align-items: baseline;
   margin: 4px 0;
+}
+
+.panelStage[data-canvas-expanded] {
+  width: var(--canvas-side);
+}
+.panelStage[data-canvas-expanded] .cardFrame {
+  padding-right: 0;
+}
+.panelStage[data-canvas-expanded] .card {
+  width: calc(var(--canvas-side) - 16px);
+  height: var(--canvas-side);
+  transition: none;
+  margin-top: 0 !important;
+}
+.panelStage[data-canvas-expanded] [aria-label='Shared Spaces'] {
+  flex: 1;
+  max-height: none;
+}
+.panelStage[data-canvas-expanded] [aria-label='Handoffs'] {
+  flex: 1;
+  height: auto;
+  max-height: none;
+}
+.panelStage[data-canvas-expanded] [aria-label='Work by objective'] {
+  height: calc(var(--canvas-side) - 170px);
+}
+
+.canvasExpand {
+  left: 3px;
+  right: auto;
 }

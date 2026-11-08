@@ -99,9 +99,11 @@ export class GitStates {
     entry.task = this.count(entry.repository.root, publish)
       .then((state) => {
         if (state) publish(state)
+        else if (entry.state)
+          publish({ ...entry.state, pending: false, complete: false, stale: true })
       })
       .catch(() => {
-        /* Keep the last observation; a failed scan is not a clean worktree. */
+        if (entry.state) publish({ ...entry.state, pending: false, complete: false, stale: true })
       })
       .finally(() => {
         entry.running = false
@@ -172,7 +174,7 @@ export class GitStates {
   private forSession(session: Session): Session {
     const folders = session.gitFolders ?? [session.git?.root || session.cwd]
     let pending = false
-    for (const folder of folders) {
+    for (const [index, folder] of folders.entries()) {
       if (!folder) continue
       const state = this.get(folder)
       const found = this.folders.get(gitPathKey(folder))!
@@ -182,6 +184,13 @@ export class GitStates {
         pending =
           !!found.running ||
           !!(found.repository && this.roots.get(gitPathKey(found.repository.root))?.running)
+        // A newly discovered higher-priority folder must not erase already verified
+        // metadata while it is resolving. Peek only: do not fan out new scans.
+        const fallback = folders
+          .slice(index + 1)
+          .map((candidate) => this.peek(candidate))
+          .find(Boolean)
+        if (pending && fallback) return { ...session, git: fallback, gitStatus: 'ready' }
         break
       }
     }

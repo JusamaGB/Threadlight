@@ -60,7 +60,10 @@ export function projectParticipants(
     const linked = available.map((grant) => ({
       grant,
       connection: data.connections?.find(
-        (c) => c.id === grant.pluginConnectionId && c.provider === provider && c.expiresAt > now,
+        (c) =>
+          c.id === grant.pluginConnectionId &&
+          c.provider === provider &&
+          (!c.expiresAt || c.expiresAt > now),
       ),
     }))
     const connected = linked.filter((v) => v.connection?.state === 'connected')

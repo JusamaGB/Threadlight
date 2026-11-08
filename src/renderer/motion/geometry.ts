@@ -31,7 +31,7 @@ export function advancePose(
   const ease = (current: number, target: number, ms: number) =>
     current + (target - current) * (1 - Math.exp(-dt / ms))
   // Real speech has precedence over the background work state, including interruptions.
-  const speaking = Math.max(unit(snapshot.input.level), unit(snapshot.output.level)) > 0.035
+  const speaking = Math.max(unit(snapshot.input.level), unit(snapshot.output.level)) > 0.012
   let wheel = !speaking && ['thinking', 'transcribing', 'waiting'].includes(snapshot.mode)
   // Once the header starts opening, audio gaps cannot fold it back into the wheel.
   if (header && pose.wheel > 0 && !wheel) pose.headerOpening = true
@@ -100,8 +100,10 @@ export class MotionGeometry {
     edgeToEdge = false,
     activeWheel = false,
     provider?: keyof typeof PROVIDER_COLOURS,
+    audioStyle?: 'audio' | 'muted',
   ): Float32Array {
     this.count = 0
+    const fullWidth = edgeToEdge || audioStyle !== undefined
     const compact = height < 36 || edgeToEdge
     const strands = compact ? 5 : 7
     const segments = compact ? 48 : 104
@@ -135,10 +137,15 @@ export class MotionGeometry {
     }
     const drawBody = (audio: AudioEnergy, agent: boolean, offset: number, size: number) => {
       const energy = Math.sqrt(unit(Math.max(0, audio.level - 0.008)))
+      // Visual gain exposes quiet speech; ease it in after the wheel has opened
+      // so the stronger response cannot jump between adjacent frames.
       const amplitude = edgeToEdge
-        ? (0.6 + energy * 16) * size
+        ? (0.6 + energy * 32 * pose.audioReveal) * size
         : (0.025 + (compact ? pose.rest * 0.02 : 0) + energy * 0.38) * height * size
       const colourAt = (u: number, strand: number): Colour => {
+        if (audioStyle && audio.level <= 0.012) {
+          return audioStyle === 'muted' ? [231 / 255, 76 / 255, 60 / 255] : [0.55, 0.6, 0.65]
+        }
         const flow = edgeToEdge
           ? t * 0.32 +
             noise(u * 2.7 + strand * 2.13, t * 0.38) * 2.3 +
@@ -151,7 +158,17 @@ export class MotionGeometry {
         const base: Colour = [mix(a[0], b[0], f), mix(a[1], b[1], f), mix(a[2], b[2], f)]
         // Fade provider colour with the smoothed playback envelope, including speech tails.
         if (agent && provider) {
-          const tone = PROVIDER_COLOURS[provider].rgb
+          let tone: Colour = PROVIDER_COLOURS[provider].rgb
+          if (provider === 'codex') {
+            // Each strand takes a different blue shade, deepening at the left
+            // and fading towards ice blue at the right without a moving sweep.
+            const shade = 0.12 + (strand / (strands - 1)) * 0.28 + smooth(u) * 0.5
+            tone = [
+              mix(tone[0] * 0.4, mix(tone[0], 1, 0.6), shade),
+              mix(tone[1] * 0.55, mix(tone[1], 1, 0.6), shade),
+              mix(tone[2] * 0.82, tone[2], shade),
+            ]
+          }
           const speaking = unit(audio.level / 0.035)
           return [
             mix(base[0], tone[0], speaking),
@@ -174,7 +191,7 @@ export class MotionGeometry {
           Math.sin(u * Math.PI * 3.1 - t * (agent ? 1.7 : 2.1) + phase) * (0.62 + audio.low * 0.1) +
           Math.sin(u * Math.PI * 5 + t * 0.65 + phase * 0.7) * (0.2 + audio.mid * 0.08) +
           Math.sin(u * Math.PI * 13 - t * 3.2 + phase) * audio.high * 0.16
-        const span = edgeToEdge ? width : width * 0.96 * (1 - pose.rest * (compact ? 0.15 : 0.6))
+        const span = fullWidth ? width : width * 0.96 * (1 - pose.rest * (compact ? 0.15 : 0.6))
         const x = (u - 0.5) * span
         // Overlapping frequency regions avoid seams: bass left, mids centre, treble right.
         // Overall level still controls silence; individual bands control local height.
@@ -238,9 +255,9 @@ export class MotionGeometry {
             mix(baseColour[2], highlight[2], light),
           ]
           const envelope = Math.pow(Math.sin(Math.PI * u), 0.35)
-          // Header ribbons keep visible ends even after their resting pose settles.
+          // The header and live pill keep visible ends even at rest.
           const taper = mix(
-            edgeToEdge ? 0.55 + envelope * 0.45 : envelope,
+            fullWidth ? 0.55 + envelope * 0.45 : envelope,
             0.25 + u * 0.75,
             pose.wheel,
           )

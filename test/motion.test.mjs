@@ -22,6 +22,12 @@ describe('motion state and telemetry', () => {
   it('rejects malformed telemetry and bounds every audio band', () => {
     expect(readMotion({ ...IDLE_MOTION, input: { ...full, level: NaN } })).toBeNull()
     expect(readMotion({ ...IDLE_MOTION, mode: 'complete' })).toBeNull()
+    for (const provider of ['codex', 'claude'])
+      expect(readMotion({ ...IDLE_MOTION, provider, agentWorking: true })).toMatchObject({
+        provider,
+        agentWorking: true,
+      })
+    expect(readMotion({ ...IDLE_MOTION, provider: 'other' })?.provider).toBeUndefined()
     expect(readMotion({ ...IDLE_MOTION, output: null })).toBeNull()
     expect(
       readMotion({ ...IDLE_MOTION, input: { level: 20, low: -2, mid: 0.5, high: 1 } })?.input,
@@ -309,18 +315,51 @@ describe('connected header motion', () => {
 })
 
 describe('provider speech and spatial frequency response', () => {
+  it('opens the thinking wheel for quiet speech and keeps its amplified response visible', () => {
+    const pose = { ...restingPose(), wheel: 1 }
+    const audio = { level: 0.025, low: 0.025, mid: 0, high: 0 }
+    for (let i = 0; i < 120; i++)
+      advancePose(pose, { mode: 'thinking', input: SILENT_AUDIO, output: audio }, 16, true)
+    expect(pose.wheel).toBe(0)
+    const vertices = new MotionGeometry().build(342, 36, 1, pose, false, true, true, 'codex')
+    const ys = [...vertices].filter((_, index) => index % 6 === 1)
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(5)
+  })
+  it('fades provider speech colour back towards the idle palette through a quiet tail', () => {
+    const pose = restingPose()
+    const mesh = new MotionGeometry()
+    const colours = () =>
+      [...mesh.build(342, 36, 1, pose, false, true, false, 'claude')].filter(
+        (_, i) => i % 6 >= 2 && i % 6 <= 4,
+      )
+    for (let i = 0; i < 40; i++) advancePose(pose, { ...IDLE_MOTION, output: full }, 16, true)
+    const spoken = colours()
+    for (let i = 0; i < 38; i++) advancePose(pose, IDLE_MOTION, 16, true)
+    expect(colours()).not.toEqual(spoken)
+    expect(pose.output.level).toBeGreaterThan(0)
+    for (let i = 0; i < 90; i++) advancePose(pose, IDLE_MOTION, 16, true)
+    expect(pose.output.level).toBeLessThan(0.001)
+    expect(colours()).not.toEqual(spoken)
+  })
   it('uses the selected provider for playback while retaining the idle palette', () => {
     const mesh = new MotionGeometry()
     const pose = { ...restingPose(), rest: 0, output: full }
-    for (const [provider, rgb] of [
-      ['claude', [218 / 255, 138 / 255, 98 / 255]],
-      ['codex', [104 / 255, 170 / 255, 1]],
-    ]) {
-      const vertices = mesh.build(342, 36, 1, pose, false, true, false, provider)
-      for (let i = 0; i < vertices.length; i += 6)
-        for (let channel = 0; channel < 3; channel++)
-          expect(vertices[i + 2 + channel]).toBeCloseTo(rgb[channel], 6)
+    const claude = mesh.build(342, 36, 1, pose, false, true, false, 'claude')
+    for (let i = 0; i < claude.length; i += 6)
+      for (const [channel, value] of [218 / 255, 138 / 255, 98 / 255].entries())
+        expect(claude[i + 2 + channel]).toBeCloseTo(value, 6)
+    const codex = mesh.build(342, 36, 1, pose, false, true, false, 'codex')
+    const ends = [[], []]
+    for (let i = 0; i < codex.length; i += 6) {
+      const colour = [...codex.slice(i + 2, i + 5)]
+      expect(colour[2]).toBeGreaterThan(colour[1])
+      expect(colour[1]).toBeGreaterThan(colour[0])
+      if (codex[i] < 2) ends[0].push(colour)
+      if (codex[i] > 340) ends[1].push(colour)
     }
+    expect(new Set(ends[0].map((colour) => colour.join(','))).size).toBeGreaterThanOrEqual(5)
+    const green = (colours) => colours.reduce((sum, colour) => sum + colour[1], 0) / colours.length
+    expect(green(ends[1])).toBeGreaterThan(green(ends[0]) + 0.15)
     const idle = [...mesh.build(342, 36, 1, restingPose(), false, true)]
     expect([...mesh.build(342, 36, 1, restingPose(), false, true, false, 'claude')]).toEqual(idle)
   })

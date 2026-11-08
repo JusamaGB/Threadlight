@@ -9,17 +9,15 @@
 // Several threads often share one folder, and a scan runs every second, so each folder is
 // counted at most every REFRESH_MS, in the background; the scan only ever reads the last count.
 
-import { readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { DiffStat, GitState } from '../../shared/types'
 import { findGitRepository } from './gitRepository'
 import { runGit } from './gitProcess'
+import { captureGit, invalidateGitComparison } from '../changes/git'
 export { GitStates } from './gitStates'
 
-/** Bigger new files are not read; they are counted as one changed file, not by lines. */
-const MAX_NEW_FILE_BYTES = 1024 * 1024
-const MAX_NEW_FILES = 200
 /** The branch "behind" is measured against, the first of these that exists. */
 const MAIN_BRANCHES = ['main', 'master']
 
@@ -71,25 +69,33 @@ export async function readGitState(
  * Lines added and removed in a folder against its last commit, and how many files that is
  * (new ones counted apart); null if it is not a git folder.
  */
-export async function countChanges(
-  folder: string,
-): Promise<(DiffStat & { files: number; newFiles: number }) | null> {
-  const [tracked, untracked] = await Promise.all([
-    git(folder, ['diff', 'HEAD', '--numstat', '--no-renames', '-z']),
-    git(folder, ['ls-files', '--others', '--exclude-standard', '-z']),
-  ])
-  if (tracked === null || untracked === null) return null // not a repository, no commit yet, or git is missing
-  const diff = parseNumstat(tracked)
-  const changed = tracked.split('\0').filter((record) => record.includes('\t')).length
-  const fresh = (untracked ?? '').split('\0').filter(Boolean)
-  // Bounded file reads keep large untracked directories from serializing metadata.
-  for (let i = 0; i < Math.min(fresh.length, MAX_NEW_FILES); i += 8) {
-    const counts = await Promise.all(
-      fresh.slice(i, Math.min(i + 8, MAX_NEW_FILES)).map((path) => lineCount(join(folder, path))),
-    )
-    diff.added += counts.reduce((sum, count) => sum + count, 0)
+export async function countChanges(folder: string): Promise<
+  | (DiffStat & {
+      files: number
+      newFiles: number
+      complete?: boolean
+      revision?: string
+      hasOtherLensChanges?: boolean | null
+      stale?: boolean
+    })
+  | null
+> {
+  try {
+    invalidateGitComparison(folder)
+    const result = await captureGit(folder)
+    return {
+      added: result.files.reduce((n, f) => n + f.added, 0),
+      removed: result.files.reduce((n, f) => n + f.removed, 0),
+      files: result.files.length,
+      newFiles: result.files.filter((f) => f.status === 'added').length,
+      complete: result.complete,
+      revision: result.revision,
+      hasOtherLensChanges: result.hasOtherLensChanges,
+      stale: result.stale,
+    }
+  } catch {
+    return null
   }
-  return { ...diff, files: changed + fresh.length, newFiles: fresh.length }
 }
 
 /** `git diff --numstat -z`: "added<TAB>removed<TAB>path\0" per file; binary files show "-". */
@@ -115,18 +121,6 @@ export function parseWorktrees(output: string): string[] {
 async function countCommits(folder: string, range: string): Promise<number> {
   const out = await git(folder, ['rev-list', '--count', range])
   return out === null ? 0 : Number.parseInt(out.trim(), 10) || 0
-}
-
-async function lineCount(path: string): Promise<number> {
-  try {
-    if ((await stat(path)).size > MAX_NEW_FILE_BYTES) return 0
-    const text = await readFile(path, 'utf8')
-    if (text.includes('\0')) return 0 // binary
-    if (!text) return 0
-    return text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
-  } catch {
-    return 0
-  }
 }
 
 function git(folder: string, args: string[]): Promise<string | null> {

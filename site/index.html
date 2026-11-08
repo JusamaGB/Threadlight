@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Threadlight — see every Claude and Codex thread at a glance</title>
+    <title>Threadlight — a compact view of your AI work</title>
     <meta
       name="description"
-      content="Threadlight is a tiny always-on-top window for Windows that shows every Claude and Codex thread across your worktrees, lets you message them by voice or text, and coordinates them with a Brainstorm agent. Local-first and open source."
+      content="Threadlight is a tiny always-on-top window for Windows that follows AI chats and coding threads across your workspaces, lets you message them by voice or text, and coordinates them with a Brainstorm agent. Local-first and open source."
     />
     <meta name="theme-color" content="#0b0c0f" />
     <meta
       property="og:title"
-      content="Threadlight — every Claude and Codex thread, one tiny window"
+      content="Threadlight — AI chats and coding threads in one compact panel"
     />
     <meta
       property="og:description"
@@ -1220,12 +1220,12 @@
     <header class="hero" id="top">
       <div class="wrap">
         <div>
-          <span class="pill"><b>EARLY DEV</b> Unofficial · Windows · MIT licensed</span>
-          <h1>Every <span class="grad">Claude and Codex</span> thread. One tiny window.</h1>
+          <span class="pill"><b>SOURCE PREVIEW</b> Unofficial · Windows · MIT licensed</span>
+          <h1>Your <span class="grad">AI work</span>, in one compact view.</h1>
           <p class="lede">
             Threadlight sits in the corner of your screen and shows what all your AI coding threads
             are doing right now, grouped by worktree, with wires that tie related work together.
-            Message any thread by voice or text without opening its window.
+            Read and reply through supported provider connections. Compatibility varies by provider.
           </p>
           <div class="cta">
             <a class="btn primary" href="#install">Get started</a>
@@ -1558,8 +1558,9 @@
         <span class="eyebrow reveal">Status</span>
         <h2 class="reveal">What works now. What's next.</h2>
         <p class="lede reveal">
-          Threadlight is in early development and not yet released. Here's an honest view of where
-          it stands.
+          Threadlight is an early Windows source preview. Claude needs catch-up and renewed
+          validation; Kimi remains hidden while in development. Here's an honest view of where it
+          stands.
         </p>
         <div class="road">
           <div class="col now reveal">
@@ -1582,7 +1583,8 @@
               </li>
               <li>
                 <span
-                  ><b>Voice and text compose</b> into any thread, with countdown and receipts</span
+                  ><b>Voice and text compose</b> for supported threads, with countdown and
+                  receipts</span
                 >
               </li>
               <li>
@@ -1598,7 +1600,7 @@
                 <span><b>Codex delivery</b> by idle resume with native writer exclusion</span>
               </li>
               <li class="test">
-                <span><b>Claude runtime wakeup</b> in final acceptance testing</span>
+                <span><b>Claude catch-up</b> and renewed live validation needed</span>
               </li>
             </ul>
           </div>
@@ -1607,8 +1609,8 @@
             <ul>
               <li>
                 <span
-                  ><b>Workflow builder.</b> Design an n8n-style flow of agents and modules, right
-                  inside Threadlight.</span
+                  ><b>Workflow validation.</b> Test and refine the experimental builder already
+                  included in Threadlight.</span
                 >
               </li>
               <li>
@@ -1619,8 +1621,8 @@
               </li>
               <li>
                 <span
-                  ><b>Side-by-side columns.</b> Dual view will put Claude and Codex threads next to
-                  each other.</span
+                  ><b>More provider layouts.</b> Triple and Quad views are mapped, not
+                  implemented.</span
                 >
               </li>
               <li>
@@ -1638,7 +1640,10 @@
                 >
               </li>
               <li>
-                <span><b>More platforms</b> beyond Windows</span>
+                <span
+                  ><b>Kimi</b> is in development and hidden from this preview; more platforms remain
+                  future work.</span
+                >
               </li>
             </ul>
           </div>
@@ -1656,10 +1661,11 @@
         </p>
         <div class="priv">
           <div class="card reveal">
-            <h3>Local only</h3>
+            <h3>Local app, provider services</h3>
             <p>
               No telemetry and no external Threadlight service. Local STT transcribes on your PC.
-              GPT Live, if you choose it, sends audio to GPT through your own sign-in.
+              Replies and Agent work use provider services; GPT Live sends audio through your own
+              sign-in.
             </p>
           </div>
           <div class="card reveal">
@@ -1672,8 +1678,8 @@
           <div class="card reveal">
             <h3>Scoped by default</h3>
             <p>
-              Plugin connections are read-only by default, expire after eight hours, and need your
-              approval with a verification code.
+              Plugin connections need explicit project access approval with a verification code.
+              Approved chat links persist until disconnected or revoked.
             </p>
           </div>
         </div>
@@ -1708,13 +1714,13 @@
       <div class="wrap split" style="align-items: start">
         <div class="reveal">
           <span class="eyebrow">Install</span>
-          <h2>From zero to dot in a minute.</h2>
+          <h2>Build the source preview.</h2>
           <p class="lede">
-            Until the first release, Threadlight runs from a copy of the repository. Or just ask
-            Claude to set it up.
+            Start from the repository using Node.js and Git. No signed installer is included.
+            Provider apps and sign-ins are separate prerequisites.
           </p>
           <ul class="req">
-            <li>Windows 10 (1803+) or Windows 11</li>
+            <li>Windows x64</li>
             <li>Node 22.16 or later</li>
             <li>
               The Claude desktop app with Claude Code sessions, and/or the signed-in Codex desktop
@@ -1730,23 +1736,17 @@
         </div>
         <div class="reveal">
           <div class="code" id="c1">
-            <button class="copy" data-t="c1">Copy</button
-            ><span class="c"># easiest: open Claude Code in the folder and say</span>
-            <span class="p">"set up Threadlight"</span>
-
-            <span class="c"># or run the installer yourself</span>
-            node scripts/install.mjs --hotkey Control+Alt+Q \ --countdown 5 --corner top-right
-            --autostart
-
-            <span class="c"># check without changing anything</span>
-            node scripts/install.mjs --check
-
-            <span class="c"># remove cleanly</span>
-            node scripts/install.mjs --uninstall
+            <button class="copy" data-t="c1">Copy</button>
+            <pre style="margin: 0; font: inherit; white-space: pre-wrap">
+git clone https://github.com/JusamaGB/Threadlight.git
+cd Threadlight
+npm ci
+npm run build
+npm start</pre>
           </div>
           <p style="color: var(--faint); font-size: 13px; margin-top: 14px">
-            Every option is optional. Running it again only changes what isn't right yet. The
-            76&nbsp;MB local speech model downloads the first time you use voice, after you agree.
+            See the repository README for provider setup and troubleshooting. The local speech model
+            downloads separately, only after you agree.
           </p>
         </div>
       </div>
@@ -1766,7 +1766,7 @@
           </details>
           <details>
             <summary>Does it work on macOS or Linux?</summary>
-            <p>Not yet. It is Windows only at the moment (Windows 10 1803+ or Windows 11).</p>
+            <p>Not yet. It is Windows only at the moment (Windows x64).</p>
           </details>
           <details>
             <summary>Does any of my code or audio leave my machine?</summary>
@@ -1795,8 +1795,8 @@
           <details>
             <summary>Is the workflow builder available?</summary>
             <p>
-              Not yet. Brainstorm, Project DMs and reviewed assignments are built; the n8n-style
-              workflow builder and automatic delegation are planned next.
+              An experimental workflow builder is included alongside Brainstorm, Project DMs and
+              reviewed assignments. Read the documented limits before enabling automatic work.
             </p>
           </details>
         </div>

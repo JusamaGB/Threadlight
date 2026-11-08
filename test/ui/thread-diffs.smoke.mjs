@@ -1,5 +1,5 @@
 import { selectThreadView } from './header-navigation.mjs'
-/* global window, document, getComputedStyle */
+/* global window, document, getComputedStyle, requestAnimationFrame */
 import assert from 'node:assert/strict'
 import { checkPagePinning } from './toolbar.smoke.mjs'
 
@@ -17,6 +17,7 @@ export async function checkThreadDiffs(page, capture) {
     const snapshot = await window.threadlight.getSnapshot()
     window.proof.threadDiff = {
       saved: {
+        getLocalTracking: window.threadlight.getLocalTracking,
         getChanges: window.threadlight.getChanges,
         getFileDiff: window.threadlight.getFileDiff,
         openChangedFile: window.threadlight.openChangedFile,
@@ -31,6 +32,7 @@ export async function checkThreadDiffs(page, capture) {
       calls: [],
     }
     const proof = window.proof.threadDiff
+    window.threadlight.getLocalTracking = async () => null
     window.threadlight.getChanges = async (id) => {
       proof.calls.push(['files', id])
       if (proof.ownershipError) throw new Error('Synthetic ownership unavailable')
@@ -38,16 +40,22 @@ export async function checkThreadDiffs(page, capture) {
         ? null
         : {
             branch: 'same-worktree',
+            revision: `thread-${proof.revision}`,
             complete: !proof.partial,
-            files: (
-              proof.ownedPaths?.[id.startsWith('codex:') ? 'codex' : 'claude'] ?? ['src/shared.ts']
-            ).map((path) => ({
-              path,
-              status: 'modified',
-              added: id.startsWith('codex:') ? proof.revision + 3 : 2,
-              removed: id.startsWith('codex:') ? 2 : 1,
-              binary: false,
-            })),
+            groups: proof.groups,
+            files:
+              proof.rootFiles ??
+              (
+                proof.ownedPaths?.[id.startsWith('codex:') ? 'codex' : 'claude'] ?? [
+                  'src/shared.ts',
+                ]
+              ).map((path) => ({
+                path,
+                status: 'modified',
+                added: id.startsWith('codex:') ? proof.revision + 3 : 2,
+                removed: id.startsWith('codex:') ? 2 : 1,
+                binary: false,
+              })),
           }
     }
     window.threadlight.getFileDiff = async (id, path) => {
@@ -68,10 +76,11 @@ export async function checkThreadDiffs(page, capture) {
       }
     }
     window.threadlight.openChangedFile = (...args) => proof.calls.push(['open', ...args])
-    window.threadlight.getWorktreeChanges = async (id) => {
-      proof.calls.push(['worktree-files', id])
+    window.threadlight.getWorktreeChanges = async (id, lens, rootId) => {
+      proof.calls.push(['worktree-files', id, lens, rootId])
       return {
         branch: 'same-worktree',
+        revision: 'worktree-1',
         files: [
           { path: 'src/shared.ts', status: 'modified', added: 700, removed: 50, binary: false },
           { path: 'other-writer.ts', status: 'added', added: 10, removed: 0, binary: false },
@@ -172,6 +181,53 @@ export async function checkThreadDiffs(page, capture) {
     )
     assert.equal(layout.inlineAge, false, 'last active time no longer takes up row space')
     assert.equal(layout.padding, 2, 'adjacent thread contents retain the compact row padding')
+    await page.evaluate(() => {
+      const current = window.proof.threadDiff.current
+      window.proof.emit('onSnapshot', {
+        ...current,
+        sessions: current.sessions.map((session) => ({
+          ...session,
+          threadDiff: {
+            ...session.threadDiff,
+            complete: false,
+            groups: [
+              { rootId: 'one', root: 'C:/one' },
+              { rootId: 'two', root: 'C:/two' },
+            ],
+          },
+        })),
+      })
+    })
+    const coverage = thread('Claude').locator('[data-diff-coverage]')
+    await coverage.waitFor()
+    assert.equal((await badge('Claude').innerText()).replace(/\s/g, ''), '+2−1')
+    assert.match(await coverage.innerText(), /Partial/)
+    assert.match(await coverage.innerText(), /2 roots/)
+    const placement = await thread('Claude').evaluate((row) => {
+      const tracker = row.querySelector('[data-git-tracker]').getBoundingClientRect()
+      const status = row.querySelector('[data-diff-coverage]').getBoundingClientRect()
+      const top = row.querySelector('[class*="_rowTop_"]').getBoundingClientRect()
+      return {
+        sameLine: Math.abs(tracker.y - status.y) < 2,
+        rightOfBranch: status.left > tracker.right,
+        belowTitle: status.y >= top.bottom,
+        inside: status.right <= row.getBoundingClientRect().right,
+      }
+    })
+    assert.deepEqual(placement, {
+      sameLine: true,
+      rightOfBranch: true,
+      belowTitle: true,
+      inside: true,
+    })
+    await coverage.hover()
+    await page.getByRole('tooltip').waitFor()
+    assert.match(await page.getByRole('tooltip').innerText(), /2 source folders or checkouts/)
+    await capture('thread-diff-second-row-coverage')
+    await coverage.click()
+    await page.locator('header').getByText('Thread diff · 1 file', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+    await page.evaluate(() => window.proof.emit('onSnapshot', window.proof.threadDiff.current))
     await badge('Claude').hover()
     const tip = page.getByRole('tooltip')
     await tip.waitFor()
@@ -192,6 +248,7 @@ export async function checkThreadDiffs(page, capture) {
       'open',
       'synthetic-claude',
       'src/shared.ts',
+      'thread-1',
     ])
     await capture('thread-diff-claude-recorded-file')
     await back()
@@ -199,6 +256,23 @@ export async function checkThreadDiffs(page, capture) {
     await page.getByRole('button', { name: /edit shared.ts/ }).click()
     await page.getByText('Codex own patch 1', { exact: true }).waitFor()
     assert.equal(await page.getByText('Claude own patch', { exact: true }).count(), 0)
+    await page.locator('[data-stacked-diff] button[aria-pressed]').click()
+    await page.evaluate(() => {
+      const proof = window.proof.threadDiff
+      proof.stackedElement = document.querySelector('[data-stacked-diff]')
+      proof.pendingChanges = []
+      proof.pendingDiffs = []
+      proof.restoreChanges = window.threadlight.getChanges
+      proof.restoreDiff = window.threadlight.getFileDiff
+      window.threadlight.getChanges = async (...args) => {
+        const result = await proof.restoreChanges(...args)
+        return new Promise((resolve) => proof.pendingChanges.push(() => resolve(result)))
+      }
+      window.threadlight.getFileDiff = async (...args) => {
+        const result = await proof.restoreDiff(...args)
+        return new Promise((resolve) => proof.pendingDiffs.push(() => resolve(result)))
+      }
+    })
     await page.evaluate(() => {
       const proof = window.proof.threadDiff
       proof.revision = 2
@@ -212,8 +286,121 @@ export async function checkThreadDiffs(page, capture) {
       }
       window.proof.emit('onSnapshot', proof.current)
     })
+    await page.waitForFunction(() => window.proof.threadDiff.pendingChanges.length === 1)
+    assert.equal(await page.getByText('Codex own patch 1', { exact: true }).count(), 1)
+    assert.equal(await page.getByText('Reading changes…', { exact: true }).count(), 0)
+    assert.equal(
+      await page.getByRole('button', { name: 'Refresh', exact: true }).innerText(),
+      'Refreshing…',
+    )
+    await page.evaluate(() => window.proof.threadDiff.pendingChanges.shift()())
+    await page.waitForFunction(() => window.proof.threadDiff.pendingDiffs.length === 1)
+    assert.equal(await page.getByText('Codex own patch 1', { exact: true }).count(), 1)
+    assert.equal(await page.getByText('Reading changes…', { exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Open ↗', exact: true }).isDisabled(), true)
+    await capture('thread-diff-refresh-retained')
+    await page.evaluate(() => window.proof.threadDiff.pendingDiffs.shift()())
     await page.getByText('Codex own patch 2', { exact: true }).waitFor()
+    assert.equal(await page.locator('[data-stacked-diff]').getAttribute('data-wrap'), 'false')
+    assert.equal(
+      await page.evaluate(
+        () =>
+          document.querySelector('[data-stacked-diff]') === window.proof.threadDiff.stackedElement,
+      ),
+      true,
+    )
+    // A superseded same-comparison refresh must not roll back the displayed result.
+    for (const revision of [3, 4]) {
+      await page.evaluate((value) => {
+        window.proof.threadDiff.revision = value
+      }, revision)
+      await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+      await page.waitForFunction(
+        (count) => window.proof.threadDiff.pendingChanges.length === count,
+        revision - 2,
+      )
+    }
+    await page.evaluate(() => window.proof.threadDiff.pendingChanges.pop()())
+    await page.waitForFunction(() => window.proof.threadDiff.pendingDiffs.length === 1)
+    await page.evaluate(() => window.proof.threadDiff.pendingDiffs.shift()())
+    await page.getByText('Codex own patch 4', { exact: true }).waitFor()
+    await page.evaluate(async () => {
+      const proof = window.proof.threadDiff
+      proof.pendingChanges.shift()()
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      window.threadlight.getChanges = proof.restoreChanges
+      window.threadlight.getFileDiff = proof.restoreDiff
+      proof.revision = 2
+    })
+    assert.equal(await page.getByText('Codex own patch 4', { exact: true }).count(), 1)
     await capture('thread-diff-codex-refresh')
+    await page.evaluate(() => {
+      const proof = window.proof.threadDiff
+      proof.groups = ['one', 'two'].map((name) => ({
+        rootId: name,
+        root: `C:/repo-${name}`,
+        recorded: [
+          {
+            path: 'historical.ts',
+            state: name === 'one' ? 'committed' : 'separate-branch',
+            commit: '1234567890abcdef',
+            branches: ['related'],
+            added: 1,
+            removed: 1,
+            explanation:
+              name === 'one'
+                ? 'Recorded patch matches checkout history.'
+                : 'Recorded patch remains on branch related.',
+          },
+        ],
+        lens: 'git-current',
+        files: 1,
+        added: 1,
+        removed: 1,
+        complete: false,
+        available: true,
+      }))
+      proof.rootFiles = ['one', 'two'].map((name) => ({
+        path: `${name}/src/shared.ts`,
+        displayPath: 'src/shared.ts',
+        rootId: name,
+        status: 'modified',
+        added: 1,
+        removed: 1,
+        binary: false,
+      }))
+    })
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    const secondRoot = page.getByRole('region', { name: 'Changes in C:/repo-two' })
+    await secondRoot
+      .getByText('Recorded patch remains on branch related.', { exact: false })
+      .waitFor()
+    await page.getByText('Recorded patch matches checkout history.', { exact: false }).waitFor()
+    await secondRoot.getByRole('button', { name: /edit shared.ts/ }).click()
+    await secondRoot.getByRole('button', { name: 'Open ↗', exact: true }).click()
+    assert.deepEqual(await page.evaluate(() => window.proof.threadDiff.calls.at(-1)), [
+      'open',
+      'codex:11111111-1111-4111-8111-111111111111',
+      'two/src/shared.ts',
+      'thread-2',
+    ])
+    await capture('thread-diff-multiple-roots')
+    await page.getByRole('combobox', { name: 'Source folder' }).selectOption('two')
+    await page.getByRole('combobox', { name: 'Change comparison' }).selectOption('git-staged')
+    await page.locator('header').getByText('Staged diff · 2 files', { exact: true }).waitFor()
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.proof.threadDiff.calls.filter((call) => call[0] === 'worktree-files').at(-1),
+      ),
+      ['worktree-files', 'codex:11111111-1111-4111-8111-111111111111', 'git-staged', 'two'],
+    )
+    await page.getByRole('combobox', { name: 'Source folder' }).selectOption('')
+    await page.getByRole('combobox', { name: 'Change comparison' }).selectOption('thread')
+    await page.evaluate(() => {
+      delete window.proof.threadDiff.groups
+      delete window.proof.threadDiff.rootFiles
+    })
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
     await page.evaluate(() => {
       const proof = window.proof.threadDiff
       proof.partial = true
@@ -230,8 +417,55 @@ export async function checkThreadDiffs(page, capture) {
       }
       window.proof.emit('onSnapshot', proof.current)
     })
-    await page.getByText(/Some uncommitted edits could not be attributed/).waitFor()
+    await page.getByText(/Coverage is partial/).waitFor()
     await capture('thread-diff-partial-history')
+    await page
+      .locator('header')
+      .getByText('Thread diff · 1 file shown · partial', { exact: true })
+      .waitFor()
+    await page.evaluate(() => {
+      window.proof.threadDiff.ownedPaths = { codex: [] }
+    })
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await page.getByText(/No current changes could be matched/).waitFor()
+    await page
+      .locator('header')
+      .getByText('Thread diff · 0 files shown · partial', { exact: true })
+      .waitFor()
+    await page.getByRole('combobox', { name: 'Change comparison' }).selectOption('git-staged')
+    await page.locator('header').getByText('Staged diff · 2 files', { exact: true }).waitFor()
+    await page.getByRole('combobox', { name: 'Change comparison' }).selectOption('folder-baseline')
+    await page.locator('header').getByText('Folder diff · 2 files', { exact: true }).waitFor()
+    // A late response from a previous mode must not replace the selected comparison.
+    await page.evaluate(() => {
+      const read = window.threadlight.getWorktreeChanges
+      window.proof.threadDiff.restoreComparison = read
+      window.threadlight.getWorktreeChanges = (id, lens) =>
+        lens === 'git-staged'
+          ? new Promise((resolve) => {
+              window.proof.threadDiff.releaseStaged = () =>
+                resolve({ branch: null, files: [], lens: 'git-staged', complete: true })
+            })
+          : read(id, lens)
+    })
+    await page.getByRole('combobox', { name: 'Change comparison' }).selectOption('git-staged')
+    await page.waitForFunction(() => !!window.proof.threadDiff.releaseStaged)
+    assert.equal(await page.getByRole('button', { name: /edit shared.ts/ }).count(), 0)
+    await page.getByText('Reading changes…', { exact: true }).waitFor()
+    await page.getByRole('combobox', { name: 'Change comparison' }).selectOption('git-current')
+    await page.locator('header').getByText('Worktree diff · 2 files', { exact: true }).waitFor()
+    await page.evaluate(async () => {
+      window.proof.threadDiff.releaseStaged()
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      window.threadlight.getWorktreeChanges = window.proof.threadDiff.restoreComparison
+    })
+    assert.equal(
+      await page.locator('header').getByText('Worktree diff · 2 files', { exact: true }).count(),
+      1,
+    )
+    await page.getByRole('combobox', { name: 'Change comparison' }).selectOption('thread')
+    await page.getByText(/No current changes could be matched/).waitFor()
+
     await page.evaluate(() => {
       const proof = window.proof.threadDiff
       proof.unavailable = true
@@ -256,7 +490,7 @@ export async function checkThreadDiffs(page, capture) {
         ...proof.current,
         sessions: proof.current.sessions.map((session) => ({
           ...session,
-          threadDiff: { files: 0, added: 0, removed: 0, complete: false, revision: 'committed' },
+          threadDiff: { files: 0, added: 0, removed: 0, complete: true, revision: 'committed' },
         })),
       })
     })
@@ -366,6 +600,7 @@ export async function checkThreadDiffs(page, capture) {
       'worktree-open',
       'synthetic-claude',
       'src/shared.ts',
+      'worktree-1',
     ])
     await capture('worktree-diff-shared-file')
     // Attribution can change without any change to the worktree's counts or file list.
@@ -449,7 +684,9 @@ export async function checkThreadDiffs(page, capture) {
     })
     await thread('Claude').locator('button').first().click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).click()
-    await page.getByText('No uncommitted changes in this worktree.', { exact: true }).waitFor()
+    await page
+      .getByText('No changes between the last commit and current files.', { exact: true })
+      .waitFor()
     await back()
     await page.evaluate(() =>
       window.proof.emit('onSnapshot', {
@@ -463,11 +700,31 @@ export async function checkThreadDiffs(page, capture) {
     await thread('Claude').locator('button').first().click({ button: 'right' })
     assert.equal(
       await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).isDisabled(),
-      true,
+      false,
     )
-    await page.keyboard.press('Escape')
+    await page.evaluate(() => {
+      window.threadlight.getWorktreeChanges = async () => null
+      window.threadlight.getLocalTracking = async () => ({
+        rootId: 'folder',
+        root: 'C:/synthetic/folder',
+        recording: false,
+        baseline: null,
+        policyRevision: 0,
+        bytes: 0,
+        limit: 1000,
+        reasons: [],
+      })
+    })
+    await page.getByRole('menuitem', { name: 'Worktree diff', exact: true }).click()
+    await page.getByText("This thread's Git worktree is unavailable.", { exact: true }).waitFor()
+    await page.getByRole('combobox', { name: 'Change comparison' }).selectOption('folder-baseline')
+    await page.getByText(/Enable local file history to capture a starting baseline/).waitFor()
+    await page.getByText('Local file history · off', { exact: true }).click()
+    await page.getByRole('button', { name: 'Record local file history', exact: true }).waitFor()
+    await capture('folder-diff-enable-history')
+    await back()
     console.log(
-      'PASS: independent thread badges and right-click worktree diffs for both providers; shared-file ownership, scoped Open, refresh, empty/unavailable states and disabled non-Git action.',
+      'PASS: independent thread badges and right-click worktree diffs for both providers; shared-file ownership, scoped Open, refresh, empty/unavailable states and non-Git baseline entry.',
     )
   } finally {
     const close = page.getByRole('button', { name: 'Back to sessions', exact: true })

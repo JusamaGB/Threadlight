@@ -19,9 +19,20 @@ import { writerHeld } from './live'
 import { readCodexPlan } from './plan'
 import { codexUsage } from './usage'
 import type { Usage } from '../../shared/usage'
-import { codexDisplayText, codexToolActivity, codexUserRequest } from './presentation'
+import {
+  codexDisplayText,
+  codexToolActivity,
+  codexUserRequest,
+  publicActivityHeading,
+} from './presentation'
 import { codexState } from './state'
-import { nativeQuestionRef } from './nativeQuestions'
+import {
+  answeredQuestionIds,
+  pendingQuestion,
+  questionId,
+  questionRecords,
+} from './questionLifecycle'
+import type { QuestionObserver } from './questionObserver'
 import { codexGitFolders, codexPullRequest } from './badges'
 import { CompletionOrder } from '../sessions/completionOrder'
 import { compareSessionOrder, recentSessions } from '../../shared/sessionOrder'
@@ -87,7 +98,7 @@ export interface CodexSummary {
   contextUsed: number | null
 }
 
-function questionCard(value: unknown): Attention | null {
+function questionCard(value: unknown): Extract<Attention, { kind: 'question' }> | null {
   if (!Array.isArray(value)) return null
   const questions = value.filter(isObject).flatMap((q) => {
     const question = str(q['question']) || str(q['title'])
@@ -122,6 +133,8 @@ function questionCard(value: unknown): Attention | null {
 export function summarizeCodex(records: Row[], turnStatus?: unknown): CodexSummary {
   let questionCall: string | null = null,
     asynchronous = false,
+    rolloutTurn: string | null = null,
+    indexes: number[] = [],
     progress: string | null = null
   const out: CodexSummary = {
     lastPrompt: null,
@@ -138,18 +151,47 @@ export function summarizeCodex(records: Row[], turnStatus?: unknown): CodexSumma
     if (plan) Object.assign(out, plan, { hasPlan: true })
     const item = isObject(record['payload']) ? record['payload'] : record
     const type = str(item['type'])
+    const eventTurn = str(item.turn_id)
+    const nextTurn = type === 'task_started' && eventTurn !== rolloutTurn
+    const ended =
+      (type === 'task_complete' || type === 'turn_aborted') &&
+      !!rolloutTurn &&
+      eventTurn === rolloutTurn
+    if (asynchronous && out.attention?.kind === 'question' && (nextTurn || ended)) {
+      out.attention = null
+      questionCall = null
+      asynchronous = false
+    }
+    if (type === 'task_started') rolloutTurn = eventTurn
     if (
       type === 'userMessage' ||
       type === 'user_message' ||
       (type === 'message' && item['role'] === 'user')
     ) {
-      const request = codexUserRequest(textOf(item['content']) || str(item['message']) || '')
+      const text = textOf(item['content']) || str(item['message']) || ''
+      if (asynchronous && questionCall && out.attention?.kind === 'question') {
+        const answered = answeredQuestionIds([
+          { type: 'userMessage', content: [{ type: 'text', text }] },
+        ])
+        if (answered.size) {
+          const call = questionCall
+          const remaining = out.attention.questions.filter(
+            (_, i) => !answered.has(questionId(call, indexes[i]!)),
+          )
+          indexes = indexes.filter((index) => !answered.has(questionId(call, index)))
+          out.attention = remaining.length ? { ...out.attention, questions: remaining } : null
+          if (!remaining.length) questionCall = null
+        }
+      }
+      const request = codexUserRequest(text)
       if (!request) continue
       out.lastPrompt = request
       progress = null
       out.lastAction = null
-      out.attention = null
-      questionCall = null
+      if (!asynchronous || !questionCall) {
+        out.attention = null
+        questionCall = null
+      }
     }
     if (
       type === 'agentMessage' ||
@@ -170,9 +212,14 @@ export function summarizeCodex(records: Row[], turnStatus?: unknown): CodexSumma
       const card = questionCard(item['questions'])
       if (card) {
         out.attention = card
-        questionCall = null
+        indexes = card.questions.map((_, i) => i)
+        questionCall = str(item.id)
         asynchronous = true
       }
+    }
+    if (type === 'reasoning') {
+      progress = publicActivityHeading(item) || null
+      out.lastAction = progress
     }
     if (type === 'commandExecution') out.lastAction = progress || codexToolActivity(type, item)
     if (type === 'function_call' || type === 'functionCall') {
@@ -181,6 +228,7 @@ export function summarizeCodex(records: Row[], turnStatus?: unknown): CodexSumma
       out.lastAction = progress || codexToolActivity(name, args)
       if (/request_user_input(?:_async)?$/.test(name) && Array.isArray(args['questions'])) {
         out.attention = questionCard(args['questions'])
+        indexes = args.questions.map((_, i) => i)
         questionCall = str(item['call_id']) || str(item['id'])
         asynchronous = name.endsWith('_async')
       }
@@ -232,6 +280,11 @@ export class CodexTracker {
     private readonly gitFor: (cwd: string) => GitState | null = () => null,
     private readonly hidden: (id: string, cwd: string) => boolean = () => false,
     private readonly pinned?: (session: Session) => boolean,
+    private readonly questions?: QuestionObserver,
+    private readonly dismissed?: (
+      id: string,
+      ref: import('../../shared/codexQuestions').CodexQuestionRef,
+    ) => boolean,
   ) {}
   configure(hours: number, max: number): void {
     this.windowHours = hours
@@ -309,14 +362,15 @@ export class CodexTracker {
       const planType = itemColumns.has('item_type')
         ? 'item_type'
         : "json_extract(item_json,'$.type')"
-      const compactionMetadata =
-        ['item_type', 'turn_id', 'started_at_ms', 'completed_at_ms'].every((column) =>
-          itemColumns.has(column),
-        ) &&
+      const questionMetadata =
+        itemColumns.has('item_type') &&
+        itemColumns.has('turn_id') &&
         history
           ?.prepare('PRAGMA table_info(thread_turns)')
           .all()
           .some((column) => column['name'] === 'turn_id')
+      const compactionMetadata =
+        questionMetadata && itemColumns.has('started_at_ms') && itemColumns.has('completed_at_ms')
       const pendingCompaction = compactionMetadata
         ? history?.prepare(
             "SELECT 1 FROM thread_items WHERE thread_id=? AND turn_id=? AND item_type='contextCompaction' AND started_at_ms IS NOT NULL AND completed_at_ms IS NULL LIMIT 1",
@@ -365,6 +419,7 @@ export class CodexTracker {
         groups.set(cwd, [...(groups.get(cwd) || []), row])
       }
       const built = new Map<string, Session>()
+      const activeQuestions = new Map<string, string>()
       // Optional on older Codex versions. Keep source databases read-only.
       const attachments = new Map<string, Row[]>()
       try {
@@ -394,17 +449,22 @@ export class CodexTracker {
         if (cached) return cached
         let records: Row[] = [],
           turn: Row = {}
+        const recordTurns = new Map<Row, unknown>()
         if (history) {
           try {
             records = (
               history
                 .prepare(
-                  'SELECT item_json FROM thread_items WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 200',
+                  `SELECT ${questionMetadata ? 'turn_id,' : ''}item_json FROM thread_items WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 200`,
                 )
                 .all(id) as Row[]
             )
               .reverse()
-              .map((r) => json(r['item_json']))
+              .map((r) => {
+                const item = json(r.item_json)
+                recordTurns.set(item, r.turn_id)
+                return item
+              })
             // A proposed plan can precede hundreds of tool events. Fetch it separately instead
             // of silently losing it when it falls outside the normal recent-items page.
             const priorPlan = history
@@ -415,7 +475,7 @@ export class CodexTracker {
             if (priorPlan) records.unshift(json(priorPlan['item_json']))
             turn = (history
               .prepare(
-                `SELECT ${compactionMetadata ? 'turn_id,' : ''}status,started_at,completed_at,(SELECT completed_at FROM thread_turns WHERE thread_id=? AND completed_at IS NOT NULL ORDER BY rollout_ordinal DESC LIMIT 1) AS last_completed_at FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1`,
+                `SELECT ${questionMetadata ? 'turn_id,' : ''}status,started_at,completed_at,(SELECT completed_at FROM thread_turns WHERE thread_id=? AND completed_at IS NOT NULL ORDER BY rollout_ordinal DESC LIMIT 1) AS last_completed_at FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1`,
               )
               .get(id, id) || {}) as Row
           } catch {
@@ -430,17 +490,46 @@ export class CodexTracker {
         const live = await writerHeld(this.paths.locks, id)
         const hook = this.hooks.records.get(key)
         const fresh = hook && Date.now() - hook.at < 10 * 60_000 ? hook : null
+        const scopedAttention =
+          summary.attention && typeof turn.turn_id === 'string'
+            ? summarizeCodex(
+                records.filter((item) => recordTurns.get(item) === turn.turn_id),
+                turn.status,
+              ).attention
+            : summary.attention
         let attention = fresh
-          ? fresh.attention || (fresh.state === 'waiting' ? summary.attention : null)
-          : summary.attention
-        if (
-          attention?.kind === 'question' &&
-          ['inProgress', 'in_progress'].includes(String(turn['status']))
-        ) {
-          const reference = nativeQuestionRef(records, turn['turn_id'])
-          if (reference) attention = { ...attention, nativeCodex: reference }
+          ? fresh.attention || (fresh.state === 'waiting' ? scopedAttention : null)
+          : scopedAttention
+        let stateHook = fresh
+        if (history && typeof turn.turn_id === 'string') {
+          const active = ['inProgress', 'in_progress'].includes(String(turn.status))
+          const prose = attention?.kind === 'next-step' && !attention.holdId
+          const items = active || prose ? questionRecords(history, id, turn.turn_id) : []
+          const hasNativeCard = items.some((item) => item.type === 'agentMessage')
+          const heldAttention = fresh?.attention && !(prose && hasNativeCard)
+          const pending = active ? pendingQuestion(items, turn.turn_id) : undefined
+          if (pending) activeQuestions.set(id, turn.turn_id)
+          const owner = this.questions?.state(id, turn.turn_id)
+          const current =
+            pending &&
+            (pendingQuestion(items, turn.turn_id, owner, (ref) => !this.dismissed?.(key, ref)) ??
+              pendingQuestion(items, turn.turn_id, owner))
+          const card = current && questionCard(current.questions)
+          if (fresh?.nativeQuestionTurn && (fresh.nativeQuestionTurn !== turn.turn_id || !active))
+            stateHook = null
+          if (!heldAttention && current && card?.kind === 'question') {
+            attention = { ...card, nativeCodex: current.ref }
+          } else if (
+            !heldAttention &&
+            (hasNativeCard ||
+              records.some((item) => item.delivery === 'async' && Array.isArray(item.questions)))
+          ) {
+            // The summary spans several turns. An old native card cannot migrate onto the new turn.
+            if (attention?.kind === 'question' || hasNativeCard) attention = null
+            if (fresh?.state === 'waiting' && !attention) stateHook = null
+          }
         }
-        const { state, tracked } = codexState(turn['status'], live, attention, fresh)
+        const { state, tracked } = codexState(turn['status'], live, attention, stateHook)
         // A completed historical compaction is not a live status. Match the active turn
         // and the item's start/end lifecycle metadata from the read-only projection.
         const compacting =
@@ -601,6 +690,7 @@ export class CodexTracker {
         })
       }
       this.lastError = ''
+      this.questions?.sync(activeQuestions)
       return {
         provider: 'codex',
         codexUsage: usage,

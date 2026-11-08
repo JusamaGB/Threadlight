@@ -1,6 +1,6 @@
 {
   "name": "threadlight-codex",
-  "version": "0.2.1",
+  "version": "0.3.1",
   "description": "Threadlight status, bounded card answers and scoped shared memory for Codex chats.",
   "hooks": "./hooks/hooks.json",
   "skills": "./skills/",

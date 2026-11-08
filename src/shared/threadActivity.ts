@@ -1,5 +1,14 @@
 import type { ThreadTimeline, TimelineItem } from './threadTimeline'
 import type { Session } from './types'
+import { commandActivity } from './commandActivity'
+
+function compactActivityText(item: TimelineItem): string {
+  if (item.compactText) return item.compactText
+  // Older/history records may not have a projected compact label yet.
+  if (item.activity === 'command' && /^(?:Running|Ran)\s/.test(item.text))
+    return commandActivity(item.text.replace(/^(?:Running|Ran)\s+/, ''), item.complete)
+  return item.text
+}
 
 /** The newest public activity or message in this turn, shared by the row and open card. */
 export function liveThreadActivity(
@@ -16,23 +25,18 @@ export function liveThreadActivity(
   const latest = timeline.items.at(-1)
   if (!latest || latest.role === 'user') return null
   if (session.turnStartedAt && latest.at !== null && latest.at < session.turnStartedAt) return null
-  return latest.text.replace(/\s+/g, ' ').trim().slice(0, 300) || null
+  return compactActivityText(latest).replace(/\s+/g, ' ').trim().slice(0, 300) || null
 }
 
 export type ConversationRow =
   | { type: 'message'; id: string; item: TimelineItem }
   | { type: 'activity'; id: string; items: TimelineItem[] }
 
-/** Native message/turn boundaries remain visible; only adjacent tool activity collapses. */
+/** Group consecutive tools and edits; messages, turns and compaction remain visible boundaries. */
 export function conversationRows(items: TimelineItem[]): ConversationRow[] {
   const rows: ConversationRow[] = []
   for (const item of items) {
-    if (
-      item.role !== 'activity' ||
-      item.activity === 'compaction' ||
-      item.activity === 'files' ||
-      item.kind !== 'tool'
-    ) {
+    if (item.role !== 'activity' || item.activity === 'compaction' || item.kind !== 'tool') {
       rows.push({ type: 'message', id: item.id, item })
       continue
     }
@@ -45,7 +49,7 @@ export function conversationRows(items: TimelineItem[]): ConversationRow[] {
 
 export function activitySummary(items: TimelineItem[], active: boolean): string {
   const pending = active ? items.findLast((item) => !item.complete) : undefined
-  if (pending) return pending.activity === 'command' ? 'Running command' : pending.text
+  if (pending) return compactActivityText(pending)
   const actions = items.filter((item) => item.activity !== 'status')
   if (!actions.length) return items.at(-1)?.text || 'Activity'
   if (actions.length === 1 && actions[0]!.activity !== 'command')

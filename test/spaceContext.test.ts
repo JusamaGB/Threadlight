@@ -1,3 +1,6 @@
+import { memoryTestTransport } from './memoryTransportHelper'
+import { proxyRpc } from './mcpProxyHelper'
+import type { MemoryProxy } from '../src/main/memory/transport'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -18,6 +21,13 @@ import { unknownStatus, type ThreadAdapter } from '../src/main/threadRead/types'
 import type { MemorySpace } from '../src/shared/memory'
 import type { Session } from '../src/shared/types'
 import { ideaSchema } from '../src/shared/spaces'
+import { CommunicationService } from '../src/main/communication/service'
+import { memoryNote } from '../src/main/spaces/memoryNotes'
+import { claudeSpaceConfig, codexSpaceConfig } from '../src/main/agent/spaceContextTools'
+import type { JsonObject } from '../src/main/sessions/json'
+import type { MemoryItem } from '../src/shared/memory'
+import type { ProcessDefinition, ProcessRun } from '../src/shared/workflowGraph'
+import { vi } from 'vitest'
 import {
   SPACE_CONTEXT_TOOLS,
   SPACE_CONTEXT_SERVER,
@@ -28,7 +38,7 @@ const cleanup: (() => void)[] = []
 afterEach(() => {
   for (const close of cleanup.splice(0).reverse()) close()
 })
-async function fixture() {
+async function fixture(provider: 'claude' | 'codex' = 'codex') {
   const root = mkdtempSync(join(tmpdir(), 'threadlight-space-context-'))
   const store = new SpacesStore(join(root, 'notes.sqlite')),
     memory = new MemoryStore(join(root, 'memory.sqlite'))
@@ -120,7 +130,10 @@ async function fixture() {
       changedDuringRead: false,
     }),
   }
-  const reader = new ThreadReadServer(new ThreadReadService([adapter], () => ['codex']))
+  const reader = new ThreadReadServer(
+    new ThreadReadService([adapter], () => ['codex']),
+    memoryTestTransport(join(root, 'reader')),
+  )
   await reader.start()
   cleanup.push(() => reader.close())
   const service = new SpaceContextService(
@@ -131,13 +144,343 @@ async function fixture() {
         { id: 'codex:one', provider: 'codex', cwd: root, state: 'working', title: 'Build' },
       ] as Session[],
     reader,
+    undefined,
+    { identity: () => ({ provider, chatId: `${provider}-hosted-test` }), changed: () => {} },
   )
-  const server = new SpaceContextServer(service)
+  const auth = memoryTestTransport(root)
+  const server = new SpaceContextServer(service, auth)
   await server.start()
   cleanup.push(() => server.close())
-  return { root, workspaceId, store, memory, spaces, notes, discussion, grants, service, server }
+  return {
+    auth,
+    root,
+    workspaceId,
+    store,
+    memory,
+    spaces,
+    notes,
+    discussion,
+    grants,
+    service,
+    server,
+  }
 }
 describe('space-aware Brainstorm', () => {
+  it.each(['claude', 'codex'] as const)(
+    'saves and revises attributed notes through the %s scoped proxy',
+    async (provider) => {
+      const f = await fixture(provider),
+        connection = f.server.connect(f.discussion.id, [f.spaces[1]!.id])
+      cleanup.push(() => connection.close())
+      let proxy: MemoryProxy
+      if (provider === 'claude')
+        proxy = JSON.parse(claudeSpaceConfig(connection)).mcpServers[SPACE_CONTEXT_SERVER]
+      else {
+        const config: JsonObject = {}
+        codexSpaceConfig(config, connection)
+        const server = (config.mcp_servers as Record<string, unknown>)[
+          SPACE_CONTEXT_SERVER
+        ] as MemoryProxy & { tools: Record<string, { approval_mode: string }> }
+        expect(server.tools.threadlight_save_note?.approval_mode).toBe('approve')
+        expect(server.tools.threadlight_invoke_process?.approval_mode).toBe('approve')
+        expect(server.tools.threadlight_authorize_process).toBeUndefined()
+        proxy = server
+      }
+      const call = async (name: string, args: unknown) => {
+        const response = (await (
+          await proxyRpc(proxy, {
+            jsonrpc: '2.0',
+            method: 'tools/call',
+            params: { name, arguments: args },
+          })
+        ).json()) as { error?: { message: string }; result: { content: { text: string }[] } }
+        if (response.error) throw Error(response.error.message)
+        return JSON.parse(response.result.content[0]!.text)
+      }
+      const p = {
+        operationId: randomUUID(),
+        text: 'Remember this idea. Preserve the complete second sentence.',
+      }
+      const saved = await call('threadlight_save_note', p)
+      expect(saved).toMatchObject({
+        outcome: 'saved',
+        revision: 1,
+        title: 'Remember this idea.',
+        saver: { provider, chatId: `${provider}-hosted-test` },
+      })
+      expect(await call('threadlight_save_note', p)).toEqual(saved)
+      expect(f.store.all().filter((n) => n.id === p.operationId)).toHaveLength(1)
+      expect(f.store.get(p.operationId).text).toBe(p.text)
+      await expect(call('threadlight_save_note', { ...p, text: 'Changed retry' })).rejects.toThrow(
+        'different',
+      )
+      await expect(
+        call('threadlight_save_note', { ...p, saver: { provider: 'human' } }),
+      ).rejects.toThrow()
+      const update = {
+        operationId: randomUUID(),
+        sourceRef: saved.sourceRef,
+        expectedRevision: 1,
+        text: 'Keep the updated complete body.',
+      }
+      const revised = await call('threadlight_revise_note', update)
+      expect(revised.revision).toBe(2)
+      expect(revised.title).toBe(saved.title)
+      expect(await call('threadlight_revise_note', update)).toEqual(revised)
+      expect(f.store.revision(p.operationId, 1).text).toBe(p.text)
+      await expect(
+        call('threadlight_revise_note', { ...update, operationId: randomUUID() }),
+      ).rejects.toThrow('changed')
+      await expect(
+        call('threadlight_revise_note', { ...update, sourceRef: `note:${f.notes[1]!.id}` }),
+      ).rejects.toThrow('Comparison')
+      await expect(
+        call('threadlight_revise_note', { ...update, sourceRef: `note:${f.discussion.id}` }),
+      ).rejects.toThrow('user note')
+      const inventory = (await (
+        await proxyRpc(proxy, { jsonrpc: '2.0', method: 'tools/list' })
+      ).json()) as { result: { tools: { name: string; annotations: { readOnlyHint: boolean } }[] } }
+      expect(
+        inventory.result.tools.find((t: { name: string }) => t.name === 'threadlight_save_note')
+          ?.annotations.readOnlyHint,
+      ).toBe(false)
+      expect(
+        inventory.result.tools.find(
+          (t: { name: string }) => t.name === 'threadlight_get_space_context',
+        )?.annotations.readOnlyHint,
+      ).toBe(true)
+    },
+  )
+
+  it('revises plugin notes in place without converting handoffs or results into Notes', async () => {
+    const f = await fixture('claude'),
+      scope = f.service.open(f.discussion.id)
+    const folder = f.memory.execute({
+      action: 'ensure_folder',
+      spaceId: f.spaces[0]!.id,
+      title: 'Notes',
+      description: 'Notes',
+      reason: 'Test',
+      operationId: randomUUID(),
+    }) as { folder: { id: string } }
+    const create = (purpose: string) =>
+      f.memory.execute({
+        action: 'create_item',
+        operationId: randomUUID(),
+        folderId: folder.folder.id,
+        title: 'Original',
+        body: 'Original body',
+        purpose,
+        kind: 'note',
+      }) as MemoryItem
+    const note = create('note'),
+      work = create('work_context'),
+      result = create('result')
+    const p = {
+      operationId: randomUUID(),
+      sourceRef: `item:${note.id}`,
+      expectedRevision: 1,
+      text: 'User requested amendment',
+    }
+    const saved = await f.service.call(scope, 'threadlight_revise_note', p)
+    expect(await f.service.call(scope, 'threadlight_revise_note', p)).toEqual(saved)
+    expect(memoryNote(f.memory, note.id, f.workspaceId)).toMatchObject({
+      id: note.id,
+      revision: 2,
+      text: p.text,
+      saver: { provider: 'claude' },
+    })
+    expect(f.memory.read({}, note.id, 1).revision.body).toBe('Original body')
+    for (const item of [work, result])
+      await expect(
+        f.service.call(scope, 'threadlight_revise_note', { ...p, sourceRef: `item:${item.id}` }),
+      ).rejects.toThrow('not user notes')
+    expect(f.memory.snapshot().items).toHaveLength(3)
+    expect(() =>
+      f.memory.execute(
+        { action: 'accept_item', id: note.id, operationId: randomUUID(), expectedRevision: 2 },
+        { brainstorm: { provider: 'claude', principal: 'test', spaceId: f.spaces[0]!.id } },
+      ),
+    ).toThrow('only revise')
+  })
+
+  it('integrates draft, readiness, authorized runs and objective evidence with the real workflow runtime', async () => {
+    const f = await fixture(),
+      spaceId = f.spaces[0]!.id,
+      scope = f.service.open(f.discussion.id, [f.spaces[1]!.id])
+    const deliver = vi.fn(async () => ({ reply: 'Unexpected delivery' }))
+    const service = new CommunicationService(f.memory.communications, {
+      destinations: async () => [],
+      deliver,
+      authorize: (actor, id) => f.memory.authorizeCommunication(actor, id),
+      input: () => {
+        throw Error('No context used')
+      },
+      project: () => ({
+        paused: false,
+        expiresAt: Date.now() + 60000,
+        maxDispatches: 5,
+        root: f.root,
+      }),
+    })
+    f.memory.communicationService = service
+    cleanup.push(() => service.close())
+    const resultFolders = [spaceId, f.spaces[1]!.id].map(
+      (id) =>
+        f.memory.execute({
+          action: 'ensure_folder',
+          operationId: randomUUID(),
+          spaceId: id,
+          title: 'Results',
+          description: 'Reports',
+          reason: 'Keep workflow outputs together',
+        }) as { folder: { id: string } },
+    )
+    const folders = (await f.service.call(scope, 'threadlight_get_workflow', {})) as {
+      folders: { id: string }[]
+    }
+    expect(folders.folders.map((f) => f.id)).toEqual([resultFolders[0]!.folder.id])
+    expect(
+      await f.service.call(scope, 'threadlight_get_workflow', { offset: 1, limit: 1 }),
+    ).toMatchObject({ folders: [], totals: { folders: 1 }, hasMore: false })
+    expect(
+      await f.service.call(scope, 'threadlight_get_workflow', { spaceId: f.spaces[1]!.id }),
+    ).toMatchObject({ readOnly: true, folders: [{ id: resultFolders[1]!.folder.id }] })
+    const human = { id: 'human', kind: 'human' as const }
+    service.configure(
+      {
+        id: randomUUID(),
+        spaceId,
+        revision: 1,
+        mode: 'automatic',
+        paused: false,
+        participants: [
+          {
+            id: randomUUID(),
+            target: `codex:${randomUUID()}`,
+            role: 'Build',
+            model: 'fixture',
+            communicate: false,
+            requestWork: false,
+          },
+        ],
+        maxConcurrent: 1,
+        maxDispatches: 5,
+        expiresAt: Date.now() + 60000,
+        recover: false,
+        acceptBy: 'human',
+      },
+      0,
+      human,
+    )
+    const definition: ProcessDefinition = {
+      schemaVersion: 1,
+      id: randomUUID(),
+      spaceId,
+      revision: 1,
+      name: 'Save planning outcome',
+      nodes: [{ id: 'done', title: 'Done', type: 'finish', success: true, inputs: {}, x: 0, y: 0 }],
+      edges: [],
+      trigger: { type: 'manual' },
+      maxConcurrent: 1,
+      maxOperations: 5,
+    }
+    await expect(
+      f.service.call(scope, 'threadlight_validate_process', { definition }),
+    ).resolves.toMatchObject({ outcome: 'valid', executionAuthorized: false })
+    const draft = { operationId: randomUUID(), expectedRevision: 0, definition }
+    expect(await f.service.call(scope, 'threadlight_save_process', draft)).toEqual(definition)
+    expect(await f.service.call(scope, 'threadlight_save_process', draft)).toEqual(definition)
+    expect(service.processes.runs()).toHaveLength(0)
+    const invoke = {
+      operationId: randomUUID(),
+      spaceId,
+      definitionId: definition.id,
+      revision: 1,
+      objective: 'Improve onboarding',
+    }
+    await expect(f.service.call(scope, 'threadlight_invoke_process', invoke)).rejects.toThrow(
+      'authorization',
+    )
+    await expect(
+      f.service.call(scope, 'threadlight_authorize_process', { ...invoke }),
+    ).rejects.toThrow('not available')
+    await service.execute(
+      'authorize_process',
+      {
+        operationId: randomUUID(),
+        spaceId,
+        definitionId: definition.id,
+        revision: 1,
+        triggers: false,
+      },
+      human,
+    )
+    expect(
+      await f.service.call(scope, 'threadlight_read_process', {
+        definitionId: definition.id,
+        revision: 1,
+      }),
+    ).toMatchObject({ readiness: { ready: true } })
+    const run = (await f.service.call(scope, 'threadlight_invoke_process', invoke)) as ProcessRun
+    expect(run.actor.kind).toBe('agent')
+    expect(await f.service.call(scope, 'threadlight_invoke_process', invoke)).toEqual(run)
+    expect(service.processes.runs()).toHaveLength(1)
+    await service.processes.tick()
+    const state = (await f.service.call(scope, 'threadlight_read_space_source', {
+      sourceRef: `workflow-run:${run.id}`,
+    })) as { source: { body: string } }
+    expect(JSON.parse(state.source.body)).toMatchObject({
+      objective: 'Improve onboarding',
+      status: 'completed',
+      success: true,
+    })
+    expect(await f.service.call(scope, 'threadlight_get_workflow', {})).toMatchObject({
+      totals: { definitions: 1, runs: 1 },
+    })
+    await expect(
+      f.service.call(scope, 'threadlight_save_process', {
+        ...draft,
+        operationId: randomUUID(),
+        definition: { ...definition, spaceId: f.spaces[1]!.id },
+      }),
+    ).rejects.toThrow('Comparison')
+    await expect(
+      f.service.call(scope, 'threadlight_invoke_process', { ...invoke, spaceId: f.spaces[1]!.id }),
+    ).rejects.toThrow('Comparison')
+    await f.service.call(scope, 'threadlight_save_process', {
+      operationId: randomUUID(),
+      expectedRevision: 1,
+      definition: { ...definition, revision: 2, name: 'New version' },
+    })
+    expect(
+      await f.service.call(scope, 'threadlight_read_process', {
+        definitionId: definition.id,
+        revision: 1,
+      }),
+    ).toMatchObject({ readiness: { ready: true }, definition: { revision: 1 } })
+    expect(
+      await f.service.call(scope, 'threadlight_read_process', {
+        definitionId: definition.id,
+        revision: 2,
+      }),
+    ).toMatchObject({ readiness: { ready: false }, definition: { revision: 2 } })
+    await expect(
+      f.service.call(scope, 'threadlight_invoke_process', {
+        ...invoke,
+        operationId: randomUUID(),
+        revision: 2,
+      }),
+    ).rejects.toThrow('authorization')
+    expect(deliver).not.toHaveBeenCalled()
+    f.service.close(scope)
+    await expect(
+      f.service.call(scope, 'threadlight_save_note', {
+        operationId: randomUUID(),
+        text: 'Do not save',
+      }),
+    ).rejects.toThrow('access ended')
+  })
   it('reads handoffs, questions and real authors without dispatching or accepting results', async () => {
     const f = await fixture(),
       spaceId = f.spaces[0]!.id
@@ -213,22 +556,33 @@ describe('space-aware Brainstorm', () => {
       expect(argv).not.toContain('--agents')
       expect(argv[argv.indexOf('--append-system-prompt') + 1]).toContain(BRAINSTORM_INSTRUCTIONS)
       const config = JSON.parse(argv[argv.indexOf('--mcp-config') + 1]!) as {
-        mcpServers: Record<string, { url: string; headers: Record<string, string> }>
+        mcpServers: Record<string, MemoryProxy>
       }
       expect(Object.keys(config.mcpServers)).toEqual([SPACE_CONTEXT_SERVER])
       const endpoint = config.mcpServers[SPACE_CONTEXT_SERVER]!
       const rpc = () =>
-        fetch(endpoint.url, {
-          method: 'POST',
-          headers: { ...endpoint.headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'tools/call',
-            params: { name: 'threadlight_get_space_context', arguments: {} },
-          }),
+        proxyRpc(endpoint, {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'threadlight_get_space_context', arguments: {} },
         })
       expect(await (await rpc()).text()).toContain('Restart decision')
+      for (const delegated of [false, true]) {
+        stdout.write(
+          JSON.stringify({
+            type: 'control_request',
+            request_id: `note-${delegated}`,
+            request: {
+              subtype: 'can_use_tool',
+              tool_name: `mcp__${SPACE_CONTEXT_SERVER}__threadlight_save_note`,
+              input: {},
+              ...(delegated ? { agent_id: 'worker' } : {}),
+            },
+          }) + '\n',
+        )
+        expect(replies.at(-1)).toContain(delegated ? 'deny' : 'allow')
+      }
       for (const name of ['Bash', 'Task', 'mcp__outside__send_message']) {
         stdout.write(
           JSON.stringify({
@@ -240,7 +594,7 @@ describe('space-aware Brainstorm', () => {
         expect(replies.at(-1)).toContain('deny')
       }
       run.close()
-      expect((await rpc()).status).toBe(401)
+      expect(await (await rpc()).json()).toMatchObject({ error: { code: -32000 } })
     } finally {
       run.close()
     }
@@ -339,7 +693,7 @@ describe('space-aware Brainstorm', () => {
     const f = await fixture(),
       connection = f.server.connect(f.discussion.id)
     const rpc = (method: string, headers = {}, params?: unknown) =>
-      fetch(connection.endpoint, {
+      f.auth.fetch(connection.endpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${connection.token}`,

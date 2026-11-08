@@ -1,3 +1,4 @@
+import { memoryTestTransport } from './memoryTransportHelper'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -60,7 +61,7 @@ for (const provider of ['claude', 'codex'] as const)
         calls.push(tool)
         return call(scope, tool, args)
       }
-      const server = new SpaceContextServer(context)
+      const server = new SpaceContextServer(context, memoryTestTransport(root))
       await server.start()
       const cli =
         provider === 'claude'

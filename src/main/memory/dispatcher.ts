@@ -3,6 +3,7 @@ import type { MemoryDeliveryContext } from '../../shared/memory'
 import { MemoryStore } from './store'
 
 export interface MemoryDelivery {
+  accountChatDelivery?: import('../communication/accountChatTransport').AccountChatTransport['deliver']
   questionsChanged?: (
     questions: import('../../shared/communication').CommunicationQuestion[],
   ) => void

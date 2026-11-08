@@ -1,0 +1,86 @@
+@property --pin-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+.surface {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: var(--reference-height);
+  max-height: min(var(--reference-height), calc(var(--panel-room, 800px) * 0.65));
+  overflow: hidden;
+  border: 1px solid #8665aa;
+  border-color: transparent;
+  border-radius: 6px;
+  background:
+    linear-gradient(var(--bg), var(--bg)) padding-box,
+    conic-gradient(
+        from var(--pin-angle),
+        #76588e,
+        #ae88d1,
+        #826399 29%,
+        #76588e 67%,
+        #9c79b6,
+        #76588e
+      )
+      border-box;
+  animation: pinTravel 13s linear infinite;
+}
+[data-agent-front] .surface:not([data-detached]) {
+  flex-shrink: 1;
+}
+.surface[data-detached] {
+  height: 100vh;
+  max-height: 100vh;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  min-height: 17px;
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.bar span {
+  flex: 1;
+}
+[data-detached] .bar {
+  min-height: clamp(24px, var(--indicator-height, 32px), 29px);
+  padding-left: calc(var(--indicator-width, 32px) + 4px);
+}
+[data-detached][data-anchor-right] .bar {
+  padding-left: 5px;
+  padding-right: calc(var(--indicator-width, 32px) + 4px);
+}
+[data-detached][data-anchor-bottom] .bar {
+  order: 1;
+}
+.grip {
+  flex: none;
+  height: 6px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.grip:hover,
+.grip:focus-visible {
+  background: var(--purple);
+  outline: 0;
+}
+.grip[data-upward] {
+  order: -1;
+}
+@keyframes pinTravel {
+  to {
+    --pin-angle: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .surface {
+    animation: none;
+  }
+}

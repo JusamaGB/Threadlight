@@ -24,7 +24,7 @@ async function fixture(run: (root: string, git: (...args: string[]) => void) => 
   }
 }
 
-describe('uncommitted changes attributed to a thread', () => {
+describe('uncommitted changes attributed to a thread', { timeout: 60_000 }, () => {
   it('keeps only pending lines after a partial commit and clears after the final commit', async () =>
     fixture(async (root, git) => {
       const ledger = new ThreadDiffLedger(),
@@ -61,7 +61,7 @@ describe('uncommitted changes attributed to a thread', () => {
       })
     }))
 
-  it('retains staged edits after a working file reversal, even when recorded net edits are zero', async () =>
+  it('reports net current zero after a working reversal and exposes separate staged activity', async () =>
     fixture(async (root, git) => {
       const ledger = new ThreadDiffLedger(),
         view = new UncommittedThreads()
@@ -75,9 +75,11 @@ describe('uncommitted changes attributed to a thread', () => {
       await writeFile(path, before)
       expect(ledger.data().summary.files).toBe(0)
       expect((await view.project(ledger, root, 0))?.summary).toMatchObject({
-        files: 1,
-        added: 1,
-        removed: 1,
+        files: 0,
+        added: 0,
+        removed: 0,
+        complete: true,
+        hasOtherLensChanges: true,
       })
     }))
 

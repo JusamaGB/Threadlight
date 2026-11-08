@@ -1,3 +1,4 @@
+import { memoryTestTransport } from './memoryTransportHelper'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -83,7 +84,7 @@ for (const provider of ['claude', 'codex'] as const)
           }),
         1000,
       )
-      const server = new AppControlServer(service)
+      const server = new AppControlServer(service, memoryTestTransport(directory))
       await server.start()
       const cli =
         provider === 'claude'

@@ -29,6 +29,21 @@ export function followCodexThread(
   changed: (update: StreamUpdate) => void,
   connect = connectCodexDesktop,
 ): () => void {
+  return followCodexState(
+    id,
+    (state) => changed({ connection: 'live', items: projectStream(state) }),
+    (notice) => changed({ connection: 'reconnecting', notice }),
+    connect,
+  )
+}
+
+/** The verified owner's current state, shared by timeline and question consumers. */
+export function followCodexState(
+  id: string,
+  received: (state: Record<string, unknown>) => void,
+  reconnecting: (notice: string) => void,
+  connect = connectCodexDesktop,
+): () => void {
   let stopped = false,
     generation = 0,
     attempt = 0
@@ -69,7 +84,7 @@ export function followCodexThread(
     generation++
     cleanup()
     clearTimeout(retry)
-    changed({ connection: 'reconnecting', notice })
+    reconnecting(notice)
     retry = setTimeout(() => void start(), Math.min(30_000, 1000 * 2 ** Math.min(attempt++, 5)))
   }
   const start = async () => {
@@ -141,7 +156,7 @@ export function followCodexThread(
               publish = setTimeout(() => {
                 publish = undefined
                 try {
-                  if (state) changed({ connection: 'live', items: projectStream(state) })
+                  if (state) received(state)
                 } catch {
                   recover('Native history changed format. Using saved history while reconnecting.')
                 }

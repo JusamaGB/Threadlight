@@ -1,3 +1,4 @@
+import { authenticatedMcp } from './mcpTransport'
 import { APP_CONTROL_SERVER, controlTools } from '../../shared/appControl'
 import type { ThreadReadConnection } from '../threadRead/server'
 import type { JsonObject } from '../sessions/json'
@@ -6,16 +7,14 @@ export function controlConfig(config: string, connection?: ThreadReadConnection)
   if (!connection) return config
   const value = JSON.parse(config)
   value.mcpServers[APP_CONTROL_SERVER] = {
-    type: 'http',
-    url: connection.endpoint,
-    headers: { Authorization: `Bearer ${connection.token}` },
+    type: 'stdio',
+    ...authenticatedMcp(connection),
   }
   return JSON.stringify(value)
 }
 export function codexControlConfig(config: JsonObject, connection: ThreadReadConnection) {
   ;(config.mcp_servers as JsonObject)[APP_CONTROL_SERVER] = {
-    url: connection.endpoint,
-    http_headers: { Authorization: `Bearer ${connection.token}` },
+    ...authenticatedMcp(connection),
     enabled: true,
     default_tools_approval_mode: 'prompt',
     enabled_tools: controlTools.map((t) => t.name),

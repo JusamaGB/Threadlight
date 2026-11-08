@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { saveDotPosition } from '../src/main/windowState'
 import { IPC } from '../src/shared/ipc'
 import type { Session } from '../src/shared/types'
 
 const state = vi.hoisted(() => ({
   saved: { x: 1200, y: 200 },
   cursor: { x: 1205, y: 205 },
+  held: true,
   primary: { x: 0, y: 0, width: 1920, height: 1040 },
   secondary: { x: -1280, y: 0, width: 1280, height: 720 },
   nativeWindows: [] as { visible: boolean }[],
@@ -15,10 +17,13 @@ vi.mock('../src/main/windowState', () => ({
 }))
 vi.mock('electron', () => {
   const display = (point: { x: number }) => ({
+    bounds: point.x < 0 ? state.secondary : state.primary,
     workArea: point.x < 0 ? state.secondary : state.primary,
   })
   return {
     screen: {
+      on: vi.fn(),
+      off: vi.fn(),
       getCursorScreenPoint: () => state.cursor,
       getPrimaryDisplay: () => ({ workArea: state.primary }),
       getDisplayMatching: display,
@@ -35,8 +40,11 @@ vi.mock('electron', () => {
       }
       on = vi.fn()
       setAlwaysOnTop = vi.fn()
+      moveTop = vi.fn()
       setIgnoreMouseEvents = vi.fn()
-      loadFile = vi.fn()
+      setFocusable = vi.fn()
+      setSkipTaskbar = vi.fn()
+      loadFile = vi.fn(async () => {})
       focus = vi.fn()
       hide() {
         this.visible = false
@@ -62,10 +70,294 @@ vi.mock('electron', () => {
     },
   }
 })
-import { PANEL_WIDTH, PANEL_WIDTH_DUAL, WindowManager } from '../src/main/windows'
+vi.mock('../src/main/keyState', () => ({ isKeyDown: () => state.held }))
+import {
+  PANEL_WIDTH,
+  PANEL_WIDTH_DUAL,
+  spokenReplyBounds,
+  WindowManager,
+} from '../src/main/windows'
 import { WORKSPACE_GUTTER } from '../src/shared/attentionMotion'
 
 describe('panel movement and available height', () => {
+  it('resizes the live dot and suspends its reply for menu, panel and call end', () => {
+    const windows = new WindowManager()
+    windows.setOpenMicLive(true)
+    const reply = { id: 'one', text: 'A caption', blocks: [] }
+    windows.setSpokenReply(reply)
+    const dot = windows.dot
+    const sender = dot.webContents
+    expect(windows.getSpokenReply(sender)).toEqual(reply)
+    expect(windows.getSpokenReply(windows.panel.webContents)).toBeNull()
+    windows.setSpokenReplySize(windows.panel.webContents, 296, 200)
+    expect(dot.getBounds().width).toBe(92)
+    for (const [width, height] of [
+      [180, 24],
+      [296, 24],
+      [296, 200],
+      [296, 24],
+      [180, 24],
+      [92, 24],
+    ] as const) {
+      windows.setSpokenReplySize(sender, width, height)
+      expect(dot.getBounds()).toMatchObject({ width, height })
+    }
+    windows.setMicMenu(true)
+    windows.setSpokenReplySize(sender, 296, 200)
+    expect(dot.getBounds().width).toBe(148)
+    expect(windows.getSpokenReply(sender)).toBeNull()
+    windows.setMicMenu(false)
+    expect(windows.getSpokenReply(sender)).toEqual(reply)
+    windows.openPanel({ focus: false, fresh: false })
+    expect(windows.getSpokenReply(sender)).toBeNull()
+    windows.closePanel()
+    expect(windows.getSpokenReply(sender)).toEqual(reply)
+    windows.setSpokenReply(null)
+    expect(windows.getSpokenReply(sender)).toBeNull()
+    windows.setOpenMicLive(false)
+    windows.setSpokenReplySize(sender, 296, 200)
+    expect(dot.getBounds().width).toBe(32)
+  })
+
+  it.each([
+    { x: -1272, y: 8 },
+    { x: -640, y: 300 },
+    { x: -104, y: 685 },
+    { x: -8, y: 710 },
+  ])('unfolds within the work area at %j', (anchor) => {
+    const area = state.secondary
+    const rest = spokenReplyBounds(anchor, area, 92, 24)
+    for (const [width, height] of [
+      [92, 56],
+      [137, 56],
+      [221, 56],
+      [296, 24],
+      [296, 256],
+    ] as const) {
+      const box = spokenReplyBounds(anchor, area, width, height)
+      expect(box.x).toBe(
+        Math.max(
+          area.x,
+          Math.min(area.x + area.width - width, Math.round(rest.x + (rest.width - width) / 2)),
+        ),
+      )
+      expect(box.x).toBeGreaterThanOrEqual(area.x)
+      expect(box.x + box.width).toBeLessThanOrEqual(area.x + area.width)
+      expect(box.y).toBe(Math.min(rest.y, area.y + area.height - height))
+      expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height)
+    }
+  })
+
+  it('accepts non-focusing hover only over the waveform and outside an active press, drag or menu', () => {
+    state.held = false
+    const windows = new WindowManager()
+    windows.setOpenMicLive(true)
+    windows.setSpokenReplySize(windows.dot.webContents, 296, 200)
+    const bounds = windows.dot.getBounds()
+    state.cursor = { x: bounds.x + 20, y: bounds.y + 60 }
+    windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(false)
+    state.cursor.y = bounds.y + 10
+    state.held = true
+    windows.openFromDot(true)
+    state.held = false
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.setMicMenu(true)
+    windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.setMicMenu(false)
+    windows.setSpokenReplySize(windows.dot.webContents, 296, 200)
+    windows.dragDot(6, 0)
+    windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.endDrag()
+    windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(false)
+    vi.advanceTimersByTime(240)
+    windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(true)
+    expect(windows.panel.focus).not.toHaveBeenCalled()
+    expect(windows.panel.webContents.send).toHaveBeenCalledWith(
+      IPC.panelOpened,
+      expect.objectContaining({ fresh: false, fromMic: true }),
+    )
+  })
+
+  it('moves the expanded reply from a clamped edge and saves the resting anchor on release', () => {
+    vi.mocked(saveDotPosition).mockClear()
+    state.saved = { x: 8, y: 8 }
+    const windows = new WindowManager()
+    windows.setOpenMicLive(true)
+    windows.setSpokenReplySize(windows.dot.webContents, 296, 200)
+    const before = windows.dot.getBounds()
+    windows.dragDot(36, 18)
+    expect(windows.dot.getBounds()).toEqual({ ...before, x: before.x + 36, y: before.y + 18 })
+    windows.dragDot(70, 25)
+    expect(windows.dot.getBounds()).toEqual({ ...before, x: before.x + 70, y: before.y + 25 })
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.dragDot(-500, 1000)
+    const final = windows.dot.getBounds()
+    expect(final.x).toBeGreaterThanOrEqual(state.secondary.x)
+    expect(final.x + final.width).toBeLessThanOrEqual(state.secondary.x + state.secondary.width)
+    expect(final.y + final.height).toBeLessThanOrEqual(state.secondary.y + state.secondary.height)
+    windows.endDrag()
+    expect(saveDotPosition).toHaveBeenCalledTimes(1)
+    state.saved = vi.mocked(saveDotPosition).mock.calls.at(-1)![0]
+    const restored = new WindowManager()
+    restored.setOpenMicLive(true)
+    restored.setSpokenReplySize(restored.dot.webContents, 296, 200)
+    expect(restored.dot.getBounds()).toEqual(final)
+  })
+
+  it('routes waveform clicks to the live conversation, then collapses back to the still-live pill', () => {
+    const windows = new WindowManager()
+    windows.setClaudeRunning(true)
+    windows.setOpenMicLive(true)
+    state.cursor = { x: 400, y: 400 }
+    windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.openFromDot()
+    expect(windows.panel.webContents.send).toHaveBeenCalledWith(
+      IPC.panelOpened,
+      expect.objectContaining({ fresh: false, fromMic: true }),
+    )
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(true)
+    vi.advanceTimersByTime(350)
+    windows.setStayOpen(true)
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(true)
+    windows.setStayOpen(false)
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(false)
+    expect(windows.dot.isVisible()).toBe(true)
+    windows.openFromDot()
+    expect(windows.panel.isVisible()).toBe(true)
+    windows.setOpenMicLive(false)
+  })
+
+  it.each([
+    { x: 8, y: 8 },
+    { x: 1878, y: 994 },
+    { x: -1250, y: 675 },
+  ])('keeps the live waveform anchored and menu visible at %j', (anchor) => {
+    state.saved = anchor
+    const windows = new WindowManager()
+    windows.setOpenMicLive(true)
+    const pill = windows.dot.getBounds()
+    const placement = windows.setMicMenu(true)!
+    const bounds = windows.dot.getBounds()
+    const screen = anchor.x < 0 ? state.secondary : state.primary
+    expect(bounds.x + placement.x).toBe(pill.x)
+    expect(bounds.y + placement.y).toBe(pill.y)
+    expect(bounds.x).toBeGreaterThanOrEqual(screen.x)
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(screen.y + screen.height)
+    expect(placement.menuY + 74).toBeLessThanOrEqual(bounds.height)
+    windows.setMicMenu(false)
+    expect(windows.dot.getBounds()).toEqual(pill)
+    expect(windows.panel.isVisible()).toBe(false)
+  })
+
+  it('keeps the call menu available while listening independently of provider-window polling', () => {
+    const windows = new WindowManager()
+    windows.setOpenMicLive(true)
+    expect(windows.dot.isVisible()).toBe(true)
+    expect(windows.dot.setFocusable).toHaveBeenLastCalledWith(true)
+    expect(windows.dot.focus).not.toHaveBeenCalled()
+    windows.setClaudeRunning(true)
+    windows.setClaudeRunning(false)
+    expect(windows.dot.isVisible()).toBe(true)
+    windows.setOpenMicLive(false)
+    expect(windows.dot.setFocusable).toHaveBeenLastCalledWith(false)
+    expect(windows.dot.isVisible()).toBe(false)
+  })
+
+  it.each(['dot', 'panel'] as const)(
+    'ignores a delayed panel leave or close when the %s closes first',
+    (target) => {
+      const windows = new WindowManager()
+      windows.setClaudeRunning(true)
+      windows.openPanel()
+      const bounds = windows.panel.getBounds()
+      state.cursor = { x: bounds.x + 1, y: bounds.y + 1 }
+      vi.advanceTimersByTime(16)
+      expect(windows.panel.setIgnoreMouseEvents).toHaveBeenCalledWith(true, { forward: true })
+      state.cursor = { x: 0, y: 0 }
+      vi.spyOn(windows[target], 'isDestroyed').mockReturnValue(true)
+      const destroyed = () => {
+        throw new Error('Object has been destroyed')
+      }
+      vi.spyOn(windows[target], 'getBounds').mockImplementation(destroyed)
+      vi.spyOn(windows[target], 'isVisible').mockImplementation(destroyed)
+      vi.spyOn(windows[target], 'showInactive').mockImplementation(destroyed)
+      vi.spyOn(windows[target], 'setIgnoreMouseEvents').mockImplementation(destroyed)
+      expect(() => windows.closeOnPointerLeave()).not.toThrow()
+      expect(() => vi.advanceTimersByTime(16)).not.toThrow()
+      expect(() => windows.closePanel()).not.toThrow()
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
+
+  it.each(['dot', 'panel'] as const)(
+    'ignores queued callbacks after the %s is destroyed during restart',
+    (target) => {
+      const windows = new WindowManager()
+      windows.setClaudeRunning(true)
+      windows.keepOnTop()
+      expect(windows.dot.moveTop).toHaveBeenCalledOnce()
+      vi.spyOn(windows[target], 'isDestroyed').mockReturnValue(true)
+      vi.spyOn(windows[target], 'isVisible').mockImplementation(() => {
+        throw new Error('Object has been destroyed')
+      })
+      vi.mocked(windows.dot.moveTop).mockClear()
+      vi.mocked(windows.dot.setAlwaysOnTop).mockClear()
+      expect(() => windows.keepOnTop()).not.toThrow()
+      expect(() => windows.setClaudeRunning(false)).not.toThrow()
+      expect(() => windows.setClaudeRunning(true)).not.toThrow()
+      expect(() => windows.openFromDot()).not.toThrow()
+      expect(() => windows.setAttention([])).not.toThrow()
+      expect(windows.dot.moveTop).not.toHaveBeenCalled()
+      expect(windows.dot.setAlwaysOnTop).not.toHaveBeenCalled()
+    },
+  )
+  it('expands temporarily within the work area and restores single and dual geometry', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.resizePanel(400)
+    const before = windows.panel.getBounds()
+    expect(windows.setCanvasExpanded(true)).toEqual({ width: 900, height: 900 })
+    windows.resizePanel(200)
+    expect(windows.panel.getBounds().height).toBe(900)
+    windows.setCanvasExpanded(false)
+    expect(windows.panel.getBounds()).toEqual(before)
+    windows.setPanelLayout('dual')
+    const dual = windows.panel.getBounds()
+    windows.setCanvasExpanded(true)
+    windows.setCanvasExpanded(false)
+    expect(windows.panel.getBounds()).toEqual(dual)
+    expect(windows.setCanvasExpanded('yes')).toBeNull()
+  })
+  it('fits a constrained secondary display without changing the saved panel layout', () => {
+    state.saved = { x: -300, y: 600 }
+    const windows = new WindowManager()
+    windows.openPanel()
+    const before = windows.panel.getBounds()
+    expect(windows.setCanvasExpanded(true)).toEqual({ width: 720, height: 720 })
+    expect(windows.panel.getBounds()).toMatchObject({ y: 0, height: 720 })
+    windows.setCanvasExpanded(false)
+    expect(windows.panel.getBounds()).toEqual(before)
+  })
+
+  it('does not mount renderers before backend registration and loads each only once', async () => {
+    const windows = new WindowManager()
+    expect(windows.panel.loadFile).not.toHaveBeenCalled()
+    expect(windows.dot.loadFile).not.toHaveBeenCalled()
+    const first = windows.loadRenderers()
+    expect(windows.loadRenderers()).toBe(first)
+    await first
+    expect(windows.panel.loadFile).toHaveBeenCalledTimes(1)
+    expect(windows.dot.loadFile).toHaveBeenCalledTimes(1)
+  })
   it('uses the full work area for Workspace, keeps its top fixed on resize, and restores normal layout', () => {
     const windows = new WindowManager()
     windows.openPanel()
@@ -107,8 +399,39 @@ describe('panel movement and available height', () => {
     state.saved = { x: 1200, y: 200 }
     state.cursor = { x: 1205, y: 205 }
     state.nativeWindows = []
+    state.held = true
   })
   afterEach(() => vi.useRealTimers())
+
+  it('retains a code pan outside the panel and continues scrolling at a stationary screen edge until release', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.codePan('grab', true)
+    state.cursor = { x: 300, y: 500 }
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(true)
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.webContents.send).toHaveBeenCalledWith(IPC.codePanMotion, {
+      id: 'grab',
+      dx: 905,
+      dy: -295,
+    })
+    state.cursor = { x: -1280, y: 500 }
+    vi.advanceTimersByTime(48)
+    expect(windows.panel.webContents.send).toHaveBeenCalledWith(IPC.codePanMotion, {
+      id: 'grab',
+      dx: 4,
+      dy: 0,
+    })
+    state.held = false
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.webContents.send).toHaveBeenCalledWith(IPC.codePanMotion, {
+      id: 'grab',
+      end: true,
+      dx: 0,
+      dy: 0,
+    })
+  })
 
   it('keeps the external wire gutter click-through while the card remains interactive', () => {
     const windows = new WindowManager()
@@ -141,7 +464,9 @@ describe('panel movement and available height', () => {
     const windows = new WindowManager()
     windows.setClaudeRunning(true)
     windows.setModifierStage('hidden')
+    expect(windows.panel.webContents.send).toHaveBeenCalledWith(IPC.panelControlHeld, true)
     windows.setModifierStage('peek')
+    expect(windows.panel.webContents.send).toHaveBeenCalledWith(IPC.panelControlHeld, false)
     expect(windows.panel.isVisible()).toBe(true)
     expect(windows.dot.isVisible()).toBe(false)
     expect(windows.panel.focus).not.toHaveBeenCalled()
@@ -407,6 +732,25 @@ describe('panel movement and available height', () => {
     expect(windows.attentionMotion.active).toBe(true)
     windows.setAttention([])
     expect(windows.attentionMotion.active).toBe(false)
+  })
+
+  it('shows Agent question drips and keeps the panel open when the question clears', () => {
+    const windows = new WindowManager()
+    windows.setAgentAttention('codex')
+    expect(windows.attentionMotion).toMatchObject({ active: true, providers: ['codex'] })
+    windows.openPanel()
+    windows.setAgentAttention(null)
+    expect(windows.panel.isVisible()).toBe(true)
+    expect(windows.attentionMotion.active).toBe(false)
+    windows.setClaudeRunning(true)
+    windows.closePanel()
+    windows.setAttention([
+      { id: 'claude-waiting', state: 'waiting', attention: null, lastActiveAt: 1 } as Session,
+    ])
+    windows.setAgentAttention('codex')
+    expect(windows.attentionMotion.providers).toEqual(['codex', 'claude'])
+    windows.setAgentAttention(null)
+    expect(windows.attentionMotion.providers).toEqual(['claude'])
   })
 
   it('drips once per waiting thread in the order the panel lists them, as threads are answered', () => {

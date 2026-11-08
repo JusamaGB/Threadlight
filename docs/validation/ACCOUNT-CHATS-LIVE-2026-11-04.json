@@ -1,0 +1,24 @@
+{
+  "readOnly": true,
+  "checkedAt": "2026-11-04T15:13:06.885Z",
+  "sources": {
+    "chatgpt": {
+      "listCount": 30,
+      "listHasMore": true,
+      "recentOnly": false,
+      "messages": 10,
+      "roles": ["user", "assistant"],
+      "hasText": true,
+      "hasOlder": false
+    },
+    "perplexity": {
+      "listCount": 5,
+      "listHasMore": false,
+      "recentOnly": true,
+      "messages": 2,
+      "roles": ["user", "assistant"],
+      "hasText": true,
+      "hasOlder": false
+    }
+  }
+}

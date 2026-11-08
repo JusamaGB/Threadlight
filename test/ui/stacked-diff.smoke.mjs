@@ -1,5 +1,6 @@
-/* global window, getComputedStyle */
+/* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
+import { revealActivity } from './activity-grouping.smoke.mjs'
 
 export async function checkStackedDiff(page, conversation, capture) {
   const viewport = page.viewportSize()
@@ -34,9 +35,10 @@ export async function checkStackedDiff(page, conversation, capture) {
       ],
     })
   }, patch)
+  await revealActivity(conversation, 'stacked-diff-proof')
   await conversation
     .locator('[data-message-id="stacked-diff-proof"]')
-    .getByRole('button', { name: 'View changes', exact: true })
+    .getByRole('button', { name: 'View', exact: true })
     .click()
   const changes = page.getByRole('region', { name: 'Card changes', exact: true })
   await changes.getByRole('button', { name: /Indented.tsx/ }).click()
@@ -79,7 +81,59 @@ export async function checkStackedDiff(page, conversation, capture) {
     await removed.locator('[data-diff-text]').first().textContent(),
     '                <p className={styles.hint}>',
   )
+  const removedScroll = removed.locator('[class*="_codeLines_"]')
+  const addedScroll = added.locator('[class*="_codeLines_"]')
+  for (const section of [removedScroll, addedScroll]) {
+    const dimensions = await section.evaluate((element) => ({
+      overflow: element.scrollWidth > element.clientWidth,
+      track: element.offsetHeight - element.clientHeight,
+    }))
+    assert.equal(dimensions.overflow, true, 'long unwrapped lines overflow their own section')
+    assert.equal(dimensions.track, 6, 'each overflowing section reserves its own slim scrollbar')
+  }
+  const box = await removedScroll.boundingBox()
+  const start = { x: box.x + 10, y: box.y + box.height - 3 }
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(start.x + 55, start.y, { steps: 8 })
+  await page.mouse.up()
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="Removed · 3 lines"] [class*="_codeLines_"]').scrollLeft >
+      0,
+  )
+  assert.equal(
+    await addedScroll.evaluate((element) => element.scrollLeft),
+    0,
+    'dragging Removed leaves Added in place',
+  )
+  const addedBox = await addedScroll.boundingBox()
+  await page.mouse.move(addedBox.x + addedBox.width / 2, addedBox.y + 10)
+  await page.mouse.wheel(120, 0)
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="Added · 5 lines"] [class*="_codeLines_"]').scrollLeft >
+      0,
+  )
+  assert.equal(
+    await diff.evaluate((element) => element.scrollLeft),
+    0,
+    'horizontal scrolling stays inside the section',
+  )
+  await capture('stacked-diff-section-scrollbars')
   await diff.getByRole('button', { name: 'Wrap off', exact: true }).click()
+  for (const section of [removedScroll, addedScroll]) {
+    assert.equal(
+      await section.evaluate((element) => element.scrollWidth > element.clientWidth),
+      false,
+      'wrapping removes horizontal overflow',
+    )
+    assert.equal(
+      await section.evaluate((element) => element.offsetHeight - element.clientHeight),
+      0,
+      'wrapped sections do not reserve scrollbar space',
+    )
+  }
   const context = diff.getByText('1 unchanged line', { exact: true })
   await context.focus()
   await context.press('Enter')
@@ -98,6 +152,6 @@ export async function checkStackedDiff(page, conversation, capture) {
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.setViewportSize(viewport)
   console.log(
-    'PASS: narrow stacked diffs, original whitespace, separate hunks, source numbers and keyboard context expansion.',
+    'PASS: narrow stacked diffs, independent slim section scrollbars with thumb dragging and horizontal wheel input, original whitespace, source numbers and keyboard context expansion.',
   )
 }

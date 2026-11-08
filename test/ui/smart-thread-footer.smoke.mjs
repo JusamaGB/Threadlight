@@ -55,6 +55,7 @@ export async function checkSmartThreadFooter(page, conversation, history, compos
     for (const reading of [false, true]) {
       if (reading) {
         await history.evaluate((element) => {
+          element.focus({ preventScroll: true })
           element.scrollTop = 100
           element.dispatchEvent(new Event('scroll'))
         })

@@ -8,25 +8,28 @@ export function communicationConfig(
   connection?: ThreadReadConnection,
 ): string {
   const config = reader ? JSON.parse(claudeReadConfig(reader)) : { mcpServers: {} }
-  if (connection)
-    config.mcpServers[COMMUNICATION_SERVER] = {
-      type: 'http',
-      url: connection.endpoint,
-      headers: { Authorization: `Bearer ${connection.token}` },
-    }
+  if (connection) {
+    if (!connection.mcp) throw new Error('Authenticated communication proxy is required.')
+    config.mcpServers[COMMUNICATION_SERVER] = { type: 'stdio', ...connection.mcp }
+  }
   return JSON.stringify(config)
 }
 export function codexCommunicationConfig(config: JsonObject, connection: ThreadReadConnection) {
+  if (!connection.mcp) throw new Error('Authenticated communication proxy is required.')
   ;(config.mcp_servers as JsonObject)[COMMUNICATION_SERVER] = {
-    url: connection.endpoint,
-    http_headers: { Authorization: `Bearer ${connection.token}` },
+    ...connection.mcp,
     enabled: true,
     default_tools_approval_mode: 'prompt',
     enabled_tools: communicationTools.map((t) => t.name),
     tools: Object.fromEntries(
-      communicationTools.map((t) => [t.name, { approval_mode: 'approve' }]),
+      communicationTools.map((t) => [
+        t.name,
+        { approval_mode: t.name.endsWith('_process') ? 'prompt' : 'approve' },
+      ]),
     ),
   }
 }
 export const builtinCommunicationTool = (name: string) =>
-  communicationTools.some((t) => name === `mcp__${COMMUNICATION_SERVER}__${t.name}`)
+  communicationTools.some(
+    (t) => !t.name.endsWith('_process') && name === `mcp__${COMMUNICATION_SERVER}__${t.name}`,
+  )

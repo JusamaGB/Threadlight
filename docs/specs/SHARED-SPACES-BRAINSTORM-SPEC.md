@@ -162,5 +162,5 @@ commands and actual runtime outcomes.
 
 The remaining limitations are catalogue scale beyond 5,000 records, exact persistent chat-passage
 navigation, incremental indexing/change cursors, durable evidence receipts, and provider-store
-isolation. Live Claude acceptance is blocked by the installed account policy. User-added skills,
+isolation. Live Claude acceptance remains pending. User-added skills,
 automatic monitoring, concurrent Brainstorm turns and dispatch are outside V1.

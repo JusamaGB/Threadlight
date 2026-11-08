@@ -100,6 +100,24 @@
 }
 .root[data-wrap='false'] .codeLines {
   overflow-x: auto;
+  scrollbar-width: auto;
+}
+.root[data-wrap='false'] .codeLines::-webkit-scrollbar {
+  display: block;
+  height: 6px;
+}
+.root[data-wrap='false'] .codeLines::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  border-radius: 3px;
+}
+.root[data-wrap='false'] .codeLines::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  border-radius: 3px;
+}
+.root[data-wrap='false'] .codeLines::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
 }
 .root[data-wrap='false'] .line {
   min-width: max-content;

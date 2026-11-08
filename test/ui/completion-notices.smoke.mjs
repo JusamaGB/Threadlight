@@ -57,9 +57,25 @@ export async function checkCompletionNotices(page, capture) {
   await page.clock.fastForward(35_000)
   await dot().waitFor()
   await capture('unread-finished-thread')
+  const activeCount = async () => page.locator('header [data-thread-view="active"]').innerText()
+  const beforeExpiry = await activeCount()
+  // The reply is already 95 seconds old. Keep it through 9m35s, then cross ten minutes.
+  await page.clock.fastForward(8 * 60_000)
+  await dot().waitFor()
+  assert.equal(await activeCount(), beforeExpiry, 'unread replies stay Active before ten minutes')
+  await page.clock.fastForward(30_000)
+  await row.waitFor({ state: 'detached' })
+  assert.notEqual(
+    await activeCount(),
+    beforeExpiry,
+    'expired unread replies leave the Active count',
+  )
   await selectThreadView(page, 'recent')
   await dot().waitFor()
+  await capture('expired-unread-in-recent')
   await page.reload()
+  await row.waitFor({ state: 'detached' })
+  await selectThreadView(page, 'recent')
   await dot().waitFor()
   await toggle().click()
   await dot().waitFor({ state: 'detached' })
@@ -70,6 +86,7 @@ export async function checkCompletionNotices(page, capture) {
   )
   await capture('read-finished-thread')
   await toggle().click()
+  await selectThreadView(page, 'active')
   await row.waitFor({ state: 'detached' })
 
   // A completion behind another page must remain unread until the thread becomes visible.
@@ -106,6 +123,6 @@ export async function checkCompletionNotices(page, capture) {
   assert.equal(await dot().count(), 0, 'waiting keeps its amber indicator')
   assert.equal(await row.locator('[data-state="waiting"][data-attention]').count(), 1)
   console.log(
-    'PASS: centered blue unread dot, Active retention, Recent/reload persistence, open-to-read, hidden page protection and amber waiting state',
+    'PASS: centered blue unread dot, ten-minute Active expiry and count, Recent/reload persistence, open-to-read, hidden page protection and amber waiting state',
   )
 }

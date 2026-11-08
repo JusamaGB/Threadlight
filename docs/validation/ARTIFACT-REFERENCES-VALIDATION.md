@@ -59,7 +59,7 @@ in its visualization directory; no transcript changes are needed.
 ## Real provider evidence
 
 The live storyboard check exposed a Windows path mismatch: Codex recorded this
-chat's workspace as `\\?\Z:\General`, while the presented HTML link used the ordinary
+chat's workspace as `\\?\C:\demo`, while the presented HTML link used the ordinary
 drive path. The lexical containment check rejected that file before resolving it.
 The corrected comparison normalizes local drive prefixes from provider paths;
 transcript-supplied device/UNC links and junction escapes remain rejected.

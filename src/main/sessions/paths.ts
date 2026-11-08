@@ -22,13 +22,14 @@ export interface ClaudePaths {
 
 export function defaultPaths(env: NodeJS.ProcessEnv = process.env, home = homedir()): ClaudePaths {
   const appData = env['APPDATA'] ?? join(home, 'AppData', 'Roaming')
+  const configDir = env.CLAUDE_CONFIG_DIR || join(home, '.claude')
   return {
-    projectsDir: join(home, '.claude', 'projects'),
+    projectsDir: join(configDir, 'projects'),
     appSessionsDir: join(appData, 'Claude', 'claude-code-sessions'),
     appLockFile: join(appData, 'Claude', 'lockfile'),
     appCliRoot: join(appData, 'Claude', 'claude-code'),
     nativeCli: join(home, '.local', 'bin', 'claude.exe'),
-    liveSessionsDir: join(home, '.claude', 'sessions'),
+    liveSessionsDir: join(configDir, 'sessions'),
   }
 }
 

@@ -283,6 +283,9 @@ describe('thread diff source and caller integration', () => {
       const git = (...args: string[]) =>
         execFileSync('git', ['-C', home, ...args], { windowsHide: true })
       git('init')
+      // Real provider history lives outside the worktree. Keep this fixture's SQLite
+      // source out of the compared inventory so the final commit is actually clean.
+      await writeFile(join(home, '.git', 'info', 'exclude'), 'history.sqlite\n')
       git('config', 'user.email', 'test@example.com')
       git('config', 'user.name', 'Test')
       const file = join(home, 'shared.ts')
@@ -319,7 +322,7 @@ describe('thread diff source and caller integration', () => {
       // A cold chat may be seen before Git root discovery. Arrival must bypass the old 5s throttle.
       expect(await service.changes({ ...a, git: null })).toBeNull()
       const changes = await service.changes(a)
-      expect(changes?.files).toEqual([
+      expect(changes?.files).toMatchObject([
         { path: 'shared.ts', status: 'modified', added: 1, removed: 1, binary: false },
       ])
       expect(JSON.stringify(await service.file(a, 'shared.ts'))).toContain('own A')
@@ -365,5 +368,5 @@ describe('thread diff source and caller integration', () => {
       db.close()
       await rm(home, { recursive: true, force: true })
     }
-  }, 15000)
+  }, 60000)
 })

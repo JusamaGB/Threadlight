@@ -21,15 +21,15 @@ export async function checkWorkspacePicker(page, capture) {
   const folders = {
     claude: [
       { id: 'C:/Projects/shared', name: 'shared' },
-      { id: 'Z:/General', name: 'General' },
-      { id: 'Z:/General/lib', name: 'lib' },
+      { id: 'Z:/FixtureProjects', name: 'General' },
+      { id: 'Z:/FixtureProjects/lib', name: 'lib' },
       { id: 'Z:/', name: 'Z:' },
       { id: '//server/team/app', name: 'app' },
     ],
     codex: [
       { id: '\\\\?\\c:\\Projects\\shared', name: 'shared' },
       { id: 'C:/Projects/other', name: 'other' },
-      { id: 'Z:/General', name: 'General' },
+      { id: 'Z:/FixtureProjects', name: 'General' },
       { id: 'Z:/Archive/shared', name: 'shared' },
     ],
   }
@@ -144,10 +144,10 @@ export async function checkWorkspacePicker(page, capture) {
     await results.getByRole('button', { name: 'Browse General', exact: true }).click()
     await page
       .getByRole('navigation', { name: 'Workspace folder navigation' })
-      .getByText('Z:/General', { exact: true })
+      .getByText('Z:/FixtureProjects', { exact: true })
       .waitFor()
     await choose('lib').waitFor()
-    const useFolder = page.getByRole('button', { name: 'Use Z:/General', exact: true })
+    const useFolder = page.getByRole('button', { name: 'Use Z:/FixtureProjects', exact: true })
     await useFolder.waitFor()
     const navigation = page.getByRole('navigation', { name: 'Workspace folder navigation' })
     const back = navigation.getByRole('button', { name: 'Parent folder', exact: true })
@@ -162,7 +162,7 @@ export async function checkWorkspacePicker(page, capture) {
     await page.locator('header').hover()
     const normal = await colours()
     assert.notEqual(normal[0], normal[1], 'only Use is accented at rest')
-    for (const text of ['Use', 'Z:/General']) {
+    for (const text of ['Use', 'Z:/FixtureProjects']) {
       await useFolder.getByText(text, { exact: true }).hover()
       assert.deepEqual(
         await colours(),
@@ -171,12 +171,12 @@ export async function checkWorkspacePicker(page, capture) {
       )
     }
     await capture('workspace-picker-browse')
-    await useFolder.getByText('Z:/General', { exact: true }).click()
+    await useFolder.getByText('Z:/FixtureProjects', { exact: true }).click()
     assert.equal(
       await page.evaluate(
         async () => (await window.threadlight.getSettings()).combinedFocusWorkspace,
       ),
-      'codex:Z:/General',
+      'codex:Z:/FixtureProjects',
     )
     await open()
     await zDrive.click()
@@ -192,7 +192,7 @@ export async function checkWorkspacePicker(page, capture) {
       await page.evaluate(
         async () => (await window.threadlight.getSettings()).combinedFocusWorkspace,
       ),
-      'codex:Z:/General',
+      'codex:Z:/FixtureProjects',
     )
     await page.getByRole('button', { name: 'Filter applications: Both', exact: true }).waitFor()
     await open()

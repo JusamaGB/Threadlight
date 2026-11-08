@@ -1,10 +1,10 @@
-import { createServer, type Server } from 'node:http'
+import { MemoryTransport, openMemoryProxy, type MemoryTransportOptions } from './transport'
 import { z } from 'zod'
-import { type MemoryRead } from '../../shared/memory'
+import { type MemoryRead, type MemoryInput, type MemoryManualConnection } from '../../shared/memory'
 import { MemoryError, MemoryStore } from './store'
 import { agentActions, toolSchemas, memoryTools, memoryInstructions } from './protocol'
 import { MemoryConnections } from './connections'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { ClaudeRuntimeInbox } from '../communication/claudeRuntime'
 import {
   communicationInstructions,
@@ -16,45 +16,76 @@ import {
 
 /** Stateless Streamable HTTP MCP, bound to loopback and authenticated on every request. */
 export class MemoryServer {
-  private server: Server | null = null
+  private transport: MemoryTransport | null = null
+  private proxies = new Map<string, () => void>()
   endpoint: string | null = null
   readonly connections: MemoryConnections
   readonly runtime: ClaudeRuntimeInbox
   private ownedCommunication = new Map<string, () => CommunicationActor>()
+  enroll(input: MemoryInput): MemoryManualConnection {
+    if (!this.endpoint) throw new Error('Shared memory is offline.')
+    const grant = this.store.execute({ ...input, action: 'create_grant' }) as {
+      id: string
+      token: string
+      label: string
+    }
+    if (typeof grant.token !== 'string')
+      throw new Error('This configuration was already issued. Create a fresh enrollment.')
+    try {
+      const proxy = openMemoryProxy(this.endpoint, grant.token)
+      this.proxies.set(grant.id, proxy.close)
+      return {
+        label: grant.label,
+        claude: JSON.stringify(
+          { mcpServers: { threadlight: { type: 'stdio', ...proxy.mcp } } },
+          null,
+          2,
+        ),
+        codex: `[mcp_servers.threadlight]\ncommand = ${JSON.stringify(proxy.mcp.command)}\nargs = [${proxy.mcp.args.map((s) => JSON.stringify(s)).join(', ')}]\nenv = { ELECTRON_RUN_AS_NODE = "1" }`,
+      }
+    } catch (error) {
+      this.store.execute({ action: 'revoke_grant', id: grant.id, operationId: randomUUID() })
+      throw error
+    }
+  }
+  releaseEnrollment(id: string) {
+    this.proxies.get(id)?.()
+    this.proxies.delete(id)
+  }
   revokeCommunication() {
+    for (const close of this.proxies.values()) close()
+    this.proxies.clear()
     this.ownedCommunication.clear()
     this.runtime.clear()
   }
   connectCommunication(actor: () => CommunicationActor) {
     if (!this.endpoint) throw new Error('Communication endpoint is unavailable.')
     const token = randomBytes(32).toString('hex')
+    const endpoint = this.endpoint.replace('/mcp', '/communication')
+    const proxy = openMemoryProxy(endpoint, token)
+    this.proxies.set(token, proxy.close)
     this.ownedCommunication.set(token, actor)
     return {
-      endpoint: this.endpoint.replace('/mcp', '/communication'),
+      mcp: proxy.mcp,
+      endpoint,
       token,
       close: () => {
+        proxy.close()
+        this.proxies.delete(token)
         this.ownedCommunication.delete(token)
       },
     }
   }
-  constructor(private readonly store: MemoryStore) {
+  constructor(
+    private readonly store: MemoryStore,
+    private readonly transportOptions: MemoryTransportOptions = {},
+  ) {
     this.connections = new MemoryConnections(store)
     store.connectionStatus = () => this.connections.list()
     this.runtime = new ClaudeRuntimeInbox(store.communications)
   }
   async start(port = 47618) {
-    const server = createServer((request, response) => {
-      const finish = (status: number, value?: unknown) => {
-        if (response.writableEnded) return
-        response.writeHead(status, {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store',
-          'X-Content-Type-Options': 'nosniff',
-        })
-        response.end(value === undefined ? undefined : JSON.stringify(value))
-      }
-      if (request.headers.origin || !/^127\.0\.0\.1:\d+$/.test(request.headers.host ?? ''))
-        return finish(403)
+    const transport = new MemoryTransport((request, response, finish) => {
       if (request.url === '/plugin/connect') {
         this.connections.handle(request, finish)
         return
@@ -98,7 +129,19 @@ export class MemoryServer {
         } else chunks.push(chunk)
       })
       request.on('end', async () => {
-        if (response.writableEnded) return
+        if (response.writableEnded || response.destroyed) return
+        try {
+          const token = request.headers.authorization!.slice(7)
+          if (communicationOnly) {
+            communicationActor = this.ownedCommunication.get(token)?.()
+            if (!communicationActor) throw new Error('Connection expired.')
+          } else
+            actor = connection
+              ? this.connections.authenticate(connection, token)
+              : this.store.authenticate(token)
+        } catch {
+          return finish(401, { error: 'Connection expired or revoked.' })
+        }
         let id: string | number | null = null
         try {
           if (runtimeConnection) {
@@ -311,25 +354,17 @@ export class MemoryServer {
         }
       })
     })
-    server.requestTimeout = 15_000
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject)
-      server.listen(port, '127.0.0.1', () => {
-        server.off('error', reject)
-        resolve()
-      })
-    })
-    this.server = server
-    const address = server.address()
-    this.endpoint = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : port}/mcp`
+    this.transport = transport
+    this.endpoint = await transport.start(port, this.transportOptions)
     return this.endpoint
   }
   close() {
     this.runtime.close()
+    for (const close of this.proxies.values()) close()
+    this.proxies.clear()
     this.ownedCommunication.clear()
     this.connections.close()
-    this.server?.closeAllConnections()
-    this.server?.close()
+    this.transport?.close()
     this.endpoint = null
   }
 }

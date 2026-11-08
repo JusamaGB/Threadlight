@@ -14,7 +14,8 @@ export async function checkAgentSelection(page, capture) {
       requests: [],
     }),
   )
-  await page.getByText('Claude · claude-haiku-5-5 / opus', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Agent settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Agent provider: Claude', exact: true }).waitFor()
   await page.getByText(/Your next conversation will use Codex · future-deep · ultra/).waitFor()
   const change = page.getByRole('button', { name: 'Use selected model', exact: true })
   await capture('agent-selection-changed')
@@ -29,7 +30,7 @@ export async function checkAgentSelection(page, capture) {
     () => window.proof.calls.filter((c) => c[0] === 'agentSend').length,
   )
   await change.click()
-  await page.getByText('Codex · future-deep · ultra', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Agent effort: ultra', exact: true }).waitFor()
   assert.equal(await change.count(), 0)
   assert.equal(
     await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'agentSend').length),
@@ -39,6 +40,16 @@ export async function checkAgentSelection(page, capture) {
 }
 
 export async function checkFooterSettings(page, capture) {
+  const gear = page.getByRole('button', { name: 'Agent settings', exact: true })
+  if (await gear.isVisible()) {
+    const back = page.getByRole('button', { name: 'Back to sessions', exact: true })
+    const g = await gear.boundingBox(),
+      b = await back.boundingBox()
+    assert.ok(g.x + g.width <= b.x && b.x - g.x - g.width <= 8 && Math.abs(g.y - b.y) <= 1)
+    await capture('agent-header-settings')
+    await gear.press('Enter')
+    await page.getByRole('button', { name: 'Back to Agent' }).waitFor()
+  }
   const footer = page.getByRole('group', { name: 'Agent settings', exact: true })
   const control = (field) => footer.getByRole('button', { name: new RegExp(`^Agent ${field}:`) })
   const settings = () => page.evaluate(() => window.threadlight.getSettings())
@@ -188,9 +199,9 @@ export async function checkFooterSettings(page, capture) {
     await page.getByRole('menuitem', { name: 'Retry', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Future Fast', exact: true }).waitFor()
     await page.keyboard.press('Escape')
-    await capture('agent-footer-settings')
+    await capture('agent-header-preferences')
     console.log(
-      'PASS: footer provider/model/effort, full model catalog, effort reset, current conversation retention, keyboard, both opening directions, failed save and discovery retry.',
+      'PASS: header gear beside Back, Agent provider/model/effort, full model catalog, effort reset, current conversation retention, keyboard, both opening directions, failed save and discovery retry.',
     )
   } finally {
     await page.evaluate((saved) => {
@@ -203,6 +214,7 @@ export async function checkFooterSettings(page, capture) {
       })
     }, saved)
     await idle()
+    await page.getByRole('button', { name: 'Back to Agent', exact: true }).click()
     await page.evaluate(() =>
       window.proof.emit('onPanelOpened', { maxHeight: 800, opensDown: true, fresh: false }),
     )

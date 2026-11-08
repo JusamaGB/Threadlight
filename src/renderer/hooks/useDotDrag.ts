@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent } from 'react'
+import { useCallback, useRef, type PointerEvent } from 'react'
 
 const DRAG_THRESHOLD = 3
 
@@ -6,12 +6,17 @@ const DRAG_THRESHOLD = 3
  * Pointer handlers that move the dot (and the open panel with it). `isDragging` lets the panel
  * ignore the pointer briefly slipping outside while its window catches up.
  */
-export function useDotDrag() {
+export function useDotDrag(includeChildren = false) {
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null)
 
   const onPointerDown = (event: PointerEvent<HTMLElement>) => {
-    // Only the bare background drags; text and the dot keep their own clicks.
-    if (event.button !== 0 || event.target !== event.currentTarget) return
+    // The header drags only from its background. The waveform includes its canvas.
+    if (
+      drag.current ||
+      event.button !== 0 ||
+      (includeChildren ? !event.isPrimary : event.target !== event.currentTarget)
+    )
+      return
     event.currentTarget.setPointerCapture(event.pointerId)
     drag.current = { x: event.screenX, y: event.screenY, moved: false }
   }
@@ -24,11 +29,11 @@ export function useDotDrag() {
     start.moved = true
     window.threadlight.dotDrag(dx, dy)
   }
-  const onPointerUp = () => {
+  const onPointerUp = useCallback(() => {
     const start = drag.current
     drag.current = null
     if (start?.moved) window.threadlight.dotDragEnd()
-  }
+  }, [])
 
   return {
     handlers: {

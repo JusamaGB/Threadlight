@@ -1,3 +1,4 @@
+import { openMemoryProxy, type MemoryProxy } from '../memory/transport'
 import type { MemoryDeliveryContext } from '../../shared/memory'
 import { spawn } from 'node:child_process'
 import { access, readdir, stat } from 'node:fs/promises'
@@ -51,11 +52,11 @@ export function codexRelayArgs(session: Pick<Session, 'id' | 'model'>): string[]
 }
 
 /** Replace this server's whole invocation config so old static headers cannot override the task token. */
-export function codexMemoryArgs(memory?: Pick<MemoryDeliveryContext, 'url'>): string[] {
-  return memory
+export function codexMemoryArgs(proxy?: MemoryProxy): string[] {
+  return proxy
     ? [
         '-c',
-        `mcp_servers.threadlight={url=${JSON.stringify(memory.url)},bearer_token_env_var="THREADLIGHT_MEMORY_TOKEN",default_tools_approval_mode="approve"}`,
+        `mcp_servers.threadlight={command=${JSON.stringify(proxy.command)},args=[${proxy.args.map((s) => JSON.stringify(s)).join(',')}],env={ELECTRON_RUN_AS_NODE="1"},default_tools_approval_mode="approve"}`,
       ]
     : []
 }
@@ -118,87 +119,96 @@ export async function sendCodex(
       ok: false,
       reason: 'Codex has this chat open. Copy your message and open it in Codex.',
     }
-  return new Promise((resolve) => {
-    const env = { ...process.env }
-    // Do not borrow the executor identity of a process which happened to launch Threadlight.
-    for (const key of ['CODEX_THREAD_ID', 'CODEX_TURN_ID', 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE'])
-      delete env[key]
-    if (memory) env['THREADLIGHT_MEMORY_TOKEN'] = memory.token
-    const memoryArgs = codexMemoryArgs(memory)
-    const child = spawn(
-      cli.command,
-      [...cli.prefixArgs, ...memoryArgs, ...codexRelayArgs(session)],
-      {
-        cwd: session.cwd,
-        windowsHide: true,
-        shell: false,
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      },
-    )
-    let stdout = '',
-      stderr = '',
-      settled = false,
-      accepted = false,
-      observedThread: string | undefined,
-      pending = ''
-    const finish = (result: RelayResult) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      resolve(result)
-    }
-    const timer = setTimeout(() => {
-      child.kill()
-      finish({
-        ok: false,
-        reason:
-          'No reply within 30 minutes. Check Codex before retrying; the message may have been accepted.',
-      })
-    }, 30 * 60_000)
-    child.stdin.on('error', () => {})
-    child.once('spawn', () => child.stdin.end(text.trim()))
-    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-      stdout = (stdout + chunk).slice(-2 * 1024 * 1024)
-      pending += chunk
-      const lines = pending.split('\n')
-      pending = lines.pop() || ''
-      for (const line of lines) {
-        try {
-          const event = JSON.parse(line)
-          if (event.type === 'thread.started') observedThread = event.thread_id
-          if (
-            !accepted &&
-            event.type === 'turn.started' &&
-            observedThread === codexId(session.id)
-          ) {
-            accepted = true
-            onSent()
-          }
-        } catch {
-          /* partial diagnostics */
-        }
-      }
-    })
-    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-      stderr = (stderr + chunk).slice(-32 * 1024)
-    })
-    child.once('error', (error) =>
-      finish({ ok: false, reason: `Could not start Codex: ${error.message}` }),
-    )
-    child.once('close', (code) => {
-      const result = interpretCodexOutput(stdout, stderr, code)
-      finish(
-        result.ok && observedThread !== codexId(session.id)
-          ? {
-              ok: false,
-              reason:
-                'Codex did not confirm the requested chat identity. Check the native chat; do not resend blindly.',
-            }
-          : result,
+  let proxy: ReturnType<typeof openMemoryProxy> | undefined
+  try {
+    if (memory) proxy = openMemoryProxy(memory.url, memory.token)
+  } catch {
+    return { ok: false, reason: 'Authenticated shared memory is unavailable.' }
+  }
+  try {
+    return await new Promise((resolve) => {
+      const env = { ...process.env }
+      // Do not borrow the executor identity of a process which happened to launch Threadlight.
+      for (const key of ['CODEX_THREAD_ID', 'CODEX_TURN_ID', 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE'])
+        delete env[key]
+      const memoryArgs = codexMemoryArgs(proxy?.mcp)
+      const child = spawn(
+        cli.command,
+        [...cli.prefixArgs, ...memoryArgs, ...codexRelayArgs(session)],
+        {
+          cwd: session.cwd,
+          windowsHide: true,
+          shell: false,
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
       )
+      let stdout = '',
+        stderr = '',
+        settled = false,
+        accepted = false,
+        observedThread: string | undefined,
+        pending = ''
+      const finish = (result: RelayResult) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(result)
+      }
+      const timer = setTimeout(() => {
+        child.kill()
+        finish({
+          ok: false,
+          reason:
+            'No reply within 30 minutes. Check Codex before retrying; the message may have been accepted.',
+        })
+      }, 30 * 60_000)
+      child.stdin.on('error', () => {})
+      child.once('spawn', () => child.stdin.end(text.trim()))
+      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+        stdout = (stdout + chunk).slice(-2 * 1024 * 1024)
+        pending += chunk
+        const lines = pending.split('\n')
+        pending = lines.pop() || ''
+        for (const line of lines) {
+          try {
+            const event = JSON.parse(line)
+            if (event.type === 'thread.started') observedThread = event.thread_id
+            if (
+              !accepted &&
+              event.type === 'turn.started' &&
+              observedThread === codexId(session.id)
+            ) {
+              accepted = true
+              onSent()
+            }
+          } catch {
+            /* partial diagnostics */
+          }
+        }
+      })
+      child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+        stderr = (stderr + chunk).slice(-32 * 1024)
+      })
+      child.once('error', (error) =>
+        finish({ ok: false, reason: `Could not start Codex: ${error.message}` }),
+      )
+      child.once('close', (code) => {
+        const result = interpretCodexOutput(stdout, stderr, code)
+        finish(
+          result.ok && observedThread !== codexId(session.id)
+            ? {
+                ok: false,
+                reason:
+                  'Codex did not confirm the requested chat identity. Check the native chat; do not resend blindly.',
+              }
+            : result,
+        )
+      })
     })
-  })
+  } finally {
+    proxy?.close()
+  }
 }
 
 export class CodexRelayService {

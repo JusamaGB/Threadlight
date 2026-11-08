@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { Settings, SettingsPatch } from '../../shared/settings'
 import { AgentIdentity } from '../panel/AgentIdentity'
 import { Tip } from '../panel/Tip'
@@ -9,7 +9,9 @@ import styles from './Settings.module.css'
 export function AgentSettings({
   settings,
   save: persist,
+  identity,
 }: {
+  identity?: ReactNode
   settings: Settings
   save: (patch: SettingsPatch) => Promise<boolean>
 }) {
@@ -34,18 +36,20 @@ export function AgentSettings({
         </p>
       )}
       <div className={styles.agentSelection} role="group" aria-label="Agent settings">
-        <AgentIdentity
-          provider={settings.agentProvider}
-          model={
-            settings.agentProvider === 'codex' ? settings.agentCodexModel : settings.agentWorker
-          }
-          reasoning={settings.agentProvider === 'codex' ? settings.agentCodexReasoning : null}
-          hasConversation={false}
-          settings={settings}
-          onError={setSaveError}
-          appearance="settings"
-          saveSettings={persist}
-        />
+        {identity ?? (
+          <AgentIdentity
+            provider={settings.agentProvider}
+            model={
+              settings.agentProvider === 'codex' ? settings.agentCodexModel : settings.agentWorker
+            }
+            reasoning={settings.agentProvider === 'codex' ? settings.agentCodexReasoning : null}
+            hasConversation={false}
+            settings={settings}
+            onError={setSaveError}
+            appearance="settings"
+            saveSettings={persist}
+          />
+        )}
         {/* How long the conversation lasts sits in the same row as provider, model and effort and
             works like them: hover to list the other choices, click to hold the menu open. */}
         <HoverChoice
@@ -60,6 +64,19 @@ export function AgentSettings({
           onChange={(minutes) => save({ agentLifetimeMinutes: Number(minutes) })}
         />
       </div>
+      <label className={styles.row}>
+        <span>Show spoken replies in waveform pill</span>
+        <button
+          type="button"
+          role="switch"
+          className={styles.toggle}
+          aria-label="Show spoken replies in waveform pill"
+          aria-checked={settings.spokenReplyCompanion}
+          onClick={() => void save({ spokenReplyCompanion: !settings.spokenReplyCompanion })}
+        >
+          <span />
+        </button>
+      </label>
     </section>
   )
 }

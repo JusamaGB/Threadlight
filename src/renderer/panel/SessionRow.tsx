@@ -14,8 +14,7 @@ import { TaskTimer } from './TaskTimer'
 import { Tip } from './Tip'
 import { providerName, sessionProvider, workspaceFolder } from '../../shared/providers'
 import { CodexPlan } from './CodexPlan'
-import { ArtifactStrip } from './ArtifactStrip'
-import { useThreadTimeline } from '../hooks/useThreadTimeline'
+import { useThreadTimeline, type ThreadTimelineState } from '../hooks/useThreadTimeline'
 import { liveThreadActivity } from '../../shared/threadActivity'
 
 interface SessionRowProps {
@@ -38,10 +37,27 @@ interface SessionRowProps {
 }
 
 /** The badge and opened viewer share this chat's recorded diff, never its worktree total. */
-function ThreadCount({ diff, onOpen }: { diff: ThreadDiffSummary; onOpen: () => void }) {
-  if (!diff.files) return null
+function ThreadCount({
+  diff,
+  onOpen,
+  details = false,
+}: {
+  diff: ThreadDiffSummary
+  onOpen: () => void
+  details?: boolean
+}) {
+  const hasRecorded = diff.groups?.some((group) => group.recorded?.length)
+  if (!diff.files && diff.complete && !diff.hasOtherLensChanges && !diff.stale && !hasRecorded)
+    return null
+  const partial = !hasRecorded && !diff.complete
+  const hasDetails = partial || diff.stale || (diff.groups?.length ?? 0) > 1
+  if (details && !hasDetails) return null
+  if (!details && !diff.added && !diff.removed && !diff.complete && !diff.hasOtherLensChanges)
+    return null
   return (
     <Tip
+      data-diff-coverage={details || undefined}
+      aria-label={details ? `Diff coverage: ${threadDiffSentence(diff)}` : undefined}
       className={`${styles.diff} ${styles.diffLink}`}
       text={threadDiffSentence(diff)}
       infoContent={
@@ -59,9 +75,17 @@ function ThreadCount({ diff, onOpen }: { diff: ThreadDiffSummary; onOpen: () => 
             </span>
           )}
           <span className={styles.tipDiffStatus}>
-            {en.changes.uncommitted}
+            {hasRecorded && !diff.files ? 'No current changes matched' : en.changes.uncommitted}
             {!diff.complete && ` · ${en.changes.partialShort}`}
           </span>
+          {diff.groups?.map((group) => (
+            <span key={group.rootId} style={{ overflowWrap: 'anywhere' }}>
+              {group.root}
+            </span>
+          ))}
+          {(diff.groups?.length ?? 0) > 1 && (
+            <span>{diff.groups!.length} source folders or checkouts</span>
+          )}
         </span>
       }
       tourHelp="Click to view this thread's files and diffs."
@@ -70,9 +94,20 @@ function ThreadCount({ diff, onOpen }: { diff: ThreadDiffSummary; onOpen: () => 
         onOpen()
       }}
     >
-      {diff.added > 0 && <span className={styles.added}>+{compact(diff.added)}</span>}
-      {diff.removed > 0 && <span className={styles.removed}>−{compact(diff.removed)}</span>}
-      {!diff.added && !diff.removed && (
+      {!details && diff.added > 0 && <span className={styles.added}>+{compact(diff.added)}</span>}
+      {!details && diff.removed > 0 && (
+        <span className={styles.removed}>−{compact(diff.removed)}</span>
+      )}
+      {details && partial && <span>Partial</span>}
+      {details && diff.stale && <span>Stale</span>}
+      {details && (diff.groups?.length ?? 0) > 1 && (
+        <span>
+          {partial || diff.stale ? '· ' : ''}
+          {diff.groups!.length} roots
+        </span>
+      )}
+      {!details && !diff.files && diff.hasOtherLensChanges && <span>Staged</span>}
+      {!details && !diff.added && !diff.removed && diff.complete && !diff.hasOtherLensChanges && (
         <span>{diff.files ? en.changes.files(diff.files) : en.changes.title}</span>
       )}
     </Tip>
@@ -80,7 +115,7 @@ function ThreadCount({ diff, onOpen }: { diff: ThreadDiffSummary; onOpen: () => 
 }
 
 export function SessionRow(props: SessionRowProps) {
-  const { session, relay, composing, now, expanded, onToggle, onContextMenu, onCompose } = props
+  const { session, relay, composing, now, expanded, onToggle, onContextMenu } = props
   // Delivery ticks must not replace the live activity or the latest reply.
   const line = relay?.state === 'failed' ? relayLine(relay, now) : null
   const appId = session.appId
@@ -90,7 +125,7 @@ export function SessionRow(props: SessionRowProps) {
     typeof window.threadlight.onThreadTimeline === 'function'
   const timelineState = useThreadTimeline(
     session.id,
-    timelineSupported && !attention && (session.state === 'working' || expanded),
+    timelineSupported && ((!attention && session.state === 'working') || expanded),
   )
   const activity = liveThreadActivity(session, timelineState.timeline)
   const titleClass = [styles.title, composing && styles.composing].filter(Boolean).join(' ')
@@ -98,6 +133,7 @@ export function SessionRow(props: SessionRowProps) {
     <div
       className={expanded ? `${styles.row} ${styles.expanded}` : styles.row}
       data-session-id={session.id}
+      data-session-title={session.title}
       data-striped={props.striped || undefined}
       data-workspace-folder={workspaceFolder(session.git?.root || session.cwd) || undefined}
       data-provider={props.showProvider ? sessionProvider(session.id) : undefined}
@@ -204,6 +240,9 @@ export function SessionRow(props: SessionRowProps) {
               )}
             </Tip>
           )}
+          {session.threadDiff && (
+            <ThreadCount diff={session.threadDiff} onOpen={props.onShowChanges} details />
+          )}
           {!(expanded && appId) && !attention && session.backgroundTasks.length > 0 && (
             <TaskTimer tasks={session.backgroundTasks} />
           )}
@@ -220,7 +259,6 @@ export function SessionRow(props: SessionRowProps) {
           )}
         </span>
       </Tip>
-      <ArtifactStrip threadId={session.id} onOpen={props.onOpenArtifact} />
       {expanded && appId && (
         <button
           className={styles.rowOpen}
@@ -232,35 +270,58 @@ export function SessionRow(props: SessionRowProps) {
           {en.detail.open}
         </button>
       )}
-      {/* Codex's plan remains visible while its question or approval card waits for an answer. */}
-      {expanded &&
-        attention &&
+      {expanded && <SessionRowDetails {...props} timelineState={timelineState} />}
+    </div>
+  )
+}
+
+export function SessionRowDetails({
+  session,
+  relay,
+  now,
+  onCompose,
+  onToggle,
+  onOpenArtifact,
+  timelineState,
+}: Pick<
+  SessionRowProps,
+  'session' | 'relay' | 'now' | 'onCompose' | 'onToggle' | 'onOpenArtifact'
+> & { timelineState: ThreadTimelineState }) {
+  const attention = session.attention
+  const card = attention && !session.questionDismissed && (
+    <AttentionCard
+      session={session}
+      attention={attention}
+      relay={relay}
+      onCompose={onCompose}
+      onCollapse={onToggle}
+    />
+  )
+  if (
+    !attention ||
+    (typeof window.threadlight.threadTimeline === 'function' &&
+      typeof window.threadlight.onThreadTimeline === 'function')
+  )
+    return (
+      <SessionDetail
+        session={session}
+        relay={relay}
+        now={now}
+        timelineState={timelineState}
+        onOpenArtifact={onOpenArtifact}
+        pendingCard={card}
+      />
+    )
+  return (
+    <>
+      {attention &&
         sessionProvider(session.id) === 'codex' &&
         (session.plan.length > 0 || session.planText) && (
           <div className={styles.detail}>
             <CodexPlan session={session} />
           </div>
         )}
-      {expanded &&
-        (attention ? (
-          <div className={styles.cardSlot}>
-            <AttentionCard
-              session={session}
-              attention={attention}
-              relay={relay}
-              onCompose={onCompose}
-              onCollapse={onToggle}
-            />
-          </div>
-        ) : (
-          <SessionDetail
-            session={session}
-            relay={relay}
-            now={now}
-            timelineState={timelineState}
-            onOpenArtifact={props.onOpenArtifact}
-          />
-        ))}
-    </div>
+      <div className={styles.cardSlot}>{card}</div>
+    </>
   )
 }

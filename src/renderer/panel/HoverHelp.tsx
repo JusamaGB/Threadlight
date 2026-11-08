@@ -51,7 +51,7 @@ function NativeHints({ mode }: { mode: HelpMode }) {
       setHint(null)
     }
     const track = (event: MouseEvent) => {
-      if (mode !== 'tour' || !(event.target instanceof Element)) return
+      if ((mode !== 'tour' && mode !== 'teach') || !(event.target instanceof Element)) return
       if (event.target.closest('[role="tooltip"]')) return
       if (
         hasDockedHover(anchor.current) &&
@@ -118,7 +118,7 @@ function NativeHints({ mode }: { mode: HelpMode }) {
         if (element.getAttribute('title') === '') element.setAttribute('title', title)
     }
   }, [mode])
-  return mode === 'tour' && hint ? (
+  return (mode === 'tour' || mode === 'teach') && hint ? (
     <HoverInfo anchor={anchor} point={hint.point} onDismiss={() => setHint(null)}>
       <span className={hint.help ? styles.tipHelp : undefined}>{hint.text}</span>
     </HoverInfo>

@@ -1,3 +1,6 @@
+import { memoryTestTransport } from './memoryTransportHelper'
+import { proxyRpc } from './mcpProxyHelper'
+import type { MemoryProxy } from '../src/main/memory/transport'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,6 +29,7 @@ import {
   type ControlDependencies,
 } from '../src/main/appControl/service'
 import { AppControlServer } from '../src/main/appControl/server'
+import { PinnedCodeStore } from '../src/main/pinnedCode'
 import { DEFAULT_SETTINGS } from '../src/shared/settings'
 import type { TimelineItem } from '../src/shared/threadTimeline'
 
@@ -99,6 +103,63 @@ describe('application control contract and service', () => {
     expect(workspaces).toHaveLength(2)
     expect(workspaces[1]).toMatchObject({ id: 'c:/project/child', parentId: 'c:/project' })
   })
+  it('requires a decision and fresh revision to change only the selected pinned snapshot', async () => {
+    const f = controlFixture(),
+      store = new PinnedCodeStore(join(f.directory, 'pins.json'), () => {})
+    f.deps.pins = store
+    const source = join(f.directory, 'sample.py')
+    writeFileSync(source, 'on disk')
+    store.request({
+      action: 'open',
+      legacy: JSON.stringify([
+        {
+          id: 'a',
+          code: 'original',
+          language: 'python',
+          file: { name: 'sample.py', kind: 'reference', path: source },
+        },
+      ]),
+    })
+    const call = (name: string, input: unknown) => f.service.call(f.caller, name, input)
+    const args = { id: 'a', expectedRevision: 1, code: 'next', operationId: randomUUID() }
+    expect((await call('threadlight_list_pins', {})).data).toMatchObject({
+      items: [{ id: 'a', revision: 1 }],
+    })
+    expect((await call('threadlight_read_pin', { id: 'a' })).data).toMatchObject({
+      code: 'original',
+    })
+    expect((await call('threadlight_replace_pin', { ...args, path: source })).outcome).toBe(
+      'unavailable',
+    )
+    expect((await call('threadlight_replace_pin', args)).outcome).toBe('pending')
+    f.decisions[0]!(false)
+    expect((await call('threadlight_replace_pin', args)).outcome).toBe('denied')
+    const first = { ...args, operationId: randomUUID() },
+      second = { ...args, code: 'stale', operationId: randomUUID() }
+    await call('threadlight_replace_pin', first)
+    await call('threadlight_replace_pin', second)
+    f.decisions[1]!(true)
+    f.decisions[2]!(true)
+    await expect
+      .poll(
+        async () =>
+          (await call('threadlight_get_operation', { operationId: second.operationId })).outcome,
+      )
+      .toBe('conflict')
+    expect((await call('threadlight_replace_pin', first)).outcome).toBe('ok')
+    expect(store.read('a', 0).data).toMatchObject({
+      revision: 2,
+      code: 'next',
+      file: { path: source },
+    })
+    expect(readFileSync(source, 'utf8')).toBe('on disk')
+    const revoked = { ...args, operationId: randomUUID(), expectedRevision: 2 }
+    await call('threadlight_replace_pin', revoked)
+    f.service.revoke(f.caller)
+    f.decisions[3]!(true)
+    expect((await call('threadlight_read_pin', { id: 'a' })).outcome).toBe('denied')
+    expect(store.read('a', 0).data?.revision).toBe(2)
+  })
   it('preserves unreadable receipts and disables writes instead of replaying or erasing them', async () => {
     const f = controlFixture()
     writeFileSync(f.file, 'incomplete receipt')
@@ -146,8 +207,49 @@ describe('application control contract and service', () => {
       )
       .toBe('uncertain')
   })
+  it('requires the Agent decision and reuses its receipt when a space chat is requested twice', async () => {
+    const f = controlFixture(),
+      input = {
+        operationId: randomUUID(),
+        spaceId: randomUUID(),
+        provider: 'perplexity',
+        openingMessage: 'The first message',
+        role: 'Research',
+      }
+    const target = 'perplexity:' + randomUUID()
+    f.deps.spaces = () => [
+      { id: input.spaceId, title: 'Acceptance space', workspaceId: 'workspace' },
+    ]
+    f.caller.approve = vi.fn(f.caller.approve)
+    f.deps.startSpaceChat = vi.fn(async () => ({ outcome: 'ok' as const, target, linked: true }))
+    expect((await f.service.call(f.caller, 'threadlight_start_space_chat', input)).outcome).toBe(
+      'pending',
+    )
+    expect(f.deps.startSpaceChat).not.toHaveBeenCalled()
+    expect(f.caller.approve).toHaveBeenCalledWith(
+      `control:${input.operationId}`,
+      'Start Perplexity chat',
+      'Space: Acceptance space\nRole: Research\n\nOpening message:\nThe first message',
+      expect.any(Function),
+    )
+    f.decisions[0]!(true)
+    await vi.waitFor(() => expect(f.deps.startSpaceChat).toHaveBeenCalledOnce())
+    expect(await f.service.call(f.caller, 'threadlight_start_space_chat', input)).toMatchObject({
+      outcome: 'ok',
+      data: { target, spaceId: input.spaceId, linked: true },
+    })
+    expect(
+      (
+        await f.service.call(f.caller, 'threadlight_start_space_chat', {
+          ...input,
+          openingMessage: 'different',
+        })
+      ).outcome,
+    ).toBe('conflict')
+    expect(f.deps.startSpaceChat).toHaveBeenCalledOnce()
+  })
   it('publishes exactly the bounded tools and deliberately supported settings', () => {
-    expect(controlTools).toHaveLength(12)
+    expect(controlTools).toHaveLength(18)
     for (const tool of controlTools) expect(z.toJSONSchema(tool.schema).type).toBe('object')
     expect(Object.keys(controlSettingsSchema.shape).sort()).toEqual([
       'hoverHelp',
@@ -155,13 +257,65 @@ describe('application control contract and service', () => {
       'listWindowHours',
       'maxSessions',
       'panelLayout',
+      'pythonSuggestions',
     ])
     expect(controlSettingsSchema.safeParse({ agentProvider: 'codex' }).success).toBe(false)
     expect(APP_CONTROL_INSTRUCTIONS).toContain('never delegate')
     expect(APP_CONTROL_INSTRUCTIONS).toContain('same spoken action')
   })
+  it('restricts coaching to the live caller and only accepts the bounded editor actions', async () => {
+    const f = controlFixture()
+    const call = (args: unknown) => f.service.call(f.caller, 'threadlight_editor_coach', args)
+    expect((await call({ action: 'context' })).outcome).toBe('unavailable')
+    f.caller.editorCoach = vi.fn(async () => ({ snapshot: 'fixture' }))
+    expect((await call({ action: 'context' })).data).toEqual({ snapshot: 'fixture' })
+    expect((await call({ action: 'review' })).outcome).toBe('ok')
+    expect((await call({ action: 'review', nextPage: crypto.randomUUID() })).outcome).toBe('ok')
+    expect((await call({ action: 'review', path: 'another.py' })).outcome).toBe('conflict')
+    expect((await call({ action: 'review', nextPage: 'invalid' })).outcome).toBe('conflict')
+    expect((await call({ action: 'apply', path: 'sample.py' })).outcome).toBe('conflict')
+    expect((await call({ action: 'diff', snapshot: 'old' })).outcome).toBe('conflict')
+    const guide = {
+      action: 'guide',
+      snapshot: crypto.randomUUID(),
+      steps: [{ line: 15, hint: 'a'.repeat(209), explanation: 'Explain the expression.' }],
+    }
+    expect((await call(guide)).outcome).toBe('ok')
+    expect((await call({ action: 'guide_status' })).outcome).toBe('ok')
+    expect(
+      (await call({ action: 'progress', intent: 'next', token: guide.snapshot })).outcome,
+    ).toBe('ok')
+    expect((await call({ action: 'progress', intent: 'next' })).outcome).toBe('conflict')
+    expect(
+      (await call({ ...guide, steps: [{ ...guide.steps[0], hint: 'a'.repeat(1001) }] })).reason,
+    ).toMatch(/steps.0.hint.+No editor connection was attempted/)
+    const inline = { action: 'inline', snapshot: guide.snapshot, replacements: ['first', 'second'] }
+    expect((await call(inline)).outcome).toBe('ok')
+    expect((await call({ ...inline, replacements: [] })).outcome).toBe('conflict')
+    expect((await call({ ...inline, firstLine: 1 })).outcome).toBe('conflict')
+    expect((await call({ ...inline, replacements: ['x'.repeat(12001)] })).outcome).toBe('conflict')
+    const trace = {
+      action: 'trace',
+      snapshot: guide.snapshot,
+      anchor: { line: 2, column: 0, expectedLine: '' },
+      text: '    value = 2',
+    }
+    expect((await call(trace)).outcome).toBe('ok')
+    expect((await call({ ...trace, anchor: { line: 2, column: 0 } })).outcome).toBe('conflict')
+    expect((await call({ ...trace, text: 'x'.repeat(2001) })).outcome).toBe('conflict')
+    expect(f.caller.editorCoach).toHaveBeenCalledTimes(8)
+  })
   it('reads without side effects and refuses unknown chat/artifact identities', async () => {
     const f = controlFixture()
+    expect((await f.service.call(f.caller, 'threadlight_foreground_window', {})).outcome).toBe(
+      'unavailable',
+    )
+    const read = vi.fn(async () => ({ application: 'Music.exe', title: 'Player', observedAt: 123 }))
+    f.caller.foregroundWindow = read
+    expect(
+      (await f.service.call(f.caller, 'threadlight_foreground_window', {})).data,
+    ).toMatchObject({ application: 'Music.exe' })
+    expect(read).toHaveBeenCalledWith(false)
     expect(
       (await f.service.call(f.caller, 'threadlight_list_artifacts', { threadRef: 'guessed' }))
         .outcome,
@@ -183,7 +337,7 @@ describe('application control contract and service', () => {
     const args = {
       operationId: randomUUID(),
       expectedRevision: (state.data as { settingsRevision: string }).settingsRevision,
-      patch: { hoverHelp: 'off' },
+      patch: { hoverHelp: 'off', pythonSuggestions: 'on' },
     }
     expect((await f.service.call(f.caller, 'threadlight_update_settings', args)).outcome).toBe(
       'pending',
@@ -203,6 +357,7 @@ describe('application control contract and service', () => {
     ).toBe('conflict')
     f.decisions[0]!(true)
     await expect.poll(() => f.deps.settings().hoverHelp).toBe('off')
+    expect(f.deps.settings().pythonSuggestions).toBe('on')
     expect(
       (
         await f.service.call(f.caller, 'threadlight_get_operation', {
@@ -239,6 +394,87 @@ describe('application control contract and service', () => {
     f.service.revoke(f.caller)
     expect((await f.service.call(f.caller, 'threadlight_get_app_state', {})).outcome).toBe('denied')
     expect(f.deps.createSpace).not.toHaveBeenCalled()
+  })
+  it('forwards explicit Git modes and root identity, and rejects lenses on recorded scopes', async () => {
+    const f = controlFixture(1000)
+    for (const lens of ['git-current', 'git-staged', 'git-unstaged', 'folder-baseline']) {
+      const result = await f.service.call(f.caller, 'threadlight_get_changes', {
+        threadRef: 'resolved',
+        scope: 'worktree',
+        lens,
+        rootId: 'second-root',
+      })
+      expect(result.outcome).toBe('ok')
+      expect(f.deps.changes).toHaveBeenLastCalledWith(
+        'codex:fixture',
+        'worktree',
+        lens,
+        'second-root',
+      )
+    }
+    await f.service.call(f.caller, 'threadlight_get_changes', {
+      threadRef: 'resolved',
+      scope: 'worktree',
+    })
+    expect(f.deps.changes).toHaveBeenLastCalledWith(
+      'codex:fixture',
+      'worktree',
+      'git-current',
+      undefined,
+    )
+    for (const scope of ['card', 'thread']) {
+      expect(
+        (
+          await f.service.call(f.caller, 'threadlight_get_changes', {
+            threadRef: 'resolved',
+            scope,
+            lens: 'git-staged',
+          })
+        ).reason,
+      ).toBe('Invalid tool arguments.')
+      expect(
+        (
+          await f.service.call(f.caller, 'threadlight_navigate', {
+            operationId: randomUUID(),
+            route: { page: 'changes', threadRef: 'resolved', scope, rootId: 'second-root' },
+          })
+        ).reason,
+      ).toBe('Invalid tool arguments.')
+    }
+    f.publish()
+    const request = f.service.call(f.caller, 'threadlight_navigate', {
+      operationId: randomUUID(),
+      route: {
+        page: 'changes',
+        threadRef: 'resolved',
+        scope: 'worktree',
+        lens: 'git-staged',
+        rootId: 'second-root',
+      },
+    })
+    await expect.poll(() => f.commands.length).toBe(1)
+    expect(f.deps.changes).toHaveBeenLastCalledWith(
+      'codex:fixture',
+      'worktree',
+      'git-staged',
+      'second-root',
+    )
+    expect(f.commands[0]!.route).toMatchObject({ lens: 'git-staged', rootId: 'second-root' })
+    f.publish(f.commands[0])
+    expect((await request).outcome).toBe('ok')
+    vi.mocked(f.deps.changes).mockResolvedValue(null)
+    const unavailable = await f.service.call(f.caller, 'threadlight_navigate', {
+      operationId: randomUUID(),
+      route: {
+        page: 'changes',
+        threadRef: 'resolved',
+        scope: 'worktree',
+        lens: 'git-unstaged',
+        rootId: 'missing-root',
+      },
+    })
+    expect(unavailable.outcome).toBe('unavailable')
+    expect(f.commands).toHaveLength(1)
   })
   it('awaits committed navigation and rejects stale generations and wrong routes', async () => {
     const f = controlFixture(1000)
@@ -335,11 +571,12 @@ describe('application control contract and service', () => {
   })
   it('enforces HTTP Host, Origin, content type and token revocation through the real loopback server', async () => {
     const f = controlFixture(),
-      server = new AppControlServer(f.service)
+      auth = memoryTestTransport(f.directory),
+      server = new AppControlServer(f.service, auth)
     await server.start()
     const connection = server.connect(f.caller)
     const rpc = (headers: Record<string, string> = {}) =>
-      fetch(connection.endpoint, {
+      auth.fetch(connection.endpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${connection.token}`,
@@ -349,7 +586,37 @@ describe('application control contract and service', () => {
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
       })
     try {
-      expect((await json(await rpc())).result.tools).toHaveLength(12)
+      expect((await json(await rpc())).result.tools).toHaveLength(18)
+      f.caller.foregroundWindow = async (inspect) => ({
+        application: 'Fixture.exe',
+        title: 'Fixture window',
+        observedAt: 123,
+        ...(inspect ? { jpeg: '/9j/fixture' } : {}),
+      })
+      const inspected = await auth.fetch(connection.endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${connection.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: { name: 'threadlight_foreground_window', arguments: { inspect: true } },
+        }),
+      })
+      expect((await json(inspected)).result.content).toEqual([
+        {
+          type: 'text',
+          text: JSON.stringify({
+            application: 'Fixture.exe',
+            title: 'Fixture window',
+            observedAt: 123,
+          }),
+        },
+        { type: 'image', mimeType: 'image/jpeg', data: '/9j/fixture' },
+      ])
       const wrongHost = await new Promise<number>((resolve) => {
         const request = httpRequest(
           connection.endpoint,
@@ -376,7 +643,8 @@ describe('application control contract and service', () => {
 describe('actual hosted adapters with synthetic provider transports and real MCP execution', () => {
   it('Claude delivers the knowledge, executes control through its configured endpoint, denies worker use and revokes access', async () => {
     const f = controlFixture(),
-      server = new AppControlServer(f.service)
+      auth = memoryTestTransport(f.directory),
+      server = new AppControlServer(f.service, auth)
     await server.start()
     const stdin = new PassThrough(),
       stdout = new PassThrough(),
@@ -405,11 +673,7 @@ describe('actual hosted adapters with synthetic provider transports and real MCP
         APP_CONTROL_SERVER
       ]
       const rpc = (method: string, params?: object) =>
-        fetch(config.url, {
-          method: 'POST',
-          headers: { ...config.headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-        })
+        proxyRpc(config, { jsonrpc: '2.0', id: 1, method, params })
       const tools = (await json(await rpc('tools/list'))).result.tools
       expect(tools.map((t: { name: string }) => t.name)).toEqual(controlTools.map((t) => t.name))
       stdout.write(
@@ -442,7 +706,7 @@ describe('actual hosted adapters with synthetic provider transports and real MCP
       )
       expect(JSON.stringify(responses.at(-1))).toContain('deny')
       run.close()
-      expect((await rpc('tools/list')).status).toBe(401)
+      expect(await (await rpc('tools/list')).json()).toMatchObject({ error: { code: -32000 } })
     } finally {
       run.close()
       server.close()
@@ -450,22 +714,19 @@ describe('actual hosted adapters with synthetic provider transports and real MCP
   })
   it('Codex verifies the effective inventory and executes the configured control tool on turn/start', async () => {
     const f = controlFixture(),
-      server = new AppControlServer(f.service)
+      auth = memoryTestTransport(f.directory),
+      server = new AppControlServer(f.service, auth)
     await server.start()
     let started: JsonObject = {},
       evidence: unknown
     const rpc = async (method: string, params?: object) => {
-      const config = (started.config as JsonObject).mcp_servers as Record<
+      const config = (started.config as JsonObject).mcp_servers as unknown as Record<
         string,
-        { url: string; http_headers: Record<string, string> }
+        MemoryProxy
       >
-      const connection = config[APP_CONTROL_SERVER]!
-      return fetch(connection.url, {
-        method: 'POST',
-        headers: { ...connection.http_headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-      })
+      return proxyRpc(config[APP_CONTROL_SERVER]!, { jsonrpc: '2.0', id: 1, method, params })
     }
+
     const fake: CodexTransport = {
       onEvent: () => {},
       onFailure: () => {},
@@ -535,7 +796,7 @@ describe('actual hosted adapters with synthetic provider transports and real MCP
       expect(config['features.apps']).toBe(false)
       expect(config['features.multi_agent']).toBe(false)
       await run.close()
-      expect((await rpc('tools/list')).status).toBe(401)
+      expect(await (await rpc('tools/list')).json()).toMatchObject({ error: { code: -32000 } })
     } finally {
       await run.close()
       server.close()

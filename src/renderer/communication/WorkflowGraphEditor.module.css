@@ -1,0 +1,118 @@
+.root {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.root.root label {
+  margin: 0;
+  font-size: 12px;
+}
+.root.root input,
+.root.root select,
+.root.root textarea {
+  padding: 4px;
+}
+.root.root .bar select {
+  width: auto;
+  max-width: 100%;
+}
+.root.root input[type='checkbox'] {
+  width: auto;
+  display: inline;
+}
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.root button {
+  margin: 0;
+  padding: 4px 7px;
+  width: fit-content;
+}
+.root input,
+.root select,
+.root textarea {
+  padding: 4px;
+  min-width: 0;
+}
+.root label {
+  display: grid;
+  gap: 3px;
+}
+.canvas {
+  position: relative;
+  height: 200px;
+  overflow: hidden;
+  touch-action: none;
+  border: 1px solid var(--border, #555);
+  border-radius: 5px;
+}
+:global([data-canvas-expanded]) .canvas {
+  height: 300px;
+}
+.world {
+  position: absolute;
+  transform-origin: 0 0;
+}
+.world svg {
+  position: absolute;
+  pointer-events: none;
+  overflow: visible;
+}
+.node {
+  position: absolute;
+  display: grid;
+  gap: 3px;
+  max-width: 185px;
+  text-align: left;
+}
+.root .node {
+  width: max-content;
+}
+.node strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 165px;
+}
+.node[aria-pressed='true'] {
+  outline: 2px solid var(--accent, #85b9ed);
+}
+.node small {
+  opacity: 0.7;
+}
+.config {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid var(--border, #555);
+  padding-top: 6px;
+}
+.config textarea {
+  min-height: 48px;
+  font-family: inherit;
+}
+.config details {
+  min-width: 0;
+}
+.config pre,
+.root pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}
+.error {
+  color: var(--danger, #ffb5a9);
+  margin: 0;
+}
+.connection {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.connection select {
+  max-width: 150px;
+}

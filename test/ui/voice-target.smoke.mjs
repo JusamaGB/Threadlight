@@ -23,11 +23,10 @@ export async function checkVoiceTarget(page) {
     await page.waitForFunction(() => window.proof.talkState === 'listening')
     if (target === 'agent') {
       await page.getByRole('region', { name: 'Voice waveform', exact: true }).waitFor()
-      await page
-        .getByRole('region', { name: 'Voice activity' })
-        .getByRole('status')
-        .filter({ hasText: /^(Listening|You speaking)$/ })
-        .waitFor()
+      assert.equal(
+        await page.getByRole('region', { name: 'Voice activity' }).getByRole('status').count(),
+        0,
+      )
     } else {
       assert.equal(
         await page.getByRole('region', { name: 'Voice waveform', exact: true }).count(),

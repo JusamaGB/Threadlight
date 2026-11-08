@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { SettingsStore } from '../src/main/settings'
+import { DEFAULT_KIMI_SETUP } from '../src/shared/kimi'
 import {
   DEFAULT_SETTINGS,
   parseSettings,
@@ -16,7 +17,123 @@ let box: Sandbox
 beforeEach(async () => (box = await sandbox()))
 afterEach(() => box.cleanup())
 
+describe('Kimi settings compatibility', () => {
+  it('defaults old files and isolates an invalid Kimi value from other settings', () => {
+    expect(parseSettings({ maxSessions: 17 }).kimiSetup).toEqual(DEFAULT_KIMI_SETUP)
+    expect(parseSettings({ maxSessions: 17, kimiSetup: { connected: true } })).toMatchObject({
+      maxSessions: 17,
+      kimiSetup: DEFAULT_KIMI_SETUP,
+    })
+    expect(validatePatch({ kimiSetup: { ...DEFAULT_KIMI_SETUP, connected: true } }).ok).toBe(false)
+  })
+  it('saves a Kimi-only patch without resetting providers or unrelated settings', async () => {
+    const store = new SettingsStore(box.root)
+    await store.update({ maxSessions: 19, enabledProviders: ['codex'], agentProvider: 'codex' })
+    const before = store.settings
+    const kimiSetup = {
+      ...DEFAULT_KIMI_SETUP,
+      connection: { ...DEFAULT_KIMI_SETUP.connection, model: 'exact/model:v1' },
+    }
+    expect(validatePatch({ kimiSetup })).toEqual({ ok: true, patch: { kimiSetup } })
+    expect((await store.update({ kimiSetup })).ok).toBe(true)
+    expect(await new SettingsStore(box.root).load()).toEqual({ ...before, kimiSetup })
+  })
+})
+
+describe('spoken reply companion', () => {
+  it('is opt-in for existing profiles and persists a toggle across restart', async () => {
+    const store = new SettingsStore(box.root)
+    expect(parseSettings({}).spokenReplyCompanion).toBe(false)
+    expect((await store.update({ spokenReplyCompanion: true })).ok).toBe(true)
+    expect((await new SettingsStore(box.root).load()).spokenReplyCompanion).toBe(true)
+    expect(validatePatch({ spokenReplyCompanion: 'yes' }).ok).toBe(false)
+  })
+})
+
 describe('parseSettings', () => {
+  it('migrates provider visibility without enabling extra coding sources or Kimi', () => {
+    expect(parseSettings({ enabledProviders: ['codex'] })).toMatchObject({
+      enabledProviders: ['codex'],
+      shownProviders: ['codex', 'perplexity'],
+    })
+    expect(parseSettings({ enabledProviders: [], shownProviders: 'invalid' })).toMatchObject({
+      enabledProviders: [],
+      shownProviders: ['perplexity'],
+    })
+    expect(validatePatch({ shownProviders: ['kimi', 'kimi'] }).ok).toBe(false)
+    expect(validatePatch({ shownProviders: ['unknown'] }).ok).toBe(false)
+  })
+  it('persists all, subsets and none; keeps legacy filters synced without losing chat choices or Kimi setup', async () => {
+    const store = new SettingsStore(box.root)
+    await store.load()
+    const kimiSetup = {
+      ...DEFAULT_KIMI_SETUP,
+      connection: { ...DEFAULT_KIMI_SETUP.connection, model: 'retained-model' },
+    }
+    await store.update({
+      kimiSetup,
+      chatSources: ['chatgpt'],
+      shownProviders: ['kimi', 'codex', 'claude', 'perplexity'],
+    })
+    expect(store.settings).toMatchObject({
+      enabledProviders: ['claude', 'codex'],
+      shownProviders: ['claude', 'codex', 'perplexity', 'kimi'],
+    })
+    await store.update({ enabledProviders: ['codex'] })
+    expect(store.settings.shownProviders).toEqual(['codex', 'perplexity', 'kimi'])
+    await store.update({ shownProviders: [] })
+    expect(await new SettingsStore(box.root).load()).toMatchObject({
+      enabledProviders: [],
+      shownProviders: [],
+      chatSources: ['chatgpt'],
+      kimiSetup,
+    })
+    await store.update({ shownProviders: ['kimi'] })
+    await store.update({ chatSources: [] })
+    expect(store.settings).toMatchObject({
+      shownProviders: ['kimi'],
+      enabledProviders: [],
+      chatSources: [],
+      kimiSetup,
+    })
+  })
+  it('persists chat source and conversation filters independently of coding preferences', async () => {
+    const store = new SettingsStore(box.root)
+    await store.load()
+    await store.update({
+      enabledProviders: ['codex'],
+      conversationFilter: 'chat',
+      chatSources: ['perplexity'],
+    })
+    expect(await new SettingsStore(box.root).load()).toMatchObject({
+      enabledProviders: ['codex'],
+      conversationFilter: 'chat',
+      chatSources: ['perplexity'],
+    })
+  })
+  it('defaults the per-space ignore offer off and persists enabling it', async () => {
+    const store = new SettingsStore(box.root)
+    expect((await store.load()).sharedSpacesGitignore).toBe(false)
+    expect((await store.update({ sharedSpacesGitignore: true })).ok).toBe(true)
+    expect((await new SettingsStore(box.root).load()).sharedSpacesGitignore).toBe(true)
+    expect(validatePatch({ sharedSpacesGitignore: 'yes' }).ok).toBe(false)
+  })
+  it('persists the Active pin independently of workspace wires and rejects invalid values', async () => {
+    const store = new SettingsStore(box.root)
+    expect((await store.load()).pinnedActiveThreads).toBe(false)
+    await store.update({ pinnedActiveThreads: true, workspaceWires: true })
+    expect(await new SettingsStore(box.root).load()).toMatchObject({
+      pinnedActiveThreads: true,
+      workspaceWires: true,
+    })
+    await store.update({ pinnedActiveThreads: false })
+    expect(await new SettingsStore(box.root).load()).toMatchObject({
+      pinnedActiveThreads: false,
+      workspaceWires: true,
+    })
+    expect(parseSettings({ pinnedActiveThreads: 'yes' }).pinnedActiveThreads).toBe(false)
+    expect(validatePatch({ pinnedActiveThreads: 'yes' }).ok).toBe(false)
+  })
   it('preserves the Info baseline, validates hover help modes and saves the choice', async () => {
     expect(parseSettings({}).hoverHelp).toBe('info')
     expect(parseSettings({ hoverHelp: 'invalid', maxSessions: 12 })).toMatchObject({
@@ -36,7 +153,7 @@ describe('parseSettings', () => {
     })
     const store = new SettingsStore(box.root)
     await store.load()
-    for (const hoverHelp of ['tour', 'off', 'info'] as const) {
+    for (const hoverHelp of ['tour', 'off', 'info', 'teach'] as const) {
       expect(validatePatch({ hoverHelp })).toEqual({ ok: true, patch: { hoverHelp } })
       await store.update({ hoverHelp })
       expect((await new SettingsStore(box.root).load()).hoverHelp).toBe(hoverHelp)
@@ -67,6 +184,14 @@ describe('parseSettings', () => {
     expect(voiceHotkeyMode({ ...DEFAULT_SETTINGS, voiceMode: 'local-stt', talkMode: 'hold' })).toBe(
       'hold',
     )
+    const local = {
+      ...DEFAULT_SETTINGS,
+      agentProvider: 'codex',
+      voiceMode: 'local-stt',
+      talkMode: 'hold',
+    } as const
+    expect(voiceHotkeyMode({ ...local, talkHotkey: 'Alt+Ctrl+Q' })).toBe('toggle')
+    expect(voiceHotkeyMode({ ...local, talkHotkey: 'Alt+Ctrl+X' })).toBe('hold')
   })
   it('fills in defaults and keeps every valid value', () => {
     expect(parseSettings({})).toEqual(DEFAULT_SETTINGS)
@@ -234,10 +359,16 @@ describe('SettingsStore', () => {
   it('saves changes and reads them back', async () => {
     const store = new SettingsStore(box.root)
     await store.load()
-    expect(await store.update({ openOn: 'click', listWindowHours: 48 })).toMatchObject({ ok: true })
+    expect(
+      await store.update({ openOn: 'click', listWindowHours: 48, pythonSuggestions: 'on' }),
+    ).toMatchObject({ ok: true })
 
     const again = new SettingsStore(box.root)
-    expect(await again.load()).toMatchObject({ openOn: 'click', listWindowHours: 48 })
+    expect(await again.load()).toMatchObject({
+      openOn: 'click',
+      listWindowHours: 48,
+      pythonSuggestions: 'on',
+    })
     const file = JSON.parse(await readFile(join(box.root, 'settings.json'), 'utf8'))
     expect(file.version).toBe(1)
   })

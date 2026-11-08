@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Attention, Session } from '../../shared/types'
 import { useNow } from '../hooks/useNow'
 import { useDraft } from '../lib/drafts'
+import { AnswerComposer } from '../composer/AnswerComposer'
 import styles from './Panel.module.css'
 
 export function CodexCard({ session, attention }: { session: Session; attention: Attention }) {
@@ -22,10 +23,11 @@ export function CodexCard({ session, attention }: { session: Session; attention:
   const [text, setText] = useDraft(`${session.id}:${attention.kind}:${identity}:answer`, '')
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  const [dictating, setDictating] = useState(false)
   const [done, setDone] = useState(false)
   const open = () => session.appId && window.threadlight.openInClaude(session.appId)
   const send = async (value: string) => {
-    if (!held || !holdId || sending || done) return
+    if (!held || !holdId || sending || done || dictating) return
     setSending(true)
     const result = await window.threadlight.answerCodex(session.id, holdId, value)
     setSending(false)
@@ -33,6 +35,11 @@ export function CodexCard({ session, attention }: { session: Session; attention:
       setDone(true)
       setText('')
     } else setError(result.reason)
+  }
+  const copyAndOpen = () => {
+    if (dictating) return
+    if (text.trim()) window.threadlight.copyText(text)
+    open()
   }
   const question =
     attention.kind === 'next-step'
@@ -60,12 +67,15 @@ export function CodexCard({ session, attention }: { session: Session; attention:
           </div>
         ))}
       {attention.kind !== 'approval' && (
-        <textarea
-          className={styles.qOther}
-          aria-label="Answer for this Codex chat"
+        <AnswerComposer
+          id={`${session.id}:${attention.kind}:${identity}:answer`}
+          label="Answer for this Codex chat"
           value={text}
           disabled={sending || done}
-          onChange={(event) => setText(event.target.value)}
+          sendLabel={held ? 'Submit typed answer' : 'Copy answer and open Codex'}
+          onChange={setText}
+          onSend={() => (held ? void send(text) : copyAndOpen())}
+          onActivityChange={setDictating}
         />
       )}
       <div className={styles.qButtons}>
@@ -81,19 +91,13 @@ export function CodexCard({ session, attention }: { session: Session; attention:
         ) : held && !done ? (
           <button
             className={styles.qNext}
-            disabled={sending || !text.trim()}
+            disabled={sending || dictating || !text.trim()}
             onClick={() => void send(text)}
           >
             Send answer
           </button>
         ) : null}
-        <button
-          className={styles.qSkip}
-          onClick={() => {
-            if (text.trim()) window.threadlight.copyText(text)
-            open()
-          }}
-        >
+        <button className={styles.qSkip} disabled={dictating} onClick={copyAndOpen}>
           {text.trim() ? 'Copy and open Codex' : 'Open in Codex'}
         </button>
         {held && !done && (

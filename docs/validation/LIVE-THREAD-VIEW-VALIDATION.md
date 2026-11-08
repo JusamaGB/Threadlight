@@ -80,6 +80,28 @@ Public summary extraction accepts only the short leading bold heading and drops
 the body and raw content. Existing history readers retain their limited fallback
 metadata when the desktop feed is unavailable.
 
+Public headings now supply compact labels for their following actions, until a new
+reasoning event, message, turn or compaction boundary. Explicit MCP titles and
+descriptions take priority. An unfinished final reasoning event with no complete
+public heading yields a temporary **Working…** label, replaced using the same item
+ID when its heading arrives. Completed empty events do not add history entries.
+The saved-history status tracker uses the same heading extractor. Summary bodies
+and raw reasoning content remain excluded.
+
+A read-only inspection of this chat confirmed that both reported headings,
+“Updating thread-view click helper” and “Checking voice route scope”, exist in the
+saved history and the native snapshot. It also observed native events with empty
+summary arrays. This confirms data availability, not the exact timing of the earlier
+screenshot; Threadlight cannot display a specific heading before Codex supplies it.
+
+Follow-up validation: 46 focused tests passed across heading projection, incremental
+patches, saved-history status, activity grouping, stream and timeline handling.
+The isolated built-renderer check exercised a heading through a command, the
+temporary **Working…** state, a replacement heading in both compact and expanded
+views, and an explicit tool title. Typecheck, focused lint and production build
+passed. These UI checks use synthetic events; the read-only inspection above did
+not restart the user's app or establish live visual acceptance of this patch.
+
 Validation: 17 focused tests passed across grouping, stream projection and timeline
 service, plus lint, typecheck and production build. The built renderer smoke test
 covers collapsed/expanded action lists, output disclosure, changing active labels
