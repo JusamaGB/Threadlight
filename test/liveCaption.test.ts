@@ -167,6 +167,42 @@ describe('native answer and spoken captions', () => {
     }
   })
 
+  it.each([true, false])(
+    'requires factual status ownership after a foreign completion (matching playback arrives: %s)',
+    async (matched) => {
+      vi.useFakeTimers()
+      try {
+        const { live, request } = fixture()
+        live.completedCommentary('turn', {
+          ...acknowledgment,
+          text: "I'll check the current buffer, but first indent line ten.",
+        })
+        live.editorActivity('turn', 'capabilities', false, {})
+        await vi.advanceTimersByTimeAsync(1)
+        const status = 'I’m checking the editor status.'
+        expect(request).toHaveBeenCalledTimes(1)
+        expect(JSON.stringify(request.mock.lastCall)).toContain(status)
+        const proposal = live.coachStep('The highlighted change is visible.', true, true)
+        const outcome = matched
+          ? expect(proposal).resolves.toBeUndefined()
+          : expect(proposal).rejects.toThrow(/confirmed playback boundary/)
+        live.playbackBoundary('assistant', 'foreign')
+        live.playbackBoundary('done', 'foreign', 'I cannot approve that.')
+        await Promise.resolve()
+        expect(request).toHaveBeenCalledTimes(1)
+        if (matched) {
+          live.playbackBoundary('assistant', 'status')
+          live.playbackBoundary('done', 'status', status)
+        } else await vi.advanceTimersByTimeAsync(30001)
+        await outcome
+        expect(request).toHaveBeenCalledTimes(matched ? 2 : 1)
+        live.disconnect('done')
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+
   it('offers an explicit one-shot prose readout instead of submitting on an uncertain progress timeout', async () => {
     vi.useFakeTimers()
     try {
