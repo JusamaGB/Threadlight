@@ -39,7 +39,7 @@ it('bounds preview payloads while counting the full diff', () => {
   expect(result.files[0]).toMatchObject({ added: 20000, removed: 0, previewTruncated: true })
   expect(result.files.reduce((n, f) => n + (f.diff?.length ?? 0), 0)).toBeLessThanOrEqual(64000)
 })
-it('retains a separate visible card for each edit and updates the same native ID in place', () => {
+it('groups adjacent native edits while retaining each event and its own recorded patch', () => {
   const first = {
     id: 'edit1',
     type: 'fileChange',
@@ -54,10 +54,7 @@ it('retains a separate visible card for each edit and updates the same native ID
   const items = projectStream({
     turns: [{ turnId: 'turn', status: 'completed', items: [first, second] }],
   })
-  expect(conversationRows(items).map((r) => [r.type, r.id])).toEqual([
-    ['message', 'edit1'],
-    ['message', 'edit2'],
-  ])
+  expect(conversationRows(items)).toEqual([{ type: 'activity', id: 'edit1', items }])
   expect(items.map((i) => i.fileChanges?.[0]?.added)).toEqual([1, 2])
   const failed = projectStream({
     turns: [{ turnId: 'turn', status: 'completed', items: [{ ...first, status: 'failed' }] }],

@@ -1,12 +1,42 @@
 import { describe, expect, it } from 'vitest'
 import { CompletionOrder } from '../src/main/sessions/completionOrder'
-import { compareSessionOrder, recentSessions } from '../src/shared/sessionOrder'
+import {
+  compareSessionOrder,
+  recentSessions,
+  mergedRecentThreads,
+} from '../src/shared/sessionOrder'
 import type { Session } from '../src/shared/types'
 
 const chat = (id: string, state: Session['state'], at: number, reply: string | null = 'done') =>
   ({ id, state, lastActiveAt: at, lastReply: reply }) as Session
 
 describe('completion ordering', () => {
+  it('interleaves chat and coding sources using one chronological order and count', () => {
+    const sessions = [chat('codex:code', 'idle', 300), chat('claude', 'idle', 100)]
+    const chats = [
+      { id: 'gpt', source: 'chatgpt' as const, title: 'GPT', updatedAt: 400 },
+      { id: 'pplx', source: 'perplexity' as const, title: 'Perplexity', updatedAt: 200 },
+    ]
+    expect(mergedRecentThreads(sessions, chats, 4).map((row) => row.key)).toEqual([
+      'chatgpt:gpt',
+      'session:codex:code',
+      'perplexity:pplx',
+      'session:claude',
+    ])
+    expect(mergedRecentThreads(sessions, chats, 2).map((row) => row.key)).toEqual([
+      'chatgpt:gpt',
+      'session:codex:code',
+    ])
+    expect(mergedRecentThreads(sessions, chats, 0)).toEqual([])
+    const active = { ...sessions[1]!, state: 'working' as const, orderAt: 50, lastActiveAt: 999 }
+    expect(mergedRecentThreads([sessions[0]!, active], chats, 2).map((row) => row.key)).toEqual([
+      'chatgpt:gpt',
+      'session:claude',
+    ])
+    expect(
+      mergedRecentThreads([{ ...active, ignored: true }], chats, 2).map((row) => row.key),
+    ).toEqual(['chatgpt:gpt', 'perplexity:pplx'])
+  })
   it('holds five concurrent threads through messages, tools and permission pauses, then promotes completion', () => {
     const order = new CompletionOrder()
     let rows = [1, 2, 3, 4, 5].map((n) => order.observe(chat(String(n), 'idle', n * 100)))

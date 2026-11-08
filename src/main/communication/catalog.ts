@@ -25,28 +25,46 @@ export class CommunicationCatalog {
     for (const adapter of this.adapters.filter((a) => this.enabled().includes(a.provider))) {
       if (target) {
         if ((target.startsWith('codex:') ? 'codex' : 'claude') !== adapter.provider) continue
-        const row = await adapter.locate(target.replace(/^codex:/, ''))
+        const nativeId = target.replace(/^codex:/, '')
+        let row = await adapter.locate(nativeId)
+        if (!row && adapter.provider === 'claude') {
+          // Claude indexes exact targets during catalog discovery.
+          let cursor: string | undefined
+          for (let page = 0; page < 10; page++) {
+            const result = await adapter.catalog(cursor)
+            if (result.entries.some((entry) => entry.nativeId === nativeId)) {
+              row = await adapter.locate(nativeId)
+              break
+            }
+            if (!result.next) break
+            cursor = result.next
+          }
+        }
         if (row) rows.push(row)
       } else {
+        const matches: CatalogEntry[] = []
         let cursor: string | undefined
         for (let page = 0; page < 10; page++) {
           const result = await adapter.catalog(cursor)
-          rows.push(
+          matches.push(
             ...result.entries.filter(
-              (e) => !e.archived && e.title.toLowerCase().includes(query.toLowerCase()),
+              (e) => e.archived !== true && e.title.toLowerCase().includes(query.toLowerCase()),
             ),
           )
-          if (!result.next) break
+          if (!result.next || matches.length >= 100) break
           cursor = result.next
         }
+        // Bound each provider independently so a large earlier catalogue cannot
+        // hide every chat belonging to another enabled provider.
+        rows.push(...matches.slice(0, 100))
       }
     }
     return Promise.all(
-      rows.slice(0, 100).map(async (row): Promise<Destination> => {
+      rows.map(async (row): Promise<Destination> => {
         const id = row.provider === 'codex' ? `codex:${row.nativeId}` : row.nativeId
         const observed = this.session(id)
         const runtime =
-          target && row.provider === 'claude' && !row.archived
+          target && row.provider === 'claude' && row.archived !== true
             ? await this.runtime?.(id)
             : undefined
         const admitted = !!target && !row.archived && !!row.workspace && (await this.admitted(id))
@@ -72,7 +90,7 @@ export class CommunicationCatalog {
             ? ''
             : admitted
               ? 'Chat currently has a native writer. Delivery is queued until the verified resume boundary is available.'
-              : row.archived
+              : row.archived === true
                 ? 'Archived chat. Restore it before requesting delivery.'
                 : observed?.live
                   ? 'Native desktop ownership prevents ordinary sends. The inbox remains available to an enrolled participant.'

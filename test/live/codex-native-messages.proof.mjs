@@ -15,8 +15,13 @@ load.extensions['.ts'] = (module, filename) =>
   )
 const { NativeCodexMessages } = load('../../src/main/codex/nativeMessages.ts')
 assert.equal(process.env.THREADLIGHT_NATIVE_MESSAGES_PROOF, '1', 'Explicit live opt-in required')
-const id = 'eca91ec8-c3fc-5f90-ae47-2251ba237c1f',
+const id = process.env.THREADLIGHT_NATIVE_TEST_CHAT,
   key = `codex:${id}`
+assert.match(
+  id ?? '',
+  /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i,
+  'Set THREADLIGHT_NATIVE_TEST_CHAT to an explicitly authorised disposable chat',
+)
 const history = path.join(process.env.USERPROFILE, '.codex/thread_history_1.sqlite')
 const output = path.resolve(
   import.meta.dirname,

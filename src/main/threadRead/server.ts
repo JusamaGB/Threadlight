@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http'
+import { MemoryTransport, openMemoryProxy, type MemoryTransportOptions } from '../memory/transport'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
@@ -11,18 +11,22 @@ import {
 import { ThreadReadService, type ReadScope } from './service'
 
 export interface ThreadReadConnection {
+  mcp?: import('../memory/transport').MemoryProxy
   endpoint: string
   token: string
   close: () => void
 }
 export class ThreadReadServer {
-  private server: Server | null = null
+  private transport?: MemoryTransport
   private endpoint = ''
   private connections = new Map<
     string,
     { scope: ReadScope; receipt: (r: ThreadToolReceipt) => void }
   >()
-  constructor(private service: ThreadReadService) {}
+  constructor(
+    private service: ThreadReadService,
+    private transportOptions: MemoryTransportOptions = {},
+  ) {}
   resolve(connection: ThreadReadConnection, ref: string) {
     const caller = this.connections.get(connection.token)
     return caller ? this.service.resolve(caller.scope, ref) : null
@@ -49,25 +53,20 @@ export class ThreadReadServer {
     const token = randomBytes(32).toString('hex'),
       scope = this.service.open(permits)
     this.connections.set(token, { scope, receipt })
+    const proxy = openMemoryProxy(this.endpoint, token)
     return {
+      mcp: proxy.mcp,
       endpoint: this.endpoint,
       token,
       close: () => {
+        proxy.close()
         this.service.close(scope)
         this.connections.delete(token)
       },
     }
   }
   async start() {
-    this.server = createServer((request, response) => {
-      const finish = (status: number, value?: unknown) => {
-        if (response.writableEnded) return
-        response.writeHead(status, {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store',
-        })
-        response.end(value === undefined ? undefined : JSON.stringify(value))
-      }
+    this.transport = new MemoryTransport((request, response, finish) => {
       if (request.headers.origin || !/^127\.0\.0\.1:\d+$/.test(request.headers.host ?? ''))
         return finish(403)
       if (request.url !== '/mcp') return finish(404)
@@ -171,20 +170,12 @@ export class ThreadReadServer {
         })()
       })
     })
-    this.server.requestTimeout = 6000
-    await new Promise<void>((resolve, reject) => {
-      this.server!.once('error', reject)
-      this.server!.listen(0, '127.0.0.1', () => resolve())
-    })
-    const address = this.server.address()
-    if (!address || typeof address === 'string') throw new Error('Reader listener unavailable.')
-    this.endpoint = `http://127.0.0.1:${address.port}/mcp`
+    this.endpoint = await this.transport.start(0, this.transportOptions, 'thread-read-auth')
   }
   close() {
     for (const c of this.connections.values()) this.service.close(c.scope)
     this.connections.clear()
-    this.server?.closeAllConnections()
-    this.server?.close()
+    this.transport?.close()
     this.endpoint = ''
   }
 }

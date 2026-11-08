@@ -28,12 +28,18 @@ export function AgentRequestCard({
   }
   const form = request.questions !== undefined
   return (
-    <div className={styles.qCard}>
-      <p className={styles.qText}>
-        {request.title}
-        {count > 1 ? ` · ${count} pending` : ''}
-      </p>
-      {request.detail && <pre className={styles.agentDetail}>{request.detail}</pre>}
+    <div className={`${styles.qCard} ${styles.agentRequest}`} data-agent-request="">
+      <div className={styles.qHead}>
+        <p className={styles.qText}>
+          {request.title}
+          {count > 1 ? ` · ${count} pending` : ''}
+        </p>
+      </div>
+      {request.detail && (
+        <pre className={styles.agentDetail} tabIndex={0} aria-label="Request details">
+          {request.detail}
+        </pre>
+      )}
       {request.questions?.map((q) => (
         <fieldset key={q.id} className={styles.agentQuestion}>
           <legend>{q.text}</legend>

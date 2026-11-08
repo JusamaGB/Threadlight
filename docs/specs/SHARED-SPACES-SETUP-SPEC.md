@@ -20,9 +20,11 @@ files and redirected folders make a space unavailable rather than redirecting
 writes. Database history and permissions remain in Threadlight's existing stores;
 the on-disk Markdown files are immutable snapshots, not a second editable database.
 
-The guide has three steps: choose a space, match a plugin request and link the
-chat, then review access. Requests update from existing memory subscriptions.
-Only the requesting provider's chats in the selected project are offered. The
+The guide uses the already opened space and has two steps: match the request,
+then review access. Requests update from existing memory subscriptions. Exact
+request-supplied native chat IDs resolve against available provider sessions;
+older requests offer searchable chats across working folders. See the
+[project connection update](PROJECT-CONNECTION-SETUP-SPEC.md). The
 human must explicitly match the code and approve. Publishing and communication
 are unchecked initially. Communication explains its required project-wide write
 access, while folder creation and delegation remain ungranted.

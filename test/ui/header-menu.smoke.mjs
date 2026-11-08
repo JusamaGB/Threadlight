@@ -1,6 +1,6 @@
 /* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
-import { openHeaderPage } from './header-navigation.mjs'
+import { openHeaderPage, selectConversationFilter } from './header-navigation.mjs'
 
 export async function checkHeaderMenu(page, capture) {
   await page.evaluate(async () => {
@@ -27,12 +27,55 @@ export async function checkHeaderMenu(page, capture) {
     })
   })
   const header = page.locator('header')
+  const filters = header.locator('[data-header-filters]')
+  const threadFilter = header.locator('[data-thread-filter]')
+  assert.equal(await page.getByRole('combobox', { name: 'Conversation type' }).count(), 0)
+  await page.mouse.move(440, 850)
+  await page.evaluate(() => document.activeElement?.blur())
+  assert.match(
+    await threadFilter.evaluate((el) => getComputedStyle(el).maskImage),
+    /linear-gradient/,
+  )
+  assert.equal(await filters.evaluate((el) => getComputedStyle(el).maskImage), 'none')
+  const workspace = header.getByRole('button', { name: /^Choose workspace:/ })
+  assert.equal(await workspace.evaluate((el) => getComputedStyle(el).maskImage), 'none')
+  await capture('header-filters-rest')
+  await filters.hover()
+  assert.equal(await threadFilter.evaluate((el) => getComputedStyle(el).maskImage), 'none')
+  await workspace.hover()
+  assert.equal(await workspace.evaluate((el) => getComputedStyle(el).maskImage), 'none')
+  await capture('header-filters-hover')
+  await page.mouse.move(440, 850)
+  await threadFilter.focus()
+  assert.equal(await threadFilter.evaluate((el) => getComputedStyle(el).maskImage), 'none')
+  await page.keyboard.press('Enter')
+  const threadMenu = page.getByRole('menu', { name: 'Thread filter', exact: true })
+  await threadMenu.waitFor()
+  assert.equal(
+    await threadMenu.getByRole('menuitem', { name: 'Code & Computer', exact: true }).count(),
+    0,
+  )
+  await capture('header-thread-filter-menu')
+  await page.keyboard.press('Escape')
+  await threadMenu.waitFor({ state: 'hidden' })
+  await selectConversationFilter(page, 'all')
+  assert.equal(await threadFilter.innerText(), 'Threads')
+  await selectConversationFilter(page, 'chat')
+  assert.equal(await threadFilter.innerText(), 'Chat')
+  await selectConversationFilter(page, 'code-computer')
+  const layout = await header.evaluate((el) => ({
+    width: el.clientWidth,
+    content: el.scrollWidth,
+    height: el.getBoundingClientRect().height,
+  }))
+  assert.ok(layout.content <= layout.width + 1, 'header filters fit the narrow panel')
+  assert.ok(layout.height <= 26, 'filters stay in a single header row')
   assert.equal(await header.getByRole('button', { name: 'Shared Spaces', exact: true }).count(), 0)
   assert.equal(await header.getByRole('button', { name: /Agent: ask/ }).count(), 0)
   await openHeaderPage(page, 'Shared Spaces')
   await page.getByRole('region', { name: 'Shared Spaces', exact: true }).waitFor()
   await openHeaderPage(page, 'Agent')
-  await page.getByPlaceholder('Ask your agent…').waitFor()
+  await page.getByRole('button', { name: 'Reply to Agent' }).waitFor()
   await header.focus()
   await page.keyboard.press('Shift+F10')
   const menu = page.getByRole('menu', { name: 'Header menu', exact: true })

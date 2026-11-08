@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react'
 import type { TimelineItem } from '../../shared/threadTimeline'
 import { activitySummary } from '../../shared/threadActivity'
 import styles from './ThreadConversation.module.css'
 import { ThreadImages } from './ThreadImages'
+import { ThreadFileChanges } from './ThreadFileChanges'
 
 export function ActivityIcon({ kind }: { kind?: TimelineItem['activity'] }) {
   return (
@@ -29,6 +31,35 @@ export function ActivityIcon({ kind }: { kind?: TimelineItem['activity'] }) {
   )
 }
 
+export function ActivityDisclosure({
+  label,
+  active,
+  kind,
+  id,
+  icon,
+  children,
+}: {
+  label: string
+  active: boolean
+  kind?: TimelineItem['activity']
+  id?: string
+  icon?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <details className={styles.activityGroup} data-message-id={id} data-active={active}>
+      <summary title={label}>
+        {icon === undefined ? <ActivityIcon kind={kind} /> : icon}
+        <span>{label}</span>
+        <span className={styles.chevron} aria-hidden="true">
+          ›
+        </span>
+      </summary>
+      {children}
+    </details>
+  )
+}
+
 export function ActivityGroup({
   items,
   active,
@@ -46,18 +77,7 @@ export function ActivityGroup({
   const kind =
     current?.activity ?? (items.every((item) => item.activity === 'command') ? 'command' : 'tool')
   return (
-    <details
-      className={styles.activityGroup}
-      data-message-id={items[0]!.id}
-      data-active={!!current}
-    >
-      <summary title={label}>
-        <ActivityIcon kind={kind} />
-        <span>{label}</span>
-        <span className={styles.chevron} aria-hidden="true">
-          ›
-        </span>
-      </summary>
+    <ActivityDisclosure label={label} id={items[0]!.id} active={!!current} kind={kind}>
       <ol className={styles.activityList} aria-label="Activity details">
         {items
           .filter((item) => item.activity !== 'image' || item.id === images[0]?.id)
@@ -65,6 +85,8 @@ export function ActivityGroup({
             <li key={item.id} data-activity-id={item.id} data-failed={item.failed || undefined}>
               {item.activity === 'image' ? (
                 <ThreadImages threadId={threadId} items={images} onOpenArtifact={onOpenArtifact} />
+              ) : item.activity === 'files' ? (
+                <ThreadFileChanges item={item} threadId={threadId} />
               ) : item.detail ? (
                 <details className={styles.tool}>
                   <summary>
@@ -78,6 +100,6 @@ export function ActivityGroup({
             </li>
           ))}
       </ol>
-    </details>
+    </ActivityDisclosure>
   )
 }

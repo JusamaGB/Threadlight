@@ -14,6 +14,7 @@ export async function checkSmartThreadScroll(page, conversation, history, compos
   })
   const setHistory = async (position) => {
     await history.evaluate((element, position) => {
+      element.focus({ preventScroll: true })
       element.scrollTop = position === 'bottom' ? element.scrollHeight : position
       element.dispatchEvent(new Event('scroll'))
     }, position)

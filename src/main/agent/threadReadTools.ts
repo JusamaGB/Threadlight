@@ -1,3 +1,4 @@
+import { authenticatedMcp } from './mcpTransport'
 import type { ThreadReadConnection } from '../threadRead/server'
 import { THREAD_READ_SERVER, THREAD_READ_TOOLS } from '../../shared/threadRead'
 import type { JsonObject } from '../sessions/json'
@@ -5,8 +6,7 @@ import type { JsonObject } from '../sessions/json'
 export function codexReadConfig(config: JsonObject, connection: ThreadReadConnection): void {
   const servers = config.mcp_servers as JsonObject
   servers[THREAD_READ_SERVER] = {
-    url: connection.endpoint,
-    http_headers: { Authorization: `Bearer ${connection.token}` },
+    ...authenticatedMcp(connection),
     enabled: true,
     default_tools_approval_mode: 'prompt',
     enabled_tools: [...THREAD_READ_TOOLS],
@@ -19,9 +19,8 @@ export function claudeReadConfig(connection: ThreadReadConnection): string {
   return JSON.stringify({
     mcpServers: {
       [THREAD_READ_SERVER]: {
-        type: 'http',
-        url: connection.endpoint,
-        headers: { Authorization: `Bearer ${connection.token}` },
+        type: 'stdio',
+        ...authenticatedMcp(connection),
       },
     },
   })

@@ -1,8 +1,20 @@
 /* global window */
 import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
+import { checkAnswerComposer } from './question-composer.smoke.mjs'
 
 export async function checkNativeCodexQuestions(page, capture) {
-  const reference = { turnId: '22222222-2222-4222-8222-222222222222', itemId: 'call_native_ui' }
+  const reference = {
+    turnId: '22222222-2222-4222-8222-222222222222',
+    itemId: 'call_native_ui',
+    generation: 'a'.repeat(64),
+  }
+  const { IgnoredInput } = createRequire(import.meta.url)('../../src/main/ignoredInput.ts')
+  const ignored = new IgnoredInput()
+  await page.exposeFunction('dismissFixtureQuestion', (session, ref) =>
+    ignored.dismiss(session, ref),
+  )
+  await page.exposeFunction('applyQuestionDismissals', (snapshot) => ignored.annotate(snapshot))
   await page.evaluate(async (reference) => {
     await window.threadlight.updateSettings({
       enabledProviders: ['claude', 'codex'],
@@ -14,6 +26,13 @@ export async function checkNativeCodexQuestions(page, capture) {
       return new Promise((resolve) => {
         window.proof.finishNative = resolve
       })
+    }
+    window.threadlight.dismissCodexQuestion = async (id, ref) => {
+      const snapshot = await window.threadlight.getSnapshot()
+      const session = snapshot.sessions.find((s) => s.id === id)
+      const ok = await window.dismissFixtureQuestion(session, ref)
+      window.proof.emit('onSnapshot', await window.applyQuestionDismissals(snapshot))
+      return ok
     }
     await window.proof.patch({
       state: 'waiting',
@@ -43,6 +62,7 @@ export async function checkNativeCodexQuestions(page, capture) {
     .click()
   const card = page.getByRole('region', { name: 'Codex question', exact: true })
   await card.getByRole('button', { name: 'Send answer', exact: true }).waitFor()
+  await checkAnswerComposer(page, card, 'Answer for this Codex question', capture)
   assert.equal(await card.getByRole('button', { name: /Open|Copy/ }).count(), 0)
   await card.getByRole('radio').nth(1).check()
   await capture('native-codex-send')
@@ -81,6 +101,28 @@ export async function checkNativeCodexQuestions(page, capture) {
     'A quieter custom sample',
   )
   await capture('native-codex-uncertain')
+  await card.getByRole('button', { name: 'Dismiss question in Threadlight' }).click()
+  await card.waitFor({ state: 'detached' })
+  assert.equal(
+    await row.getByRole('button', { name: 'Open ↗', exact: true }).count(),
+    1,
+    'thread remains expanded',
+  )
+  await row
+    .getByRole('button', { name: /Synthetic Codex/ })
+    .first()
+    .click()
+  await page.evaluate(async () =>
+    window.proof.emit(
+      'onSnapshot',
+      await window.applyQuestionDismissals(await window.threadlight.getSnapshot()),
+    ),
+  )
+  await row
+    .getByRole('button', { name: /Synthetic Codex/ })
+    .first()
+    .click()
+  assert.equal(await card.count(), 0, 'reopening a dismissed question does not resurrect it')
   await page.evaluate(async () => {
     await window.proof.patch({
       attention: {
@@ -103,6 +145,30 @@ export async function checkNativeCodexQuestions(page, capture) {
   })
   await card.getByRole('button', { name: 'Send answer', exact: true }).waitFor()
   assert.equal(await card.getByLabel('Answer for this Codex question').inputValue(), '')
+  await page.evaluate(() => window.proof.patch({ state: 'working', attention: null }))
+  await card.waitFor({ state: 'detached' })
+  await page.evaluate(() =>
+    window.proof.patch({
+      state: 'waiting',
+      attention: {
+        kind: 'question',
+        answerableUntil: null,
+        nativeCodex: {
+          turnId: '33333333-3333-4333-8333-333333333333',
+          itemId: 'next',
+          generation: 'b'.repeat(64),
+        },
+        questions: [
+          {
+            header: '',
+            question: 'Another sample?',
+            multiSelect: false,
+            options: [{ label: 'Green', description: '', recommended: true }],
+          },
+        ],
+      },
+    }),
+  )
   await card.getByRole('button', { name: 'Send answer', exact: true }).click()
   await page.evaluate(() => window.proof.finishNative({ ok: true }))
   await card.waitFor({ state: 'detached' })
@@ -111,6 +177,6 @@ export async function checkNativeCodexQuestions(page, capture) {
     [],
   )
   console.log(
-    'PASS: native Send, choice/free text, pending state, uncertain-result protection, fresh-card identity, and no copy/open.',
+    'PASS: native Send, local X, reopen, provider resolution, fresh generations, draft isolation and uncertain-send protection.',
   )
 }

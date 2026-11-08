@@ -1,6 +1,6 @@
 // Builders for SYNTHETIC test data. Never copy real transcripts or app records in here.
 
-import { mkdir, mkdtemp, rm, utimes, writeFile, appendFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, utimes, writeFile, appendFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -12,8 +12,14 @@ export interface Sandbox {
   cleanup(): Promise<void>
 }
 
+/** Windows runners may supply TEMP using an 8.3 alias. Native Git and file
+ * readers return the resolved path. Use that same path to construct fixtures. */
+export async function temporaryDirectory(prefix: string): Promise<string> {
+  return realpath(await mkdtemp(join(tmpdir(), prefix)))
+}
+
 export async function sandbox(): Promise<Sandbox> {
-  const root = await mkdtemp(join(tmpdir(), 'threadlight-test-'))
+  const root = await temporaryDirectory('threadlight-test-')
   const paths = {
     projectsDir: join(root, 'projects'),
     appSessionsDir: join(root, 'app-sessions'),

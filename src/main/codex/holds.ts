@@ -11,6 +11,7 @@ import type {
 const HOLD_MS = 60_000
 
 interface RecordState {
+  nativeQuestionTurn?: string
   state: SessionState
   at: number
   attention: Attention | null
@@ -65,6 +66,9 @@ export class CodexHolds {
     this.records.set(key, {
       state,
       at: this.now(),
+      ...(nativeQuestion && str(payload.turn_id)
+        ? { nativeQuestionTurn: String(payload.turn_id) }
+        : {}),
       attention: event === 'PermissionRequest' ? approvalAttention(payload) : question,
     })
     for (const [oldKey, record] of this.records)

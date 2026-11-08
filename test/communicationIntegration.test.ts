@@ -1,3 +1,4 @@
+import { memoryTestTransport } from './memoryTransportHelper'
 import { randomUUID } from 'node:crypto'
 import { backup } from 'node:sqlite'
 import { join } from 'node:path'
@@ -21,7 +22,8 @@ describe('Communication real callers, recovery and native capabilities', () => {
   it('answers a managed card through the authenticated MCP caller and rejects a revoked reader', async () => {
     const box = await sandbox(),
       memory = new MemoryStore(join(box.root, 'memory.sqlite')),
-      server = new MemoryServer(memory)
+      auth = memoryTestTransport(box.root),
+      server = new MemoryServer(memory, auth)
     const target = `codex:${randomUUID()}`,
       human = { id: 'human', kind: 'human' as const }
     const space = memory.execute({
@@ -47,7 +49,7 @@ describe('Communication real callers, recovery and native capabilities', () => {
         spaceId: space.id,
       }))
       const call = async (action: string, args: unknown) => {
-        const response = await fetch(connection.endpoint, {
+        const response = await auth.fetch(connection.endpoint, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${connection.token}`,
@@ -123,7 +125,8 @@ describe('Communication real callers, recovery and native capabilities', () => {
   it('serves the exact scoped tool inventory, persists backup replay IDs, and revokes owned capabilities', async () => {
     const box = await sandbox(),
       memory = new MemoryStore(join(box.root, 'memory.sqlite')),
-      server = new MemoryServer(memory)
+      auth = memoryTestTransport(box.root),
+      server = new MemoryServer(memory, auth)
     const target = `codex:${randomUUID()}`,
       human = { id: 'human', kind: 'human' as const }
     const space = memory.execute({
@@ -183,7 +186,7 @@ describe('Communication real callers, recovery and native capabilities', () => {
       await server.start(0)
       const connection = server.connectCommunication(() => ({ id: 'agent-one', kind: 'agent' }))
       const rpc = async (method: string, params?: unknown) =>
-        fetch(connection.endpoint, {
+        auth.fetch(connection.endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

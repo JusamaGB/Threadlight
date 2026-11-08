@@ -481,6 +481,143 @@ const assignment = (f: ReturnType<typeof fixture>, role = 0, dependsOn: string[]
 })
 
 describe('Workflow progression and native response authority', () => {
+  it('keeps the communication pump exclusive while workflow adapters await', async () => {
+    const f = fixture()
+    let release!: () => void
+    const pump = vi.spyOn(f.service.processes, 'tick').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        }),
+    )
+    const first = f.service.tick()
+    await f.service.tick()
+    expect(pump).toHaveBeenCalledTimes(1)
+    release()
+    await first
+  })
+  it('workflow AI steps use normal scoped assignments and wait for explicit submission', async () => {
+    const f = fixture()
+    f.workflow.mode = 'automatic'
+    f.service.configure({ ...f.workflow, revision: 2 }, 1, f.human)
+    f.destinations[1]!.send = true
+    const definition = {
+      schemaVersion: 1,
+      id: randomUUID(),
+      spaceId: f.spaceId,
+      revision: 1,
+      name: 'AI workflow',
+      nodes: [
+        {
+          id: 'ai',
+          title: 'Correct checks',
+          type: 'ai',
+          x: 0,
+          y: 0,
+          inputs: {},
+          roleId: f.workflow.participants[1]!.id,
+          folderId: f.folderId,
+          brief: 'Correct the scoped test failure',
+          acceptance: 'Saved output passes',
+          items: [],
+          milestone: 'submitted',
+        },
+        { id: 'finish', title: 'Finish', type: 'finish', x: 0, y: 80, inputs: {}, success: true },
+      ],
+      edges: [{ from: 'ai', to: 'finish', route: 'always' }],
+      trigger: { type: 'manual' },
+      maxConcurrent: 1,
+      maxOperations: 5,
+    }
+    await f.service.execute(
+      'save_process',
+      { operationId: randomUUID(), expectedRevision: 0, definition },
+      f.human,
+    )
+    await f.service.execute(
+      'authorize_process',
+      {
+        operationId: randomUUID(),
+        spaceId: f.spaceId,
+        definitionId: definition.id,
+        revision: 1,
+        triggers: false,
+      },
+      f.human,
+    )
+    await f.service.execute(
+      'invoke_process',
+      {
+        operationId: randomUUID(),
+        spaceId: f.spaceId,
+        definitionId: definition.id,
+        revision: 1,
+        objective: 'Repair checks',
+      },
+      f.human,
+    )
+    await f.service.tick()
+    const task = f.store.list('assignment')[0]!
+    expect(task.objective?.title).toBe('Repair checks')
+    expect(task.brief).toContain('Untrusted workflow evidence')
+    await f.service.tick()
+    await vi.waitFor(() => expect(f.deliver).toHaveBeenCalledTimes(1))
+    expect(f.service.processes.runs()[0]!.nodes.ai!.status).toBe('waiting')
+    await f.service.execute(
+      'submit_assignment_result',
+      {
+        operationId: randomUUID(),
+        id: task.id,
+        body: 'Correction saved',
+        outputIds: [randomUUID()],
+      },
+      f.peer(f.b),
+    )
+    await f.service.processes.tick()
+    expect(f.service.processes.runs()[0]!.status).toBe('completed')
+    expect(f.store.get('assignment', task.id).state).toBe('submitted')
+  })
+  it('projects old uncertain assignment receipts independently of paginated history', async () => {
+    const f = fixture(),
+      task = assignment(f),
+      receipt = await f.send()
+    receipt.deliveries[0]!.phase = 'unknown'
+    f.store.put('message', receipt, 'Uncertain fixture')
+    f.store.put(
+      'assignment',
+      { ...task, state: 'blocked', reason: 'Uncertain', messageId: receipt.id },
+      'Assignment fixture',
+    )
+    for (let i = 0; i < 55; i++)
+      f.store.put(
+        'message',
+        { ...receipt, id: randomUUID(), at: receipt.at + i + 1, deliveries: receipt.deliveries },
+        'History fixture',
+      )
+    const snapshot = f.service.snapshot(f.human, f.spaceId)
+    expect(snapshot.messages.some((m) => m.id === receipt.id)).toBe(false)
+    expect(snapshot.assignmentDeliveryPhases?.[task.id]).toEqual(['unknown'])
+    expect(
+      f.service.snapshot(f.human, randomUUID()).assignmentDeliveryPhases?.[task.id],
+    ).toBeUndefined()
+  })
+
+  it('persists explicit objective association without granting dispatch or adding dependencies', async () => {
+    const f = fixture()
+    const objective = { id: randomUUID(), title: 'Improve onboarding' }
+    const task = { ...assignment(f), objective }
+    await f.service.execute(
+      'propose_assignment',
+      { operationId: randomUUID(), assignment: task },
+      f.human,
+    )
+    const saved = f.store.get('assignment', task.id)
+    expect(saved.objective).toEqual(objective)
+    expect(saved.dependsOn).toEqual([])
+    expect(saved.messageId).toBeUndefined()
+    expect(f.deliver).not.toHaveBeenCalled()
+  })
+
   it('queues a busy verified destination without generating repeated events, then delivers once idle', async () => {
     const f = fixture()
     f.destinations[1]!.queue = true

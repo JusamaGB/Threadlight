@@ -172,9 +172,9 @@ function within(path: string, root: string) {
   )
 }
 export async function referenceAllowed(path: string, roots: string[]): Promise<boolean> {
-  // Lexical check also preserves a missing-file entry so the viewer can explain it.
-  if (!roots.some((root) => within(path, root))) return false
   try {
+    // Compare resolved locations: a Windows profile junction and its target may use
+    // different drives, including when the viewer rechecks the resolved file path.
     const actual = await realpath(path)
     for (const root of roots) {
       const base = await realpath(root).catch(() => null)
@@ -182,7 +182,10 @@ export async function referenceAllowed(path: string, roots: string[]): Promise<b
     }
     return false
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ENOENT'
+    // Keep missing-file entries so the viewer can explain them, within the original roots.
+    return (
+      (error as NodeJS.ErrnoException).code === 'ENOENT' && roots.some((root) => within(path, root))
+    )
   }
 }
 

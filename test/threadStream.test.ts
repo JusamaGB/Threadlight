@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { applyStreamPatches, projectStream } from '../src/main/codex/threadStreamState'
 import { followCodexThread, type StreamUpdate } from '../src/main/codex/threadStream'
 import type { StreamingDesktopConnection } from '../src/main/codex/desktopConnection'
+import { liveThreadActivity } from '../src/shared/threadActivity'
+import { normalizeRollout } from '../src/main/threadRead/normalize'
+import { codexReplyMarkdown } from '../src/main/codex/presentation'
 
 const id = '11111111-1111-4111-8111-111111111111'
 const turn = (text: string) => ({
@@ -37,6 +40,72 @@ const snapshot = (text = 'Checking') => ({
   },
 })
 afterEach(() => vi.useRealTimers())
+
+it('keeps fenced Python and indentation in live messages and saved Smart Thread history', () => {
+  const markdown = 'Here is the example:\n\n```python\ndef main():\n    print("🙂")\n```'
+  const text = '::codex-realtime-inline{}\n' + markdown
+  expect(projectStream(snapshot(text)).at(-1)?.text).toBe(markdown)
+  const records = [
+    {
+      offset: 0,
+      value: {
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          phase: 'final_answer',
+          content: [{ type: 'output_text', text }],
+        },
+      },
+    },
+  ]
+  expect(normalizeRollout(records, id, codexReplyMarkdown)[0]?.text).toBe(markdown)
+})
+
+it('projects a compact action from the full wrapped command while retaining its original details', () => {
+  const command = `"C:/Users/example/${'runtime/'.repeat(45)}pwsh.exe" -NoProfile -Command "$env:THREADLIGHT_PLAYWRIGHT='C:/runtime/playwright'; node test/ui/providers.smoke.mjs"`
+  for (const complete of [false, true]) {
+    const projected = projectStream({
+      id,
+      turns: [
+        {
+          turnId: 'command-turn',
+          status: complete ? 'completed' : 'inProgress',
+          items: [
+            {
+              id: 'wrapped-command',
+              type: 'commandExecution',
+              command,
+              status: complete ? 'failed' : 'inProgress',
+              exitCode: complete ? 1 : null,
+            },
+          ],
+        },
+      ],
+    })
+    expect(projected).toHaveLength(1)
+    expect(projected[0]).toMatchObject({
+      compactText: complete ? 'Ran UI checks' : 'Running UI checks',
+      complete,
+      failed: complete,
+    })
+    expect(projected[0]!.detail).toContain(command)
+    expect(projected[0]!.text).toContain('C:/Users/example/')
+    expect(
+      liveThreadActivity(
+        { id: `codex:${id}`, state: 'working', turnStartedAt: null },
+        {
+          threadId: `codex:${id}`,
+          revision: 1,
+          connection: 'live',
+          hasMore: false,
+          loadingOlder: false,
+          items: projected,
+        },
+      ),
+    ).toBe(complete ? 'Ran UI checks' : 'Running UI checks')
+  }
+})
 
 it('orders canonical history, preserves IDs and omits private reasoning and instructions', () => {
   const items = projectStream(snapshot())
@@ -263,6 +332,7 @@ it('projects native activity titles, command output and compaction without summa
     'Inspect Threadlight activity',
     'Ran npm test',
     'Context automatically compacted',
+    'Working…',
   ])
   expect(items[0]).toMatchObject({ activity: 'status', complete: false })
   expect(items[2]?.detail).toContain('31 tests passed')

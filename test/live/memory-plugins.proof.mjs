@@ -1,3 +1,4 @@
+import { memoryFixture } from './memory-transport.fixture.mjs'
 // Explicit opt-in. Synthetic material, fresh chats, invocation-only config and approval fixture.
 import { createRequire } from 'node:module'
 import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs'
@@ -25,11 +26,17 @@ const { findClaudeCli } = require('../../src/main/relay.ts'),
 const root = resolve('.'),
   directory = mkdtempSync(join(tmpdir(), 'threadlight-plugin-live-'))
 const store = new MemoryStore(join(directory, 'memory.sqlite')),
-  server = new MemoryServer(store)
+  transportAuth = memoryFixture(directory),
+  server = new MemoryServer(store, transportAuth)
 const execute = (input) => store.execute({ ...input, operationId: randomUUID() })
+store.connectionProjects = () => store.projectIdentities()
 const results = []
 async function run(cli, args, prompt, endpoint) {
-  const env = { ...process.env, THREADLIGHT_MEMORY_URL: endpoint }
+  const env = {
+    ...process.env,
+    THREADLIGHT_MEMORY_URL: endpoint,
+    THREADLIGHT_MEMORY_AUTH_FILE: transportAuth.authFile,
+  }
   for (const key of [
     'CODEX_THREAD_ID',
     'CODEX_TURN_ID',
@@ -92,12 +99,14 @@ try {
         if (
           r.state === 'pending' &&
           r.provider === provider &&
+          r.spaceId === space.id &&
           r.label === 'Disposable plugin proof'
         )
           server.connections.approve(r.id, {
             action: 'create_grant',
             spaceId: space.id,
             folderId: folder.id,
+            assignee: r.chatId ? `${provider === 'codex' ? 'codex:' : ''}${r.chatId}` : undefined,
             title: `Disposable ${provider} plugin`,
             readOnly: false,
             createFolders: true,
@@ -126,7 +135,7 @@ try {
           ]
         : [
             '-c',
-            `mcp_servers.threadlight={command="node",args=[${JSON.stringify(bridge)},"--provider","codex"],env={THREADLIGHT_MEMORY_URL=${JSON.stringify(endpoint)}},default_tools_approval_mode="approve"}`,
+            `mcp_servers.threadlight={command="node",args=[${JSON.stringify(bridge)},"--provider","codex"],env={THREADLIGHT_MEMORY_URL=${JSON.stringify(endpoint)},THREADLIGHT_MEMORY_AUTH_FILE=${JSON.stringify(transportAuth.authFile)}},default_tools_approval_mode="approve"}`,
             'exec',
             '--ephemeral',
             '--skip-git-repo-check',
@@ -135,7 +144,7 @@ try {
             '--json',
             '-',
           ]
-    const prompt = `This is an authorized disposable Threadlight plugin integration test. Use only Threadlight memory tools. Do not use shell, filesystem, other services, other chats or UI. The test human has preauthorized a fixture that approves ONLY your synthetic connection labelled "Disposable plugin proof". Call memory_connect with that label; observe its approved state (check the returned connectionId once if needed). Call memory_briefing with that connectionId, read item ${seed.id} revision 1, create or reuse a folder named "Plugin output" under the authorized Evidence folder, and publish one note titled "${provider} plugin result" there containing the exact verification phrase. Use UUID operation IDs. Do not approve yourself or request broader access. Finally report the saved item ID and phrase, then memory_disconnect. Do nothing else.`
+    const prompt = `This is an authorized disposable Threadlight plugin integration test. Use only Threadlight memory tools. Do not use shell, filesystem, other services, other chats or UI. The test human has preauthorized a fixture that approves ONLY your synthetic connection labelled "Disposable plugin proof". Call memory_list_projects, select the project named "Disposable ${provider} plugin" and call memory_connect with its returned spaceId and that label; observe its approved state (check the returned connectionId once if needed). Call memory_briefing with that connectionId, read item ${seed.id} revision 1, create or reuse a folder named "Plugin output" under the authorized Evidence folder, and publish one note titled "${provider} plugin result" there containing the exact verification phrase. Use UUID operation IDs. Do not approve yourself or request broader access. Finally report the saved item ID and phrase, then memory_disconnect. Do nothing else.`
     console.log(`Testing ${provider} with fresh disposable chat…`)
     const outcome = await run(cli, args, prompt, endpoint)
     const item = store.snapshot().items.find((i) => i.title === `${provider} plugin result`)

@@ -7,6 +7,7 @@ import {
   type CentreMember,
 } from '../../shared/workspaceWires'
 import { HeaderWire } from '../motion/HeaderWire'
+import { ContextMenu } from './ContextMenu'
 import styles from './WorkspaceLinks.module.css'
 
 const colours = ['#80c5b5', '#b2a1e4', '#d1b480', '#7fb9d7']
@@ -20,6 +21,8 @@ export function WorkspaceLinks({
   centre = false,
   onRightGutter,
   onToggle,
+  home,
+  activePin,
 }: {
   card: RefObject<HTMLDivElement | null>
   enabled: boolean
@@ -27,10 +30,17 @@ export function WorkspaceLinks({
   centre?: boolean
   onRightGutter: (width: number) => void
   onToggle: () => Promise<void>
+  home?: { label: string; onSelect: () => void }
+  activePin: { enabled: boolean; onToggle: () => Promise<void> }
 }) {
   const host = useRef<HTMLDivElement>(null)
   const control = useRef<HTMLButtonElement>(null)
   const [saving, setSaving] = useState(false)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const closeMenu = () => {
+    setMenu(null)
+    control.current?.focus({ preventScroll: true })
+  }
   useEffect(() => {
     const panel = card.current,
       overlay = host.current
@@ -39,6 +49,8 @@ export function WorkspaceLinks({
       held: string | null = null,
       hovered: string | null = null,
       focused: string | null = null
+    let pointer: { x: number; y: number } | null = null
+    let refreshHover = false
     let previousControl = ''
     let previousGutter = -1
     const gutter = (width: number) => {
@@ -51,7 +63,8 @@ export function WorkspaceLinks({
         ? target.closest<HTMLElement>('[data-workspace-folder]')?.dataset.workspaceFolder || null
         : null
     const highlight = () => {
-      const candidate = held ?? hovered ?? focused
+      const candidate =
+        held ?? hovered ?? (document.activeElement?.matches(':focus-visible') ? focused : null)
       const active = [...overlay.querySelectorAll<SVGGElement>('[data-wire-key]')].some(
         (wire) => wire.dataset.wireKey === candidate,
       )
@@ -122,7 +135,17 @@ export function WorkspaceLinks({
       }
       for (const members of groups.values()) members.sort((a, b) => a.y - b.y)
       const linked = [...groups].filter(([, members]) => members.length > 1)
-      if (held && !linked.some(([key]) => key === held)) held = null
+      // A click holds the group only while its Smart Thread is still expanded.
+      // Collapsing it must return control to hover, even if the button keeps focus.
+      if (
+        held &&
+        (!linked.some(([key]) => key === held) ||
+          ![...list.querySelectorAll('[data-workspace-folder]')].some(
+            (row) =>
+              keyOf(row) === held && row.querySelector('button[aria-expanded="true"]') !== null,
+          ))
+      )
+        held = null
       const routes = routeWorkspaceWires(
         linked.map(([key, members]) => ({ key, members })),
         divider !== undefined,
@@ -161,6 +184,10 @@ export function WorkspaceLinks({
         svg.append(group)
       }
       overlay.append(svg)
+      if (refreshHover) {
+        hovered = pointer ? keyOf(document.elementFromPoint(pointer.x, pointer.y)) : null
+        refreshHover = false
+      }
       highlight()
       // Row transforms do not resize their boxes. Follow finite layout animations through
       // their final frame so wires settle on the actual anchors even when list height is fixed.
@@ -194,13 +221,22 @@ export function WorkspaceLinks({
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ['data-workspace-folder', 'data-session-id', 'style', 'hidden'],
+      attributeFilter: [
+        'data-workspace-folder',
+        'data-session-id',
+        'style',
+        'hidden',
+        'aria-expanded',
+      ],
     })
     const over = (event: PointerEvent) => {
+      pointer = { x: event.clientX, y: event.clientY }
       hovered = keyOf(event.target)
       highlight()
     }
     const out = (event: PointerEvent) => {
+      if (!(event.relatedTarget instanceof Node) || !panel.contains(event.relatedTarget))
+        pointer = null
       hovered = keyOf(event.relatedTarget)
       highlight()
     }
@@ -214,7 +250,8 @@ export function WorkspaceLinks({
     }
     const click = (event: MouseEvent) => {
       held = keyOf(event.target)
-      highlight()
+      // React commits the row's expanded state after this native bubbling listener.
+      schedule()
     }
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -223,10 +260,11 @@ export function WorkspaceLinks({
       }
     }
     const scroll = () => {
-      hovered = null
+      refreshHover = true
       schedule()
     }
     panel.addEventListener('pointerover', over)
+    panel.addEventListener('pointermove', over)
     panel.addEventListener('pointerout', out)
     panel.addEventListener('focusin', focus)
     panel.addEventListener('focusout', blur)
@@ -240,6 +278,7 @@ export function WorkspaceLinks({
       resize.disconnect()
       mutation.disconnect()
       panel.removeEventListener('pointerover', over)
+      panel.removeEventListener('pointermove', over)
       panel.removeEventListener('pointerout', out)
       panel.removeEventListener('focusin', focus)
       panel.removeEventListener('focusout', blur)
@@ -251,7 +290,7 @@ export function WorkspaceLinks({
       window.threadlight.setWorkspaceWireControl(null)
     }
   }, [card, enabled, centre, onRightGutter])
-  const label = enabled ? 'Hide workspace wires' : 'Show workspace wires'
+  const label = home?.label ?? (enabled ? 'Hide workspace wires' : 'Show workspace wires')
   return (
     <>
       <button
@@ -259,11 +298,29 @@ export function WorkspaceLinks({
         className={styles.toggle}
         data-wire-toggle
         data-connected={enabled}
+        data-active-pinned={activePin.enabled || undefined}
         aria-label={label}
+        aria-description="Right-click or press Shift+F10 to pin or unpin Active threads."
         title={label}
-        aria-pressed={enabled}
+        aria-pressed={home ? undefined : enabled}
         disabled={saving}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          setMenu({ x: event.clientX, y: event.clientY })
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+          event.preventDefault()
+          event.stopPropagation()
+          const box = event.currentTarget.getBoundingClientRect()
+          setMenu({ x: box.left, y: box.bottom })
+        }}
         onClick={async () => {
+          if (home) {
+            home.onSelect()
+            return
+          }
           setSaving(true)
           try {
             await onToggle()
@@ -274,6 +331,24 @@ export function WorkspaceLinks({
       >
         <HeaderWire connected={enabled} />
       </button>
+      {menu && (
+        <ContextMenu
+          label="Wire menu"
+          x={menu.x}
+          y={menu.y}
+          items={[
+            {
+              label: activePin.enabled ? 'Unpin active threads' : 'Pin active threads',
+              disabled: saving,
+              onSelect: () => {
+                setSaving(true)
+                void activePin.onToggle().finally(() => setSaving(false))
+              },
+            },
+          ]}
+          onClose={closeMenu}
+        />
+      )}
       <div ref={host} className={styles.links} data-workspace-links aria-hidden />
     </>
   )

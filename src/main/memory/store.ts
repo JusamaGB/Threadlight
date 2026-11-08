@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { readBackup } from './backup'
+import { initializeProcessStorage } from '../workflows/storage'
 import { attachmentMime } from './attachments'
 import { CommunicationStore } from '../communication/store'
 import type { CommunicationService } from '../communication/service'
@@ -48,6 +49,11 @@ type RecordValue =
   | MemoryTask
   | MemoryMessage
 export interface MemoryActor {
+  /** Trusted hosted Brainstorm identity; only note revisions, never model arguments. */
+  brainstorm?: { spaceId: string; principal: string; provider: 'claude' | 'codex'; chatId?: string }
+  /** Internal workflow adapter only; never parsed from tool arguments. */
+  workflowRunId?: string
+  enrollment?: { provider: 'claude' | 'codex'; connectionId: string }
   grantId?: string
   taskId?: string
 }
@@ -63,6 +69,11 @@ const normalName = (s: string) =>
 /** One local transactional authority. Provider data is never written by this store. */
 export class MemoryStore {
   connectionStatus: () => import('../../shared/memoryPlugins').MemoryPluginConnection[] = () => []
+  /** Supplied by Shared Spaces; unavailable until its availability checks are wired. */
+  connectionProjects: () => { id: string; name: string }[] = () => []
+  projectIdentities() {
+    return this.all<MemorySpace>('space').map(({ id, title }) => ({ id, name: title }))
+  }
   readonly communications: CommunicationStore
   communicationService?: CommunicationService
   private db: DatabaseSync
@@ -96,6 +107,7 @@ export class MemoryStore {
       CREATE TABLE IF NOT EXISTS operations (principal TEXT NOT NULL, operation TEXT NOT NULL, digest TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(principal,operation));
       CREATE TABLE IF NOT EXISTS blobs (id TEXT PRIMARY KEY, mime TEXT NOT NULL, data BLOB NOT NULL);
       CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS plugin_pairings (id TEXT PRIMARY KEY, data TEXT NOT NULL);
     `)
     this.communications = new CommunicationStore(this.db, this.now)
     this.db.exec('PRAGMA user_version=2')
@@ -137,6 +149,12 @@ export class MemoryStore {
   }
   restoreFrom(file: string) {
     if (
+      this.communicationService?.processes
+        .runs()
+        .some((r) => !['completed', 'cancelled'].includes(r.status))
+    )
+      throw new Error('Cancel or finish workflow runs before restoring memory.')
+    if (
       this.communications
         .list('message')
         .some((m) =>
@@ -154,8 +172,30 @@ export class MemoryStore {
       fail('busy', 'Resolve running or uncertain assignments before restoring memory.')
     const data = readBackup(file)
     return this.transaction(() => {
+      initializeProcessStorage(this.db)
       this.db.exec(
-        'DELETE FROM records; DELETE FROM blobs; DELETE FROM events; DELETE FROM operations; DELETE FROM preferences;',
+        'DELETE FROM process_definitions; DELETE FROM process_runs; DELETE FROM process_grants; DELETE FROM process_triggers; DELETE FROM process_trigger_slots;',
+      )
+      for (const d of data.processDefinitions)
+        this.db
+          .prepare('INSERT INTO process_definitions VALUES(?,?,?,?)')
+          .run(d.id, d.revision, d.spaceId, JSON.stringify(d))
+      for (const r of data.processRuns) {
+        if (!['completed', 'cancelled'].includes(r.status)) {
+          r.status = 'paused'
+          r.reason = 'Restored backup; all execution grants revoked.'
+          for (const n of Object.values(r.nodes))
+            if (n.status === 'running') {
+              n.status = 'uncertain'
+              r.status = 'needs_you'
+            }
+        }
+        this.db
+          .prepare('INSERT INTO process_runs VALUES(?,?,?)')
+          .run(r.id, r.spaceId, JSON.stringify(r))
+      }
+      this.db.exec(
+        'DELETE FROM records; DELETE FROM blobs; DELETE FROM events; DELETE FROM operations; DELETE FROM preferences; DELETE FROM plugin_pairings;',
       )
       this.db.exec(
         'DELETE FROM communication_records; DELETE FROM communication_events; DELETE FROM communication_operations;',
@@ -215,7 +255,7 @@ export class MemoryStore {
         )
           fail('invalid_backup', 'An attachment is damaged or has an unsupported format.')
         this.db
-          .prepare('INSERT INTO blobs(id,mime,data) VALUES(?,?,?)')
+          .prepare('INSERT INTO blobs(id,mime,data) VALUES(?,?,COALESCE(?,zeroblob(0)))')
           .run(blob.id, blob.mime, blob.data)
       }
       for (const folder of this.all<MemoryFolder>('folder')) {
@@ -373,6 +413,30 @@ export class MemoryStore {
       archived: value.item.archived,
     }
   }
+  workflowContext(actor: CommunicationActor, items: { itemId: string; revision: number }[]) {
+    this.authorizeCommunication(actor, actor.spaceId)
+    return items.map((input) => {
+      const meta = this.communicationInput(actor, input.itemId, input.revision)
+      if (meta.archived) throw new Error('Workflow input is archived.')
+      const value = this.read({}, input.itemId, input.revision)
+      return { ...input, title: value.item.title, body: value.revision.body }
+    })
+  }
+  workflowOutput(
+    run: import('../../shared/workflowGraph').ProcessRun,
+    folderId: string,
+    title: string,
+    body: string,
+    operationId: string,
+  ) {
+    this.authorizeCommunication(run.actor, run.spaceId)
+    this.communicationFolder(run.spaceId, folderId)
+    const item = this.execute(
+      { action: 'create_item', folderId, title, body, purpose: 'result', operationId },
+      { workflowRunId: run.id },
+    ) as MemoryItem
+    return { itemId: item.id, revision: item.revision }
+  }
   prepareCommunicationDelivery(spaceId: string, assignee: string) {
     const parent = this.all<MemoryGrant>('grant').find(
       (g) =>
@@ -400,6 +464,8 @@ export class MemoryStore {
     return token
   }
   author(actor: MemoryActor) {
+    if (actor.brainstorm) return `Brainstorm: ${actor.brainstorm.provider}`
+    if (actor.workflowRunId) return `Workflow run: ${actor.workflowRunId}`
     const grant = this.grant(actor)
     return grant ? `Capability: ${grant.label}` : 'Human'
   }
@@ -428,6 +494,8 @@ export class MemoryStore {
     write = false,
   ) {
     this.get<MemorySpace>('space', spaceId)
+    if (actor.brainstorm && actor.brainstorm.spaceId !== spaceId)
+      fail('permission_denied', 'This note belongs to another project.')
     const grant = this.grant(actor)
     if (
       grant &&
@@ -444,7 +512,8 @@ export class MemoryStore {
       fail('permission_denied', 'This assignment may only publish inside its output folder.')
   }
   private human(actor: MemoryActor) {
-    if (actor.grantId) fail('permission_denied', 'This action requires the human.')
+    if (actor.grantId || actor.brainstorm)
+      fail('permission_denied', 'This action requires the human.')
   }
   private folder(actor: MemoryActor, id: string, write = false): MemoryFolder {
     const folder = this.get<MemoryFolder>('folder', id)
@@ -471,6 +540,26 @@ export class MemoryStore {
     if (!grant) return fail('permission_denied', 'Invalid shared-memory capability.')
     this.grant({ grantId: grant.id })
     return { grantId: grant.id, taskId: grant.taskId }
+  }
+  /** Internal pairing authority, after MemoryConnections verifies the private pairing secret. */
+  authenticatePairing(grantId: string, connectionId: string): MemoryActor {
+    const grant = this.grant({ grantId })!
+    if (grant.pluginConnectionId !== connectionId)
+      fail('permission_denied', 'Invalid shared-memory capability pairing.')
+    return { grantId, taskId: grant.taskId }
+  }
+  savedPairings(): unknown[] {
+    return this.db
+      .prepare('SELECT data FROM plugin_pairings')
+      .all()
+      .map((r) => JSON.parse(String(r.data)))
+  }
+  savePairing(id: string, data: unknown) {
+    this.db
+      .prepare(
+        'INSERT INTO plugin_pairings VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
+      )
+      .run(id, JSON.stringify(data))
   }
   snapshot(actor: MemoryActor = {}): MemorySnapshot {
     const grant = this.grant(actor)
@@ -618,6 +707,18 @@ export class MemoryStore {
   }
   execute(raw: unknown, actor: MemoryActor = {}): unknown {
     const input = memoryInput.parse(raw)
+    if (actor.brainstorm) {
+      if (
+        input.action !== 'revise_item' ||
+        !input.id ||
+        (input.purpose && input.purpose !== 'note')
+      )
+        fail('permission_denied', 'Hosted Brainstorm may only revise user notes here.')
+      const note = this.get<MemoryItem>('item', input.id!)
+      if (note.purpose !== 'note' || note.spaceId !== actor.brainstorm.spaceId || note.archived)
+        fail('permission_denied', 'Choose an active user note in the bound project.')
+      this.folder(actor, note.folderId, true)
+    }
     if (input.action === 'briefing') return this.briefing(actor)
     if (input.action === 'snapshot') return this.snapshot(actor)
     if (input.action === 'read') return this.read(actor, required(input.id, 'item'), input.revision)
@@ -669,7 +770,9 @@ export class MemoryStore {
     }
     const operation = required(input.operationId, 'operation ID')
     return this.transaction(() => {
-      const principal = actor.grantId ?? 'human'
+      const principal =
+        actor.brainstorm?.principal ??
+        (actor.workflowRunId ? `workflow:${actor.workflowRunId}` : (actor.grantId ?? 'human'))
       this.grant(actor)
       const digest = hash(JSON.stringify(input))
       const previous = this.db
@@ -693,6 +796,28 @@ export class MemoryStore {
         .run(principal, operation, digest, JSON.stringify(persisted))
       return result
     })
+  }
+  private saver(actor: MemoryActor): import('../../shared/memory').MemorySaver {
+    if (actor.brainstorm)
+      return {
+        provider: actor.brainstorm.provider,
+        chatId: actor.brainstorm.chatId,
+        at: this.now(),
+      }
+    if (actor.workflowRunId) return { provider: 'workflow', at: this.now() }
+    const grant = this.grant(actor)
+    if (!grant) return { provider: 'human', at: this.now() }
+    return {
+      provider: grant.assignee
+        ? grant.assignee.startsWith('codex:')
+          ? 'codex'
+          : 'claude'
+        : (actor.enrollment?.provider ?? 'unknown'),
+      ...(grant.assignee ? { chatId: grant.assignee } : {}),
+      ...(grant.pluginConnectionId ? { connectionId: grant.pluginConnectionId } : {}),
+      grantId: grant.id,
+      at: this.now(),
+    }
   }
   private base(spaceId: string, actor: MemoryActor) {
     return { id: randomUUID(), spaceId, author: this.author(actor), createdAt: this.now() }
@@ -819,12 +944,15 @@ export class MemoryStore {
           folderId: folder.id,
           title: required(i.title, 'title'),
           kind: i.kind ?? 'note',
+          ...(i.purpose ? { purpose: i.purpose } : {}),
+          saver: this.saver(actor),
           revision: 1,
           acceptedRevision: null,
           archived: false,
         }
         if (['image', 'document'].includes(item.kind))
           fail('invalid_input', 'Import attachments through the attachment action.')
+        this.validatePurpose(item, i.body ?? '')
         this.put('item', item)
         this.addRevision(item, i.body ?? '', actor)
         this.event(folder.spaceId, item.id, 'Item published', actor)
@@ -856,7 +984,20 @@ export class MemoryStore {
           )
         if (['image', 'document'].includes(item.kind))
           fail('invalid_input', 'Publish a new attachment instead of replacing its binary data.')
-        const next = { ...item, title: i.title ?? item.title, revision: item.revision + 1 }
+        if (
+          i.purpose &&
+          i.purpose !== item.purpose &&
+          this.tasks().some((t) => t.outputIds.includes(item.id))
+        )
+          fail('invalid_input', 'Submitted results retain their result purpose.')
+        const next = {
+          ...item,
+          title: i.title ?? item.title,
+          revision: item.revision + 1,
+          ...(i.purpose ? { purpose: i.purpose } : {}),
+          saver: this.saver(actor),
+        }
+        this.validatePurpose(next, required(i.body, 'body'))
         this.addRevision(next, required(i.body, 'body'), actor)
         this.put('item', next)
         this.event(item.spaceId, item.id, 'Revision proposed', actor)
@@ -1200,6 +1341,10 @@ export class MemoryStore {
         reason: 'Output folder changed. Review this task before continuing.',
       })
   }
+  private validatePurpose(item: MemoryItem, body: string) {
+    if (item.purpose === 'note' && (!body.trim() || body.length > 8000))
+      fail('invalid_input', 'Notes require text of 1 to 8000 characters.')
+  }
   private addRevision(
     item: MemoryItem,
     body: string,
@@ -1209,6 +1354,9 @@ export class MemoryStore {
     const revision: MemoryRevision = {
       ...this.base(item.spaceId, actor),
       itemId: item.id,
+      title: item.title,
+      purpose: item.purpose,
+      saver: item.saver ?? this.saver(actor),
       revision: item.revision,
       body,
       hash: hash(attachment?.data ?? body),
@@ -1219,7 +1367,7 @@ export class MemoryStore {
       revision.mime = attachment.mime
       revision.filename = attachment.filename
       this.db
-        .prepare('INSERT INTO blobs(id,mime,data) VALUES(?,?,?)')
+        .prepare('INSERT INTO blobs(id,mime,data) VALUES(?,?,COALESCE(?,zeroblob(0)))')
         .run(revision.blobId, attachment.mime, attachment.data)
     }
     this.put('revision', revision)
@@ -1370,6 +1518,11 @@ export class MemoryStore {
         fail('permission_denied', 'This capability is not assigned to that task.')
       for (const id of i.outputIds ?? []) {
         const result = this.read(actor, id)
+        if (result.item.purpose && result.item.purpose !== 'result')
+          fail(
+            'invalid_input',
+            'Submit items saved with result purpose; notes and checkpoints remain separate.',
+          )
         if (result.item.folderId !== task.folderId)
           fail('invalid_input', 'Save results in the assigned output folder.')
       }
@@ -1455,6 +1608,8 @@ export class MemoryStore {
     return this.all<MemoryTask>('task')
   }
   private notifyItem(item: MemoryItem, actor: MemoryActor) {
+    // Explicit purpose saves never dispatch work. Legacy subscription behavior is retained.
+    if (item.purpose) return
     const author = this.grant(actor),
       space = this.space(item.spaceId)
     for (const sub of this.all<MemorySubscription>('subscription').filter(

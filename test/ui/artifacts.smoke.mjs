@@ -38,7 +38,7 @@ export async function checkArtifacts(page, capture) {
       .getByRole('button', { name: new RegExp(`Synthetic ${provider}`) })
       .first()
       .click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Artifacts…', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Artifacts', exact: true }).click()
   }
   const network = []
   const claudeRow = page.locator('[data-session-id="synthetic-claude"]')
@@ -210,124 +210,53 @@ export async function checkArtifacts(page, capture) {
       !document.querySelector('[data-wide]') &&
       document.querySelector('[data-card]').getBoundingClientRect().width < 250,
   )
-  const tiles = claudeRow.getByRole('button', { name: /^Open artifact:/ })
-  await tiles.first().waitFor()
-  assert.equal(await tiles.count(), 3, 'one tile per saved artifact')
-  const attachments = claudeRow.getByRole('group', { name: 'Thread attachments', exact: true })
-  const stripBox = await attachments.boundingBox()
-  const textBox = await claudeRow.locator(':scope > button').first().boundingBox()
-  assert.ok(stripBox.y >= textBox.y + textBox.height, 'attachments sit below both text lines')
-  const checker = await tiles.first().locator(':scope > span').first().boundingBox()
-  assert.equal(checker.y - stripBox.y, 1, 'checker marks sit closer to the text above')
-  assert.equal(checker.height, 3, 'checker marks retain their visible size')
+  assert.equal(await claudeRow.getByRole('button', { name: /^Open artifact:/ }).count(), 0)
+  assert.equal(
+    await page.getByRole('group', { name: 'Thread attachments', exact: true }).count(),
+    0,
+  )
+  const buttonHeight = (await claudeRow.locator(':scope > button').first().boundingBox()).height
+  assert.equal(
+    (await claudeRow.boundingBox()).height,
+    buttonHeight,
+    'closed rows reserve no attachment line',
+  )
   assert.equal(
     (await claudeRow.boundingBox()).height,
     rowHeightBefore,
-    'adding attachments preserves the thread container height',
+    'linking artifacts adds no row height',
   )
   assert.equal(
     (await page.locator('[data-session-id^="codex:"]').first().boundingBox()).height,
     rowHeightBefore,
-    'threads with and without attachments have the same height',
+    'both providers use the same compact rows',
   )
-  assert.equal(
-    await page.locator('[data-provider="codex"] [aria-label="Thread attachments"]').count(),
-    0,
-  )
-  await page.getByRole('button', { name: 'Open artifact: Notes.txt', exact: true }).hover()
-  await page.getByRole('tooltip').filter({ hasText: 'Notes.txt' }).waitFor()
-  assert.equal(
-    await page
-      .getByRole('button', { name: 'Open artifact: Notes.txt', exact: true })
-      .getAttribute('title'),
-    'Notes.txt',
-  )
-  await capture('artifact-checker-strip')
-  await page.getByRole('button', { name: 'Open artifact: Notes.txt', exact: true }).click()
+  await capture('thread-rows-without-artifact-bars')
+  await claudeRow.locator(':scope > button').first().click({ button: 'right' })
+  const artifactsMenu = page.getByRole('menuitem', { name: 'Artifacts', exact: true })
+  await artifactsMenu.focus()
+  await capture('thread-artifacts-context-menu')
+  await artifactsMenu.press('Enter')
+  await navigation.getByRole('button', { name: 'Open artifact 2: Notes.txt', exact: true }).click()
   await page.getByText('<script>literal text</script>', { exact: true }).waitFor()
-  assert.equal(
-    await claudeRow.locator('[aria-expanded="true"]').count(),
-    0,
-    'tile does not expand row',
-  )
-  await page.getByRole('button', { name: 'Back to threads' }).click()
-  await page.getByRole('button', { name: 'Open artifact: Frame.png', exact: true }).focus()
-  await page.keyboard.press('Enter')
-  await page.getByRole('img', { name: 'Frame.png' }).waitFor()
-  await page.getByRole('button', { name: 'Back to threads' }).click()
-  await page.waitForFunction(() => !document.querySelector('[data-wide]'))
   await page.evaluate(() => {
-    window.proof.retainedArtifacts = window.proof.artifactRecords.get('synthetic-claude')
-    window.proof.artifactRecords.set('synthetic-claude', [])
-    window.proof.emit('onArtifactsChanged', { threadId: 'synthetic-claude', items: [] })
+    const items = [
+      ...window.proof.artifactRecords.get('synthetic-claude'),
+      { id: 'live', title: 'New live file.txt', kind: 'text' },
+    ]
+    window.proof.artifactRecords.set('synthetic-claude', items)
+    window.proof.emit('onArtifactsChanged', { threadId: 'synthetic-claude', items })
   })
-  await attachments.waitFor({ state: 'detached' })
+  await navigation
+    .getByRole('button', { name: 'Open artifact 4: New live file.txt', exact: true })
+    .waitFor()
+  await page.getByRole('button', { name: 'Back to threads' }).click()
   assert.equal(
     (await claudeRow.boundingBox()).height,
     rowHeightBefore,
-    'removing attachments also preserves the thread container height',
+    'live artifact updates add no row height',
   )
-  await page.evaluate(() => {
-    const items = window.proof.retainedArtifacts
-    window.proof.artifactRecords.set('synthetic-claude', items)
-    window.proof.emit('onArtifactsChanged', { threadId: 'synthetic-claude', items })
-  })
-  await attachments.waitFor()
-  await page.evaluate(() => {
-    window.proof.originalArtifacts = window.proof.artifactRecords.get('synthetic-claude')
-    const items = Array.from({ length: 20 }, (_, index) => ({
-      id: `frame-${index}`,
-      title: `Frame ${index + 1}.png`,
-      kind: 'image',
-    }))
-    window.proof.artifactRecords.set('synthetic-claude', items)
-    window.proof.emit('onArtifactsChanged', {
-      threadId: 'synthetic-claude',
-      items,
-    })
-  })
-  await page.waitForFunction(
-    () =>
-      document.querySelectorAll(
-        '[data-session-id="synthetic-claude"] [aria-label^="Open artifact:"]',
-      ).length === 20,
-  )
-  assert.equal(await tiles.count(), 20)
-  const rowBounds = await claudeRow.boundingBox()
-  for (const tile of await tiles.all()) {
-    const bounds = await tile.boundingBox()
-    assert.ok(
-      bounds.x >= rowBounds.x && bounds.x + bounds.width <= rowBounds.x + rowBounds.width,
-      'all tiles stay inside the row',
-    )
-    assert.ok(bounds.width >= 8, 'crowded strip retains distinct targets')
-  }
-  assert.equal(
-    rowBounds.height,
-    rowHeightBefore,
-    'a full attachment strip preserves the same height',
-  )
-  await page.getByRole('button', { name: 'Open artifact: Frame 20.png', exact: true }).hover()
-  await page.getByRole('tooltip').filter({ hasText: 'Frame 20.png' }).waitFor()
-  await capture('artifact-checker-strip-full')
-  await page.evaluate(() => {
-    const items = Array.from({ length: 25 }, (_, index) => ({
-      id: `frame-${index}`,
-      title: `Frame ${index + 1}.png`,
-      kind: 'image',
-    }))
-    window.proof.artifactRecords.set('synthetic-claude', items)
-    window.proof.emit('onArtifactsChanged', { threadId: 'synthetic-claude', items })
-  })
-  await claudeRow.getByRole('button', { name: 'View all thread artifacts', exact: true }).waitFor()
-  assert.equal(await tiles.count(), 19)
-  await page.evaluate(() => {
-    window.proof.artifactRecords.set('synthetic-claude', window.proof.originalArtifacts)
-    window.proof.emit('onArtifactsChanged', {
-      threadId: 'synthetic-claude',
-      items: window.proof.originalArtifacts,
-    })
-  })
+  assert.equal(await claudeRow.getByRole('button', { name: /^Open artifact:/ }).count(), 0)
   await open('Codex')
   assert.equal(
     await page.getByRole('navigation', { name: 'Thread artifact navigation' }).count(),
@@ -393,6 +322,6 @@ export async function checkArtifacts(page, capture) {
   )
   assert.deepEqual(network, [])
   console.log(
-    'PASS: live attachment updates on a third line beneath the title/Now text, exact artifact click/keyboard opening, thread isolation, square HTML/image/text viewer, blocked scripts/network, Back/Escape and read errors.',
+    'PASS: compact rows without artifact bars or reserved space, context-menu click/keyboard opening, live viewer updates, thread isolation, square HTML/image/text viewer, blocked scripts/network, Back/Escape and read errors.',
   )
 }

@@ -1,3 +1,4 @@
+import { memoryFixture } from './memory-transport.fixture.mjs'
 // Real delivery acceptance test: fresh throwaway chats only, one bounded assignment each.
 import { createRequire } from 'node:module'
 import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs'
@@ -25,7 +26,8 @@ const { RelayService } = require('../../src/main/relayService.ts'),
   { defaultPaths, codexPaths } = require('../../src/main/sessions/paths.ts')
 const directory = mkdtempSync(join(tmpdir(), 'threadlight-delegation-proof-')),
   store = new MemoryStore(join(directory, 'memory.sqlite')),
-  server = new MemoryServer(store)
+  transportAuth = memoryFixture(directory),
+  server = new MemoryServer(store, transportAuth)
 const execute = (input) => store.execute({ ...input, operationId: randomUUID() })
 const seed = (cli, args) =>
   new Promise((done) => {

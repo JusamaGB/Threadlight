@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadlight — A Windows overlay for Claude Code and Codex</title>
+  <meta name="description" content="Follow Claude Code and Codex work from a compact Windows desktop overlay. Explore Threadlight, install the open-source preview and connect your first coding thread.">
+  <link rel="canonical" href="https://threadlight.jocosewasp4.chatgpt.site/">
+  <link rel="icon" href="/assets/icon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Threadlight — Keep your AI chats in view">
+  <meta property="og:description" content="A compact Windows overlay for following coding threads, reviewing changes and sharing project context. Explore the preview and set it up from source.">
+  <meta property="og:url" content="https://threadlight.jocosewasp4.chatgpt.site/">
+  <meta property="og:image" content="https://threadlight.jocosewasp4.chatgpt.site/assets/release.jpg">
+  <meta property="og:image:alt" content="Threadlight release artwork with an illuminated blue and amber spiral">
+  <meta name="twitter:card" content="summary_large_image">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Threadlight","url":"https://threadlight.jocosewasp4.chatgpt.site/","operatingSystem":"Windows","applicationCategory":"DeveloperApplication","description":"An open-source Windows desktop overlay for following Claude Code and Codex coding threads, reviewing changes and sharing project context.","license":"https://github.com/JusamaGB/Threadlight/blob/main/LICENSE","downloadUrl":"https://codeload.github.com/JusamaGB/Threadlight/zip/refs/heads/main","sameAs":"https://github.com/JusamaGB/Threadlight"}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap mast"><a class="brand" href="/" aria-label="Threadlight home"><img src="/assets/icon.svg" alt="" width="32" height="32">Threadlight</a>
+<nav aria-label="Main navigation"><a href="#overview">Overview</a><a href="#setup">Setup</a><a href="#faq">FAQ</a><a class="repo" href="https://github.com/JusamaGB/Threadlight">GitHub <span aria-hidden="true">↗</span></a></nav></header>
+<main id="main">
+<section class="wrap hero" aria-labelledby="headline">
+  <div class="hero-copy"><p class="kicker"><i></i> Open-source Windows alpha</p>
+  <h1 id="headline">Keep your AI<br>chats <em>in view.</em></h1>
+  <p class="lead">Threadlight brings your local Claude Code and Codex sessions to the edge of your Windows desktop. See which thread needs you, read what changed and reply from a compact desktop overlay.</p>
+  <div class="actions"><a class="button" href="#setup">Set up Threadlight <span aria-hidden="true">→</span></a><a class="quiet" href="#overview">See how it works <span aria-hidden="true">↓</span></a></div></div>
+  <div class="hero-art" aria-hidden="true"><img src="/assets/spiral.webp" width="1080" height="954" fetchpriority="high" alt=""></div>
+</section>
+<section class="wrap feature" id="overview" aria-labelledby="story">
+  <div><p class="kicker blue">Inside the overlay</p><h2 id="story">Find the thread<br>that needs you.</h2>
+  <dl><dt>Pick up where you left off</dt><dd>Click the corner dot to see active and recent sessions. Open a thread to read its plan, question or latest result.</dd>
+  <dt>Look at the change</dt><dd>Inspect Codex edit records and local Git changes in the panel. Open a local artifact to see what a thread produced.</dd>
+  <dt>Give the next chat context</dt><dd>Save a decision or handoff in a Shared Space. Approve individual chat connections to let collaborators read the project material you share.</dd></dl></div>
+  <figure><a href="/assets/recent-agent-call.webp" aria-label="Open the full-size Recent and Agent illustration"><img src="/assets/recent-agent-call.webp" alt="Recent lists four example chats. On a simulated call, the Agent checks two of them and shows the Python return statement that keeps the old welcome-button label." width="1254" height="1254" loading="lazy"></a><figcaption>Recent and Agent are shown in the development build with example threads and a simulated call. The public source preview has an earlier layout.</figcaption></figure>
+</section>
+<section class="band" id="setup" aria-labelledby="install"><div class="wrap setup">
+  <div><p class="kicker">Windows setup</p><h2 id="install">Set up with an assistant.</h2>
+  <p>Open an assistant that can run commands on your Windows PC, such as a local Codex or Claude Code session. Give it the prompt below and tell it which provider you use. It can check the requirements, install the selected plugin and launch Threadlight. You handle sign-in, hook trust and Windows approval prompts.</p>
+  </div>
+  <div><aside class="setup-prompt">
+  <div class="prompt-heading">
+    <h3>Give your assistant this prompt</h3>
+    <button type="button" id="copy-setup" hidden aria-label="Copy setup prompt" title="Copy setup prompt">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+        <rect x="8" y="8" width="12" height="13" rx="2"/>
+        <path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>
+      </svg>
+    </button>
+  </div>
+  <blockquote id="setup-prompt">Help me set up Threadlight on this Windows PC. Read https://threadlight.jocosewasp4.chatgpt.site/#setup and the setup guide in https://github.com/JusamaGB/Threadlight. Ask whether I use Codex, Claude Code or both. Check the tools for my choice and explain any changes. With my approval, install Threadlight from a folder I can keep using the matching --providers option. Pause for my sign-in, hook trust and Windows prompts. Run the same provider-specific check after setup and help me verify a new local chat in the overlay.</blockquote>
+  <span id="copy-result" role="status"></span></aside>
+  <p class="setup-note">Choose Codex, Claude Code or both. <a href="#codex-connection">Codex-only setup</a> works without Claude.</p></div>
+  <details class="manual"><summary>Manual setup on Windows · Git Bash or PowerShell</summary>
+  <ol><li><h3>Check the requirements for your provider</h3><p>Use Windows x64 (Windows 10 version 1803 or later, or Windows 11), Node.js 22.16 or later and Windows <code>curl.exe</code>. For Codex, use a compatible native <code>codex.exe</code> from Codex Desktop or on your PATH. For Claude Code, install Claude Desktop and the Claude Code CLI. Use Git to clone the source, or <a href="https://codeload.github.com/JusamaGB/Threadlight/zip/refs/heads/main">download the source ZIP</a>.</p></li>
+  <li><h3>Choose your Windows terminal</h3><p>In VS Code, open the terminal profile menu and choose <strong>Git Bash</strong> or <strong>PowerShell</strong>. If your terminal is already in a folder where you want to keep Threadlight, continue to the next step. Otherwise, use your shell’s example to create one.</p>
+  <details><summary>Git Bash on Windows</summary><pre><code>mkdir -p "$HOME/Threadlight Projects"
+cd "$HOME/Threadlight Projects"</code></pre></details>
+  <details><summary>PowerShell on Windows</summary><pre><code>New-Item -ItemType Directory -Force -Path "$HOME/Threadlight Projects" | Out-Null
+Set-Location -LiteralPath "$HOME/Threadlight Projects"</code></pre></details></li>
+  <li><h3>Get the source and check your setup</h3><p>These commands work in either Windows terminal. The example selects Codex alone. For Claude Code alone, use <code>claude</code> in place of <code>codex</code>. For both providers, use <code>claude,codex</code>. Keep that choice for every install and check command.</p>
+  <pre><code>git clone https://github.com/JusamaGB/Threadlight.git
+cd Threadlight
+node scripts/install.mjs --check --providers codex</code></pre><p>If you downloaded the ZIP, extract it in File Explorer and open your chosen terminal in the folder containing <code>package.json</code>. Start with the provider-specific check command. On a fresh installation, missing app packages, build output and plugin registration are expected.</p></li>
+  <li><h3>Install and check Threadlight</h3><p>Once the prerequisites pass, install from the source folder. The installer builds and launches the overlay and registers the selected plugin. Then check that same provider:</p>
+  <pre><code>node scripts/install.mjs --providers codex
+node scripts/install.mjs --check --providers codex</code></pre></li>
+  <li><h3>Verify your first thread</h3><p>For Codex, sign in, review and trust the Threadlight hooks in <code>/hooks</code>, then open a new local Codex chat. For Claude Code, check <code>claude auth status</code>, finish sign-in if needed and start a new Claude Code session. Open the corner dot and look for your thread. <a href="https://github.com/JusamaGB/Threadlight/blob/main/skills/setup/SKILL.md">Full setup guide</a></p></li></ol></details>
+</div></section>
+<section class="wrap faq" id="faq" aria-labelledby="questions"><div><p class="kicker blue">Help &amp; compatibility</p><h2 id="questions">Common questions.</h2></div>
+<div class="answers">
+<details id="codex-connection"><summary>Can I use Codex without Claude?</summary><p>Yes. From the source folder, run <code>node scripts/install.mjs --providers codex</code>. It registers the Codex plugin and selects Codex. Run <code>node scripts/install.mjs --check --providers codex</code> to check the installation. Complete your own Codex sign-in, review hook trust in <code>/hooks</code> and start a new local Codex chat to verify activity. <a href="https://github.com/JusamaGB/Threadlight/blob/main/docs/validation/CODEX-ONLY-SETUP.md">Windows 10 installation results</a> · <a href="https://github.com/JusamaGB/Threadlight/blob/main/codex-plugin/README.md">Codex plugin guide</a></p></details>
+<details><summary>Can Threadlight follow chats in my browser?</summary><p>A browser tab alone cannot connect its chats to the overlay. The public build follows local Claude Code and Codex coding sessions. The development build can also read and reply to ordinary ChatGPT chats through signed-in Codex Desktop, and Perplexity chats through the signed-in Perplexity desktop app. These account-chat features have not shipped in the public source preview.</p></details>
+<details><summary>Is there a Windows installer or a Mac version?</summary><p>The public alpha is a Windows source build. There is no packaged release to download. Keep the source folder after setup because the app runs from it. Desktop integrations can change when provider apps update.</p></details>
+<details><summary>What stays on my PC?</summary><p>Threadlight reads local session records and workspace files for the features you use. It has no Threadlight account or analytics service. Sending a reply invokes your provider under your own account. Local dictation uses a downloaded speech model. GPT Live sends microphone audio to the provider while active. <a href="https://github.com/JusamaGB/Threadlight/blob/main/PRIVACY.md">Local data details</a> · <a href="https://github.com/JusamaGB/Threadlight#what-it-does">Voice and network use</a></p></details>
+<details><summary>Who can read a Shared Space?</summary><p>Connecting a chat requires approval in Threadlight. Match its verification code, check the requested space and permissions, then approve the intended connection. Project direct messages also require project DMs to be enabled. <a href="https://github.com/JusamaGB/Threadlight/blob/main/docs/SHARED-MEMORY.md">Shared memory guide</a></p></details>
+<details><summary>Why is my thread missing?</summary><p>Check the tray for Threadlight and run the diagnostic with the providers you installed, for example <code>node scripts/install.mjs --check --providers codex</code>. For Codex, check sign-in and hook trust, then open a new local chat. For Claude, open Claude Desktop, check <code>claude auth status</code> and start a fresh Claude Code session after installing the plugin.</p></details>
+<details><summary>How do I remove Threadlight?</summary><p>From the source folder, run <code>node scripts/install.mjs --uninstall</code>. The installer uses its record to remove the plugin registrations it added. It keeps your settings and project data by default. <a href="https://github.com/JusamaGB/Threadlight/blob/main/skills/setup/SKILL.md">Uninstall instructions</a></p></details>
+</div></section>
+</main>
+<footer class="wrap"><span class="brand"><img src="/assets/icon.svg" width="24" height="24" alt="">Threadlight</span><p>An independent open-source project by <a href="https://haail.dev/">HAAIL</a>. MIT licensed.</p><a href="https://github.com/JusamaGB/Threadlight">Source on GitHub ↗</a></footer>
+<script src="/setup.js" defer></script>
+</body>
+</html>

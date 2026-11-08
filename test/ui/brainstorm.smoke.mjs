@@ -34,6 +34,8 @@ const app = await _electron.launch({
 try {
   const page = await app.firstWindow(),
     errors = []
+  page.setDefaultTimeout(10000)
+  console.log('Native Brainstorm fixture: renderer opened')
   page.on('pageerror', (error) => errors.push(error.message))
   for (let attempt = 0; attempt < 80; attempt++) {
     const state = await app.evaluate(() => {
@@ -52,9 +54,22 @@ try {
   }, randomUUID())
   if (opened.outcome !== 'ok') console.log(JSON.stringify({ opened, errors }))
   assert.equal(opened.outcome, 'ok')
+  console.log('Native Brainstorm fixture: project opened')
   await page.getByRole('tab', { name: 'Brainstorm', exact: true }).click()
-  await page.getByRole('button', { name: 'New discussion', exact: true }).click()
   const message = page.getByRole('textbox', { name: 'Message to Agent', exact: true })
+  await message.waitFor()
+  assert.equal(
+    await app.evaluate(() => globalThis.brainstormProof.spaces.store.discussions().length),
+    0,
+  )
+  assert.equal(await app.evaluate(() => globalThis.brainstormProof.calls.length), 0)
+  await message.fill('Explore a first idea')
+  await message.press('Enter')
+  console.log('Native Brainstorm fixture: first message submitted')
+  await page
+    .locator('[data-agent-conversation]')
+    .getByText('Explore a first idea', { exact: true })
+    .waitFor()
   await message.fill('Unsent discussion draft')
   await message.evaluate((input) => input.setSelectionRange(2, 8))
   await page.getByRole('tab', { name: 'Notes', exact: true }).click()
@@ -62,17 +77,16 @@ try {
   await page.getByRole('button', { name: 'Save note', exact: true }).click()
   await page.getByRole('button', { name: 'Discuss in Brainstorm', exact: true }).click()
   await message.fill('Find the restart decision')
-  await page.getByRole('button', { name: 'Discuss with Agent', exact: true }).click()
+  await message.press('Enter')
   await page.getByText('Proposed plan based on', { exact: false }).waitFor()
-  const source = page
-    .locator('[aria-label="Brainstorm conversation"] button')
-    .filter({ hasText: /^note:/ })
+  const source = page.locator('[data-agent-conversation] button').filter({ hasText: /^note:/ })
   await source.click()
   await page.waitForFunction(() =>
     document
-      .querySelector('[aria-label="Brainstorm conversation"]')
+      .querySelector('[data-agent-conversation]')
       ?.textContent?.includes('Preserve drafts before restart'),
   )
+  await page.getByText('Plan and assignments', { exact: true }).click()
   await page
     .getByRole('textbox', { name: 'Mini plan', exact: true })
     .fill('Keep drafts and restore the cursor after navigation.')
@@ -84,10 +98,12 @@ try {
     1,
   )
   await page.getByRole('tab', { name: 'Brainstorm', exact: true }).click()
+  await page.getByRole('button', { name: /^Earlier/ }).click()
   await page
     .getByRole('button')
-    .filter({ has: page.locator('strong', { hasText: /^Space discussion$/ }) })
+    .filter({ hasText: /Codex · Explore a first idea/ })
     .click()
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
   assert.equal(await message.inputValue(), 'Unsent discussion draft')
   assert.deepEqual(
     await message.evaluate((input) => [input.selectionStart, input.selectionEnd]),
@@ -96,7 +112,7 @@ try {
   await message.fill('Compare our plans')
   await page.getByText('Compare with another space for this request', { exact: true }).click()
   await page.getByRole('checkbox', { name: 'Design', exact: true }).check()
-  await page.getByRole('button', { name: 'Discuss with Agent', exact: true }).click()
+  await message.press('Enter')
   await page.waitForFunction(
     () => document.querySelector('[aria-label="Message to Agent"]')?.value === '',
   )
@@ -117,6 +133,7 @@ try {
   assert.equal(proof.tasks, 0)
   assert.ok(proof.plans.includes('Keep drafts and restore the cursor after navigation.'))
   assert.ok(proof.calls.at(-1).includes('Design'))
+  assert.equal(proof.calls.length, 3)
   assert.deepEqual(errors, [])
   console.log(
     'PASS: real Panel/preload/Spaces service; empty-space discussion, Notes retained, source inspection, separate drafts, explicit comparison, no dispatch.',

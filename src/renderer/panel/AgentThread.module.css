@@ -1,0 +1,254 @@
+.thread {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: text;
+}
+.thread > * {
+  min-width: 0;
+  flex-shrink: 0;
+}
+.state {
+  font-size: 10px;
+  color: var(--muted);
+}
+.workingMark {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+.currentWork {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 5px;
+  padding: 2px 6px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--fg);
+}
+.audio summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+.audio pre {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  user-select: text;
+}
+.activity {
+  color: var(--muted);
+  font-size: 11px;
+}
+.activity > summary {
+  cursor: pointer;
+  padding: 2px 0;
+}
+.activityBody {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 4px 2px;
+}
+.message {
+  white-space: normal;
+  user-select: text;
+}
+.plain {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.markdown {
+  user-select: text;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.message[data-kind='agent'] {
+  font-size: var(--conversation-prose-size);
+  line-height: var(--conversation-prose-leading);
+}
+.markdown p {
+  margin: 0 0 8px;
+}
+.markdown ul,
+.markdown ol {
+  margin: 6px 0;
+  padding-left: 17px;
+}
+.markdown li + li {
+  margin-top: 3px;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 9px 0 4px;
+  font-size: inherit;
+  line-height: 1.4;
+}
+.markdown blockquote {
+  margin: 6px 0;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+  color: var(--muted);
+}
+.markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown code {
+  white-space: pre-wrap;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+}
+.markdown :not(pre) > code {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--raised);
+  color: var(--fg);
+}
+.table {
+  max-width: 100%;
+  overflow: auto;
+  margin: 6px 0;
+}
+.table table {
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.table th,
+.table td {
+  border-bottom: 1px solid var(--border);
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.card {
+  min-width: 0;
+  padding: 0 0 0 7px;
+  border-left: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.card[data-card-state='pending'] {
+  border-color: var(--amber);
+}
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 6px;
+}
+.cardHead strong {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.cardMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.cardMeta .state {
+  margin-left: auto;
+}
+.card[data-card-state='pending'] .cardMeta .state {
+  color: var(--amber);
+}
+.card article {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.card button,
+.card select,
+.card input {
+  font: inherit;
+}
+.card > article > button,
+.cardDetails button,
+.card > button,
+.announcement button {
+  width: fit-content;
+  padding: 2px 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.card > article > button {
+  margin-bottom: 4px;
+}
+.card form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.card form input,
+.card form select {
+  max-width: 100%;
+  min-width: 0;
+  background: var(--raised);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+.card form > button {
+  border: 1px solid var(--border);
+  background: var(--hover);
+  border-radius: 4px;
+  padding: 3px 7px;
+}
+.cardDetails {
+  color: var(--muted);
+  font-size: 10px;
+}
+.cardDetails summary {
+  cursor: pointer;
+}
+.cardDetails p {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.warning {
+  margin: 0;
+  color: var(--amber);
+  font-size: 11px;
+}
+.announcement {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.announcement button {
+  color: var(--accent);
+}
+.screenPreview {
+  display: block;
+  max-width: 100%;
+  max-height: 110px;
+  object-fit: contain;
+  margin: 3px 0;
+}

@@ -1,3 +1,4 @@
+import { memoryFixture } from './live/memory-transport.fixture.mjs'
 // Opt-in native integration check. Uses the existing ChatGPT sign-in, synthetic silence,
 // and one short test message. Never opens a physical microphone or plays through speakers.
 /* global window, AudioContext */
@@ -43,6 +44,25 @@ const eventSnapshot = {
 const projectFeed = (owner) => eventFeed.project(owner, eventSnapshot, () => 'Build')
 const folder = mkdtempSync(join(tmpdir(), 'threadlight-live-check-'))
 let browser, page, service, readServer, target
+let controlServer
+const windowProof = process.env.THREADLIGHT_LIVE_WINDOW === '1'
+const coachDescriptor = process.env.THREADLIGHT_LIVE_COACH
+const wholeReview = process.env.THREADLIGHT_LIVE_REVIEW === '1'
+const proposalProof = process.env.THREADLIGHT_LIVE_PROPOSAL === '1'
+let proposalVisible = false,
+  traceShown = false
+const guideProof = process.env.THREADLIGHT_LIVE_GUIDE === '1'
+const guideEvents = []
+let guideSpeechCount = 0,
+  voiceProgress = false
+const reviewPages = []
+let coach,
+  coachShown = false,
+  coachDiff = false,
+  coachInline = false,
+  spokeBeforeHighlight = false
+let focused = 'Orchid'
+const windowReads = []
 const readProof = process.env.THREADLIGHT_LIVE_THREAD_READ === '1'
 const announcementProof = process.env.THREADLIGHT_LIVE_ANNOUNCEMENT === '1'
 const bufferedOpening = process.env.THREADLIGHT_LIVE_BUFFERED === '1'
@@ -64,7 +84,10 @@ const waitReady = async (agent) => {
   )
   browser = await chromium.launch({
     headless: true,
-    args: ['--autoplay-policy=no-user-gesture-required'],
+    executablePath: process.env.THREADLIGHT_CHROMIUM || undefined,
+    // Mute the browser output. Muting the media element can stop Chrome decoding
+    // incoming audio, leaving totalAudioEnergy at zero despite a completed transcript.
+    args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'],
   })
   page = await browser.newPage()
   await page.route('http://localhost:17896/', (route) =>
@@ -118,6 +141,118 @@ const waitReady = async (agent) => {
       void page.evaluate((e) => window.voiceEvent?.(e), event).catch(() => {})
     },
   }
+  if (windowProof || coachDescriptor) {
+    const { AppControlService } = require('../src/main/appControl/service.ts')
+    const { AppControlServer } = require('../src/main/appControl/server.ts')
+    controlServer = new AppControlServer(
+      new AppControlService(
+        {
+          settings: options.settings,
+          workspaces: () => [],
+          spaces: () => [],
+        },
+        join(folder, 'operations.json'),
+      ),
+      memoryFixture(join(folder, 'control')),
+    )
+    await controlServer.start()
+    options.appControl = controlServer
+    options.foregroundWindow = async () => {
+      windowReads.push(focused)
+      return { application: focused + '.exe', title: focused, observedAt: Date.now() }
+    }
+    message = 'Can you help me with this app? Tell me which application is in front right now.'
+    expected = /orchid/i
+    if (coachDescriptor) {
+      const { EditorCoach } = require('../src/main/editorCoach.ts')
+      coach = new EditorCoach(
+        () => service.activeLiveSession,
+        async (id, text, first, proposal) => {
+          if (proposalProof) assert.equal(proposal, true)
+          if (!guideProof && !proposalProof) {
+            assert.ok(first)
+            assert.match(text, /lantern|total|assign|value/i)
+          }
+          coachShown = true
+          await service.speakCoachStep(id, text, first, proposal)
+          if (guideProof) {
+            guideSpeechCount++
+            if (guideSpeechCount === 2 || guideSpeechCount === 3)
+              writeFileSync(
+                join(
+                  process.env.THREADLIGHT_COACH_TEST_DIR,
+                  guideSpeechCount === 2 ? 'guide-second-speech' : 'guide-resumed-speech',
+                ),
+                '',
+              )
+          }
+        },
+        coachDescriptor,
+        async (id, event) => {
+          if (!guideProof) return
+          try {
+            await service.coachEvent(id, event)
+            guideEvents.push(event)
+            console.log('Guide receipt', event.status, event.step)
+          } catch (error) {
+            console.error('Guide event delivery:', error.message)
+            throw error
+          }
+        },
+        (id) => service.interruptProposal(id),
+      )
+      options.editorCoach = async (id, command) => {
+        const started = Date.now()
+        const result = await coach.run(id, command)
+        if (proposalProof)
+          console.log(
+            'Editor receipt',
+            command.action,
+            result?.status ?? result?.tracing,
+            Date.now() - started,
+          )
+        if (command.action === 'propose') proposalVisible = result.status === 'shown'
+        if (command.action === 'trace') traceShown = result.tracing === true
+        if (command.action === 'review') reviewPages.push(result)
+        if (guideProof && command.action === 'progress' && result.applied && result.step === 2)
+          voiceProgress = true
+        if (command.action === 'diff') coachDiff = true
+        if (command.action === 'inline') coachInline = result?.awaitingEditorAcceptance === true
+        return result
+      }
+      options.onChange = (state) => {
+        coach.sync()
+        if (
+          !coachShown &&
+          state.items.some(
+            (i) =>
+              i.id?.startsWith('live:') &&
+              i.kind === 'agent' &&
+              /starts at one|assigns (?:the )?(?:number |value )?[1one]+/i.test(i.text),
+          )
+        )
+          spokeBeforeHighlight = true
+      }
+      message =
+        'Coach me in the connected VS Code editor. Use the editor coaching context and guide tools. Highlight the assignment to total with one step. Set the spoken explanation to precisely “The lantern value starts at one.” Wait for my click.'
+      expected = /lantern|total|assign|value/i
+      if (guideProof) {
+        message =
+          'Could you show me one step at a time how this code assigns total and then prints it? Use those two steps.'
+      }
+      if (proposalProof) {
+        message =
+          'There is an undefined name in my file. Show me the inline diff and explain it aloud while I look at it.'
+        expected = /lantern|undefined|defined|name/i
+      }
+      if (wholeReview) {
+        message =
+          'Something is wrong with the file I have open in VS Code. Review the whole file and tell me what you think is wrong, if anything.'
+        expected =
+          /missing(?:_|\s+(?:underscore\s+)?)lantern|name\s?error|(?:undefined|never defined|not defined)/i
+      }
+    }
+  }
   if (readProof) {
     assert.ok(
       process.env.THREADLIGHT_LIVE_TEST_WAV,
@@ -130,6 +265,7 @@ const waitReady = async (agent) => {
     const { CodexClient } = require('../src/main/agent/codexClient.ts')
     readServer = new ThreadReadServer(
       new ThreadReadService([new CodexReadAdapter(codexPaths())], () => ['codex']),
+      memoryFixture(join(folder, 'reader')),
     )
     await readServer.start()
     target = new AgentService({
@@ -163,6 +299,9 @@ const waitReady = async (agent) => {
   service = new AgentService(options)
   await page.exposeFunction('startVoice', (id, sdp) => service.startLive(id, sdp))
   await page.exposeFunction('openVoice', (id, text) => service.openLive(id, text))
+  await page.exposeFunction('livePlaybackBoundary', (id, kind, turn) =>
+    service.playbackBoundary(id, kind, turn),
+  )
   await page.exposeFunction('getAgent', () => service.current)
   await page.exposeFunction('announceVoice', (id, command) =>
     service.announcementCommand(id, command),
@@ -171,6 +310,7 @@ const waitReady = async (agent) => {
   await page.evaluate(() => {
     window.threadlight = {
       getAgent: window.getAgent,
+      livePlaybackBoundary: window.livePlaybackBoundary,
       agentLiveStart: window.startVoice,
       agentAnnouncement: window.announceVoice,
       onCommunication: (fn) => {
@@ -266,7 +406,6 @@ const waitReady = async (agent) => {
     assert.equal(await page.evaluate(() => window.connection.connected), false)
     const wave = [...readFileSync(process.env.THREADLIGHT_LIVE_INITIAL_WAV)]
     await page.evaluate(async (bytes) => {
-      window.connection.audio.volume = 0
       const buffer = await window.context.decodeAudioData(new Uint8Array(bytes).buffer)
       const speech = window.context.createBufferSource()
       speech.buffer = buffer
@@ -297,7 +436,6 @@ const waitReady = async (agent) => {
     const wave = [...readFileSync(process.env.THREADLIGHT_LIVE_INITIAL_WAV)]
     await page.evaluate(async (bytes) => {
       window.connection.listen()
-      window.connection.audio.volume = 0 // validate received audio without playing the test aloud
       const buffer = await window.context.decodeAudioData(new Uint8Array(bytes).buffer)
       const speech = window.context.createBufferSource()
       speech.buffer = buffer
@@ -308,7 +446,6 @@ const waitReady = async (agent) => {
     expected = /Build has returned a result/i
     await page.evaluate(() => {
       window.connection.listen()
-      window.connection.audio.volume = 0
     })
     if (process.env.THREADLIGHT_LIVE_PROBE_INPUT) {
       const bytes = [...readFileSync(process.env.THREADLIGHT_LIVE_PROBE_INPUT)]
@@ -351,11 +488,48 @@ const waitReady = async (agent) => {
     )
     projectFeed(service.current.conversationId)
   } else if (!bufferedOpening) await page.evaluate((text) => window.connection.open(text), message)
-  const spokenAnswer = () =>
-    service.current.items.some(
-      (i) => i.kind === 'agent' && i.id?.startsWith('live:') && expected.test(i.text),
+  if (process.env.THREADLIGHT_LIVE_CONTROLS === '1') {
+    assert.ok(process.env.THREADLIGHT_LIVE_TEST_WAV, 'Supply a generated follow-up utterance.')
+    await page.waitForFunction(() => !!window.connection.assistantTurn, undefined, {
+      timeout: 60000,
+    })
+    const checked = await page.evaluate(() => {
+      const voice = window.connection
+      voice.setInputMuted(true)
+      const input = new Float32Array([0.4]),
+        output = new Float32Array([0.4])
+      voice.process(input, output)
+      const silentInput = output[0] === 0 && !voice.audio.muted
+      voice.setOutputMuted(true)
+      voice.setInputMuted(false)
+      const independent = voice.audio.muted && !voice.inputMuted
+      voice.setOutputMuted(false)
+      voice.stopSpeaking()
+      return {
+        silentInput,
+        independent,
+        stopped: voice.audio.muted,
+        active: voice.active,
+        peer: voice.peer.connectionState,
+        phases: window.phases,
+      }
+    })
+    assert.ok(
+      checked.silentInput &&
+        checked.independent &&
+        checked.stopped &&
+        checked.active &&
+        checked.peer === 'connected',
+      JSON.stringify(checked),
     )
-  const deadline = Date.now() + 60000
+  }
+  const spokenAnswer = () =>
+    (!coachDescriptor || (wholeReview ? reviewPages.at(-1)?.status === 'complete' : coachShown)) &&
+    service.current.items.some(
+      (i) =>
+        i.kind === 'agent' && i.liveComplete && i.id?.startsWith('live:') && expected.test(i.text),
+    )
+  const deadline = Date.now() + (wholeReview || proposalProof ? 120000 : 60000)
   while (
     !spokenAnswer() &&
     (await page.evaluate(() => window.connection.active)) &&
@@ -385,7 +559,27 @@ const waitReady = async (agent) => {
   }
   // Let the native completed-item event persist the final transcript before stopping.
   await new Promise((r) => setTimeout(r, 2500))
+  if (process.env.THREADLIGHT_LIVE_REGION) {
+    const [, jpeg, thumbnail] = readFileSync(process.env.THREADLIGHT_LIVE_REGION, 'utf8')
+      .trim()
+      .split(' ')
+    const before = new Set(service.current.items.map((item) => item.id))
+    const result = await service.shareLiveRegion(service.activeLiveSession, { jpeg, thumbnail })
+    assert.ok(result.ok, result.reason)
+    const until = Date.now() + 60000
+    const acknowledged = () =>
+      service.current.items.find(
+        (item) => item.liveComplete && item.kind === 'agent' && !before.has(item.id),
+      )
+    while (!acknowledged() && Date.now() < until) await new Promise((r) => setTimeout(r, 250))
+    assert.ok(acknowledged(), 'Expected a spoken reply after sending the image without speech.')
+    if (process.env.THREADLIGHT_LIVE_REGION_EXPECT)
+      assert.match(acknowledged().text, new RegExp(process.env.THREADLIGHT_LIVE_REGION_EXPECT, 'i'))
+    console.log('PASS: same Live session accepted a silent image and spoke:', acknowledged().text)
+    await new Promise((r) => setTimeout(r, 1200))
+  }
   if (process.env.THREADLIGHT_LIVE_TEST_WAV) {
+    if (windowProof) focused = 'Marigold'
     const priorReads = service.current.items.filter(
       (i) => i.source?.tool === 'threadlight_read_thread',
     ).length
@@ -398,14 +592,27 @@ const waitReady = async (agent) => {
       await waitReady(target)
     }
     const previousReplies = new Set(service.current.items.map((i) => i.id))
+    const receivedAudioEnergy = () =>
+      page.evaluate(async () => {
+        const reports = [...(await window.connection.peer.getStats()).values()]
+        return reports
+          .filter((r) => r.type === 'inbound-rtp' && r.kind === 'audio')
+          .reduce((sum, r) => sum + (r.totalAudioEnergy ?? 0), 0)
+      })
+    const beforeAudio = await receivedAudioEnergy()
     const followupExpected = new RegExp(
-      readProof ? 'cyan' : process.env.THREADLIGHT_LIVE_FOLLOWUP_EXPECT || '.+',
+      windowProof
+        ? 'marigold'
+        : readProof
+          ? 'cyan'
+          : process.env.THREADLIGHT_LIVE_FOLLOWUP_EXPECT || '.+',
       'i',
     )
     const followupAnswer = () =>
       service.current.items.some(
         (i) =>
           i.kind === 'agent' &&
+          i.liveComplete &&
           i.id?.startsWith('live:') &&
           !previousReplies.has(i.id) &&
           followupExpected.test(i.text.trim()),
@@ -418,7 +625,8 @@ const waitReady = async (agent) => {
       speech.connect(window.testProcessor)
       speech.start()
     }, wave)
-    const followupDeadline = Date.now() + (readProof ? 120000 : 30000)
+    const followupDeadline =
+      Date.now() + (readProof || windowProof || coachDescriptor ? 120000 : 45000)
     while (
       (service.current.items.filter((i) => i.kind === 'you').length < 2 || !followupAnswer()) &&
       Date.now() < followupDeadline
@@ -432,6 +640,25 @@ const waitReady = async (agent) => {
       followupAnswer(),
       'Expected native spoken follow-up answer matching THREADLIGHT_LIVE_FOLLOWUP_EXPECT',
     )
+    // The transcript can finish before playout updates the receiver's energy counters.
+    const audioDeadline = Date.now() + 10000
+    let afterAudio = await receivedAudioEnergy()
+    while (afterAudio <= beforeAudio && Date.now() < audioDeadline) {
+      await new Promise((r) => setTimeout(r, 250))
+      afterAudio = await receivedAudioEnergy()
+    }
+    assert.ok(
+      afterAudio > beforeAudio,
+      `Expected new non-silent incoming audio during the follow-up (${beforeAudio} -> ${afterAudio})`,
+    )
+    if (process.env.THREADLIGHT_LIVE_CONTROLS === '1') {
+      assert.ok(
+        await page.evaluate(() => window.connection.active && !window.connection.audio.muted),
+      )
+      console.log(
+        'PASS signed-in Live input mute, independent speaker mute, stopped reply playback and audible next-turn audio on the same peer.',
+      )
+    }
     if (readProof) {
       assert.ok(
         service.current.items.filter((i) => i.source?.tool === 'threadlight_read_thread').length >
@@ -449,6 +676,10 @@ const waitReady = async (agent) => {
     console.log(
       'PASS: generated speech entered the same Live conversation and received a follow-up reply.',
     )
+    if (windowProof) {
+      assert.ok(windowReads.includes('Orchid') && windowReads.includes('Marigold'))
+      console.log('PASS: signed-in Agent queried both successive foreground-app observations.')
+    }
   }
   const stats = await page.evaluate(async () =>
     [...(await window.connection.peer.getStats())]
@@ -476,6 +707,74 @@ const waitReady = async (agent) => {
     console.log('Announcement evidence:', folder)
   }
   const id = service.current.conversationId
+  if (wholeReview) {
+    assert.ok(reviewPages.length > 1)
+    let received = ''
+    for (const page of reviewPages) {
+      assert.equal(page.snapshot, reviewPages[0].snapshot)
+      assert.equal(page.startOffset, received.length)
+      received += page.text
+    }
+    assert.equal(received.length, reviewPages.at(-1).totalUnits)
+    assert.match(received, /print\(missing_lantern\)/)
+    const finding = service.current.items.find(
+      (i) =>
+        i.kind === 'agent' && i.liveComplete && i.id?.startsWith('live:') && expected.test(i.text),
+    )
+    assert.match(
+      finding.text,
+      /line (?:98|ninety[- ]eight)\b[\s\S]*(?:missing|name\s?error|defined)/i,
+    )
+    console.log(
+      'PASS signed-in Live requested all ' +
+        reviewPages.length +
+        ' whole-file pages and identified the late undefined name.',
+    )
+  } else if (coachDescriptor)
+    assert.ok(coachShown, 'Live Agent actually presented the editor step before narration')
+  assert.equal(
+    spokeBeforeHighlight,
+    false,
+    'The coaching explanation preceded the visible highlight',
+  )
+  if (guideProof) {
+    const until = Date.now() + 120000
+    while (
+      (!guideEvents.some((e) => e.status === 'completed') ||
+        !service.current.items.some(
+          (i) => i.kind === 'agent' && i.liveComplete && /guide (?:is )?complete/i.test(i.text),
+        )) &&
+      Date.now() < until
+    )
+      await new Promise((r) => setTimeout(r, 200))
+    assert.ok(voiceProgress)
+    assert.equal(guideSpeechCount, 3)
+    assert.deepEqual(
+      guideEvents.map((e) => e.status),
+      ['shown', 'shown', 'paused', 'refresh_requested', 'shown', 'completed'],
+    )
+    assert.ok(
+      service.current.items.some(
+        (i) => i.kind === 'agent' && i.liveComplete && /guide (?:is )?complete/i.test(i.text),
+      ),
+    )
+    console.log(
+      'PASS signed-in spoken next, edit, clicked refresh with fresh context, and clicked finish with native acknowledgement.',
+    )
+  } else if (proposalProof) {
+    assert.ok(
+      proposalVisible && coachShown && traceShown,
+      'Visible proposal, synchronized speech and spoken follow-up Trace',
+    )
+    console.log('PASS signed-in spoken selection-free proposal, narration and follow-up Trace.')
+  } else if (coachDescriptor && process.env.THREADLIGHT_LIVE_TEST_WAV) {
+    if (process.env.THREADLIGHT_LIVE_INLINE === '1')
+      assert.ok(
+        coachInline,
+        'The spoken inline request presented a replacement in the original editor',
+      )
+    else assert.ok(coachDiff, 'The spoken preview request opened an actual editor diff')
+  }
   await page.evaluate(() => {
     window.connection.stop()
     void window.context.close()
@@ -489,7 +788,9 @@ const waitReady = async (agent) => {
       history.items.some(
         (i) =>
           i.kind === 'you' &&
-          (process.env.THREADLIGHT_LIVE_INITIAL_WAV ? expected.test(i.text) : i.text === message),
+          (process.env.THREADLIGHT_LIVE_INITIAL_WAV
+            ? (wholeReview ? /whole file/i : expected).test(i.text)
+            : i.text === message),
       ),
     )
   assert.ok(history.items.some((i) => i.kind === 'agent' && i.text.trim()))
@@ -526,6 +827,7 @@ const waitReady = async (agent) => {
     process.exitCode = 1
   })
   .finally(async () => {
+    coach?.close()
     if (announcementProof && page) {
       const events = await page.evaluate(() => window.liveEvents).catch(() => [])
       writeFileSync(
@@ -541,6 +843,7 @@ const waitReady = async (agent) => {
     await service?.close()
     await target?.close()
     readServer?.close()
+    controlServer?.close()
     await browser?.close()
     eventDb.close()
   })

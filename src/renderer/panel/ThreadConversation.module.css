@@ -38,7 +38,15 @@
 .body > :not(.scroll) {
   flex-shrink: 0;
 }
+.body[data-fit-card] {
+  height: auto;
+  max-height: calc(var(--thread-history-height, 350px) + 53px);
+}
+.body[data-fit-card] .scroll {
+  flex-basis: var(--pending-card-height, var(--thread-history-height, 350px));
+}
 .scroll {
+  container-type: size;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -49,6 +57,9 @@
   border-top: 1px solid var(--border);
   /* History stays inside the edge tint; the composer can use the full column width. */
   padding: 0 10px 6px;
+}
+.attentionEnd {
+  display: flow-root;
 }
 .older {
   width: 100%;
@@ -84,6 +95,14 @@
 .message p {
   margin: 0;
   white-space: pre-wrap;
+}
+.message[data-role='assistant'] > :is(p, div):not(.meta) {
+  font-size: var(--conversation-prose-size);
+  line-height: var(--conversation-prose-leading);
+}
+.message[data-role='assistant'] > p {
+  user-select: text;
+  cursor: text;
 }
 .artifactLink {
   display: inline-block;
@@ -300,12 +319,6 @@
   padding: 6px 8px;
   background: var(--hover);
 }
-.fileCard header > svg {
-  width: 18px;
-  height: 20px;
-  flex: 0 0 18px;
-  color: var(--muted);
-}
 .fileHeading {
   flex: 1;
   min-width: 0;
@@ -334,13 +347,21 @@
 }
 .fileCounts {
   display: inline-flex;
-  gap: 5px;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 18px;
   font-size: 10px;
+  line-height: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .fileCounts > :first-child {
   color: var(--green);
+}
+.fileCounts > [aria-hidden] {
+  color: var(--muted);
+  line-height: 6px;
 }
 .fileCounts > :last-child {
   color: var(--red);

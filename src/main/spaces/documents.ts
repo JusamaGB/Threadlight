@@ -9,6 +9,8 @@ import {
 } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { SpaceIdea, SpaceWorkspace, SpaceLocation } from '../../shared/spaces'
+import { isSourceFile } from '../../shared/sourceReview'
+import { savedBy } from '../../shared/memory'
 import type { MemoryStore } from '../memory/store'
 import type { SpacesStore } from './store'
 
@@ -116,11 +118,12 @@ export interface DocumentDraft {
   body: string
 }
 export function ideaDocuments(idea: SpaceIdea): DocumentDraft[] {
+  if (idea.memoryItem || idea.sourcePin) return []
   const docs: DocumentDraft[] = [
     {
       id: idea.id,
       area: 'notes',
-      body: `# ${idea.title}\n\nDocument ID: ${idea.id}\nRevision: ${idea.revision}\n\n${idea.text}\n`,
+      body: `# ${idea.title}\n\nDocument ID: ${idea.id}\nRevision: ${idea.revision}\n${idea.saver ? `${savedBy(idea.saver)}\nSource chat: ${idea.saver.chatId ?? 'Not linked'}\nSaved at: ${new Date(idea.saver.at).toISOString()}\n` : ''}\n${idea.text}\n`,
     },
   ]
   if (idea.plan.trim())
@@ -137,12 +140,18 @@ export function memoryDocuments(memory: MemoryStore, spaceIds: string[]): Docume
   const resultIds = new Set(data.tasks.flatMap((t) => t.outputIds))
   const docs: DocumentDraft[] = data.items
     .filter((i) => wanted.has(i.spaceId))
-    .map((item) => {
+    .flatMap((item) => {
       const read = memory.read({}, item.id)
+      if (read.revision.mime === 'text/plain' && isSourceFile(read.revision.filename)) return []
       return {
         id: item.id,
-        area: resultIds.has(item.id) ? 'results' : 'handoffs',
-        body: `# ${item.title}\n\nDocument ID: ${item.id}\nShared space: ${item.spaceId}\nRevision: ${item.revision}\nAuthor: ${read.revision.author}\nStatus: ${item.archived ? 'Archived' : 'Active'}\n${read.revision.filename ? `Attachment: ${read.revision.filename} (original retained in Threadlight)\n` : ''}\n${read.revision.body}\n`,
+        area:
+          resultIds.has(item.id) || item.purpose === 'result'
+            ? 'results'
+            : item.purpose === 'note'
+              ? 'notes'
+              : 'handoffs',
+        body: `# ${item.title}\n\nDocument ID: ${item.id}\nShared space: ${item.spaceId}\nRevision: ${item.revision}\n${read.revision.saver ? `${savedBy(read.revision.saver)}\nSource chat: ${read.revision.saver.chatId ?? 'Not linked'}\nSaved at: ${new Date(read.revision.saver.at).toISOString()}\nPurpose: ${read.revision.purpose ?? 'legacy'}` : `Author: ${read.revision.author}`}\nStatus: ${item.archived ? 'Archived' : 'Active'}\n${read.revision.filename ? `Attachment: ${read.revision.filename} (original retained in Threadlight)\n` : ''}\n${read.revision.body}\n`,
       }
     })
   for (const task of data.tasks.filter((t) => wanted.has(t.spaceId))) {

@@ -1,4 +1,17 @@
+import { checkHandoffsCanvas } from './handoffs-canvas.smoke.mjs'
+import { checkWorkflowGraph } from './workflow-graph.smoke.mjs'
+import { checkPerplexity } from './perplexity.smoke.mjs'
+import { checkAccountChats } from './account-chats.smoke.mjs'
+import { checkAccountChatReplies } from './account-chat-replies.smoke.mjs'
+import { checkProviderSettings } from './provider-settings.smoke.mjs'
+import { checkThreadAttention } from './thread-attention.smoke.mjs'
+import { checkPinnedActive } from './pinned-active.smoke.mjs'
+import { checkNotesPurpose } from './notes-purpose.smoke.mjs'
 import { openHeaderPage, selectThreadView } from './header-navigation.mjs'
+import { checkSpacesRecovery } from './spaces-recovery.smoke.mjs'
+import { checkNotesComposer } from './notes-composer.smoke.mjs'
+import { checkChangeWorkflow } from './change-workflow.smoke.mjs'
+import { checkWorkspaceScope } from './workspace-scope.smoke.mjs'
 import { checkHeaderMenu } from './header-menu.smoke.mjs'
 // Run after npm run build. Uses Playwright from THREADLIGHT_PLAYWRIGHT or local resolution.
 // All IPC is synthetic; this never launches Threadlight, hooks or either provider CLI.
@@ -12,6 +25,8 @@ import { join, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkVoiceRouting } from './voice-routing.smoke.mjs'
 import { setupVoiceInput } from './voice-input.fixture.mjs'
+import { checkHotkeys } from './hotkeys.smoke.mjs'
+import { checkSpokenReply } from './spoken-reply.smoke.mjs'
 import { checkMicPill } from './mic-pill.smoke.mjs'
 import { readMotionFrame } from './motion-pixels.mjs'
 import {
@@ -42,12 +57,20 @@ import { checkViewCache } from './view-cache.smoke.mjs'
 import { checkCompaction } from './compaction.smoke.mjs'
 import { checkManagedQuestions } from './managed-questions.smoke.mjs'
 import { checkNativeCodexQuestions } from './native-codex-questions.smoke.mjs'
+import { checkCodexNextStepComposer } from './question-composer.smoke.mjs'
 import { checkNativeCodexMessages } from './native-codex-messages.smoke.mjs'
 import { checkCodexQueue } from './codex-queue.smoke.mjs'
 import { checkThreadTimeline } from './thread-timeline.smoke.mjs'
+import { checkThreadCopy } from './thread-copy.smoke.mjs'
+import { checkPinList } from './pin-list.smoke.mjs'
+import { checkAgentDecision } from './agent-decision.smoke.mjs'
+import { checkAgentContinuous } from './agent-continuous.smoke.mjs'
 import { checkCompletionNotices } from './completion-notices.smoke.mjs'
 import { checkConnectionSetup } from './connection-setup.smoke.mjs'
+import { checkBrainstormVoice } from './brainstorm-voice.smoke.mjs'
+import { checkSourceReview } from './source-review.smoke.mjs'
 import { checkSpacesLibrary } from './spaces-library.smoke.mjs'
+import { checkBrainstormChat } from './brainstorm-chat.smoke.mjs'
 import { checkProjectParticipants } from './project-participants.smoke.mjs'
 import { checkWorkspaceLinks } from './workspace-links.smoke.mjs'
 import { checkDualWires } from './dual-wires.smoke.mjs'
@@ -79,7 +102,9 @@ require.extensions['.ts'] = (module, filename) =>
     }).outputText,
     filename,
   )
-const { DEFAULT_SETTINGS, validatePatch } = require(join(root, 'src/shared/settings.ts'))
+const { DEFAULT_SETTINGS, validatePatch, applySettingsPatch } = require(
+  join(root, 'src/shared/settings.ts'),
+)
 const { combinedSnapshot, providerView } = require(join(root, 'src/shared/providers.ts'))
 const { withManagedQuestions } = require(join(root, 'src/shared/managedQuestions.ts'))
 const { IDLE_AGENT } = require(join(root, 'src/shared/agent.ts'))
@@ -219,7 +244,7 @@ const state = () => ({
     settings.maxSessions,
   ),
 })
-const output = resolve(root, 'out/renderer')
+const output = resolve(process.env.THREADLIGHT_TEST_RENDERER || resolve(root, 'out/renderer'))
 const server = createServer((request, response) => {
   const target = resolve(output, '.' + new URL(request.url, 'http://localhost').pathname)
   if (target !== output && !target.startsWith(output + sep)) return response.writeHead(403).end()
@@ -241,14 +266,20 @@ checks: try {
   // Synthetic hotkeys are IPC events, not Chromium user-activation gestures.
   browser = await chromium.launch({
     headless: true,
+    executablePath: process.env.THREADLIGHT_CHROMIUM || undefined,
+    // Verify app scrollbar styling instead of hiding every track in headless Chromium.
+    ignoreDefaultArgs: ['--hide-scrollbars'],
     args: ['--autoplay-policy=no-user-gesture-required'],
   })
-  const page = await browser.newPage({ viewport: { width: 460, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 460, height: 900 },
+    deviceScaleFactor: process.env.THREADLIGHT_UI_FOCUS === 'spoken-reply' ? 2 : 1,
+  })
   await page.clock.install()
   memoryProof = await setupMemory(
     page,
     require(join(root, 'src/main/memory/store.ts')).MemoryStore,
-    require(join(root, 'src/main/memory/connections.ts')).MemoryConnections,
+    require(join(root, 'src/main/memory/server.ts')).MemoryServer,
   )
   communicationProof = await setupCommunication(
     page,
@@ -278,7 +309,7 @@ checks: try {
   await page.exposeFunction('mockUpdate', async (patch) => {
     const result = validatePatch(patch)
     assert.equal(result.ok, true)
-    settings = { ...settings, ...result.patch }
+    settings = applySettingsPatch(settings, result.patch)
     if (!settings.enabledProviders.includes('codex')) {
       chats.codex.attention.answerableUntil = null
       delete chats.codex.attention.holdId
@@ -315,7 +346,7 @@ checks: try {
     return state().snapshot
   })
   await page.addInitScript(
-    ({ agent }) => {
+    ({ agent, startupRecovery, providerHealth }) => {
       const listeners = new Map()
       const drafts = new Map()
       const emit = (name, value) => {
@@ -324,6 +355,7 @@ checks: try {
       window.proof = {
         calls: [],
         resizes: [],
+        failSettings: startupRecovery,
         emit,
         agent(next) {
           agent = { ...agent, ...next, revision: agent.revision + 1 }
@@ -340,10 +372,47 @@ checks: try {
         {
           // App-control handshakes belong to their dedicated integration fixtures.
           controlHello: undefined,
+          readDraft: undefined,
+          writeDraft: undefined,
+          readDraftSelection: undefined,
+          writeDraftSelection: undefined,
+          historyCurrentId: undefined,
+          pinnedCode: async (cmd) => {
+            const key = 'fixture.pinnedState',
+              stored = localStorage.getItem(key)
+            const state = stored
+              ? JSON.parse(stored)
+              : {
+                  version: 1,
+                  generation: 0,
+                  files: JSON.parse(cmd.legacy || '[]'),
+                  selectedId: null,
+                }
+            if (cmd.action === 'add') {
+              state.files.push({ ...cmd.file, revision: 1 })
+              state.selectedId = cmd.file.id
+            }
+            if (cmd.action === 'fold')
+              state.files.find((f) => f.id === cmd.id).collapsed = cmd.collapsed
+            if (cmd.action === 'remove') state.files = state.files.filter((f) => f.id !== cmd.id)
+            if (cmd.action === 'select') state.selectedId = cmd.id
+            state.generation++
+            localStorage.setItem(key, JSON.stringify(state))
+            emit('onPinsChanged', state)
+            return state
+          },
           codexQueue: async () => ({ ok: true, items: [] }),
           communicationRequest: (input) => window.mockCommunication(input),
           memoryRequest: (input) => window.mockMemory(input),
-          spacesRequest: (input) => window.mockSpaces(input),
+          spacesRequest: (input) => {
+            if (startupRecovery && input.action === 'list' && !window.proof.startupList) {
+              window.proof.startupList = true
+              return new Promise((_resolve, reject) => {
+                window.proof.rejectSpaces = reject
+              })
+            }
+            return window.mockSpaces(input)
+          },
           getComposerDraft: async (id) => ({
             ok: true,
             draft: drafts.get(id) || { text: '', revision: 0, updatedAt: 0 },
@@ -355,7 +424,10 @@ checks: try {
             drafts.set(id, draft)
             return { ok: true, draft }
           },
-          getSettings: async () => (await window.mockState()).settings,
+          getSettings: async () => {
+            if (window.proof.failSettings) throw Error('Synthetic initial settings failure')
+            return (await window.mockState()).settings
+          },
           getSnapshot: async () => (await window.mockState()).snapshot,
           getAttentionMotion: async () => ({ active: false }),
           getSessions: async () => (await window.mockState()).snapshot.sessions,
@@ -391,6 +463,9 @@ checks: try {
             output: { level: 0, low: 0, mid: 0, high: 0 },
           }),
           dotClick: () => window.proof.calls.push(['dotClick']),
+          dotHover: () => window.proof.calls.push(['dotHover']),
+          dotDrag: (dx, dy) => window.proof.calls.push(['dotDrag', dx, dy]),
+          dotDragEnd: () => window.proof.calls.push(['dotDragEnd']),
           leavePanel: () => window.proof.calls.push(['leavePanel']),
           resizePanel: (height) => window.proof.resizes.push(height),
           setPanelLayout: async (layout) => {
@@ -404,12 +479,37 @@ checks: try {
             window.proof.rightWireGutter = width
             return null
           },
+          publishSpokenReply: (reply) => {
+            window.proof.spokenReply = reply
+            emit('onSpokenReply', reply)
+          },
+          getSpokenReply: async () => window.proof.spokenReply ?? null,
+          setSpokenReplySize: (width, height) => {
+            ;(window.proof.pillSizes ??= []).push([width, height])
+          },
+          setMicMenu: async (open) => (open ? { x: 0, y: 0, menuY: 26 } : null),
+          micAction: (action) => window.proof.calls.push(['micAction', action]),
           stopOpenMic: () => window.proof.calls.push(['stopOpenMic']),
           getAgent: async () => agent,
           getUsage: async () => ({
             at: Date.now(),
             fiveHour: { used: 0.2, resetsAt: Date.now() + 3600_000 },
             week: { used: 0.6, resetsAt: Date.now() + 86400_000 },
+          }),
+          ...(providerHealth && {
+            accountChats: async (command) => {
+              window.proof.healthCalls ??= []
+              window.proof.healthCalls.push(command)
+              if (command.action !== 'list') throw Error('Unexpected probe')
+              if (command.source === 'chatgpt' && !window.proof.healthReady)
+                return {
+                  ok: false,
+                  reason: window.proof.healthLimit
+                    ? 'The provider is limiting requests. Try again after the cooldown.'
+                    : 'The desktop chat format changed.',
+                }
+              return { ok: true, kind: 'list', chats: [], hasMore: false, recentOnly: false }
+            },
           }),
           getVersion: async () => 'preview',
           transcribe: () =>
@@ -488,7 +588,10 @@ checks: try {
             window.proof.calls.push(['answer', ...args])
             return { ok: true }
           },
-          copyText: (...args) => window.proof.calls.push(['copy', ...args]),
+          copyText: async (...args) => {
+            window.proof.calls.push(['copy', ...args])
+            return true
+          },
           openInClaude: (...args) => window.proof.calls.push(['open', ...args]),
           ignoreNeedsInput: (...args) => window.proof.calls.push(['ignore', ...args]),
           restartApp: () => window.proof.calls.push(['restart']),
@@ -508,7 +611,11 @@ checks: try {
         },
       )
     },
-    { agent: IDLE_AGENT },
+    {
+      agent: IDLE_AGENT,
+      startupRecovery: process.env.THREADLIGHT_UI_FOCUS === 'spaces-recovery',
+      providerHealth: process.env.THREADLIGHT_UI_FOCUS === 'provider-health',
+    },
   )
   const url = `http://127.0.0.1:${server.address().port}/`
   await page.goto(url + '?view=panel')
@@ -520,14 +627,16 @@ checks: try {
   }
   const toggle = async (provider) => {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await page.getByRole('switch', { name: provider, exact: true }).click()
+    await page
+      .getByRole('switch', { name: provider === 'Codex' ? 'OpenAI' : provider, exact: true })
+      .click()
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   }
   const capture = async (name) => {
     const dir = process.env['THREADLIGHT_SCREENSHOTS']
     if (dir) {
       mkdirSync(dir, { recursive: true })
-      const stage = await page.locator('#root > div').boundingBox()
+      const stage = await page.locator('#root > :first-child').boundingBox()
       const tips = await page
         .getByRole('tooltip')
         .or(page.getByRole('menu'))
@@ -547,6 +656,221 @@ checks: try {
     }
   }
   const box = page.getByPlaceholder('Type a message…')
+  if (process.env.THREADLIGHT_UI_FOCUS === 'hotkeys') {
+    await checkHotkeys(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'voice-pace') {
+    await openHeaderPage(page, 'Agent')
+    await page.getByRole('button', { name: 'Agent settings', exact: true }).click()
+    const slider = page.getByRole('slider', { name: 'Voice pace' })
+    assert.equal(await slider.getAttribute('aria-valuetext'), 'Normal')
+    await slider.focus()
+    await slider.press('ArrowLeft')
+    await page.waitForFunction(
+      async () => (await window.threadlight.getSettings()).agentVoicePace === 'slightly-slower',
+    )
+    assert.equal(await slider.getAttribute('aria-valuetext'), 'Slightly slower')
+    await page.getByRole('button', { name: 'Reset voice pace to Normal' }).click()
+    await page.waitForFunction(
+      async () => (await window.threadlight.getSettings()).agentVoicePace === 'normal',
+    )
+    console.log(
+      'PASS: Agent voice pace changed by keyboard, displayed the persisted choice and reset to Normal.',
+    )
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'spoken-reply') {
+    await checkSpokenReply(page, url)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'mic-indicator') {
+    await page.goto(url + '?view=dot')
+    await page.evaluate(() => window.threadlight.updateSettings({ enabledProviders: [] }))
+    await checkMicPill(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'provider-health') {
+    const warning = page.locator('[data-provider-errors]')
+    await warning.getByText('The desktop chat format changed.', { exact: false }).first().waitFor()
+    assert.equal(
+      await page.locator('[data-thread-filter]').getAttribute('data-thread-filter'),
+      'code-computer',
+    )
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.evaluate(() => window.threadlight.updateSettings({ hoverHelp: 'off' }))
+    assert.ok(await warning.isVisible())
+    await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+    assert.ok(await warning.isVisible())
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.evaluate(() => {
+      window.proof.healthLimit = true
+    })
+    await page.getByRole('button', { name: 'Retry ChatGPT connection', exact: true }).click()
+    await warning.getByText('ChatGPT · Chat list', { exact: true }).waitFor()
+    await warning.getByText(/Refresh paused after a rate limit/).waitFor()
+    assert.ok(await warning.locator('[data-paused]').isVisible())
+    await page.evaluate(() => {
+      window.proof.healthReady = true
+    })
+    await page.getByRole('button', { name: 'Retry ChatGPT connection', exact: true }).click()
+    await warning.waitFor({ state: 'detached' })
+    await page.evaluate(() =>
+      window.proof.emit('onSharedDeliveryStatus', { source: 'chatgpt', sequence: 2, failed: true }),
+    )
+    await warning.getByText('Shared message', { exact: false }).first().waitFor()
+    await page.evaluate(() =>
+      window.proof.emit('onSharedDeliveryStatus', {
+        source: 'chatgpt',
+        sequence: 1,
+        failed: false,
+      }),
+    )
+    assert.ok(await warning.isVisible())
+    await page.evaluate(() =>
+      window.proof.emit('onRelays', [
+        {
+          sessionId: 'codex:private-id',
+          state: 'failed',
+          at: Date.now(),
+          detail: 'Private failure detail',
+        },
+      ]),
+    )
+    await warning.getByText('Private failure detail', { exact: false }).first().waitFor()
+    await warning.getByRole('button', { name: 'Copy diagnostics' }).click()
+    const copied = await page.evaluate(() => window.proof.calls.find((c) => c[0] === 'copy')?.[1])
+    assert.equal(JSON.parse(copied).issues.length, 2)
+    assert.ok(!copied.includes('Private failure detail') && !copied.includes('private-id'))
+    await page.evaluate(() => {
+      window.proof.emit('onSharedDeliveryStatus', { source: 'chatgpt', sequence: 3, failed: false })
+      window.proof.emit('onRelays', [])
+    })
+    await warning.waitFor({ state: 'detached' })
+    assert.ok(await page.evaluate(() => window.proof.healthCalls.every((c) => c.action === 'list')))
+    assert.deepEqual(errors, [])
+    const calls = () =>
+      page.evaluate(() => window.proof.healthCalls.filter((c) => c.source === 'chatgpt').length)
+    const idle = await calls()
+    await page.clock.fastForward(125000)
+    assert.equal(await calls(), idle, 'healthy ChatGPT discovery stays idle off the chat list')
+    await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+    await page.evaluate(() => window.threadlight.updateSettings({ conversationFilter: 'all' }))
+    await page.waitForFunction(
+      (n) => window.proof.healthCalls.filter((c) => c.source === 'chatgpt').length > n,
+      idle,
+    )
+    const first = await calls()
+    await page.clock.fastForward(55000)
+    assert.equal(await calls(), first, 'the visible ChatGPT list does not poll every five seconds')
+    await page.clock.fastForward(10000)
+    await page.waitForFunction(
+      (n) => window.proof.healthCalls.filter((c) => c.source === 'chatgpt').length > n,
+      first,
+    )
+    console.log(
+      'PASS: first-load discovery, cooldown recovery, off-list idle, minute-spaced visible refresh, zero sends.',
+    )
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'provider-settings') {
+    await checkProviderSettings(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'screen-region-settings') {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const group = page.getByRole('group', { name: 'Screen regions', exact: true })
+    const live = group.getByRole('switch', { name: 'In Live', exact: true })
+    const outside = group.getByRole('switch', { name: 'Outside Live', exact: true })
+    const speech = page.getByRole('switch', { name: 'Speak outside-Live replies' })
+    assert.ok(await live.isChecked())
+    assert.ok(!(await outside.isChecked()))
+    await outside.click()
+    await speech.waitFor()
+    assert.ok((await live.isChecked()) && (await outside.isChecked()))
+    await speech.click()
+    await page.waitForFunction(
+      async () => !(await window.threadlight.getSettings()).speakScreenReply,
+    )
+    await live.click()
+    await page.waitForFunction(
+      async () => (await window.threadlight.getSettings()).screenRegionModes.join() === 'outside',
+    )
+    await capture('screen-region-settings')
+    await page.reload()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await outside.waitFor()
+    assert.ok(
+      (await outside.isChecked()) && !(await live.isChecked()) && !(await speech.isChecked()),
+    )
+    await outside.click()
+    await speech.waitFor({ state: 'detached' })
+    assert.ok(!(await live.isChecked()) && !(await outside.isChecked()))
+    assert.deepEqual(errors, [])
+    console.log(
+      'PASS: independent Live and outside selections, both, neither, persisted speech preference.',
+    )
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'account-chats') {
+    await checkAccountChats(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'account-chat-replies') {
+    await checkAccountChatReplies(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'perplexity') {
+    await checkPerplexity(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'workflow-graph') {
+    await checkWorkflowGraph(page, memoryProof, communicationProof, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'pinned-active') {
+    await checkPinnedActive(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'handoffs-canvas') {
+    await checkHandoffsCanvas(page, memoryProof, spacesProof, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'notes-purpose') {
+    await checkNotesPurpose(page, spacesProof, memoryProof, capture)
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'notes-composer') {
+    await checkNotesComposer(page, spacesProof, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'spaces-recovery') {
+    await checkSpacesRecovery(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'change-workflow') {
+    await checkChangeWorkflow(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'workspace-scope') {
+    await checkWorkspaceScope(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'header-menu') {
     await checkHeaderMenu(page, capture)
     assert.deepEqual(errors, [])
@@ -557,6 +881,34 @@ checks: try {
     assert.deepEqual(errors, [])
     break checks
   }
+  if (['agent-continuous', 'agent-grouped'].includes(process.env.THREADLIGHT_UI_FOCUS)) {
+    await checkAgentContinuous(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'agent-decision') {
+    await checkAgentDecision(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'pin-list') {
+    await checkPinList(page)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'thread-copy') {
+    await checkThreadCopy(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'thread-attention') {
+    await checkThreadAttention(page, capture)
+    assert.deepEqual(errors, [])
+    console.log(
+      'PASS: one normal-height reader, card at live edge, earlier history on scroll, reopen and resolution.',
+    )
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'thread-timeline') {
     await checkThreadTimeline(page, capture)
     assert.deepEqual(errors, [])
@@ -564,6 +916,21 @@ checks: try {
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'project-participants') {
     await checkProjectParticipants(page, memoryProof, spacesProof, chats, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'brainstorm-chat') {
+    await checkBrainstormChat(page, spacesProof, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (['brainstorm-voice', 'hotkeys-routes'].includes(process.env.THREADLIGHT_UI_FOCUS)) {
+    await checkBrainstormVoice(page, spacesProof, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'source-review') {
+    await checkSourceReview(page, spacesProof, memoryProof)
     assert.deepEqual(errors, [])
     break checks
   }
@@ -579,6 +946,11 @@ checks: try {
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'input-navigation') {
     await checkInputNavigation(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'memory-security') {
+    await checkMemory(page, memoryProof, capture)
     assert.deepEqual(errors, [])
     break checks
   }
@@ -600,6 +972,11 @@ checks: try {
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'native-codex-questions') {
     await checkNativeCodexQuestions(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'question-composer') {
+    await checkCodexNextStepComposer(page, capture)
     assert.deepEqual(errors, [])
     break checks
   }
@@ -674,13 +1051,18 @@ checks: try {
       'hovering does not restart',
     )
     await restart.click()
+    const restarting = page.getByRole('button', { name: 'Restarting…', exact: true })
+    assert.equal(await restarting.isVisible(), true)
+    assert.equal(await restarting.isDisabled(), true)
+    await restarting.evaluate((button) => button.click())
+    await capture('restart-pending')
     assert.equal(
       await page.evaluate(() => window.proof.calls.filter(([name]) => name === 'restart').length),
       1,
     )
     assert.deepEqual(errors, [])
     console.log(
-      'PASS: one sign-in switch, no helper text, enable/disable and reload; Restart explains itself and relaunches.',
+      'PASS: sign-in enable/disable and reload; Restart immediately shows pending feedback and prevents duplicate requests.',
     )
     break checks
   }
@@ -698,6 +1080,9 @@ checks: try {
   }
   if (process.env.THREADLIGHT_UI_FOCUS === 'agent-settings') {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const footer = page.getByText('An independent open-source project by HAAIL.', { exact: false })
+    await footer.waitFor()
+    assert.match(await footer.innerText(), /Threadlight preview/)
     await checkAgentSettings(page, capture)
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
     await openHeaderPage(page, 'Agent')
@@ -705,8 +1090,20 @@ checks: try {
     assert.deepEqual(errors, [])
     break checks
   }
-  if (process.env.THREADLIGHT_UI_FOCUS === 'communication') {
-    await checkCommunication(page, communicationProof, memoryProof.store, capture)
+  if (['communication', 'communication-roles'].includes(process.env.THREADLIGHT_UI_FOCUS)) {
+    await checkCommunication(
+      page,
+      communicationProof,
+      memoryProof.store,
+      capture,
+      process.env.THREADLIGHT_UI_FOCUS === 'communication-roles',
+    )
+    assert.deepEqual(errors, [])
+    break checks
+  }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'call-ready') {
+    await setupVoiceInput(page)
+    await (await import('./call-ready.smoke.mjs')).checkCallReady(page)
     assert.deepEqual(errors, [])
     break checks
   }
@@ -721,10 +1118,10 @@ checks: try {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     await chooseSetting(page, 'Voice target', 'GPT Live')
     await page.getByRole('button', { name: 'Voice target: GPT Live', exact: true }).waitFor()
-    await page.getByLabel(/^Send text to/).waitFor({ state: 'detached' })
+    await page.getByRole('button', { name: /^Send text to:/ }).waitFor({ state: 'detached' })
     await capture('voice-target-gpt-live')
     await chooseSetting(page, 'Voice target', 'Local STT')
-    await page.getByLabel(/^Send text to/).waitFor()
+    await page.getByRole('button', { name: /^Send text to:/ }).waitFor()
     await capture('voice-target-local-stt')
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
     await setupVoiceInput(page)
@@ -763,10 +1160,15 @@ checks: try {
     assert.deepEqual(errors, [])
     break checks
   }
+  if (process.env.THREADLIGHT_UI_FOCUS === 'panel-motion') {
+    await checkDualLong(page, capture)
+    assert.deepEqual(errors, [])
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'panel-layout') {
     await checkPanelLayout(page, capture)
     await checkDualDetails(page, capture)
-    await checkDualLong(page)
+    await checkDualLong(page, capture)
     assert.deepEqual(errors, [])
     break checks
   }
@@ -1109,7 +1511,7 @@ checks: try {
     'true',
   )
   assert.equal(
-    await page.getByRole('switch', { name: 'Codex', exact: true }).getAttribute('aria-checked'),
+    await page.getByRole('switch', { name: 'OpenAI', exact: true }).getAttribute('aria-checked'),
     'true',
   )
   // The merged open-mic control coexists with both provider switches; saving it never starts it.
@@ -1122,7 +1524,7 @@ checks: try {
   await page.getByText('Send countdown', { exact: true }).waitFor()
   await chooseSetting(page, 'Voice target', 'GPT Live')
   await page.getByRole('button', { name: 'Voice target: GPT Live', exact: true }).waitFor()
-  await page.getByLabel(/^Send text to/).waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: /^Send text to:/ }).waitFor({ state: 'detached' })
   await capture('voice-target-gpt-live')
   await chooseSetting(page, 'Voice target', 'Local STT')
   await chooseSetting(page, 'Send text to', 'Agent conversation')
@@ -1193,7 +1595,10 @@ checks: try {
   const sendsBeforeRecording = await page.evaluate(
     () => window.proof.calls.filter((c) => c[0] === 'send').length,
   )
-  await page.getByRole('button', { name: 'Talk', exact: true }).click()
+  await page
+    .getByRole('group', { name: 'Codex message composer' })
+    .getByRole('button', { name: 'Talk', exact: true })
+    .click()
   const waveform = page.getByRole('img', { name: 'Listening...', exact: true })
   await waveform.waitFor()
   const codexDivider = page.getByRole('region', { name: 'Voice waveform', exact: true })
@@ -1210,7 +1615,10 @@ checks: try {
   const firstFrame = await readMotionFrame(waveform)
   await page.waitForTimeout(150)
   assert.notEqual((await readMotionFrame(waveform)).hash, firstFrame.hash)
-  await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).click()
+  await page
+    .getByRole('group', { name: 'Codex message composer' })
+    .getByRole('button', { name: 'Stop and transcribe', exact: true })
+    .click()
   await waveform.waitFor({ state: 'detached' })
   await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
   await page.evaluate(() => window.proof.finishTranscript('Synthetic transcript'))
@@ -1221,7 +1629,10 @@ checks: try {
   await codexDivider.waitFor({ state: 'detached' })
   await box.fill('Existing draft')
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await page.getByRole('button', { name: 'Talk', exact: true }).click()
+  await page
+    .getByRole('group', { name: 'Codex message composer' })
+    .getByRole('button', { name: 'Talk', exact: true })
+    .click()
   await waveform.waitFor()
   await codexDivider.waitFor()
   assert.equal(await page.locator('textarea').inputValue(), 'Existing draft')
@@ -1238,7 +1649,10 @@ checks: try {
   await page.evaluate(() => {
     window.proof.finishTranscript = null
   })
-  await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).click()
+  await page
+    .getByRole('group', { name: 'Codex message composer' })
+    .getByRole('button', { name: 'Stop and transcribe', exact: true })
+    .click()
   await waveform.waitFor({ state: 'detached' })
   await page.waitForFunction(() => window.proof.stoppedTracks === 2)
   await page.getByPlaceholder('Transcribing...').waitFor()
@@ -1318,10 +1732,13 @@ checks: try {
   await capture('agent-codex-settings')
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await openHeaderPage(page, 'Agent')
+  await page.getByRole('button', { name: 'Reply to Agent' }).click()
   await page.getByPlaceholder('Ask your agent…').fill('Synthetic agent question')
   await page.getByPlaceholder('Ask your agent…').press('Enter')
   await page.getByRole('button', { name: 'Stop', exact: true }).waitFor()
-  await page.getByText('Codex · future-deep · ultra', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Agent settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Agent effort: ultra', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Back to Agent', exact: true }).click()
   await page.evaluate(() =>
     window.proof.agent({
       status: 'waiting',
@@ -1376,7 +1793,14 @@ checks: try {
   await page
     .getByText('Turn stopped. You can continue this conversation.', { exact: true })
     .waitFor()
-  await page.getByRole('button', { name: 'End', exact: true }).click()
+  await page.evaluate(() => {
+    window.threadlight.finishCallChat = async () => {
+      window.proof.agent({ ended: true, status: 'idle' })
+      return { ok: true }
+    }
+  })
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.getByRole('button', { name: 'Agent settings', exact: true }).click()
   await page.getByRole('button', { name: /Earlier · 1/ }).click()
   await page.getByRole('button', { name: /Synthetic earlier agent/ }).click()
   await page.getByText('A saved reply', { exact: true }).waitFor()

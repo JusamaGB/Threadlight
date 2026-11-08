@@ -59,7 +59,6 @@ describe('relayMessage', () => {
       '--resume',
       SESSION,
       '-p',
-      'check the build',
       '--output-format',
       'json',
       '--permission-mode',
@@ -67,13 +66,22 @@ describe('relayMessage', () => {
       '--model',
       'demo-model',
     ])
+    expect(recorded.message).toBe('check the build')
     expect(resolve(recorded.cwd)).toBe(resolve(box.root))
   })
 
-  it('passes shell-looking text through untouched, as one argument', async () => {
+  it('passes shell-looking text through stdin untouched', async () => {
     const tricky = 'say "hi" & del *.* | echo %PATH% $(whoami) `id`'
     const result = await relayMessage(target(), tricky, deps())
     expect(result).toEqual({ ok: true, reply: `Got it: ${tricky}` })
+  })
+
+  it('bounds provider output and leaves an explicit uncertain-outcome message', async () => {
+    process.env['FAKE_CLAUDE_MODE'] = 'oversized'
+    expect(await relayMessage(target(), 'bounded', deps())).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('safe limit'),
+    })
   })
 
   it('refuses a thread the Claude app holds, without starting the CLI', async () => {
@@ -122,11 +130,8 @@ describe('isInLiveRegistry', () => {
 
 describe('relayArgs', () => {
   it('drops a permission mode or model it does not recognise', () => {
-    const args = relayArgs(
-      target({ permissionMode: 'everything --evil', model: 'x; rm -rf /' }),
-      'hi',
-    )
-    expect(args).toEqual(['--resume', SESSION, '-p', 'hi', '--output-format', 'json'])
+    const args = relayArgs(target({ permissionMode: 'everything --evil', model: 'x; rm -rf /' }))
+    expect(args).toEqual(['--resume', SESSION, '-p', '--output-format', 'json'])
   })
 })
 

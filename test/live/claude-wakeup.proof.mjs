@@ -1,3 +1,4 @@
+import { memoryFixture } from './memory-transport.fixture.mjs'
 // Actual native runtime + packaged MCP bridge + production registration/claims/outbox.
 // Explicit opt-in; disposable chat and project only. This is NOT Desktop UI sign-off.
 import assert from 'node:assert/strict'
@@ -29,7 +30,8 @@ const { findClaudeCli } = require('../../src/main/relay.ts'),
 const root = mkdtempSync(join(tmpdir(), 'threadlight-wakeup-')),
   id = randomUUID()
 const store = new MemoryStore(join(root, 'memory.sqlite')),
-  server = new MemoryServer(store)
+  transportAuth = memoryFixture(root),
+  server = new MemoryServer(store, transportAuth)
 const events = [],
   checks = [],
   report = { root, id, checks, desktopSignOff: false }
@@ -52,6 +54,7 @@ const check = (label) => {
 const user = (content) =>
   child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n')
 try {
+  store.connectionProjects = () => store.projectIdentities()
   await server.start(0)
   const space = store.execute({
     action: 'create_space',
@@ -97,7 +100,11 @@ try {
   store.communicationService = service
   const cli = await findClaudeCli(defaultPaths())
   assert.ok(cli)
-  const env = { ...process.env, THREADLIGHT_MEMORY_URL: server.endpoint }
+  const env = {
+    ...process.env,
+    THREADLIGHT_MEMORY_URL: server.endpoint,
+    THREADLIGHT_MEMORY_AUTH_FILE: transportAuth.authFile,
+  }
   delete env.CLAUDECODE
   child = spawn(
     cli.command,
@@ -130,6 +137,7 @@ try {
         },
       }),
       '--allowedTools',
+      'mcp__threadlight__memory_list_projects',
       'mcp__threadlight__memory_connect',
       'mcp__threadlight__memory_enable_wakeup',
       'mcp__threadlight__threadlight_claim_delivery',
@@ -160,7 +168,7 @@ try {
   })
   child.stdin.on('error', () => {})
   user(
-    'Disposable Threadlight transport proof. Request a Threadlight connection using memory_connect with label "Native wakeup proof". Show the verification code and stop. No other tools or work.',
+    'Disposable Threadlight transport proof. Discover projects with memory_list_projects, select Disposable runtime wakeup proof, then request a Threadlight connection using memory_connect with its spaceId and label "Native wakeup proof". Show the verification code and stop. No other tools or work.',
   )
   await until(
     'enrollment request and idle turn',

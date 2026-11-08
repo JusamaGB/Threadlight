@@ -24,7 +24,7 @@ export function queueText(entry: Entry): string {
     : text
 }
 
-/** Queue-only connection: never resumes a thread or starts a competing turn. */
+/** Queue transport never resumes a thread or starts a competing writer. */
 export class CodexQueue {
   private tail: Promise<unknown> = Promise.resolve()
   constructor(
@@ -218,6 +218,7 @@ export class CodexQueue {
     key: string,
     text: string,
     files: NativeAttachment[] = [],
+    sendIfIdle?: () => Promise<{ ok: true } | { ok: false; reason: string; active?: true }>,
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
     return this.serial(async () => {
       let client: CodexTransport | undefined
@@ -228,8 +229,8 @@ export class CodexQueue {
         const input = nativeAttachmentMessage(text.trim(), files).input
         const hash = createHash('sha256').update(JSON.stringify(input)).digest('hex')
         const file = join(this.journal, `${id}.json`)
-        client = await this.connect()
         if (existsSync(file)) {
+          client = await this.connect()
           const previous = JSON.parse(readFileSync(file, 'utf8')) as {
             clientId: string
             hash: string
@@ -255,6 +256,13 @@ export class CodexQueue {
           unlinkSync(file)
           if (previous.hash === hash) return { ok: true }
         }
+        // Reconcile any uncertain queue submission before trying direct delivery.
+        // Only a positively identified active turn may fall back to the queue.
+        if (sendIfIdle) {
+          const result = await sendIfIdle()
+          if (result.ok || !result.active) return result
+        }
+        client ??= await this.connect()
         const clientId = randomUUID()
         mkdirSync(this.journal, { recursive: true })
         writeFileSync(file, JSON.stringify({ clientId, hash }))

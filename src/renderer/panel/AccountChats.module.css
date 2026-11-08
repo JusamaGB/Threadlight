@@ -1,0 +1,130 @@
+.chatRow[data-provider='chatgpt'] {
+  --provider-tint: #78bfa5;
+}
+.chatRow[data-provider='perplexity'] {
+  --provider-tint: #80bdc8;
+}
+.providerDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--provider-tint);
+}
+.conversation {
+  min-width: 0;
+  padding: 3px 0 5px;
+  font-size: 12px;
+}
+.conversation p {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+.conversation button:not([data-shared-composer] button, [data-history-boundary]) {
+  max-width: 100%;
+  width: fit-content;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  background: var(--raised);
+}
+.conversation button:disabled:not([data-shared-composer] button, [data-history-boundary]) {
+  opacity: 0.5;
+}
+.chatRow :focus-visible {
+  outline: 1px solid var(--fg);
+  outline-offset: -1px;
+}
+.hint,
+.conversation small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.transcript {
+  max-height: 280px;
+  overflow: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  padding: 0 10px 4px;
+  margin-top: 4px;
+}
+.transcript article + article {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 4px;
+}
+.transcript p {
+  white-space: pre-wrap;
+}
+.markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.markdown p {
+  white-space: normal;
+}
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 6px 0 3px;
+}
+.markdown :is(ul, ol),
+.detail :is(ul, ol) {
+  padding-left: 18px;
+  margin: 4px 0;
+}
+.markdown li,
+.detail li {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+.markdown blockquote {
+  margin: 4px 0;
+  padding-left: 6px;
+  border-left: 2px solid var(--border);
+}
+.conversation a {
+  color: var(--provider-tint);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.detail {
+  margin: 4px 0;
+}
+.detail summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  width: fit-content;
+}
+.markdown code {
+  font-size: 11px;
+}
+.table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 4px 0;
+}
+.table table {
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.table :is(th, td) {
+  border: 1px solid var(--border);
+  padding: 3px 5px;
+  min-width: 60px;
+  text-align: left;
+}
+.followUps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+}
+.followUps button {
+  text-align: left;
+  overflow-wrap: anywhere;
+}

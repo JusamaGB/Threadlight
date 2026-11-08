@@ -1,13 +1,13 @@
 /* global document, createImageBitmap */
 /** Inspect composited pixels: WebGL is allowed to discard its buffer after presentation. */
-export async function readMotionFrame(locator) {
+export async function readMotionFrame(locator, includeNeutral = false) {
   // A transparent header canvas overlaps text outside its painted band. Exclude
   // text colour during this measurement so antialiased glyphs cannot count as light.
   const screenshot = await locator.screenshot({
     style: 'body * { color: transparent !important; text-shadow: none !important; }',
   })
   return locator.evaluate(
-    async (_host, bytes) => {
+    async (_host, { bytes, includeNeutral }) => {
       const image = await createImageBitmap(
         new Blob([Uint8Array.from(bytes)], { type: 'image/png' }),
       )
@@ -32,7 +32,7 @@ export async function readMotionFrame(locator) {
           const i = (y * canvas.width + x) * 4
           const max = Math.max(pixels[i], pixels[i + 1], pixels[i + 2])
           const min = Math.min(pixels[i], pixels[i + 1], pixels[i + 2])
-          if (max > 50 && max - min > 18) {
+          if (max > 50 && (includeNeutral || max - min > 18)) {
             count++
             if (pixels[i] > pixels[i + 2] * 1.25) orange++
             if (pixels[i + 2] > pixels[i] * 1.1 && pixels[i + 2] > pixels[i + 1] * 1.05) blue++
@@ -55,6 +55,6 @@ export async function readMotionFrame(locator) {
         bottom: bottom / (canvas.height / _host.getBoundingClientRect().height),
       }
     },
-    [...screenshot],
+    { bytes: [...screenshot], includeNeutral },
   )
 }

@@ -21,7 +21,7 @@ export async function checkThreadBadges(page, capture) {
       ...session,
       threadDiff: { files: 2, added: 124, removed: 13, complete: true, revision: 'badge-fixture' },
       git: {
-        root: 'Z:/General/repo',
+        root: 'Z:/FixtureProjects/repo',
         branch: 'main',
         added: 124,
         removed: 13,
@@ -29,7 +29,7 @@ export async function checkThreadBadges(page, capture) {
         newFiles: 0,
         ahead: 2,
         behind: 7,
-        worktrees: Array.from({ length: 5 }, (_, i) => `Z:/General/repo-${i}`),
+        worktrees: Array.from({ length: 5 }, (_, i) => `Z:/FixtureProjects/repo-${i}`),
       },
       pullRequests: [{ number: 25, state: session.provider === 'codex' ? 'unknown' : 'merged' }],
       backgroundTasks:

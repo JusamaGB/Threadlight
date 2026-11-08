@@ -13,10 +13,14 @@ import {
   type ControlSnapshot,
   type AppliedRoute,
 } from '../../shared/appControl'
+import type { ChangeLens } from '../../shared/changes'
+import { pinInfo } from '../../shared/codeReference'
 import type { Settings } from '../../shared/settings'
 import type { TimelineItem } from '../../shared/threadTimeline'
 
 export interface ControlCaller {
+  editorCoach?(command: import('../../shared/editorCoach').CoachCommand): Promise<unknown>
+  foregroundWindow?(inspect: boolean): Promise<import('../liveScreen').WindowObservation | null>
   active: boolean
   owner(): string
   resolve(ref: string): { id: string } | null
@@ -24,6 +28,7 @@ export interface ControlCaller {
   approve(id: string, title: string, detail: string, decide: (allow: boolean) => void): void
 }
 export interface ControlDependencies {
+  pins?: import('../pinnedCode').PinnedCodeStore
   hasChat?: (id: string) => boolean
   chatInfo?: (id: string) => { id: string; title: string; provider: string } | null
   availability?: (name: string) => { available: boolean; reason?: string }
@@ -32,12 +37,26 @@ export interface ControlDependencies {
   workspaces(): { id: string; name: string; path: string; parentId: string | null }[]
   spaces(): { id: string; title: string; workspaceId: string | null }[]
   artifacts(id: string): Promise<{ id: string; title: string; kind: string }[]>
-  changes(id: string, scope: 'thread' | 'worktree'): Promise<unknown>
+  changes(
+    id: string,
+    scope: 'thread' | 'worktree',
+    lens?: ChangeLens,
+    rootId?: string,
+  ): Promise<unknown>
   createSpace(
     title: string,
     workspace: string,
     operationId: string,
   ): Promise<{ ok: boolean; spaceId?: string }>
+  startSpaceChat?(
+    input: {
+      spaceId: string
+      provider: 'claude' | 'perplexity'
+      role: string
+      openingMessage: string
+    },
+    actionId: string,
+  ): Promise<{ outcome: ControlOutcome; reason?: string; target?: string; linked?: boolean }>
   createChat(
     workspace: string | null,
     operationId: string,
@@ -294,8 +313,35 @@ export class AppControlService {
     if (!caller.active) return this.result('denied', 'Caller revoked.')
     const tool = controlTools.find((t) => t.name === name)
     const parsed = tool?.schema.safeParse(raw)
+    if (name === 'threadlight_editor_coach' && parsed && !parsed.success) {
+      const issue = parsed.error.issues[0]
+      return this.result(
+        'conflict',
+        `Invalid coaching request at ${issue?.path.join('.') || 'action'}: ${issue?.message || 'invalid input'}. Correct the request and retry. No editor connection was attempted.`,
+      )
+    }
     if (!tool || !parsed?.success) return this.result('unavailable', 'Invalid tool arguments.')
     const input = parsed.data as Record<string, unknown>
+    if (name === 'threadlight_editor_coach') {
+      if (!caller.editorCoach)
+        return this.result('unavailable', 'Use the foreground Threadlight Live Agent.')
+      try {
+        const data = await caller.editorCoach(
+          parsed.data as import('../../shared/editorCoach').CoachCommand,
+        )
+        return caller.active
+          ? this.result('ok', undefined, data)
+          : this.result('denied', 'Live session ended.')
+      } catch (error) {
+        return this.result('unavailable', (error as Error).message)
+      }
+    }
+    if (name === 'threadlight_foreground_window') {
+      const value = await caller.foregroundWindow?.(input.inspect === true)
+      return value && caller.active
+        ? this.result('ok', undefined, value)
+        : this.result('unavailable', 'No matching foreground window in this Live session.')
+    }
     const operationId = input.operationId as string | undefined
     const key = `${caller.owner()}:${operationId}`
     if (name === 'threadlight_get_operation')
@@ -359,11 +405,36 @@ export class AppControlService {
     this.owners.set(caller, owned)
     this.save()
     if (tool.effect === 'navigate') await this.navigate(caller, key, input)
-    else
+    else {
+      const spaceChat = name === 'threadlight_start_space_chat'
+      const provider = input.provider === 'claude' ? 'Claude Code' : 'Perplexity'
+      const space = spaceChat
+        ? this.deps.spaces().find((space) => space.id === input.spaceId)?.title
+        : undefined
+      const replacing = name === 'threadlight_replace_pin'
+      const pin = replacing
+        ? this.deps.pins?.current?.files.find((f) => f.id === input.id)
+        : undefined
+      if (replacing && (!pin || pin.revision !== input.expectedRevision))
+        return this.settle(
+          key,
+          pin ? 'conflict' : 'not_found',
+          'Read the current pinned copy before replacing it.',
+        )
       caller.approve(
         `control:${operationId}`,
-        name.replace('threadlight_', '').replaceAll('_', ' '),
-        JSON.stringify(input, null, 2),
+        spaceChat
+          ? `Start ${provider} chat`
+          : replacing
+            ? input.mode === 'append'
+              ? 'Append to pinned copy'
+              : 'Replace pinned copy'
+            : name.replace('threadlight_', '').replaceAll('_', ' '),
+        spaceChat
+          ? `Space: ${space ?? 'Selected Shared Space'}\nRole: ${input.role}\n\nOpening message:\n${input.openingMessage}`
+          : pin
+            ? `${pinInfo(pin)}\nLatest revision ${pin.revision}\n\n${input.mode === 'append' ? 'Append' : 'Replacement'}:\n${input.code}`
+            : JSON.stringify(input, null, 2),
         (allow) => {
           if (this.operations.get(key)?.result.reason !== 'Awaiting human decision.') return
           if (!allow || !caller.active) {
@@ -389,6 +460,7 @@ export class AppControlService {
           })
         },
       )
+    }
     return this.operations.get(key)!.result
   }
   private async read(
@@ -399,6 +471,20 @@ export class AppControlService {
     const customAvailability = this.deps.availability?.(name)
     if (customAvailability && !customAvailability.available)
       return this.result('unavailable', customAvailability.reason)
+    if (name === 'threadlight_list_pins' || name === 'threadlight_read_pin') {
+      const store = this.deps.pins
+      if (!store?.available)
+        return this.result('unavailable', 'Pinned reference store unavailable.')
+      if (name === 'threadlight_list_pins')
+        return this.result('ok', undefined, store.list(Number(input.offset), Number(input.limit)))
+      const item = store.read(
+        String(input.id),
+        Number(input.offset),
+        input.expectedRevision as number | undefined,
+        input.version as number | undefined,
+      )
+      return this.result(item.outcome, item.reason, item.data)
+    }
     if (name === 'threadlight_get_capabilities')
       return this.result('ok', undefined, {
         version: APP_CONTROL_VERSION,
@@ -409,7 +495,7 @@ export class AppControlService {
         })),
         settings: Object.keys(controlSettingsSchema.shape),
         limitations: [
-          'Native chat creation supports enabled Codex only.',
+          'Workspace chat creation supports Codex. In Shared Spaces the foreground Agent can request a Claude Code or ordinary Perplexity chat with an opening message.',
           'Writes require the existing Agent human decision card.',
           'Captured edit cards require an available Codex native stream; Claude card previews are unavailable.',
           'Card discovery is bounded to 50 captured cards.',
@@ -520,7 +606,14 @@ export class AppControlService {
           })
         : this.result('not_found', 'Card not found in the bounded discovery page.')
     }
-    const changes = await this.deps.changes(resolved.id, input.scope as 'thread' | 'worktree')
+    const changes = await this.deps.changes(
+      resolved.id,
+      input.scope as 'thread' | 'worktree',
+      input.scope === 'worktree'
+        ? ((input.lens as ChangeLens | undefined) ?? 'git-current')
+        : undefined,
+      input.scope === 'worktree' ? (input.rootId as string | undefined) : undefined,
+    )
     return changes === null
       ? this.result('unavailable', 'Changes are unavailable for this chat and scope.')
       : this.result('ok', undefined, changes)
@@ -531,6 +624,11 @@ export class AppControlService {
         available: false,
         reason: 'Control receipt store unavailable; existing data was preserved.',
       }
+    if (
+      ['threadlight_list_pins', 'threadlight_read_pin', 'threadlight_replace_pin'].includes(name) &&
+      !this.deps.pins?.available
+    )
+      return { available: false, reason: 'Pinned reference store unavailable.' }
     const custom = this.deps.availability?.(name)
     if (custom && !custom.available) return custom
     if (
@@ -543,6 +641,8 @@ export class AppControlService {
       !this.deps.settings().enabledProviders.includes('codex')
     )
       return { available: false, reason: 'Native chat creation requires enabled Codex.' }
+    if (name === 'threadlight_start_space_chat' && !this.deps.startSpaceChat)
+      return { available: false, reason: 'Shared Space chat creation unavailable.' }
     if (name === 'threadlight_restart_app' && this.deps.busy().otherWork)
       return { available: false, reason: 'Other active work or captures prevent restart.' }
     return { available: true }
@@ -580,7 +680,12 @@ export class AppControlService {
       if (
         route.page === 'changes' &&
         route.scope !== 'card' &&
-        (await this.deps.changes(resolved.id, route.scope)) === null
+        (await this.deps.changes(
+          resolved.id,
+          route.scope,
+          route.scope === 'worktree' ? (route.lens ?? 'git-current') : undefined,
+          route.scope === 'worktree' ? route.rootId : undefined,
+        )) === null
       ) {
         this.settle(key, 'unavailable', 'Changes are unavailable for this chat and scope.')
         return
@@ -663,6 +768,16 @@ export class AppControlService {
       this.settle(key, 'not_found', 'Workspace is no longer known.')
       return
     }
+    if (name === 'threadlight_replace_pin') {
+      const value = this.deps.pins!.replace(
+        String(input.id),
+        Number(input.expectedRevision),
+        String(input.code),
+        input.mode === 'append' ? 'append' : 'replace',
+      )
+      this.settle(key, value.outcome, value.reason, value.data)
+      return
+    }
     if (name === 'threadlight_update_settings') {
       if (input.expectedRevision !== this.revision()) {
         this.settle(key, 'conflict', 'Settings changed; read the current revision.')
@@ -691,6 +806,23 @@ export class AppControlService {
         this.operations.get(key)!.actionId,
       )
       this.settle(key, result.ok ? 'ok' : 'unavailable', undefined, { spaceId: result.spaceId })
+      return
+    }
+    if (name === 'threadlight_start_space_chat') {
+      const result = await this.deps.startSpaceChat?.(
+        {
+          spaceId: String(input.spaceId),
+          provider: input.provider as 'claude' | 'perplexity',
+          role: String(input.role),
+          openingMessage: String(input.openingMessage),
+        },
+        this.operations.get(key)!.actionId,
+      )
+      this.settle(key, result?.outcome ?? 'unavailable', result?.reason, {
+        spaceId: input.spaceId,
+        target: result?.target,
+        linked: result?.linked ?? false,
+      })
       return
     }
     if (name === 'threadlight_create_chat') {

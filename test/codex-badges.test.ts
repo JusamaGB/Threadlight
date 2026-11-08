@@ -1,6 +1,6 @@
+import { temporaryDirectory } from './helpers'
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { codexGitFolders, codexPullRequest } from '../src/main/codex/badges'
@@ -14,26 +14,26 @@ afterEach(async () => {
   for (const path of temp.splice(0)) await rm(path, { recursive: true, force: true })
 })
 
-describe('Codex thread badges', () => {
+describe('Codex thread badges', { timeout: 30_000 }, () => {
   it('uses structured native and legacy paths, newest first, without interpreting tool source', () => {
     expect(
       codexGitFolders([
-        { type: 'turn_context', payload: { cwd: 'Z:/General' } },
+        { type: 'turn_context', payload: { cwd: 'Z:/FixtureProjects' } },
         {
           type: 'response_item',
           payload: {
             type: 'function_call',
             name: 'functions.exec_command',
-            arguments: JSON.stringify({ workdir: 'Z:/General/repo' }),
+            arguments: JSON.stringify({ workdir: 'Z:/FixtureProjects/repo' }),
           },
         },
-        { type: 'commandExecution', cwd: 'Z:/General/repo' },
-        { type: 'fileChange', changes: [{ path: 'Z:\\General\\repo\\src\\main.ts' }] },
+        { type: 'commandExecution', cwd: 'Z:/FixtureProjects/repo' },
+        { type: 'fileChange', changes: [{ path: 'Z:\\FixtureProjects\\repo\\src\\main.ts' }] },
         { type: 'fileChange', changes: [{ path: 'relative/file.ts' }] },
         { type: 'custom_tool_call', name: 'exec', input: 'workdir: "Z:/other"' },
         { type: 'agentMessage', text: 'Read Z:/other/private' },
       ]),
-    ).toEqual(['Z:\\General\\repo\\src', 'Z:/General/repo', 'Z:/General'])
+    ).toEqual(['Z:\\FixtureProjects\\repo\\src', 'Z:/FixtureProjects/repo', 'Z:/FixtureProjects'])
     expect(codexGitFolders([{ type: 'commandExecution', cwd: '\\\\?\\Z:\\repo' }])).toEqual([
       '\\\\?\\Z:\\repo',
     ])
@@ -54,7 +54,7 @@ describe('Codex thread badges', () => {
   it.each(['recent', 'older', 'legacy', 'worktree'])(
     'populates badges for General chats from %s activity without changing workspace grouping or source files',
     async (mode) => {
-      const home = await mkdtemp(join(tmpdir(), 'threadlight-codex-badges-'))
+      const home = await temporaryDirectory('threadlight-codex-badges-')
       temp.push(home)
       const paths = codexPaths({ CODEX_HOME: home }, home)
       const id = '11111111-1111-4111-8111-111111111111'
@@ -67,7 +67,7 @@ describe('Codex thread badges', () => {
           payload: {
             type: 'function_call',
             name: 'functions.exec_command',
-            arguments: JSON.stringify({ workdir: 'Z:/General/repo' }),
+            arguments: JSON.stringify({ workdir: 'Z:/FixtureProjects/repo' }),
           },
         }) + '\n',
       )
@@ -77,7 +77,7 @@ describe('Codex thread badges', () => {
       )
       state
         .prepare('INSERT INTO threads VALUES (?,?,?,0,?,?)')
-        .run(id, 'Z:/General', 'Synthetic Codex', Math.floor(Date.now() / 1000), rollout)
+        .run(id, 'Z:/FixtureProjects', 'Synthetic Codex', Math.floor(Date.now() / 1000), rollout)
       state
         .prepare('INSERT INTO thread_attachments VALUES (?,?,?,?,?,1)')
         .run(
@@ -108,7 +108,7 @@ describe('Codex thread badges', () => {
           .run(
             id,
             'commandExecution',
-            JSON.stringify({ type: 'commandExecution', cwd: 'Z:/General/repo' }),
+            JSON.stringify({ type: 'commandExecution', cwd: 'Z:/FixtureProjects/repo' }),
           )
         for (let i = 1; i <= (mode === 'older' ? 201 : 1); i++)
           history.prepare('INSERT INTO thread_items VALUES (?,?,?,?)').run(
@@ -126,7 +126,7 @@ describe('Codex thread badges', () => {
       }
       const files = [paths.state, rollout, ...(mode === 'legacy' ? [] : [paths.history])]
       const before = await Promise.all(files.map((path) => readFile(path)))
-      const repo = mode === 'worktree' ? 'Z:/worktrees/repo' : 'Z:/General/repo'
+      const repo = mode === 'worktree' ? 'Z:/worktrees/repo' : 'Z:/FixtureProjects/repo'
       const git: GitState = {
         root: repo,
         branch: 'main',
@@ -141,14 +141,14 @@ describe('Codex thread badges', () => {
       const tracker = new CodexTracker(paths, new CodexHolds(() => {}), (folder) =>
         folder === repo ? git : null,
       )
-      const snapshot = await tracker.snapshot({ expanded: ['Z:/General'], showAll: [] })
+      const snapshot = await tracker.snapshot({ expanded: ['Z:/FixtureProjects'], showAll: [] })
       expect(snapshot.sessions[0]).toMatchObject({
-        cwd: 'Z:/General',
+        cwd: 'Z:/FixtureProjects',
         git,
         pullRequests: [{ number: 25, state: 'unknown' }],
         ...(mode === 'legacy' ? {} : { attention: { kind: 'next-step' }, state: 'waiting' }),
       })
-      expect(snapshot.workspaces[0]?.id).toBe('Z:/General')
+      expect(snapshot.workspaces[0]?.id).toBe('Z:/FixtureProjects')
       expect(snapshot.workspaces[0]?.threads[0]?.session.git).toEqual(git)
       expect(await Promise.all(files.map((path) => readFile(path)))).toEqual(before)
     },

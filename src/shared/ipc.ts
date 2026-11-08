@@ -1,4 +1,6 @@
 import type { QueueCommand, QueueResult } from './codexQueue'
+import type { ChangeWorkflowCommand, ChangeWorkflowReply } from './changeWorkflow'
+import type { ChangeLens, TrackingAction, TrackingState } from './changes'
 import type { AnnouncementCommand, AnnouncementReply } from './conversationEvents'
 import type { ControlCommand, ControlHello, ControlPublication } from './appControl'
 // The one contract between the UI (renderer) and the Node side (main).
@@ -16,11 +18,17 @@ import type {
   AgentResult,
 } from './agent'
 import type { Settings, SettingsPatch } from './settings'
+import type { KimiSetup, KimiRuntimeInspection } from './kimi'
 import type { SttStatus } from './stt'
 import type { Usage } from './usage'
 import type { MemoryInput, MemoryReply, MemorySnapshot } from './memory'
 import type { SpacesInput, SpacesReply, SpacesSnapshot } from './spaces'
-import type { LiveVoiceEvent, LiveVoiceResult } from './liveVoice'
+import type {
+  LiveVoiceEvent,
+  LiveVoiceResult,
+  ScreenVoiceEvent,
+  ScreenVoiceCommand,
+} from './liveVoice'
 import type { MotionSnapshot } from './motion'
 import type { AttentionMotion } from './attentionMotion'
 import type { DraftResult } from './messaging'
@@ -35,6 +43,11 @@ import type {
 } from './types'
 
 export const IPC = {
+  perplexity: 'perplexity:request',
+  accountChats: 'account-chats:request',
+  sharedDeliveryStatus: 'account-chats:delivery-status',
+  perplexityChanged: 'perplexity:changed',
+  changeWorkflow: 'changes:workflow',
   newThread: 'threads:create',
   composerAttachments: 'composer:attachments',
   threadImage: 'thread-timeline:image',
@@ -61,10 +74,12 @@ export const IPC = {
   getSnapshot: 'sessions:get-snapshot',
   snapshotChanged: 'sessions:snapshot-changed',
   setTreeView: 'sessions:set-tree-view',
+  inspectKimiLocalRuntime: 'kimi:inspect-local-runtime',
   getSettings: 'settings:get',
   updateSettings: 'settings:update',
   settingsChanged: 'settings:changed',
   openSettings: 'settings:open',
+  screenHelpNotice: 'screen-region:notice',
   hotkeyCapture: 'hotkey:capture',
   resetDotPosition: 'dot:reset-position',
   getStt: 'stt:get',
@@ -72,6 +87,11 @@ export const IPC = {
   sttDownload: 'stt:download',
   transcribe: 'stt:transcribe',
   talkToggle: 'talk:toggle',
+  voiceShortcutTrace: 'talk:shortcut-trace',
+  liveTiming: 'agent:live-timing',
+  liveRemainder: 'agent:read-remaining',
+  spacesLiveStart: 'spaces:live-start',
+  spacesLiveStop: 'spaces:live-stop',
   talkHold: 'talk:hold',
   talkState: 'talk:state',
   openMicLive: 'talk:open-mic-live',
@@ -80,7 +100,12 @@ export const IPC = {
   motion: 'motion:changed',
   getMotion: 'motion:get',
   stopOpenMic: 'talk:stop-open-mic',
+  micMenu: 'talk:mic-menu',
+  spokenReply: 'talk:spoken-reply',
+  spokenReplySize: 'talk:spoken-reply-size',
+  micAction: 'talk:mic-action',
   openPanelQuietly: 'panel:open-quietly',
+  getHotkeyProblem: 'hotkey:current-problem',
   hotkeyProblem: 'hotkey:problem',
   sendMessage: 'relay:send',
   codexQueue: 'codex:queue',
@@ -97,9 +122,17 @@ export const IPC = {
   dotHover: 'dot:hover',
   panelOpened: 'panel:opened',
   panelPeek: 'panel:peek',
+  panelControlHeld: 'panel:control-held',
+  codePan: 'panel:code-pan',
+  codePanMotion: 'panel:code-pan-motion',
+  pinnedCodeSize: 'panel:pinned-code-size',
+  pinnedCode: 'panel:pinned-code',
+  pinsChanged: 'panel:pins-changed',
+  referenceAnchor: 'reference:anchor',
   panelNavigate: 'panel:navigate',
   workspacePanel: 'panel:workspace-layout',
   panelResize: 'panel:resize',
+  canvasExpanded: 'panel:canvas-expanded',
   panelLayout: 'panel:layout',
   workspaceWireRegions: 'panel:wire-regions',
   workspaceWireGutter: 'panel:wire-gutter',
@@ -110,6 +143,7 @@ export const IPC = {
   workspaceWireControl: 'panel:wire-control',
   openInClaude: 'claude:open-thread',
   ignoreNeedsInput: 'session:ignore-needs-input',
+  dismissCodexQuestion: 'codex:dismiss-question',
   restartApp: 'app:restart',
   answerQuestion: 'hold:answer-question',
   answerNextStep: 'hold:answer-next-step',
@@ -120,6 +154,8 @@ export const IPC = {
   releaseHold: 'hold:release',
   copyText: 'clipboard:copy',
   getChanges: 'changes:get',
+  getLocalTracking: 'changes:tracking',
+  configureLocalTracking: 'changes:configure-tracking',
   getWorktreeChanges: 'changes:worktree',
   getWorktreeFileDiff: 'changes:worktree-file',
   openWorktreeChangedFile: 'changes:worktree-open',
@@ -131,11 +167,18 @@ export const IPC = {
   agentLiveStart: 'agent:live-start',
   agentLiveOpen: 'agent:live-open',
   agentLiveStop: 'agent:live-stop',
+  livePlaybackBoundary: 'agent:live-playback-boundary',
   agentLiveEvent: 'agent:live-event',
+  screenVoiceEvent: 'screen:voice-event',
+  screenVoiceCommand: 'screen:voice-command',
   agentChanged: 'agent:changed',
   agentSend: 'agent:send',
   agentDecide: 'agent:decide',
   agentClose: 'agent:close',
+  finishCallChat: 'agent:finish-call-chat',
+  startAgentVoice: 'agent:start-voice',
+  liveMuteShortcut: 'agent:mute-shortcut',
+  liveCallControls: 'agent:live-controls',
   agentApps: 'agent:apps',
   agentHistory: 'agent:history',
   agentReadPast: 'agent:read-past',
@@ -149,6 +192,10 @@ export const IPC = {
 } as const
 
 export interface PanelOpened {
+  /** Explicit waveform click. Ordinary resize or quiet opens preserve the current route. */
+  fromMic?: boolean
+  canvasSize?: { width: number; height: number }
+
   /** Tallest the panel may grow on this display; the list scrolls beyond it. */
   maxHeight: number
   /** Grows down from the dot (top half of the screen), or up from it (bottom half). */
@@ -161,7 +208,24 @@ export interface PanelOpened {
 export type TalkState = 'idle' | 'listening' | 'transcribing'
 
 /** What the preload script exposes on `window.threadlight`. */
+export interface ReferenceAnchor {
+  right: boolean
+  bottom: boolean
+  width: number
+  height: number
+}
+
 export interface ThreadlightApi {
+  perplexity(
+    input: import('./perplexity').PerplexityCommand,
+  ): Promise<import('./perplexity').PerplexityReply>
+  accountChats(
+    input: import('./accountChats').ChatCommand,
+  ): Promise<import('./accountChats').ChatReply>
+  onSharedDeliveryStatus(
+    listener: (status: import('./accountChats').SharedDeliveryStatus) => void,
+  ): () => void
+  onPerplexity(listener: () => void): () => void
   controlHello: () => Promise<ControlHello | null>
   controlPublish: (value: ControlPublication) => void
   controlClaim: (command: ControlCommand) => Promise<boolean>
@@ -215,6 +279,13 @@ export interface ThreadlightApi {
   setMotion(snapshot: MotionSnapshot): void
   onMotion(listener: (snapshot: MotionSnapshot) => void): () => void
   spacesRequest(input: SpacesInput): Promise<SpacesReply>
+  spacesLiveStart(
+    sessionId: string,
+    sdp: string,
+    spaceId: string,
+    discussionId: string | null,
+  ): Promise<LiveVoiceResult>
+  spacesLiveStop(sessionId: string): void
   onSpaces(listener: (snapshot: SpacesSnapshot) => void): () => void
   spacesRespond(ideaId: string, requestId: string, response: AgentResponse): Promise<AgentResult>
   memoryRequest(input: MemoryInput): Promise<MemoryReply>
@@ -240,6 +311,16 @@ export interface ThreadlightApi {
   setTreeView(view: TreeView): void
   onPanelOpened(listener: (info: PanelOpened) => void): () => void
   onPanelPeek(listener: (peek: boolean) => void): () => void
+  onPanelControlHeld(listener: (held: boolean) => void): () => void
+  nativeCodePan: boolean
+  pinnedCode(command: import('./pinnedCode').PinCommand): Promise<import('./pinnedCode').PinState>
+  onPinsChanged(listener: (state: import('./pinnedCode').PinState) => void): () => void
+  pinnedCodeSize(visible: boolean, height: number): void
+  onReferenceAnchor(listener: (anchor: ReferenceAnchor) => void): () => void
+  codePan(id: string, active: boolean): void
+  onCodePanMotion(
+    listener: (motion: { id: string; dx: number; dy: number; end?: boolean }) => void,
+  ): () => void
   onPanelNavigate(
     listener: (direction: import('./navigationHistory').NavigationDirection) => void,
   ): () => void
@@ -252,6 +333,7 @@ export interface ThreadlightApi {
   dotDrag(dx: number, dy: number): void
   dotDragEnd(): void
 
+  setCanvasExpanded(on: boolean): Promise<{ width: number; height: number } | null>
   resizePanel(height: number): void
   closePanel(): void
   leavePanel(): void
@@ -268,6 +350,10 @@ export interface ThreadlightApi {
   openInClaude(appId: string): void
   /** Sets a thread's pending request aside (or back) in Threadlight only; nothing reaches the app. */
   ignoreNeedsInput(sessionId: string, ignore: boolean): void
+  dismissCodexQuestion(
+    sessionId: string,
+    ref: import('./codexQuestions').CodexQuestionRef,
+  ): Promise<boolean>
   /** Closes Threadlight and starts it again: settings and threads are untouched. */
   restartApp(): void
 
@@ -276,7 +362,7 @@ export interface ThreadlightApi {
     sessionId: string,
     text: string,
     attachmentIds?: string[],
-    mode?: 'queue' | 'steer',
+    mode?: 'auto' | 'queue' | 'steer',
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   codexQueue(sessionId: string, command: QueueCommand): Promise<QueueResult>
   getRelays(): Promise<RelayStatus[]>
@@ -314,26 +400,51 @@ export interface ThreadlightApi {
   releaseHold(sessionId: string): void
 
   /** Puts text on the clipboard (for an answer to paste into Claude). */
-  copyText(text: string): void
+  copyText(text: string): Promise<boolean>
 
   /** This thread's own recorded changes; null when its history is unavailable. */
   getChanges(sessionId: string): Promise<Changes | null>
+  changeWorkflow(
+    sessionId: string,
+    command: ChangeWorkflowCommand,
+    rootId?: string,
+  ): Promise<ChangeWorkflowReply>
   /** All current changes against HEAD in the thread's detected Git worktree. */
-  getWorktreeChanges(sessionId: string): Promise<Changes | null>
-  getWorktreeFileDiff(sessionId: string, path: string): Promise<FileDiff>
-  openWorktreeChangedFile(sessionId: string, path: string): void
+  getWorktreeChanges(sessionId: string, lens?: ChangeLens, rootId?: string): Promise<Changes | null>
+  getWorktreeFileDiff(sessionId: string, path: string, revision?: string): Promise<FileDiff>
+  getLocalTracking(sessionId: string, rootId?: string): Promise<TrackingState | null>
+  configureLocalTracking(
+    sessionId: string,
+    action: TrackingAction,
+    expectedPolicy: number,
+    rootId?: string,
+  ): Promise<TrackingState>
+  openWorktreeChangedFile(sessionId: string, path: string, revision?: string): void
   /** What a thread did on one of its plan steps (named by its text); null if unreadable. */
   getStepActivity(sessionId: string, step: string): Promise<StepActivity | null>
   /** One changed file's diff, fetched when it is opened. */
-  getFileDiff(sessionId: string, path: string): Promise<FileDiff>
+  getFileDiff(sessionId: string, path: string, revision?: string): Promise<FileDiff>
   /** Opens a changed file in its own app. */
-  openChangedFile(sessionId: string, path: string): void
+  openChangedFile(sessionId: string, path: string, revision?: string): void
 
   /** The agent conversation Threadlight hosts (agentRun.ts). */
   getAgent(): Promise<AgentState>
   agentAnnouncement(sessionId: string, command: AnnouncementCommand): Promise<AnnouncementReply>
+  onScreenVoice(listener: (event: ScreenVoiceEvent) => void): () => void
+  screenVoiceCommand(
+    id: string,
+    action: ScreenVoiceCommand,
+    sdp?: string,
+  ): Promise<LiveVoiceResult | AgentResult>
   agentLiveStart(sessionId: string, sdp: string): Promise<LiveVoiceResult>
   agentLiveOpen(sessionId: string, text: string): Promise<AgentResult>
+  readLiveRemainder(session: string, token: string): Promise<import('./agent').AgentResult>
+  reportLiveTiming(event: import('./liveTiming').LiveTiming): void
+  livePlaybackBoundary(
+    sessionId: string,
+    kind: import('./liveVoice').PlaybackBoundary,
+    turnId: string,
+  ): void
   agentLiveStop(sessionId: string): void
   onAgentLive(listener: (event: LiveVoiceEvent) => void): () => void
   onAgent(listener: (state: AgentState) => void): () => void
@@ -343,6 +454,10 @@ export interface ThreadlightApi {
   agentDecide(id: string, allow: boolean): void
   /** Ends the conversation. */
   agentClose(): void
+  finishCallChat(id: string, choice: 'archive' | 'fresh'): Promise<import('./agent').AgentResult>
+  startAgentVoice(): void
+  setLiveCallControls(active: boolean): void
+  onLiveMuteShortcut(listener: () => void): () => void
   /** The connected apps the agent could use (for the Settings switches). */
   agentApps(provider?: AgentProvider): Promise<AgentApp[]>
   agentModels(): Promise<{ models: AgentModel[]; error: string | null }>
@@ -369,7 +484,14 @@ export interface ThreadlightApi {
   transcribe(audio: Float32Array): Promise<string>
 
   /** The talk hotkey was pressed (start or stop recording). Panel window only. */
-  onTalkToggle(listener: () => void): () => void
+  onTalkToggle(
+    listener: (destination?: 'brainstorm' | { liveSessionId: string }) => void,
+  ): () => void
+  reportVoiceShortcut(
+    stage:
+      'request' | 'microphone-requested' | 'listening' | 'blocked' | 'no-project' | 'needs-stt',
+    destination: 'agent' | 'brainstorm',
+  ): void
   /** Press-and-hold mode: the talk hotkey went down, or was released. Panel window only. */
   onTalkHold(listener: (phase: 'down' | 'up') => void): () => void
   /** Tells the dot what the talk recording is doing. */
@@ -381,13 +503,23 @@ export interface ThreadlightApi {
   getOpenMicIndicator(): Promise<{ live: boolean; level: number }>
   setOpenMicLevel(level: number): void
   onOpenMicLevel(listener: (level: number) => void): () => void
+  publishSpokenReply(reply: import('./spokenReply').SpokenReply | null): void
+  getSpokenReply(): Promise<import('./spokenReply').SpokenReply | null>
+  onSpokenReply(listener: (reply: import('./spokenReply').SpokenReply | null) => void): () => void
+  setSpokenReplySize(width: number, height: number): void
+  setMicMenu(open: boolean): Promise<{ x: number; y: number; menuY: number } | null>
+  micAction(action: 'pause' | 'resume' | 'stopSpeaking'): void
+  onMicAction(listener: (action: 'pause' | 'resume' | 'stopSpeaking') => void): () => void
   stopOpenMic(): void
   onStopOpenMic(listener: () => void): () => void
   /** Shows the panel without taking focus, keeping what the panel has filled in. */
   openPanelQuietly(): void
   /** The talk hotkey could not be registered (another app has it), or null when it is fine. */
+  getHotkeyProblem(): Promise<string | null>
   onHotkeyProblem(listener: (problem: string | null) => void): () => void
 
+  /** Explicit local metadata inspection only; never launches a runtime. */
+  inspectKimiLocalRuntime(setup: KimiSetup): Promise<KimiRuntimeInspection>
   getSettings(): Promise<Settings>
   /** Saves a change. Refused (with a reason) if invalid, or e.g. the hotkey is taken. */
   updateSettings(
@@ -396,6 +528,7 @@ export interface ThreadlightApi {
   onSettings(listener: (settings: Settings) => void): () => void
   /** The tray's "Settings" item: the panel switches to its settings view. Panel window only. */
   onOpenSettings(listener: () => void): () => void
+  onScreenHelpNotice(listener: (event: { message: string; open: boolean }) => void): () => void
   /** Pauses the talk hotkey while a new one is being typed in, so it can be captured. */
   setHotkeyCapture(capturing: boolean): void
   resetDotPosition(): void

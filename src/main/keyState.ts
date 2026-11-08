@@ -7,6 +7,10 @@ interface User32 {
   keyState: (virtualKey: number) => number
   foregroundWindow: () => unknown
   windowText: (window: unknown, text: Buffer, length: number) => number
+  windowProcess: (window: unknown, pid: Buffer) => number
+  openProcess: (access: number, inherit: number, pid: number) => unknown
+  imageName: (handle: unknown, flags: number, path: Buffer, length: Buffer) => number
+  closeHandle: (handle: unknown) => number
 }
 
 let user32: User32 | null | undefined
@@ -18,16 +22,64 @@ function load(): User32 | null {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const koffi = require('koffi') as typeof import('koffi')
     const lib = koffi.load('user32.dll')
+    const kernel = koffi.load('kernel32.dll')
     user32 = {
       keyState: lib.func('short __stdcall GetAsyncKeyState(int vKey)'),
       foregroundWindow: lib.func('void * __stdcall GetForegroundWindow()'),
       windowText: lib.func('int __stdcall GetWindowTextW(void *hWnd, void *text, int n)'),
+      windowProcess: lib.func('uint32 __stdcall GetWindowThreadProcessId(void *hWnd, void *pid)'),
+      openProcess: kernel.func(
+        'void * __stdcall OpenProcess(uint32 access, int inherit, uint32 pid)',
+      ),
+      imageName: kernel.func(
+        'int __stdcall QueryFullProcessImageNameW(void *handle, uint32 flags, void *path, void *length)',
+      ),
+      closeHandle: kernel.func('int __stdcall CloseHandle(void *handle)'),
     } as User32
   } catch (error) {
     console.error('user32 is unavailable; press-and-hold falls back to toggle.', error)
     user32 = null
   }
   return user32
+}
+
+export interface ForegroundApp {
+  handle: string
+  pid: number
+  title: string
+  executable: string
+}
+
+/** Read the title and process from the same HWND; never infer identity from the title alone. */
+export function foregroundApp(): ForegroundApp | null {
+  const lib = load()
+  const win = lib?.foregroundWindow()
+  if (!lib || !win) return null
+  const pidBytes = Buffer.alloc(4)
+  if (!lib.windowProcess(win, pidBytes)) return null
+  const pid = pidBytes.readUInt32LE()
+  const title = Buffer.alloc(2048)
+  const length = lib.windowText(win, title, 1024)
+  const processHandle = lib.openProcess(0x1000, 0, pid)
+  let executable = ''
+  if (processHandle) {
+    try {
+      const path = Buffer.alloc(65536),
+        size = Buffer.alloc(4)
+      size.writeUInt32LE(path.length / 2)
+      if (lib.imageName(processHandle, 0, path, size))
+        executable =
+          path
+            .toString('utf16le', 0, size.readUInt32LE() * 2)
+            .split('\\')
+            .at(-1) ?? ''
+    } finally {
+      lib.closeHandle(processHandle)
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const handle = (require('koffi') as typeof import('koffi')).address(win).toString()
+  return { handle, pid, title: title.toString('utf16le', 0, length * 2), executable }
 }
 
 /** True while the key is down, false once released, or null if this PC cannot tell. */

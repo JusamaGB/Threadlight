@@ -1,0 +1,89 @@
+.workflow {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 8px;
+  min-width: 0;
+}
+.heading {
+  font-weight: 600;
+}
+.muted {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.file {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0;
+}
+.choice {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+}
+.choice input {
+  flex: none;
+  margin: 3px 0 0;
+}
+.patch {
+  margin: 6px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 10px/1.5 monospace;
+  max-height: 240px;
+  overflow: auto;
+  user-select: text;
+}
+.actions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.action {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 7px;
+  background: var(--raised);
+}
+.primary {
+  color: var(--accent);
+}
+.action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field input,
+.field select,
+.field textarea {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.teach {
+  border-top: 1px solid var(--border);
+  padding: 8px;
+}
+.teach p {
+  color: var(--muted);
+  margin: 5px 0 0;
+}
+.error {
+  color: var(--amber);
+  overflow-wrap: anywhere;
+}
+.receipt {
+  user-select: text;
+  overflow-wrap: anywhere;
+}

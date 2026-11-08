@@ -1,8 +1,12 @@
 import type { TalkState } from '../../shared/ipc'
 import type { Provider } from '../../shared/types'
 import { en } from '../i18n/en'
-import { VoiceWave } from '../composer/VoiceWave'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { IDLE_MOTION, type MotionSnapshot } from '../../shared/motion'
+import { usePillSize } from './usePillSize'
+import { useDotDrag } from '../hooks/useDotDrag'
+import { SpokenReplyBody, usePillReply } from './SpokenReply'
+import { ContextMenu } from '../panel/ContextMenu'
 import { ElectricMotion } from '../motion/ElectricMotion'
 import styles from './Dot.module.css'
 
@@ -114,42 +118,7 @@ export function FloatingDot({
   motion = IDLE_MOTION,
 }: FloatingDotProps) {
   const open = () => window.threadlight.dotClick()
-  if (openMic)
-    return (
-      <div className={styles.micPill} role="group" aria-label={en.openMic.pill}>
-        <button
-          className={styles.micWave}
-          onClick={open}
-          aria-label={en.openMic.showThreads}
-          title={en.openMic.showThreads}
-        >
-          {motion.mode === 'idle' ? (
-            <VoiceWave level={micLevel} />
-          ) : (
-            <ElectricMotion
-              snapshot={motion}
-              label={
-                motion.output.level > 0.035
-                  ? 'Agent speaking'
-                  : motion.mode === 'thinking'
-                    ? 'Thinking'
-                    : 'Listening'
-              }
-            />
-          )}
-        </button>
-        <button
-          className={styles.micStop}
-          onClick={() => window.threadlight.stopOpenMic()}
-          aria-label={en.openMic.stop}
-          title={en.openMic.stop}
-        >
-          <svg width="7" height="7" viewBox="0 0 10 10" aria-hidden="true">
-            <rect width="10" height="10" rx="1.5" fill="currentColor" />
-          </svg>
-        </button>
-      </div>
-    )
+  if (openMic) return <LiveMicPill micLevel={micLevel} motion={motion} />
   const hoverOpen = () => window.threadlight.dotHover()
   const hover = openOn === 'hover' ? { onPointerEnter: hoverOpen, onMouseMove: hoverOpen } : {}
   return (
@@ -162,5 +131,215 @@ export function FloatingDot({
         motion={motion}
       />
     </div>
+  )
+}
+
+function LiveMicPill({ micLevel, motion }: { micLevel: number; motion: MotionSnapshot }) {
+  const open = () => window.threadlight.dotClick()
+  const wave = useRef<HTMLButtonElement>(null)
+  const drag = useDotDrag(true)
+  const finishDrag = drag.handlers.onPointerUp
+  const hoverTimer = useRef<number | undefined>(undefined)
+  const cancelHover = useCallback(() => {
+    window.clearTimeout(hoverTimer.current)
+    hoverTimer.current = undefined
+  }, [])
+  const lastPressPoint = useRef<{ x: number; y: number } | null>(null)
+  const menuPending = useRef(false)
+  const request = useRef(0)
+  const [menu, setMenu] = useState<{ x: number; y: number; menuY: number } | null>(null)
+  const reply = usePillReply()
+  const expanded = reply.available && !menu
+  const pill = useRef<HTMLDivElement>(null)
+  const [body, setBody] = useState({ width: 92, height: 0 })
+  const measureBody = useCallback((width: number, height: number) => {
+    setBody((previous) =>
+      previous.width === width && previous.height === height ? previous : { width, height },
+    )
+  }, [])
+  usePillSize(pill, body, expanded, !!menu)
+  const closeMenu = useCallback(() => {
+    request.current++
+    menuPending.current = false
+    setMenu(null)
+    void window.threadlight.setMicMenu(false)
+  }, [])
+  const showMenu = async () => {
+    cancelHover()
+    if (drag.isDragging()) finishDrag()
+    menuPending.current = true
+    const next = ++request.current
+    const position = await window.threadlight.setMicMenu(true)
+    if (request.current === next) {
+      menuPending.current = !!position
+      setMenu(position)
+    }
+  }
+  useEffect(() => {
+    const reset = () => {
+      cancelHover()
+      finishDrag()
+      closeMenu()
+    }
+    const onHide = () => {
+      if (document.hidden) reset()
+    }
+    window.addEventListener('blur', reset)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.removeEventListener('blur', reset)
+      document.removeEventListener('visibilitychange', onHide)
+      reset()
+    }
+  }, [cancelHover, closeMenu, finishDrag])
+  return (
+    <>
+      <div
+        ref={pill}
+        className={styles.micPill}
+        data-unfolded={expanded || undefined}
+        data-menu={!!menu || undefined}
+        data-agent-working={motion.agentWorking || undefined}
+        data-provider={motion.provider}
+        data-speaking={motion.output.level > 0.012 || undefined}
+        style={
+          {
+            left: menu?.x,
+            top: menu?.y,
+            '--speech-level': Math.min(1, motion.output.level * 3),
+          } as CSSProperties
+        }
+        role="group"
+        onContextMenuCapture={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          void showMenu()
+        }}
+        onKeyDownCapture={(event) => {
+          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault()
+            event.stopPropagation()
+            void showMenu()
+          }
+        }}
+        aria-label={en.openMic.pill}
+      >
+        <button
+          className={styles.micWave}
+          ref={wave}
+          aria-haspopup="menu"
+          aria-expanded={!!menu}
+          {...drag.handlers}
+          onPointerEnter={(event) => {
+            const last = lastPressPoint.current
+            if (
+              event.buttons ||
+              event.pointerType === 'touch' ||
+              menuPending.current ||
+              drag.isDragging()
+            )
+              return
+            // Native window movement can cross the cursor without a new user gesture.
+            if (last && last.x === event.screenX && last.y === event.screenY) return
+            cancelHover()
+            // Allow a primary press to capture this window before hover replaces it.
+            hoverTimer.current = window.setTimeout(() => {
+              if (!menuPending.current && !drag.isDragging() && !document.hidden)
+                window.threadlight.dotHover()
+            }, 500)
+          }}
+          onPointerLeave={(event) => {
+            cancelHover()
+            const last = lastPressPoint.current
+            if (
+              !drag.isDragging() &&
+              last &&
+              (last.x !== event.screenX || last.y !== event.screenY)
+            )
+              lastPressPoint.current = null
+          }}
+          onPointerDown={(event) => {
+            cancelHover()
+            lastPressPoint.current = { x: event.screenX, y: event.screenY }
+            drag.handlers.onPointerDown(event)
+          }}
+          onPointerUp={(event) => {
+            lastPressPoint.current = { x: event.screenX, y: event.screenY }
+            drag.handlers.onPointerUp()
+          }}
+          onClick={(event) => {
+            if (event.detail === 0) open()
+          }}
+          aria-description={[
+            motion.inputMuted ? 'Microphone muted' : 'Microphone open',
+            motion.output.level > 0.012 && 'Agent speaking',
+            motion.agentWorking && 'Agent working',
+          ]
+            .filter(Boolean)
+            .join('. ')}
+          aria-label={
+            motion.inputMuted ? 'Live microphone muted. Open voice panel' : en.openMic.showThreads
+          }
+          title="Hover to open the call. Drag to move. Right-click for call actions."
+        >
+          <ElectricMotion
+            snapshot={
+              motion.mode === 'idle' && !motion.inputMuted && micLevel > motion.input.level
+                ? { ...motion, input: { ...motion.input, level: micLevel } }
+                : motion
+            }
+            provider={motion.provider}
+            waveformOnly
+            label={
+              motion.output.level > 0.012
+                ? 'Agent speaking'
+                : motion.inputMuted
+                  ? 'Live microphone muted'
+                  : motion.agentWorking
+                    ? 'Listening · Agent working'
+                    : 'Listening'
+            }
+          />
+        </button>
+        {reply.shown && (
+          <SpokenReplyBody
+            reply={reply.shown}
+            expanded={expanded}
+            measure={measureBody}
+            dismiss={() => {
+              reply.dismiss()
+              wave.current?.focus({ preventScroll: true })
+            }}
+          />
+        )}
+      </div>
+      {menu && (
+        <ContextMenu
+          label="Voice call actions"
+          x={2}
+          y={menu.menuY}
+          onClose={() => {
+            closeMenu()
+            wave.current?.focus()
+          }}
+          items={[
+            {
+              label: motion.listeningPaused ? 'Resume listening' : 'Pause listening',
+              onSelect: () =>
+                window.threadlight.micAction(motion.listeningPaused ? 'resume' : 'pause'),
+            },
+            ...(motion.output.level > 0.012
+              ? [
+                  {
+                    label: 'Stop speaking',
+                    onSelect: () => window.threadlight.micAction('stopSpeaking'),
+                  },
+                ]
+              : []),
+            { label: 'Hang up', onSelect: () => window.threadlight.stopOpenMic() },
+          ]}
+        />
+      )}
+    </>
   )
 }

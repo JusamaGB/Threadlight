@@ -128,10 +128,12 @@ unique whole-word title phrases and speech-recognition word splits. Ambiguous na
 show the candidates. Commands expand, pin, and focus the row inside Threadlight;
 they do not send messages or launch the provider app. Workspace selection is temporary.
 Monitoring may be off while Live is available. Existing non-open-mic dictation remains.
-Composer dictation pauses Live input and mutes its playback until dictation finishes.
+Thread composer dictation takes the microphone while Live stays connected and can
+still play replies. The floating and panel waveforms turn red while Live input is muted.
+Live input resumes when dictation finishes or is cancelled.
 
 The opening is transcribed locally. After handoff, microphone audio streams through
-native Codex WebRTC and spoken replies play through the output device. Threadlight
+native Codex WebRTC and spoken replies play through the output device. When the opening playback cannot be identified, the current Live session can offer **Read remaining** for the unsaid prose. Threadlight
 does not save raw audio. Because the current native paginated history omits realtime
 timeline items, Threadlight stores voice text alongside its Agent metadata, including
 partial replies visible when the conversation ends. History stays under Earlier.
@@ -169,9 +171,18 @@ question. Backend work and approval waits extend that deadline.
 The installed V3 transport maps text appends to background context. Threadlight
 therefore submits the transcribed opening exactly once as a normal `turn/start`
 to the selected Codex model and reasoning effort in the same owned Live thread.
-The native commentary handoff conveys the backend result to voice. Voice instructions
-explain that the opening is already being handled and its result should be spoken
-without waiting for additional microphone input. Subsequent speech uses native Live
+Threadlight selects client-managed response handoffs on the native V3 session and
+disables delegation filler. When an explicitly final backing item streams a stable
+opening sentence, Threadlight can submit that sentence once through
+`thread/realtime/appendSpeech` while the rest of the answer continues.
+Other replies use completion-time speech; fenced examples remain in the transcript.
+When a lead was submitted, the same final item may submit its remaining prose once, after the lead's named playback boundary. The source item retains its Markdown and code. A read-only editor check can give one short progress update during a long turn. A confirmed coaching explanation keeps priority. The active work indicator remains below the scrollable transcript until the turn completes or needs input. Corrected native segments retain their identity and associated transport records. Commentary, private reasoning,
+tool activity, pending approvals and unconfirmed coaching hints are ineligible for early
+speech. Named playback turns gate waiting speech. A new request, interruption or session
+closure retires stale work. The current protocol has no per-utterance cancel handle.
+See [validation and timing](../validation/AGENT-CONTINUOUS-LIVE.md).
+An uncertain speech handoff is surfaced without resending the user's request.
+Subsequent speech uses native Live
 delegation. The opening stays in the durable pending journal until turn completion;
 uncertain sends are never replayed. Closing cancels unsent work and retains history.
 

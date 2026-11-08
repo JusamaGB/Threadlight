@@ -10,4 +10,6 @@
 
 - [ ] `npm run check` passes
 - [ ] No real data (transcripts, thread titles, names, paths) in code, tests or screenshots
-- [ ] `CHANGELOG.md` updated for user-visible changes
+- [ ] `CHANGELOG.md` Unreleased updated for user-visible changes (or explain why none is needed)
+- [ ] README and affected setup/plugin guides match supported behavior and limitations
+- [ ] Validation evidence distinguishes automated fixtures, live-provider checks and remaining release gates

@@ -1,3 +1,7 @@
+import { memoryTestTransport } from './memoryTransportHelper'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { ThreadReadService } from '../src/main/threadRead/service'
 import {
@@ -425,12 +429,14 @@ describe('thread discovery and reading evidence', () => {
   })
   it('TD-14 exposes exactly two authenticated read tools and revokes old capabilities', async () => {
     const { service } = setup(),
-      server = new ThreadReadServer(service)
+      directory = mkdtempSync(join(tmpdir(), 'reader-transport-test-')),
+      auth = memoryTestTransport(directory),
+      server = new ThreadReadServer(service, auth)
     await server.start()
     const receipts: unknown[] = [],
       connection = server.connect((r) => receipts.push(r))
     const call = async (method: string, params: unknown = {}, token = connection.token) =>
-      fetch(connection.endpoint, {
+      auth.fetch(connection.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ jsonrpc: '2.0', id: 'call', method, params }),
@@ -460,6 +466,7 @@ describe('thread discovery and reading evidence', () => {
       expect((await call('tools/list')).status).toBe(401)
     } finally {
       server.close()
+      rmSync(directory, { recursive: true, force: true })
     }
   })
 })

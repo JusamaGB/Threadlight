@@ -1,0 +1,30 @@
+.row {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.row .open {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  text-align: left;
+}
+.title {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+}
+.open span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+}

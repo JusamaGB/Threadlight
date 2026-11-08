@@ -1,5 +1,7 @@
 # Thread communication implementation and validation
 
+> Public copy: local proof paths and native identifiers are generalised; raw evidence remains private.
+
 Date: 2026-10-26. Local branch: `feat/agent-thread-reading`.
 
 ## Release status
@@ -28,11 +30,11 @@ Evidence directories are outside the repository; they contain disposable-chat ID
 
 | Check                                                                                                                | Result                                                                              | Evidence                                                                                                          |
 | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Independent competing native writers                                                                                 | Codex rejects a competing writer; Claude permits both                               | `C:/proof-temp/threadlight-ownership-R79gH2/ownership.json`                                                             |
-| Claude explicit same-session-ID alternative                                                                          | Both attempts reject; not a usable delivery route                                   | `C:/proof-temp/threadlight-ownership-Jlxd6V/ownership.json`                                                             |
-| Claude → Codex, Codex → Claude, exact direct replies, human question/answer and saved result                         | Passed with explicitly driven isolated native turns; not automatic Claude wakeup    | `C:/proof-temp/threadlight-peer-proof-Pmfxmw/communication.json`                                                        |
-| Native coordinator planning, background implementation, acceptance gate, native review of saved output               | Passed through production communication service/MCP and admitted Codex resume       | `C:/proof-temp/threadlight-workflow-proof-sPfGn8/workflow.json`                                                         |
-| Actual renderer workflow setup, full discovery, multiline DM, persisted reload, project question and native response | Passed; transport fixture does not launch providers                                 | `test/ui/communication.smoke.mjs`; screenshots in `C:/Example/threadlight-e2e/communication/`                     |
+| Independent competing native writers                                                                                 | Codex rejects a competing writer; Claude permits both                               | `C:/proof-temp/threadlight-ownership-R79gH2/ownership.json`                                                       |
+| Claude explicit same-session-ID alternative                                                                          | Both attempts reject; not a usable delivery route                                   | `C:/proof-temp/threadlight-ownership-Jlxd6V/ownership.json`                                                       |
+| Claude → Codex, Codex → Claude, exact direct replies, human question/answer and saved result                         | Passed with explicitly driven isolated native turns; not automatic Claude wakeup    | `C:/proof-temp/threadlight-peer-proof-Pmfxmw/communication.json`                                                  |
+| Native coordinator planning, background implementation, acceptance gate, native review of saved output               | Passed through production communication service/MCP and admitted Codex resume       | `C:/proof-temp/threadlight-workflow-proof-sPfGn8/workflow.json`                                                   |
+| Actual renderer workflow setup, full discovery, multiline DM, persisted reload, project question and native response | Passed; transport fixture does not launch providers                                 | `test/ui/communication.smoke.mjs`; screenshots in `C:/dev/threadlight-e2e/communication/`                         |
 | Focused communication/recovery contracts                                                                             | 151 focused regression tests passed, including communication and recovery contracts | `test/communication.test.ts`, `test/communicationIntegration.test.ts`, affected native/Agent/memory/Spaces suites |
 
 The workflow proof's first attempt failed because the harness imported the ownership helper from the wrong module. That import was corrected; the successful run above completed both tasks. The relay test's original two-second child-process wait proved too short on this Windows host; it now waits for the asserted condition with a bounded timeout.

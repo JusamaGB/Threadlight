@@ -13,10 +13,24 @@
   font-size: 12px;
   margin: 6px 0;
 }
+.view:has(> .requests, > article:first-child) {
+  padding-top: 5px;
+}
+.requests h3 {
+  margin: 3px 0 1.5px;
+}
 .view article {
   border-top: 1px solid var(--border);
   padding-top: 8px;
   margin-top: 10px;
+}
+.view > article:first-child {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+.view > article:first-child > h4 {
+  margin-top: 3px;
 }
 .view details {
   margin: 8px 0;

@@ -15,10 +15,16 @@ export default defineConfig(
       'screenshots-local/**',
       'notes-local/**',
       'tidy-root.mjs',
+      'threadlight-native-site/**',
+      'release-local/**',
     ],
   },
   js.configs.recommended,
   tseslint.configs.recommended,
+  {
+    files: ['threadlight-public-web/public/**/*.js'],
+    languageOptions: { globals: globals.browser },
+  },
   {
     files: ['src/renderer/**/*.{ts,tsx}', 'previews/**/*.ts'],
     extends: [reactHooks.configs.flat.recommended],
@@ -38,7 +44,8 @@ export default defineConfig(
     languageOptions: { globals: globals.node },
   },
   {
-    files: ['test/**/*.cjs'],
+    files: ['test/**/*.cjs', 'vscode-coach/**/*.cjs'],
+    languageOptions: { globals: globals.node },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   {

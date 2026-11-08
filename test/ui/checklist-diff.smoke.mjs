@@ -5,15 +5,15 @@ export async function checkChecklistDiff(page, row, capture) {
   const snapshot = await page.evaluate(() => window.threadlight.getSnapshot())
   await page.evaluate((snapshot) => {
     const saved = Object.fromEntries(
-      ['getStepActivity', 'getChanges', 'getFileDiff', 'openChangedFile'].map((key) => [
-        key,
-        window.threadlight[key],
-      ]),
+      ['getLocalTracking', 'getStepActivity', 'getChanges', 'getFileDiff', 'openChangedFile'].map(
+        (key) => [key, window.threadlight[key]],
+      ),
     )
     const files = [
       { path: 'shared/src/a.ts', added: 2, removed: 1, status: 'modified', binary: false },
       { path: 'shared/src/b.ts', added: 3, removed: 0, status: 'added', binary: false },
     ]
+    window.threadlight.getLocalTracking = async () => null
     window.proof.checklist = { saved, calls: [], mode: 'text', revision: 1, files }
     window.threadlight.getStepActivity = async () => ({
       startedAt: Date.now() - 5000,
@@ -29,7 +29,11 @@ export async function checkChecklistDiff(page, row, capture) {
     })
     window.threadlight.getChanges = async (sessionId) => {
       window.proof.checklist.calls.push(['changes', sessionId])
-      return { branch: 'main', files: window.proof.checklist.files }
+      return {
+        branch: 'main',
+        files: window.proof.checklist.files,
+        revision: `checklist-${window.proof.checklist.revision}`,
+      }
     }
     window.threadlight.getFileDiff = async (sessionId, path) => {
       const proof = window.proof.checklist
@@ -117,7 +121,12 @@ export async function checkChecklistDiff(page, row, capture) {
     )
     await capture('checklist-diff-open')
     await page.getByRole('button', { name: 'Open ↗', exact: true }).last().click()
-    assert.deepEqual((await calls()).at(-1), ['open', 'synthetic-claude', 'shared/src/a.ts'])
+    assert.deepEqual((await calls()).at(-1), [
+      'open',
+      'synthetic-claude',
+      'shared/src/a.ts',
+      'checklist-1',
+    ])
     await link('src/b.ts').focus()
     await page.keyboard.press('Enter')
     await page.getByText('new content 1 shared/src/b.ts', { exact: true }).waitFor()

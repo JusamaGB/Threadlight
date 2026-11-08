@@ -30,8 +30,8 @@ export function useVoice(onLimit: () => void) {
   const energy = useRef<AudioEnergy>(SILENT_AUDIO)
   const recording = useRef<Recording | null>(null)
   const generation = useRef(0)
-  const acquiring = useRef(false)
-  const transcribing = useRef(false)
+  const acquiring = useRef<number | null>(null)
+  const transcribing = useRef<number | null>(null)
   const limit = useRef(onLimit)
   useEffect(() => {
     limit.current = onLimit
@@ -50,8 +50,8 @@ export function useVoice(onLimit: () => void) {
 
   const start = useCallback(async () => {
     if (recording.current || acquiring.current || transcribing.current) return
-    acquiring.current = true
     const mine = ++generation.current
+    acquiring.current = mine
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -63,7 +63,7 @@ export function useVoice(onLimit: () => void) {
         },
       })
     } finally {
-      acquiring.current = false
+      acquiring.current = null
     }
     if (mine !== generation.current) {
       stream.getTracks().forEach((track) => track.stop())
@@ -93,14 +93,14 @@ export function useVoice(onLimit: () => void) {
   const stop = useCallback(async (): Promise<string> => {
     const current = recording.current
     if (!current || transcribing.current) return ''
-    transcribing.current = true
     const mine = generation.current
+    transcribing.current = mine
     const stopped = new Promise<void>((resolve) => (current.recorder.onstop = () => resolve()))
     current.recorder.stop()
     await stopped
     release(current)
     if (mine !== generation.current) {
-      transcribing.current = false
+      transcribing.current = null
       return ''
     }
     setState('transcribing')
@@ -110,7 +110,7 @@ export function useVoice(onLimit: () => void) {
       const text = await window.threadlight.transcribe(audio)
       return mine === generation.current ? text : ''
     } finally {
-      transcribing.current = false
+      transcribing.current = null
       if (mine === generation.current) setState('idle')
     }
   }, [release])
@@ -130,7 +130,14 @@ export function useVoice(onLimit: () => void) {
     [release],
   )
 
-  return { state, level, energy, start, stop, cancel }
+  const isCapturing = useCallback(
+    () =>
+      acquiring.current === generation.current ||
+      !!recording.current ||
+      transcribing.current === generation.current,
+    [],
+  )
+  return { state, level, energy, start, stop, cancel, isCapturing }
 }
 
 /** Decodes the recording and resamples it to the 16 kHz mono Whisper expects. */

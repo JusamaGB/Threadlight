@@ -1,4 +1,5 @@
 import { APP_CONTROL_INSTRUCTIONS } from '../../shared/appControl'
+import { SCREEN_REGION_GUIDANCE } from '../../shared/screenRegion'
 import { THREADLIGHT_AGENT_IDENTITY } from '../../shared/agentIdentity'
 import { BRAINSTORM_INSTRUCTIONS } from '../../shared/spaceContext'
 import { builtinSpaceTool, claudeSpaceConfig } from './spaceContextTools'
@@ -17,7 +18,8 @@ import { builtinControlTool, controlConfig } from './appControlTools'
 //
 // The stream format is Claude Code's own (the one its SDK speaks); it is not a public API.
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawnOwnedProcess, stopOwnedProcess } from './ownedProcess'
 import { randomUUID } from 'node:crypto'
 
 import type { AgentApproval, AgentItem, AgentState } from '../../shared/agent'
@@ -126,6 +128,7 @@ const FRONT_DESK = [
   "Give it the user's request in full, with anything relevant from this conversation and the briefing (the thread's folder, its git numbers). Run it in the foreground (never in the background) and wait for its report, then give the user its result briefly and plainly.",
   'Never guess or answer from memory instead of checking. Answer by yourself for small talk, questions about this conversation, thread discovery/reading using the built-in reader, and authorized Threadlight communication. Use Task for other work.',
   THREAD_READ_INSTRUCTIONS,
+  SCREEN_REGION_GUIDANCE,
 ].join(' ')
 
 const WORKER_PROMPT = [
@@ -160,6 +163,21 @@ export class AgentRun {
   }
   private state: AgentState = { ...IDLE_AGENT }
   private child: ChildProcessWithoutNullStreams | null = null
+  private retirement: Promise<void> = Promise.resolve()
+
+  /** The service waits before sending into a replacement after an error or expiry. */
+  ready(): Promise<void> {
+    return this.retirement
+  }
+
+  private retireChild(): Promise<void> {
+    const child = this.child
+    this.child = null
+    if (child)
+      this.retirement = Promise.all([this.retirement, stopOwnedProcess(child)]).then(() => {})
+    void this.retirement.catch(() => {})
+    return this.retirement
+  }
   private buffer = ''
   private pending = new Map<string, { input: JsonObject; approval: AgentApproval }>()
   private generation = 0
@@ -180,7 +198,10 @@ export class AgentRun {
   }
 
   /** Sends a message, starting the run first if there is none. */
-  send(text: string): { ok: true } | { ok: false; reason: string } {
+  send(
+    text: string,
+    region?: import('../liveScreen').RegionRequest,
+  ): { ok: true } | { ok: false; reason: string } {
     const message = text.trim()
     if (!message) return { ok: false, reason: 'Nothing to send.' }
     if (agentBusy(this.state)) {
@@ -189,16 +210,45 @@ export class AgentRun {
     this.clearExpiry()
     // Its time ran out: this message starts a fresh conversation.
     if (this.state.ended) this.state = { ...IDLE_AGENT }
-    if (!this.child) this.launch()
+    if (!this.child) {
+      try {
+        this.launch()
+      } catch (error) {
+        this.stopped('Could not start Claude: ' + (error as Error).message)
+        return { ok: false, reason: this.state.error! }
+      }
+    }
     this.update({
       status: 'working',
-      items: [...this.state.items, { kind: 'you', text: message }],
+      items: [
+        ...this.state.items,
+        {
+          kind: 'you',
+          text: region ? 'Captured screen region' : message,
+          id: region?.id,
+          screenPreview: region?.image.thumbnail,
+        },
+      ],
       error: null,
     })
     // The briefing rides along with each message; the conversation shows only what you wrote.
-    const brief = this.options.briefing?.()
+    const brief = region ? '' : this.options.briefing?.()
     const content = brief ? `${brief}\n\n${message}` : message
-    this.write({ type: 'user', message: { role: 'user', content } })
+    this.write({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: region
+          ? [
+              { type: 'text', text: content },
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: 'image/jpeg', data: region.image.jpeg },
+              },
+            ]
+          : content,
+      },
+    })
     return { ok: true }
   }
 
@@ -231,7 +281,7 @@ export class AgentRun {
   }
 
   /** Ends the conversation: the process exits, its transcript stays on disk. */
-  close(): void {
+  close(): Promise<void> {
     this.communication?.close()
     this.communication = undefined
     this.appControl?.close()
@@ -242,13 +292,12 @@ export class AgentRun {
     this.threadReads = undefined
     this.clearExpiry()
     this.closing = true
-    this.child?.stdin.end()
-    this.child?.kill()
-    this.child = null
+    this.retireChild()
     this.generation++
     this.pending.clear()
     this.state = { ...IDLE_AGENT }
     this.options.onChange(this.state)
+    return this.retirement
   }
 
   respond(key: string, response: AgentResponse): AgentResult {
@@ -325,10 +374,7 @@ export class AgentRun {
       ...DISALLOWED,
       ...this.blocked,
     ]
-    const start =
-      this.options.start ??
-      ((command, argv, cwd) =>
-        spawn(command, argv, { cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }))
+    const start = this.options.start ?? spawnOwnedProcess
     const child = start(cli.command, args, workspace)
     this.child = child
     const generation = ++this.generation
@@ -350,7 +396,6 @@ export class AgentRun {
     })
     child.on('exit', (code) => {
       if (generation !== this.generation) return
-      if (this.child === child) this.child = null
       if (!this.closing)
         this.stopped(oneLine(this.stderr).slice(-200) || `Claude exited (${code}).`)
     })
@@ -417,7 +462,11 @@ export class AgentRun {
     const body = message['message']
     const content = isObject(body) && Array.isArray(body['content']) ? body['content'] : []
     const fromWorker = str(message['parent_tool_use_id']) !== null
-    const items = [...this.state.items]
+    const items = this.state.items.map((item) =>
+      item.screenPreview && item.text === 'Captured screen region'
+        ? { ...item, text: 'Shared screen region' }
+        : item,
+    )
     for (const block of content.filter(isObject)) {
       if (block['type'] === 'text' && !fromWorker) {
         const text = str(block['text'])?.trim()
@@ -445,7 +494,7 @@ export class AgentRun {
           !request['agent_id'] &&
           !message['parent_tool_use_id']
           ? allow(id, input)
-          : deny(id, 'Brainstorm can only read its scoped space tools.'),
+          : deny(id, 'Brainstorm can only use its scoped project tools directly.'),
       )
       return
     }
@@ -482,21 +531,16 @@ export class AgentRun {
     const minutes = this.options.lifetimeMinutes?.() ?? 0
     if (minutes <= 0) return
     this.expiry = setTimeout(() => {
-      this.expiry = null
-      this.closing = true
-      this.generation++
-      this.child?.stdin.end()
-      this.child?.kill()
-      this.child = null
-      this.communication?.close()
-      this.communication = undefined
-      this.appControl?.close()
-      this.appControl = undefined
-      this.spaceContext?.close()
-      this.spaceContext = undefined
-      this.threadReads?.close()
-      this.threadReads = undefined
-      this.update({ status: 'idle', ended: true, progress: null })
+      const retained = this.state
+      void this.close()
+      this.update({
+        ...retained,
+        status: 'idle',
+        ended: true,
+        progress: null,
+        approval: null,
+        requests: [],
+      })
     }, minutes * 60_000)
   }
 
@@ -506,6 +550,9 @@ export class AgentRun {
   }
 
   private stopped(reason: string): void {
+    this.clearExpiry()
+    this.generation++
+    this.retireChild()
     this.communication?.close()
     this.communication = undefined
     this.appControl?.close()
@@ -514,7 +561,6 @@ export class AgentRun {
     this.spaceContext = undefined
     this.threadReads?.close()
     this.threadReads = undefined
-    this.child = null
     this.pending.clear()
     this.update({ status: 'error', approval: null, progress: null, error: reason })
   }

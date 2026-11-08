@@ -1,4 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
+import { createInterface } from 'node:readline'
+import { EditorCoach } from '../src/main/editorCoach'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -9,8 +12,10 @@ import { codexRequest } from '../src/main/agent/codexRequests'
 import { codexPolicy, verifyCodexPolicy } from '../src/main/agent/codexPolicy'
 import { AgentStore } from '../src/main/agent/agentStore'
 import { AgentService } from '../src/main/agent/agentService'
+import { agentTranscript } from '../src/shared/agentTranscript'
 import { DEFAULT_SETTINGS } from '../src/shared/settings'
 import { THREADLIGHT_AGENT_IDENTITY } from '../src/shared/agentIdentity'
+import { SCREEN_REGION_GUIDANCE } from '../src/shared/screenRegion'
 import {
   SPACE_CONTEXT_SERVER,
   SPACE_CONTEXT_TOOLS,
@@ -116,6 +121,112 @@ async function fixture() {
 const settle = async (run: CodexAgentRun) => expect.poll(() => run.current.status).toBe('ready')
 
 describe('Codex agent', () => {
+  it('sends a standalone crop as context with one receipt and no invented user question', async () => {
+    const { folder, fake } = await fixture()
+    const service = new AgentService({
+      workspace: folder,
+      index: join(folder, 'regions.json'),
+      claudeProjects: folder,
+      settings: () => ({
+        ...DEFAULT_SETTINGS,
+        agentProvider: 'codex',
+        agentCodexModel: 'future-fast',
+      }),
+      snapshot: () => ({
+        sessions: [],
+        workspaces: [],
+        allWorkspaces: [],
+        currentWorkspace: null,
+        currentThreadId: null,
+      }),
+      cli: async () => null,
+      codexClient: async () => fake,
+      onChange: () => {},
+      onRateLimit: () => {},
+    })
+    try {
+      expect(
+        await service.startRegion({
+          id: 'crop',
+          image: { jpeg: 'pixels', thumbnail: 'preview', application: 'Editor' },
+        }),
+      ).toEqual({ ok: true })
+      expect(
+        fake.calls.find((c) => c.method === 'thread/start')?.params.developerInstructions,
+      ).toContain(SCREEN_REGION_GUIDANCE)
+      expect(
+        fake.calls.filter((c) => c.method === 'turn/start').map((c) => c.params.input),
+      ).toEqual([
+        [
+          {
+            type: 'text',
+            text: 'Shared screen region. Foreground application at capture: "Editor".',
+          },
+          { type: 'image', url: 'data:image/jpeg;base64,pixels' },
+        ],
+      ])
+      expect(service.current.items.filter((i) => i.kind === 'you')).toEqual([
+        { id: 'crop', kind: 'you', text: 'Shared screen region', screenPreview: 'preview' },
+      ])
+      const first = service.current.conversationId!
+      fake.complete()
+      await expect.poll(() => service.current.status).toBe('ready')
+      expect((await service.send('Follow-up')).ok).toBe(true)
+      expect(service.current.conversationId).toBe(first)
+      expect(
+        (await service.startRegion({ id: 'busy', image: { jpeg: 'second', thumbnail: 'preview' } }))
+          .ok,
+      ).toBe(false)
+      expect(fake.calls.some((c) => c.method === 'thread/archive')).toBe(false)
+      fake.complete()
+      await expect.poll(() => service.current.status).toBe('ready')
+      expect(
+        (await service.startRegion({ id: 'next', image: { jpeg: 'second', thumbnail: 'preview' } }))
+          .ok,
+      ).toBe(true)
+      expect(service.store.get(first)).toMatchObject({
+        standaloneRegion: true,
+        archiveState: 'archived',
+      })
+      expect(service.current.conversationId).not.toBe(first)
+      expect((await service.history()).some((r) => r.id === first)).toBe(true)
+      const record = service.store.get(first)!
+      for (const [id, data] of [
+        ['settled', { standaloneRegion: true }],
+        ['unconfirmed', { standaloneRegion: true, pending: { id: 'p', text: 'pending', at: 1 } }],
+        ['ordinary', { standaloneRegion: undefined }],
+      ] as const)
+        await service.store.put({ ...record, id, providerId: id, archiveState: undefined, ...data })
+      await service.retryArchives()
+      expect(service.store.get('settled')?.archiveState).toBe('archived')
+      expect(service.store.get('unconfirmed')?.archiveState).toBeUndefined()
+      expect(service.store.get('ordinary')?.archiveState).toBeUndefined()
+    } finally {
+      await service.close()
+    }
+  })
+  it('waits for the owned transport to stop before completing conversation retirement', async () => {
+    const { run, fake } = await fixture()
+    await run.send('Start')
+    fake.complete()
+    await settle(run)
+    let release!: () => void
+    const stopping = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    fake.close = () => stopping
+    let retired = false
+    const closed = run.close().then(() => {
+      retired = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(retired).toBe(false)
+    expect(fake.calls.some((c) => c.method === 'thread/archive')).toBe(false)
+    release()
+    await closed
+    expect(retired).toBe(true)
+    expect(fake.calls.some((c) => c.method === 'thread/archive')).toBe(true)
+  })
   it('restricts Brainstorm to its scoped integration and denies permission escalations', async () => {
     const { fake, options } = await fixture()
     let closed = 0
@@ -140,6 +251,7 @@ describe('Codex agent', () => {
       spaceContext: () => ({
         endpoint: 'http://127.0.0.1:1234/mcp',
         token: 'synthetic',
+        mcp: { command: 'fixture', args: ['private-config'], env: {} },
         close: () => {
           closed++
         },
@@ -209,6 +321,7 @@ describe('Codex agent', () => {
           return {
             endpoint: 'http://127.0.0.1:1/mcp',
             token: 'fixture',
+            mcp: { command: 'fixture', args: ['private-config'], env: {} },
             close: () => {
               value.active = false
             },
@@ -391,7 +504,7 @@ describe('Codex agent', () => {
     fake.complete()
     await settle(run)
     expect(run.current.items.filter((i) => i.kind === 'agent')).toEqual([
-      { id: 'reply', kind: 'agent', text: 'Hello world' },
+      { id: 'reply', kind: 'agent', text: 'Hello world', backingTurnId: 'turn-1' },
     ])
     expect(store.all()[0]?.pending).toBeNull()
     expect(await run.send('Next')).toEqual({ ok: true })
@@ -730,6 +843,507 @@ describe('native Live voice', () => {
     }
   }
 
+  it('correlates the observed backing answer and incremental narration only in the issuing Live session', async () => {
+    const { run, fake, folder } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    const final = {
+      type: 'agentMessage',
+      id: 'backing-answer',
+      phase: 'final_answer',
+      text: 'The two words are “violet compass”.',
+    }
+    fake.emit('turn/started', { turn: { id: 'backing-turn' } })
+    fake.emit('item/completed', { turnId: 'backing-turn', item: final })
+    fake.emit('turn/completed', {
+      turn: { id: 'backing-turn', status: 'completed', items: [final] },
+    })
+    expect(fake.calls.filter((c) => c.method === 'thread/realtime/appendSpeech')).toHaveLength(1)
+    const segment = (id: string, text: string) => ({
+      type: 'transcriptSegment',
+      role: 'assistant',
+      id,
+      text,
+    })
+    fake.emit('thread/realtime/item/started', { item: segment('spoken', '') })
+    fake.emit('thread/realtime/item/transcript/delta', { itemId: 'spoken', delta: 'The two words' })
+    const visible = () => agentTranscript(run.current.items, [], false).map((row) => row.key)
+    expect(visible()).toContain('backing-answer')
+    expect(visible()).not.toContain('live:spoken')
+    fake.emit('thread/realtime/item/completed', {
+      item: segment('spoken', ' The two words are “violet compass.”'),
+    })
+    expect(run.current.items.find((i) => i.id === 'live:spoken')?.narrationOf).toMatchObject({
+      sessionId: voiceId,
+      turnId: 'backing-turn',
+      itemId: final.id,
+      requestId: expect.any(String),
+    })
+    expect(visible()).not.toContain('live:spoken')
+    fake.emit('thread/realtime/item/completed', { item: segment('direct', final.text) })
+    expect(visible()).toContain('live:direct')
+    fake.emit('thread/realtime/item/started', {
+      item: segment('cut', 'A separate interrupted detail'),
+    })
+    fake.emit('thread/realtime/error', { message: 'Synthetic transport failure' })
+    expect(visible()).toContain('live:cut')
+    const id = run.current.conversationId!
+    await run.close()
+    const restored = new AgentStore(join(folder, 'index.json'))
+    await restored.load()
+    const items = restored.get(id)!.liveItems!
+    expect(items.find((i) => i.id === 'live:spoken')).toMatchObject({
+      liveAfter: 'backing-answer',
+      narrationOf: { turnId: 'backing-turn' },
+    })
+    expect(items.find((i) => i.id === 'live:cut')?.text).toBe('A separate interrupted detail')
+  })
+
+  it('keeps a corrected utterance, its tool records and its spoken answer together across handoffs', async () => {
+    const { run, fake, folder } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    const emit = (method: string, item: JsonObject) =>
+      fake.emit(method, { turnId: 'voice-turn', item })
+    const user = (text: string) => ({
+      type: 'transcriptSegment',
+      id: 'original',
+      role: 'user',
+      text,
+    })
+    const envelope = (id: string, text: string) =>
+      emit('item/completed', {
+        type: 'userMessage',
+        id,
+        content: [
+          {
+            text:
+              '<realtime_delegation><input>' +
+              text +
+              '</input><transcript_delta>user: ' +
+              text +
+              '</transcript_delta></realtime_delegation>',
+          },
+        ],
+      })
+    const read = (id: string, action: string) => ({
+      type: 'mcpToolCall',
+      id,
+      tool: 'threadlight_editor_coach',
+      server: 'control',
+      arguments: { action },
+      status: 'completed',
+      result: { content: [{ text: JSON.stringify({ outcome: 'ok' }) }] },
+    })
+    const speech = () => fake.calls.filter((c) => c.method === 'thread/realtime/appendSpeech')
+    fake.emit('thread/realtime/item/completed', { item: user('Read this window.') })
+    fake.emit('turn/started', { turn: { id: 'voice-turn' } })
+    envelope('d1', 'Read this window.')
+    vi.useFakeTimers()
+    try {
+      emit('item/completed', read('read-context', 'context'))
+      expect(run.current).toMatchObject({
+        status: 'working',
+        progress: 'Editor context received · Agent working',
+      })
+      await vi.advanceTimersByTimeAsync(6500)
+      expect(speech()).toHaveLength(1)
+      expect(speech()[0]!.params.text).toContain('still working')
+      run.playbackBoundary('assistant', 'status')
+      fake.emit('thread/realtime/item/completed', {
+        item: {
+          id: 'work-status',
+          type: 'transcriptSegment',
+          role: 'assistant',
+          text: 'I’m still working on your request.',
+        },
+      })
+      run.playbackBoundary('done', 'status')
+      run.playbackBoundary('user', 'correction')
+      fake.emit('thread/realtime/item/completed', { item: user('Read this window. Hello.') })
+      envelope('d2', 'Read this window. Hello.')
+      emit('item/completed', read('read1', 'review'))
+      envelope('d3', 'Read this window. Hello.')
+      emit('item/completed', read('read2', 'review'))
+      fake.emit('thread/realtime/item/started', { item: user('') })
+      fake.emit('thread/realtime/item/completed', { item: user('Read this window.') })
+      fake.emit('thread/realtime/item/transcript/delta', { itemId: 'original', delta: ' stale' })
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(speech()).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+    const original = run.current.items.find((i) => i.id === 'live:original')
+    expect(original).toMatchObject({
+      text: 'Read this window. Hello.',
+      voiceDelegationIds: ['d1', 'd2', 'd3'],
+    })
+    const lead = 'Here is what the **first line** does.'
+    const plain = 'Here is what the first line does.'
+    const tail = 'The next line returns the result.'
+    const answer = {
+      id: 'a',
+      type: 'agentMessage',
+      phase: 'final_answer',
+      text: lead + '\n\n' + tail,
+    }
+    emit('item/started', { ...answer, text: '' })
+    fake.emit('item/agentMessage/delta', {
+      turnId: 'voice-turn',
+      itemId: 'a',
+      delta: lead + '\n\n',
+    })
+    expect(speech()).toHaveLength(2)
+    run.playbackBoundary('assistant', 'lead')
+    const narration = (id: string, text: string) =>
+      fake.emit('thread/realtime/item/completed', {
+        item: { id, type: 'transcriptSegment', role: 'assistant', text },
+      })
+    narration('spoken-lead', plain)
+    fake.emit('item/agentMessage/delta', { turnId: 'voice-turn', itemId: 'a', delta: tail })
+    emit('item/completed', answer)
+    const turn = { id: 'voice-turn', status: 'completed', items: [answer] }
+    fake.emit('turn/completed', { turn })
+    fake.emit('turn/completed', { turn })
+    await Promise.resolve()
+    run.playbackBoundary('done', 'unrelated')
+    expect(speech()).toHaveLength(2)
+    run.playbackBoundary('done', 'lead')
+    await expect.poll(() => speech().length).toBe(3)
+    expect(speech()[2]!.params.text).toContain(tail)
+    expect(speech()[2]!.params.text).not.toContain(plain)
+    narration('spoken-tail', tail)
+    const rows = agentTranscript(run.current.items, [], false)
+    expect(rows.map((r) => r.key)).toEqual([
+      'live:original',
+      'activity:read-context',
+      'live:work-status',
+      'activity:read1',
+      'a',
+    ])
+    expect(rows[0]).toMatchObject({ item: { audioDetails: expect.any(Array) } })
+    await expect.poll(() => run.current.status).toBe('ready')
+    const id = run.current.conversationId!
+    await run.close()
+    const store = new AgentStore(join(folder, 'index.json'))
+    await store.load()
+    expect(
+      store.get(id)?.liveItems?.find((i) => i.id === original?.id)?.voiceDelegationIds,
+    ).toEqual(['d1', 'd2', 'd3'])
+    expect(
+      store.get(id)?.liveItems?.find((i) => i.id === 'live:spoken-tail')?.narrationOf?.tailAfter,
+    ).toBe(plain)
+  })
+
+  it('keeps the next Live turn working through late completion and replay of the prior turn', async () => {
+    const { run, fake } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    fake.emit('turn/started', { turn: { id: 'old' } })
+    fake.emit('turn/completed', { turn: { id: 'old', status: 'completed' } })
+    fake.emit('turn/started', { turn: { id: 'new' } })
+    fake.emit('turn/started', { turn: { id: 'old' } })
+    fake.emit('turn/completed', { turn: { id: 'old', status: 'completed' } })
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(run.current.status).toBe('working')
+    fake.emit('turn/completed', { turn: { id: 'new', status: 'completed' } })
+    await expect.poll(() => run.current.status).toBe('ready')
+    await run.close()
+  })
+
+  it('starts speech during an explicitly final stream, once, before the code example completes', async () => {
+    const { run, fake } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    fake.emit('turn/started', { turn: { id: 'streaming' } })
+    const lead = 'Ordering lets each comparison safely discard half the remaining candidates.'
+    const emit = (phase: string, id: string, delta: string) => {
+      fake.emit('item/started', {
+        turnId: 'streaming',
+        item: { id, type: 'agentMessage', phase, text: '' },
+      })
+      fake.emit('item/agentMessage/delta', { turnId: 'streaming', itemId: id, delta })
+    }
+    const handoffs = () => fake.calls.filter((c) => c.method === 'thread/realtime/appendSpeech')
+    emit('commentary', 'status', lead + ' ')
+    expect(handoffs()).toHaveLength(0)
+    emit('final_answer', 'final', lead)
+    expect(handoffs()).toHaveLength(0)
+    fake.emit('item/agentMessage/delta', {
+      turnId: 'streaming',
+      itemId: 'final',
+      delta: '\n\n' + String.fromCharCode(96).repeat(3) + 'python\n',
+    })
+    expect(handoffs()).toHaveLength(1)
+    fake.emit('thread/realtime/item/completed', {
+      item: { id: 'spoken-lead', type: 'transcriptSegment', role: 'assistant', text: lead },
+    })
+    const text =
+      lead +
+      '\n\n' +
+      String.fromCharCode(96).repeat(3) +
+      'python\nprint(1)\n' +
+      String.fromCharCode(96).repeat(3)
+    const item = { type: 'agentMessage', phase: 'final_answer', id: 'final', text }
+    fake.emit('item/completed', { turnId: 'streaming', item })
+    fake.emit('turn/completed', { turn: { id: 'streaming', status: 'completed', items: [item] } })
+    expect(handoffs()).toHaveLength(1)
+    expect(handoffs()[0]!.params.text).not.toContain('python')
+    const rows = agentTranscript(run.current.items, [], false)
+    expect(rows.find((r) => r.key === 'final')).toMatchObject({ item: { text } })
+    expect(rows.some((r) => r.key === 'live:spoken-lead')).toBe(false)
+    await run.close()
+  })
+
+  it('restores a distinct transcript after a failed narration handoff', async () => {
+    const { run, fake } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    fake.handler = async (method) => {
+      if (method !== 'thread/realtime/appendSpeech') return
+      fake.emit('thread/realtime/item/completed', {
+        item: {
+          type: 'transcriptSegment',
+          id: 'ambiguous',
+          role: 'assistant',
+          text: 'Same answer.',
+        },
+      })
+      throw Error('Synthetic failed handoff')
+    }
+    const item = { type: 'agentMessage', phase: 'final_answer', id: 'answer', text: 'Same answer.' }
+    fake.emit('turn/started', { turn: { id: 'backing' } })
+    fake.emit('item/completed', { turnId: 'backing', item })
+    fake.emit('turn/completed', { turn: { id: 'backing', status: 'completed', items: [item] } })
+    await expect.poll(() => run.current.error).toContain('speech handoff')
+    expect(agentTranscript(run.current.items, [], false).map((row) => row.key)).toContain(
+      'live:ambiguous',
+    )
+    await run.close()
+  })
+
+  it('steers a region into the active Live turn once and never moves it to a different turn after rejection', async () => {
+    const { run, fake } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    fake.emit('turn/started', { turn: { id: 'active-turn' } })
+    const image = { jpeg: '/9j/test', thumbnail: '/9j/thumb' }
+    fake.handler = async (method) => {
+      if (method === 'turn/steer') return { turnId: 'active-turn' }
+    }
+    expect(await run.shareRegion(image)).toEqual({ ok: true })
+    expect(fake.calls.filter((c) => c.method === 'turn/steer').map((c) => c.params)).toEqual([
+      expect.objectContaining({
+        threadId: 'owned-thread',
+        expectedTurnId: 'active-turn',
+        input: [
+          { type: 'text', text: 'Shared screen region.' },
+          { type: 'image', url: 'data:image/jpeg;base64,/9j/test' },
+        ],
+      }),
+    ])
+    fake.handler = async (method) => {
+      if (method === 'turn/steer') throw Error('Turn changed')
+    }
+    expect((await run.shareRegion(image)).ok).toBe(false)
+    expect(fake.calls.filter((c) => c.method === 'turn/start')).toHaveLength(0)
+    await run.stopLive()
+    expect((await run.shareRegion(image)).ok).toBe(false)
+    await run.close()
+  })
+
+  it('delivers guide completion to the owning backing thread and Live without another user turn', async () => {
+    const { run, fake } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    const event = {
+      status: 'completed',
+      origin: 'editor',
+      plan: crypto.randomUUID(),
+      guideId: crypto.randomUUID(),
+      token: crypto.randomUUID(),
+      step: 2,
+      total: 2,
+      goal: 'Understand the sum',
+      hint: 'Print the result',
+    } as const
+    await run.coachEvent(event)
+    for (const method of [
+      'thread/inject_items',
+      'thread/realtime/appendText',
+      'thread/realtime/appendSpeech',
+    ]) {
+      expect(fake.calls.filter((c) => c.method === method).map((c) => c.params.threadId)).toEqual([
+        'owned-thread',
+      ])
+    }
+    expect(fake.calls.some((c) => c.method === 'turn/start')).toBe(false)
+    const speechCalls = () =>
+      fake.calls.filter(
+        (c) =>
+          c.method === 'thread/realtime/appendText' || c.method === 'thread/realtime/appendSpeech',
+      ).length
+    const beforeEdit = speechCalls()
+    await run.coachEvent({ ...event, status: 'paused' })
+    expect(speechCalls()).toBe(beforeEdit)
+    await run.coachEvent({ ...event, status: 'refresh_requested', origin: 'voice' })
+    expect(fake.calls.some((c) => c.method === 'turn/start')).toBe(false)
+    await run.coachEvent({ ...event, status: 'refresh_requested' })
+    expect(fake.calls.filter((c) => c.method === 'turn/start')).toHaveLength(1)
+    const beforeVerified = speechCalls()
+    await run.coachEvent({ ...event, status: 'refresh_requested', origin: 'verified_edit' })
+    expect(speechCalls()).toBe(beforeVerified)
+    expect(fake.calls.filter((c) => c.method === 'turn/steer').at(-1)?.params.input).toEqual([
+      expect.objectContaining({
+        text: expect.stringContaining('editor observed the exact target line'),
+      }),
+    ])
+    await run.stopLive()
+    await expect(run.coachEvent(event)).rejects.toThrow('Live has closed')
+    await run.close()
+  })
+
+  it.each(['paused', 'cancelled', 'shown', 'source', 'caption'] as const)(
+    'checks an in-flight verified refresh after a %s event',
+    async (status) => {
+      const { run, fake } = await fixture()
+      connect(fake)
+      await run.startLive(voiceId, offer)
+      const event = {
+        guideId: crypto.randomUUID(),
+        plan: crypto.randomUUID(),
+        token: crypto.randomUUID(),
+        step: 1,
+        total: 2,
+        goal: 'Receipt',
+        hint: 'Fix the loop',
+      }
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      fake.handler = async (method) => {
+        if (method === 'thread/inject_items') {
+          fake.handler = undefined
+          await gate
+        }
+        return undefined
+      }
+      let currentSource = true
+      const pending = run.coachEvent({
+        ...event,
+        status: 'refresh_requested',
+        origin: 'verified_edit',
+        isCurrentSource: () => currentSource,
+      })
+      if (status === 'source') currentSource = false
+      else if (status === 'caption') {
+        fake.emit('thread/realtime/item/completed', {
+          item: {
+            type: 'transcriptSegment',
+            role: 'user',
+            id: 'ordinary-user-caption',
+            text: 'I see the line.',
+          },
+        })
+        expect(run.current.items.some((item) => item.text === 'I see the line.')).toBe(true)
+      } else
+        await run.coachEvent({
+          ...event,
+          status,
+          origin: 'editor',
+          token: crypto.randomUUID(),
+          guideId: status === 'shown' ? crypto.randomUUID() : event.guideId,
+        })
+      release()
+      await pending
+      expect(
+        fake.calls.filter((c) => c.method === 'turn/start' || c.method === 'turn/steer'),
+      ).toHaveLength(status === 'caption' ? 1 : 0)
+      await run.close()
+    },
+  )
+
+  it('invalidates a verified dispatch while its editor notification still owns the delivery queue', async () => {
+    const { run, fake, folder } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    const address = crypto.randomUUID()
+    const file = join(folder, 'editor.json')
+    await writeFile(file, JSON.stringify({ id: address, token: 'a'.repeat(64) }))
+    let send!: (value: unknown) => void
+    let plan = ''
+    const token = crypto.randomUUID()
+    const server = createServer((socket) => {
+      send = (value) => {
+        socket.write(JSON.stringify(value) + '\n')
+      }
+      createInterface({ input: socket }).on('line', (line) => {
+        const { id, command } = JSON.parse(line)
+        if (!command) return
+        if (command.action === 'hello')
+          send({ id, value: { actions: ['progress'], verifiedGuideEdits: true } })
+        if (command.action === 'guide') {
+          plan = command.plan
+          send({ id, value: plan })
+        }
+        if (command.action === 'guide_status') send({ id, value: { token } })
+      })
+    })
+    const pipe = '\\\\.\\pipe\\threadlight-coach-' + address
+    await new Promise<void>((resolve) => server.listen(pipe, resolve))
+    const bridge = new EditorCoach(
+      () => 'owner',
+      async () => {},
+      file,
+      (_id, event) => run.coachEvent(event),
+    )
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    try {
+      await bridge.run('owner', {
+        action: 'guide',
+        snapshot: crypto.randomUUID(),
+        steps: [{ line: 1, hint: 'Receipt', explanation: 'Fix the loop' }],
+      })
+      const event = {
+        plan,
+        guideId: crypto.randomUUID(),
+        token,
+        step: 1,
+        total: 1,
+        hint: 'Fix loop',
+        goal: 'Receipt',
+      }
+      fake.handler = async (method) => {
+        if (method === 'thread/inject_items') await blocked
+        return undefined
+      }
+      send({ guideEvent: { ...event, status: 'refresh_requested', origin: 'verified_edit' } })
+      await expect.poll(() => fake.calls.some((c) => c.method === 'thread/inject_items')).toBe(true)
+      send({
+        guideEvent: { ...event, status: 'paused', origin: 'editor', token: crypto.randomUUID() },
+      })
+      // A subsequent socket reply is a barrier: the receive loop has consumed the pause,
+      // but its serialized notification cannot reach the run until injection finishes.
+      await bridge.run('owner', { action: 'guide_status' })
+      release()
+      await expect
+        .poll(() => fake.calls.filter((c) => c.method === 'thread/inject_items').length)
+        .toBe(2)
+      expect(
+        fake.calls.filter((c) => c.method === 'turn/start' || c.method === 'turn/steer'),
+      ).toHaveLength(0)
+    } finally {
+      release()
+      bridge.close()
+      server.close()
+      await run.close()
+    }
+  })
+
   it('prepares without sending, sends the opening once, retains voice history, and stops before archiving', async () => {
     const { run, fake, store } = await fixture()
     connect(fake)
@@ -740,6 +1354,8 @@ describe('native Live voice', () => {
     expect(fake.calls.find((c) => c.method === 'thread/realtime/start')?.params).toMatchObject({
       transport: { type: 'webrtc', sdp: offer },
       flushTranscriptTailOnSessionEnd: false,
+      clientManagedHandoffs: true,
+      delegationAckFiller: false,
       prompt: expect.stringContaining(THREADLIGHT_AGENT_IDENTITY),
       initialItems: [
         { role: 'developer', text: expect.stringContaining(THREADLIGHT_AGENT_IDENTITY) },
@@ -781,6 +1397,51 @@ describe('native Live voice', () => {
     ])
     const methods = fake.calls.map((c) => c.method)
     expect(methods.indexOf('thread/realtime/stop')).toBeLessThan(methods.indexOf('thread/archive'))
+  })
+
+  it('hands each completed delegated answer to Live once, without speaking commentary or interrupted work', async () => {
+    const { run, fake } = await fixture()
+    connect(fake)
+    await run.startLive(voiceId, offer)
+    const spoken = () => fake.calls.filter((c) => c.method === 'thread/realtime/appendSpeech')
+    const message = (phase: string, text: string) => ({
+      type: 'agentMessage',
+      id: phase,
+      phase,
+      text,
+    })
+    fake.emit('turn/started', { turn: { id: 'delegated' } })
+    fake.emit('item/completed', { turnId: 'delegated', item: message('commentary', 'Just a sec.') })
+    expect(spoken()).toHaveLength(0)
+    fake.emit('item/completed', {
+      turnId: 'delegated',
+      item: message('final_answer', 'The panel is ready.'),
+    })
+    const turn = { id: 'delegated', status: 'completed' }
+    fake.emit('turn/completed', { turn })
+    fake.emit('turn/completed', { turn })
+    expect(spoken()).toHaveLength(1)
+    expect(spoken()[0]?.params.text).toContain('The panel is ready.')
+    expect(spoken()[0]?.params.text).not.toContain('Just a sec.')
+    fake.emit('turn/started', { turn: { id: 'interrupted' } })
+    fake.emit('turn/completed', {
+      turn: {
+        id: 'interrupted',
+        status: 'interrupted',
+        items: [message('final_answer', 'Partial answer')],
+      },
+    })
+    await run.stopLive()
+    fake.emit('turn/started', { turn: { id: 'after-stop' } })
+    fake.emit('turn/completed', {
+      turn: {
+        id: 'after-stop',
+        status: 'completed',
+        items: [message('final_answer', 'Text only')],
+      },
+    })
+    expect(spoken()).toHaveLength(1)
+    await run.close()
   })
 
   it('retains an uncertain opening without automatically resending it', async () => {
@@ -883,69 +1544,101 @@ describe('native Live voice', () => {
     await run.close()
   })
 
-  it('protects a working Agent and ignores stop requests from older mic sessions', async () => {
-    const { folder, fake } = await fixture()
-    connect(fake)
-    const service = new AgentService({
-      workspace: folder,
-      index: join(folder, 'live-service.json'),
-      claudeProjects: folder,
-      settings: () => ({ ...DEFAULT_SETTINGS, agentProvider: 'codex' }),
-      snapshot: () => ({
-        sessions: [],
-        workspaces: [],
-        allWorkspaces: [],
-        currentWorkspace: null,
-        currentThreadId: null,
-      }),
-      cli: async () => null,
-      codexClient: async () => fake,
-      onChange: () => {},
-      onRateLimit: () => {},
-    })
-    await service.send('Existing work')
-    const originalId = service.current.conversationId
-    expect((await service.startLive(voiceId, offer)).ok).toBe(false)
-    expect(fake.calls.some((c) => c.method === 'thread/realtime/start')).toBe(false)
-    fake.complete()
-    await expect.poll(() => service.current.status).toBe('ready')
-    expect(await service.startLive(voiceId, offer)).toEqual({ ok: true, sdp: answer })
-    await service.stopLive('older-session-111111')
-    expect(service.current.live).toBe('ready')
-    expect((await service.openLive('older-session-111111', 'Do not send')).ok).toBe(false)
-    expect(service.current.conversationId).toBe(originalId)
-    expect(fake.calls.filter((c) => c.method === 'thread/start')).toHaveLength(1)
-    expect(await service.openLive(voiceId, 'Voice follow-up')).toEqual({ ok: true })
-    await service.stopLive(voiceId)
-    expect(service.current.ended).toBe(false)
-    expect(service.current.status).toBe('working')
-    expect(service.current.live).toBeNull()
-    expect(fake.calls.some((c) => c.method === 'thread/archive')).toBe(false)
-    const past = (await service.history()).find((r) => r.id === originalId)!
-    const opening = service.current.items.find((i) => i.text === 'Voice follow-up')!
-    fake.history = [
-      {
-        item: {
-          type: 'userMessage',
-          id: opening.id,
-          content: [{ type: 'text', text: 'Voice follow-up' }],
+  it.each(['fresh', 'archive'] as const)(
+    'keeps work across hang-up, rejects stale sessions and permits an explicit %s afterwards',
+    async (choice) => {
+      const { folder, fake } = await fixture()
+      connect(fake)
+      const service = new AgentService({
+        workspace: folder,
+        index: join(folder, 'live-service.json'),
+        claudeProjects: folder,
+        settings: () => ({ ...DEFAULT_SETTINGS, agentProvider: 'codex' }),
+        snapshot: () => ({
+          sessions: [],
+          workspaces: [],
+          allWorkspaces: [],
+          currentWorkspace: null,
+          currentThreadId: null,
+        }),
+        cli: async () => null,
+        codexClient: async () => fake,
+        onChange: () => {},
+        onRateLimit: () => {},
+      })
+      await service.send('Existing work')
+      const originalId = service.current.conversationId
+      expect((await service.startLive(voiceId, offer)).ok).toBe(false)
+      expect(fake.calls.some((c) => c.method === 'thread/realtime/start')).toBe(false)
+      fake.complete()
+      await expect.poll(() => service.current.status).toBe('ready')
+      expect(await service.startLive(voiceId, offer)).toEqual({ ok: true, sdp: answer })
+      await service.stopLive('older-session-111111')
+      expect(service.current.live).toBe('ready')
+      expect((await service.openLive('older-session-111111', 'Do not send')).ok).toBe(false)
+      expect(service.current.conversationId).toBe(originalId)
+      expect(fake.calls.filter((c) => c.method === 'thread/start')).toHaveLength(1)
+      const pixels = { jpeg: 'cGl4ZWxz', thumbnail: 'thumb' }
+      const send = service.shareLiveRegion(voiceId, pixels)
+      expect(await service.shareLiveRegion(voiceId, pixels)).toMatchObject({
+        notice: expect.stringMatching(/queued/),
+      })
+      expect((await send).ok).toBe(true)
+      expect(await service.shareLiveRegion(voiceId, pixels)).toMatchObject({
+        notice: expect.stringMatching(/already sent/),
+      })
+      fake.complete()
+      await expect.poll(() => service.current.status).toBe('ready')
+      expect(await service.openLive(voiceId, 'Voice follow-up')).toEqual({ ok: true })
+      await service.stopLive(voiceId)
+      expect(service.current.ended).toBe(false)
+      expect(service.current.status).toBe('working')
+      expect(service.current.live).toBeNull()
+      expect(fake.calls.some((c) => c.method === 'thread/archive')).toBe(false)
+      expect(await service.finishCallChat(originalId, 'archive')).toMatchObject({ ok: false })
+      expect(service.current.status).toBe('working')
+      const past = (await service.history()).find((r) => r.id === originalId)!
+      const opening = service.current.items.find((i) => i.text === 'Voice follow-up')!
+      fake.history = [
+        {
+          item: {
+            type: 'userMessage',
+            id: opening.id,
+            content: [{ type: 'text', text: 'Voice follow-up' }],
+          },
         },
-      },
-    ]
-    expect(
-      (await service.read(past.id)).items.filter((i) => i.text === 'Voice follow-up'),
-    ).toHaveLength(1)
-    fake.complete()
-    await expect.poll(() => service.current.status).toBe('ready')
-    expect(await service.startLive('next-session-111111', offer)).toEqual({ ok: true, sdp: answer })
-    await service.stopLive(voiceId)
-    expect(service.current.live).toBe('ready')
-    await service.stopLive('next-session-111111')
-    expect(await service.send('Typed follow-up')).toEqual({ ok: true })
-    expect(service.current.conversationId).toBe(originalId)
-    await service.close()
-    expect(fake.calls.filter((c) => c.method === 'thread/archive')).toHaveLength(1)
-  })
+      ]
+      expect(
+        (await service.read(past.id)).items.filter((i) => i.text === 'Voice follow-up'),
+      ).toHaveLength(1)
+      fake.complete()
+      await expect.poll(() => service.current.status).toBe('ready')
+      expect(await service.startLive('next-session-111111', offer)).toEqual({
+        ok: true,
+        sdp: answer,
+      })
+      expect(await service.shareLiveRegion('next-session-111111', pixels)).toEqual({ ok: true })
+      fake.complete()
+      await expect.poll(() => service.current.status).toBe('ready')
+      await service.stopLive(voiceId)
+      expect(service.current.live).toBe('ready')
+      await service.stopLive('next-session-111111')
+      expect(await service.send('Typed follow-up')).toEqual({ ok: true })
+      expect(service.current.conversationId).toBe(originalId)
+      fake.complete()
+      await expect.poll(() => service.current.status).toBe('ready')
+      expect(await service.finishCallChat('wrong-chat', 'fresh')).toMatchObject({ ok: false })
+      expect(await service.finishCallChat(originalId, choice)).toEqual({ ok: true })
+      if (choice === 'fresh') {
+        expect(service.current.items).toEqual([])
+        expect(service.current.conversationId).toBeNull()
+      } else {
+        expect(service.current.ended).toBe(true)
+        expect(service.current.items.length).toBeGreaterThan(0)
+      }
+      expect(fake.calls.filter((c) => c.method === 'thread/archive')).toHaveLength(1)
+    },
+  )
 
   it('cancels pending voice setup without ending or recreating the Agent', async () => {
     const { run, fake } = await fixture()
