@@ -10,7 +10,9 @@ Use a current Windows Codex desktop app and its signed-in native `codex.exe` CLI
 The initial compatibility check used CLI `0.164.0-alpha.11.1`. Threadlight needs
 Node 22.16+ on PATH for the plugin bridge and development; its Electron runtime includes SQLite.
 
-From the Threadlight checkout, register and install the local marketplace:
+To install the app and this plugin together, run `node scripts/install.mjs --providers codex` from the source checkout. Verify with `node scripts/install.mjs --check --providers codex`.
+
+To register only the plugin for an existing app:
 
 ```powershell
 codex plugin marketplace add .

@@ -46,6 +46,10 @@ const generated = new Map([
     readFileSync(resolve(root, 'scripts/memory-bridge.mjs'), 'utf8'),
   ],
   [
+    'codex-plugin/skills/setup/SKILL.md',
+    readFileSync(resolve(root, 'skills/setup/SKILL.md'), 'utf8'),
+  ],
+  [
     'codex-plugin/skills/shared-memory/SKILL.md',
     readFileSync(resolve(root, 'skills/shared-memory/SKILL.md'), 'utf8'),
   ],

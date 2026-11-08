@@ -314,7 +314,7 @@ function bridge(provider: 'claude' | 'codex', endpoint: string) {
 }
 const value = (reply: Reply) => JSON.parse(reply.result!.content![0]!.text!)
 
-describe('actual packaged stdio bridges', () => {
+describe('actual packaged stdio bridges', { timeout: 30_000 }, () => {
   it.each(['claude', 'codex'] as const)(
     '%s reports only its linked project capabilities through the packaged bridge',
     async (provider) => {

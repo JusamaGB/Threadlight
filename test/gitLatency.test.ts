@@ -1,5 +1,6 @@
+import { temporaryDirectory } from './helpers'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -166,7 +167,7 @@ describe('Git startup scheduling', () => {
 
 describe('repository identity and change notification', () => {
   it('preserves nested repositories and linked worktrees, and refreshes a branch on a filesystem event', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'threadlight-git-latency-'))
+    const home = await temporaryDirectory('threadlight-git-latency-')
     const root = join(home, 'repo'),
       linked = join(home, 'linked'),
       nested = join(root, 'nested')
