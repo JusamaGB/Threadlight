@@ -73,6 +73,7 @@ export class CodexLive {
     text: string
     gate: LeadPlayback
     segments: Set<string>
+    uncertain: boolean
   }
   private statusSent = false
   private needsReadStatus = false
@@ -89,7 +90,7 @@ export class CodexLive {
     sent: Promise<void>
     playback: LeadPlayback
   }
-  private waiting?: { resume: () => void; cancel: () => void }
+  private waiting?: { resume: () => void; cancel: () => void; unconfirmed: () => void }
   private narratedTurn: string | null = null
 
   constructor(
@@ -247,17 +248,27 @@ ${communicationInstructions}`
   private submitProgress(turn: string, text: string, itemId?: string) {
     this.statusSent = true
     const gate = new LeadPlayback()
-    const ack = (this.progressAck = { turn, itemId, text, gate, segments: new Set<string>() })
+    const ack = (this.progressAck = {
+      turn,
+      itemId,
+      text,
+      gate,
+      segments: new Set<string>(),
+      uncertain: false,
+    })
     // The progress utterance has its own caption and playback identity. Its
     // completion can release a queued proposal or opening, never an answer tail.
+    const unconfirmed = () => {
+      if (this.progressAck !== ack) return
+      this.progressAck.uncertain = true
+      this.deferredLead = undefined
+      this.waiting?.unconfirmed()
+    }
     void gate.wait().then((confirmed) => {
       if (this.progressAck !== ack) return
+      if (!confirmed) return unconfirmed()
       this.progressAck = undefined
-      if (confirmed) this.resumePlayback()
-      else {
-        this.deferredLead = undefined
-        this.waiting?.cancel()
-      }
+      this.resumePlayback()
     })
     const delivery = itemId
       ? this.speakAnswer(text, { sessionId: this.sessionId, turnId: turn, itemId })
@@ -266,7 +277,9 @@ ${communicationInstructions}`
             JSON.stringify(text),
         )
     this.progressRequest = this.speechRequest
-    void delivery.catch(() => gate.retire())
+    // An RPC failure can precede a real playback. Keep the ticket until positive
+    // evidence, an explicit prose readout, or retirement of this voice turn.
+    void delivery.catch(unconfirmed)
   }
 
   private resumePlayback() {
@@ -464,7 +477,8 @@ ${communicationInstructions}`
     const lead = spokenLead(text)
     if (!lead) return
     if (this.speaker || this.waitingForPlayback || this.progressAck) {
-      if (this.progressOwnsPlayback()) this.deferredLead = { turn, itemId, lead }
+      if (this.progressOwnsPlayback() && !this.progressAck?.uncertain)
+        this.deferredLead = { turn, itemId, lead }
       return
     }
     const origin = { sessionId: this.sessionId, turnId: turn, itemId, excerpt: lead }
@@ -496,15 +510,25 @@ ${communicationInstructions}`
         clearTimeout(timer)
         this.waiting = undefined
       }
-      const timer = setTimeout(() => {
-        clear()
+      const unavailable = () => {
         if (onTimeout) {
           onTimeout()
           resolve()
         } else reject(Error('No confirmed playback boundary.'))
-      }, 30000)
+      }
+      if (this.progressAck?.uncertain) {
+        unavailable()
+        return
+      }
+      const unconfirmed = () => {
+        clear()
+        if (this.progressAck) this.progressAck.uncertain = true
+        unavailable()
+      }
+      const timer = setTimeout(unconfirmed, 30000)
       timer.unref?.()
       this.waiting = {
+        unconfirmed,
         cancel: () => {
           clear()
           if (required) reject(Error('Speech was interrupted before submission.'))
@@ -719,7 +743,7 @@ ${communicationInstructions}`
       if (this.speechRequest === request) {
         this.expectedPlaybackFor = undefined
         this.waitingForPlayback = false
-        if (!this.speaker) this.waiting?.resume()
+        this.resumePlayback()
       }
       if (origin) {
         this.handoffs.fail(origin.requestId!)
