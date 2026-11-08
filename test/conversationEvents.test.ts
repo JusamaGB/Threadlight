@@ -83,6 +83,8 @@ it('reopens two recorded Allows and an independent pending card across the nativ
   history.exec(
     'CREATE TABLE thread_items(thread_id TEXT,item_id TEXT,rollout_ordinal INTEGER); CREATE TABLE thread_realtime_items(thread_id TEXT,item_id TEXT,item_type TEXT,rollout_ordinal INTEGER)',
   )
+  // Build the synthetic history page with one durable write on Windows.
+  history.exec('BEGIN')
   const insert = history.prepare('INSERT INTO thread_items VALUES(?,?,?)')
   insert.run(thread, 'failed-settings', 10)
   const live = history.prepare(
@@ -120,6 +122,7 @@ it('reopens two recorded Allows and an independent pending card across the nativ
     }
   }
   for (let i = 0; i < 100; i++) insert.run(thread, 'later' + i, 100 + i)
+  history.exec('COMMIT')
   const page = (offset: number) =>
     history
       .prepare(
