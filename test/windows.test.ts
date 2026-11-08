@@ -183,6 +183,52 @@ describe('panel movement and available height', () => {
     )
   })
 
+  it.each([
+    { x: 720, y: 410, width: 92 },
+    { x: 1000, y: 600, width: 296 },
+    { x: -650, y: 300, width: 296 },
+    { x: 0, y: 0, width: 92 },
+    { x: 1888, y: 1008, width: 296 },
+  ])('keeps a stationary waveform pointer across the panel handoff at %j', ({ x, y, width }) => {
+    state.saved = { x, y }
+    state.held = false
+    const windows = new WindowManager()
+    windows.setOpenMicLive(true)
+    windows.setSpokenReplySize(windows.dot.webContents, width, width === 92 ? 24 : 138)
+    const wave = windows.dot.getBounds()
+    const display = x < 0 ? state.secondary : state.primary
+    state.cursor = { x: wave.x + 2, y: wave.y + 12 }
+    windows.openFromDot(true)
+    for (const height of [120, 320, 205]) {
+      windows.resizePanel(height)
+      const b = windows.panel.getBounds()
+      const centerX = wave.x + wave.width / 2
+      const centerY = wave.y + 12
+      const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
+      expect(b.x).toBe(
+        clamp(
+          Math.round(centerX - PANEL_WIDTH / 2) - WORKSPACE_GUTTER,
+          display.x,
+          display.x + display.width - b.width,
+        ),
+      )
+      expect(b.y).toBe(
+        clamp(Math.round(centerY - height / 2), display.y, display.y + display.height - height),
+      )
+      vi.advanceTimersByTime(550)
+      windows.closeOnPointerLeave()
+      expect(windows.panel.isVisible()).toBe(true)
+      expect(windows.panel.webContents.send).not.toHaveBeenCalledWith(IPC.panelPointerOutside)
+      expect(windows.panel.setIgnoreMouseEvents).not.toHaveBeenCalledWith(true, { forward: true })
+    }
+    expect(
+      vi.mocked(windows.panel.webContents.send).mock.calls.filter(([c]) => c === IPC.panelOpened),
+    ).toHaveLength(1)
+    state.cursor = { x: display.x + display.width + 40, y: display.y + display.height + 40 }
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(false)
+  })
+
   it('moves the expanded reply from a clamped edge and saves the resting anchor on release', () => {
     vi.mocked(saveDotPosition).mockClear()
     state.saved = { x: 8, y: 8 }

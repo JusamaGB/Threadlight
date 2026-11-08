@@ -1,13 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { rm, writeFile } from 'node:fs/promises'
+import { temporaryDirectory } from './helpers'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ThreadDiffLedger } from '../src/main/sessions/threadDiff'
 import { UncommittedThreads } from '../src/main/sessions/threadUncommitted'
 
 async function fixture(run: (root: string, git: (...args: string[]) => void) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), 'threadlight-uncommitted-'))
+  const root = await temporaryDirectory('threadlight-uncommitted-')
   const git = (...args: string[]) => {
     execFileSync('git', ['-C', root, ...args], { windowsHide: true, stdio: 'pipe' })
   }
@@ -129,7 +129,7 @@ describe('uncommitted changes attributed to a thread', { timeout: 60_000 }, () =
     const ledger = new ThreadDiffLedger(),
       view = new UncommittedThreads()
     expect(await view.project(ledger, null, 0)).toBeNull()
-    const root = await mkdtemp(join(tmpdir(), 'threadlight-not-git-'))
+    const root = await temporaryDirectory('threadlight-not-git-')
     try {
       expect(await view.project(ledger, root, 0)).toBeNull()
     } finally {

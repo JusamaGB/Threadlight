@@ -275,7 +275,7 @@ function LiveMicPill({ micLevel, motion }: { micLevel: number; motion: MotionSna
             hoverTimer.current = window.setTimeout(() => {
               if (!menuPending.current && !drag.isDragging() && !document.hidden)
                 window.threadlight.dotHover()
-            }, 240)
+            }, 500)
           }}
           onPointerLeave={(event) => {
             cancelHover()

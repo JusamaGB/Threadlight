@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { appendFile, readFile, rm, writeFile } from 'node:fs/promises'
+import { temporaryDirectory } from './helpers'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { execFileSync } from 'node:child_process'
@@ -246,7 +246,7 @@ describe('thread diff source and caller integration', () => {
     expect(reads).toBe(0)
   })
   it('replays UTF-8 appends, waits for partial JSON and resets a rewritten transcript', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'threadlight-thread-diff-'))
+    const home = await temporaryDirectory('threadlight-thread-diff-')
     try {
       const file = join(home, 'claude.jsonl')
       await writeFile(
@@ -272,7 +272,7 @@ describe('thread diff source and caller integration', () => {
     }
   })
   it('hydrates badges/viewer from the same cache, refreshes native edits, rejects unrelated paths and ignores Git totals', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'threadlight-thread-diff-'))
+    const home = await temporaryDirectory('threadlight-thread-diff-')
     const history = join(home, 'history.sqlite')
     const db = new DatabaseSync(history)
     try {

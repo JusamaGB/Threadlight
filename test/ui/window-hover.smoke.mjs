@@ -70,6 +70,74 @@ checks: try {
   await panel.locator('[data-card]').waitFor({ state: 'attached' })
   for (const page of pages) page.on('pageerror', (error) => failures.push(error.message))
   const pause = (ms) => new Promise((done) => setTimeout(done, ms))
+  if (process.env.THREADLIGHT_UI_FOCUS === 'live-hover-handoff') {
+    await app.evaluate(({ screen }) => {
+      const h = globalThis.hoverProof
+      const area = screen.getPrimaryDisplay().workArea,
+        initial = h.windows.dot.getBounds()
+      h.windows.dragDot(
+        Math.round(area.x + area.width * 0.42) - initial.x,
+        Math.round(area.y + area.height * 0.43) - initial.y,
+      )
+      h.windows.endDrag()
+      h.windows.openPanel({ focus: false })
+      const b = h.windows.panel.getBounds()
+      h.move(b.x + 40, b.y + 12)
+      h.windows.setStayOpen(true)
+    })
+    await openHeaderPage(panel, 'Agent')
+    await panel.getByRole('button', { name: 'Reply to Agent' }).waitFor()
+    await panel.evaluate(() => window.threadlight.setOpenMicLive(true))
+    await app.evaluate(() => {
+      const h = globalThis.hoverProof
+      h.windows.setStayOpen(false)
+      h.windows.closePanel()
+    })
+    const waveform = dot.getByRole('button', { name: /open voice panel/i })
+    await waveform.waitFor()
+    const origin = await app.evaluate(() => {
+      const h = globalThis.hoverProof,
+        wave = h.windows.dot.getBounds()
+      h.move(wave.x + wave.width - 4, wave.y + 12)
+      return { wave, start: h.events.length }
+    })
+    await waveform.hover({ position: { x: origin.wave.width - 4, y: 12 } })
+    await panel.waitForFunction(() => !document.hidden)
+    for (let i = 0; i < 4; i++) {
+      await pause(550)
+      const actual = await app.evaluate((_electron, start) => {
+        const h = globalThis.hoverProof,
+          panel = h.windows.panel
+        return {
+          visible: panel.isVisible(),
+          bounds: panel.getBounds(),
+          ignored: h.mouseIgnored,
+          shows: h.events.slice(start).filter((e) => e.event === 'panel:show').length,
+          hides: h.events.slice(start).filter((e) => e.event === 'panel:hide').length,
+        }
+      }, origin.start)
+      assert.ok(
+        actual.visible && !actual.ignored && actual.shows === 1 && actual.hides === 0,
+        JSON.stringify(actual),
+      )
+      const card = await panel.locator('[data-card]').first().boundingBox()
+      const cx = actual.bounds.x + card.x + card.width / 2,
+        cy = actual.bounds.y + card.y + card.height / 2
+      assert.ok(
+        Math.abs(cx - origin.wave.x - origin.wave.width / 2) <= 1 &&
+          Math.abs(cy - origin.wave.y - 12) <= 1,
+        JSON.stringify({ actual, card, origin, cx, cy }),
+      )
+    }
+    await app.evaluate(() => globalThis.hoverProof.move(-200, -200))
+    await dot.waitForFunction(() => !document.hidden)
+    assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.isVisible()), false)
+    assert.deepEqual(failures, [])
+    console.log(
+      'PASS: stationary floating waveform opened one real Agent panel across four 550ms observations; centered renderer card stayed interactive, and intentional departure collapsed it.',
+    )
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'agent-height') {
     await app.evaluate(() => {
       const h = globalThis.hoverProof,

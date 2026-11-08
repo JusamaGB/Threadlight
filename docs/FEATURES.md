@@ -341,7 +341,7 @@ In Agent Settings, **Show spoken replies in waveform pill** lets the collapsed A
 
 Right-click anywhere on the live pill, including its code, or press Shift+F10 for Pause listening, Resume listening, Stop speaking during audible playback, and Hang up. Pausing the microphone preserves the connection and speaker preference.
 
-Hover over the waveform to open the ongoing Agent or Brainstorm conversation. Drag the waveform to reposition the pill and reply together. Text and code remain selectable, and the Copy button copies code. A focused waveform opens the call with Enter or Space. Its call controls stay with that conversation; other pages offer Return to call. Leaving an unpinned panel can collapse it while the call continues.
+Hover over the waveform for half a second to open the ongoing Agent or Brainstorm conversation. The card centers on the waveform where space allows and stays inside the screen edges. Drag the waveform to reposition the pill and reply together. Text and code remain selectable, and the Copy button copies code. A focused waveform opens the call with Enter or Space. Its call controls stay with that conversation; other pages offer Return to call. Leaving an unpinned panel can collapse it while the call continues.
 The gear immediately left of Back opens Agent settings, including provider, model, effort, lifetime and Earlier conversations.
 
 Expand a thread in the pinned Active list below the current page and use its composer mic to dictate a

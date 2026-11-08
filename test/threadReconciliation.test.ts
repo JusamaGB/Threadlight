@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { temporaryDirectory } from './helpers'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ThreadDiffLedger } from '../src/main/sessions/threadDiff'
@@ -9,7 +9,7 @@ import { ThreadChanges } from '../src/main/sessions/threadChanges'
 import type { Session } from '../src/shared/types'
 
 async function fixture(work: (root: string, git: (...args: string[]) => string) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), 'threadlight-reconcile-'))
+  const root = await temporaryDirectory('threadlight-reconcile-')
   const git = (...args: string[]) =>
     execFileSync('git', ['-C', root, ...args], {
       windowsHide: true,
@@ -144,7 +144,7 @@ describe('automatic evidence reconciliation', { timeout: 60_000 }, () => {
 
   it('retains non-Git provider evidence and reports a missing baseline without inventing current counts', async () =>
     fixture(async (root) => {
-      const folder = await mkdtemp(join(tmpdir(), 'threadlight-recorded-'))
+      const folder = await temporaryDirectory('threadlight-recorded-')
       try {
         await mkdir(join(folder, 'outputs'))
         const ledger = new ThreadDiffLedger()

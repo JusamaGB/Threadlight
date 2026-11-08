@@ -15,7 +15,16 @@ export async function checkMicPill(page, capture) {
   const hovers = () =>
     page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'dotHover').length)
   const priorHovers = await hovers()
+  await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 1000).toISOString()))
   await pill.hover()
+  await page.clock.runFor(499)
+  assert.equal(
+    await hovers(),
+    priorHovers,
+    'the full half second is available to grab the waveform',
+  )
+  await page.clock.runFor(1)
+  await page.clock.resume()
   await page.waitForFunction(
     (n) => window.proof.calls.filter((c) => c[0] === 'dotHover').length > n,
     priorHovers,

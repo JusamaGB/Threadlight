@@ -15,7 +15,7 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Agent actions are centered above the transcript, and the compact resize handle leaves room for replies. Smart Thread and Agent assistant replies share a slightly larger text size.
 - Agent Settings can show the latest GPT Live reply inside the waveform pill. It sizes itself to the centered spoken caption, keeping short replies compact and linked code left-aligned. It widens before unfolding and folds in reverse. Dismiss one reply with the ×. The next opens automatically.
 - The collapsed live waveform reaches both rounded ends of the pill. Right-clicking the live microphone waveform or pressing Shift+F10 opens listening, playback and hang-up actions. Stop speaking appears during audible playback.
-- Hovering the waveform returns to the ongoing Agent or Brainstorm conversation. Dragging the waveform moves the pill and its attached reply. Right-click anywhere on the pill for call actions. Leaving the panel can collapse it back to the pill while the call continues. Other pages offer a compact return action.
+- Hovering the waveform for half a second opens the ongoing Agent or Brainstorm conversation centered on the waveform. The panel stays open under a stationary pointer after the pill has been moved. Dragging the waveform moves the pill and its attached reply. Right-click anywhere on the pill for call actions. Leaving the panel can collapse it back to the pill while the call continues. Other pages offer a compact return action.
 
 - The compact Reply icon opens the composer, and scrolled messages fade at the reader’s upper edge. Inline code is easier to spot alongside a walkthrough; multiline Python examples retain highlighting, indentation and copy controls.
 

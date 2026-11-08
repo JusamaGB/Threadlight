@@ -148,6 +148,8 @@ export class WindowManager {
   private openMicLive = false
   /** Briefly ignore stale leave events while the pill is replaced by the panel. */
   private micOpenGraceUntil = 0
+  /** The visible waveform that handed this panel its pointer, captured before the dot shrinks. */
+  private micPanelAnchor: Rectangle | null = null
   private pointerWatch: ReturnType<typeof setInterval> | null = null
   private attentionWindow: BrowserWindow | null = null
   private attentionSessions: Session[] = []
@@ -566,6 +568,11 @@ export class WindowManager {
     fresh = focus,
     fromMic = false,
   }: { focus?: boolean; fresh?: boolean; fromMic?: boolean } = {}): void {
+    if (fromMic) {
+      this.micPanelAnchor = { ...this.dot.getBounds(), height: MIC_PILL_HEIGHT }
+    } else if (fresh || !this.panel.isVisible()) {
+      this.micPanelAnchor = null
+    }
     if (fresh) {
       this.stayOpen = false
       this.workspacePanel = false
@@ -601,6 +608,7 @@ export class WindowManager {
     if (this.overlayClosed) return
     if (this.modifierStage === 'peek') return
     this.micOpenGraceUntil = 0
+    this.micPanelAnchor = null
     this.stayOpen = false
     this.stopPointerWatch()
     if (!this.panel.isVisible()) return
@@ -623,9 +631,21 @@ export class WindowManager {
     this.closePanel()
   }
 
+  private insideHandoffWave(point: Point): boolean {
+    const wave = this.micPanelAnchor
+    return (
+      !!wave &&
+      point.x >= wave.x &&
+      point.x < wave.x + wave.width &&
+      point.y >= wave.y &&
+      point.y < wave.y + wave.height
+    )
+  }
+
   private pointerInsidePanel(): boolean {
     const point = screen.getCursorScreenPoint()
     const bounds = this.panel.getBounds()
+    if (this.insideHandoffWave(point)) return true
     return (
       point.x >= bounds.x &&
       point.x < bounds.x + bounds.width &&
@@ -659,6 +679,7 @@ export class WindowManager {
         point.x < bounds.x + bounds.width
       const gutter =
         (leftGutter || rightGutter) &&
+        !this.insideHandoffWave(point) &&
         point.y >= bounds.y &&
         point.y < bounds.y + bounds.height &&
         !(
@@ -922,7 +943,7 @@ export class WindowManager {
   private maxPanelHeight(): number {
     const dot = this.dotBounds()
     const area = this.workArea()
-    if (this.workspacePanel) return Math.max(40, area.height)
+    if (this.workspacePanel || this.micPanelAnchor) return Math.max(40, area.height)
     if (this.opensDown()) {
       const gap = clamp(dot.y - area.y, 0, MARGIN)
       return area.y + area.height - gap - dot.y
@@ -976,6 +997,10 @@ export class WindowManager {
       x: clamp(target.x, area.x, area.x + area.width - DOT_SIZE),
       y: clamp(target.y, area.y, area.y + area.height - DOT_SIZE),
     }
+    if (this.micPanelAnchor && this.panel.isVisible()) {
+      this.micPanelAnchor.x += this.dotPosition.x - x
+      this.micPanelAnchor.y += this.dotPosition.y - y
+    }
     this.placeDot()
     // Dragging the panel's header moves the hidden dot, and the panel stays anchored to it.
     this.updatePanelLayout()
@@ -993,6 +1018,7 @@ export class WindowManager {
 
   /** Puts the dot back in the top-right corner of the main screen (Settings → Reset). */
   resetDotPosition(): void {
+    this.micPanelAnchor = null
     const { x, y } = cornerPosition('top-right', screen.getPrimaryDisplay().workArea)
     this.dotPosition = { x, y }
     if (this.workspacePanel) this.workspaceTop = y
@@ -1024,6 +1050,19 @@ export class WindowManager {
     const area = this.workArea()
     const rightGutter = this.panelLayout === 'dual' ? this.rightWireGutter : 0
     const width = this.cardWidth() + WORKSPACE_GUTTER + rightGutter
+    const wave = this.micPanelAnchor
+    if (wave) {
+      // Center the painted card, not the native window with its transparent wire gutters.
+      const x = Math.round(wave.x + wave.width / 2 - this.cardWidth() / 2) - WORKSPACE_GUTTER
+      const y = Math.round(wave.y + wave.height / 2 - height / 2)
+      this.panel.setBounds({
+        x: clamp(x, area.x, area.x + area.width - width),
+        y: clamp(y, area.y, area.y + area.height - height),
+        width,
+        height,
+      })
+      return
+    }
     const x = clamp(dot.x + DOT_SIZE - width + rightGutter, area.x, area.x + area.width - width)
     const y = this.workspacePanel
       ? clamp(this.workspaceTop ?? dot.y, area.y, area.y + area.height - height)

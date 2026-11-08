@@ -163,7 +163,7 @@ press **Pause/Break** or **Ctrl+Alt+M** to mute or unmute the microphone from an
 window. Use the keyboard's Pause function (some keyboards require Fn), or the
 microphone button if a shortcut is unavailable. The speaker button mutes playback independently. **Stop speaking**
 silences the current reply. **End call** disconnects voice and keeps the current chat
-available for typing or another call. The pencil sits beside the call controls during an Agent call. It toggles the reply box and keeps your draft. The new-chat icon starts fresh, and the bin closes the conversation and keeps it in Earlier. Both wait for active work and decisions. Hover over the floating waveform to return to the call, or drag it to move the pill and its reply together. Right-click anywhere on the pill, or focus it and press **Shift+F10**, to pause or resume listening, stop an audible reply, or hang up. The waveform follows audible speech. A separate
+available for typing or another call. The pencil sits beside the call controls during an Agent call. It toggles the reply box and keeps your draft. The new-chat icon starts fresh, and the bin closes the conversation and keeps it in Earlier. Both wait for active work and decisions. Hover over the floating waveform for half a second to open the call centered on it, or drag it to move the pill and its reply together. Right-click anywhere on the pill, or focus it and press **Shift+F10**, to pause or resume listening, stop an audible reply, or hang up. The waveform follows audible speech. A separate
 working mark in the Agent and travelling blue marks around the floating pill
 show when a task is running.
 

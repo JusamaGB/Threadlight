@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { temporaryDirectory } from './helpers'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { captureGit, invalidateGitComparison, retainedPatch } from '../src/main/changes/git'
@@ -14,7 +15,7 @@ import { supportedLines } from '../src/main/changes/mapping'
 import { parseUnifiedDiff } from '../src/shared/unifiedDiff'
 
 async function fixture(work: (root: string, git: (...args: string[]) => string) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), 'threadlight-local-'))
+  const root = await temporaryDirectory('threadlight-local-')
   const git = (...args: string[]) =>
     execFileSync('git', ['-C', root, ...args], {
       windowsHide: true,
@@ -152,7 +153,7 @@ describe('local Git comparison contract', { timeout: 60_000 }, () => {
 
 describe('ordinary folders', { timeout: 60_000 }, () => {
   it('can inspect an existing baseline while recording is paused without persisting new bytes', async () => {
-    const parent = await mkdtemp(join(tmpdir(), 'threadlight-paused-')),
+    const parent = await temporaryDirectory('threadlight-paused-'),
       root = join(parent, 'folder'),
       history = new LocalHistory(join(parent, 'history'))
     try {
@@ -172,7 +173,7 @@ describe('ordinary folders', { timeout: 60_000 }, () => {
     }
   })
   it('deduplicates durable evidence, preserves it after restart, and blocks replay after Forget', async () => {
-    const parent = await mkdtemp(join(tmpdir(), 'threadlight-evidence-')),
+    const parent = await temporaryDirectory('threadlight-evidence-'),
       root = join(parent, 'folder'),
       store = join(parent, 'history')
     let history = new LocalHistory(store)
@@ -213,7 +214,7 @@ describe('ordinary folders', { timeout: 60_000 }, () => {
     }
   })
   it('requires recording, preserves baseline across restart, excludes secrets and forgets history', async () => {
-    const parent = await mkdtemp(join(tmpdir(), 'threadlight-baseline-')),
+    const parent = await temporaryDirectory('threadlight-baseline-'),
       root = join(parent, 'folder'),
       store = join(parent, 'history')
     let history = new LocalHistory(store)
@@ -247,7 +248,7 @@ describe('ordinary folders', { timeout: 60_000 }, () => {
     }
   })
   it('rejects stale settings and keeps an active baseline when storage is exhausted', async () => {
-    const parent = await mkdtemp(join(tmpdir(), 'threadlight-limit-')),
+    const parent = await temporaryDirectory('threadlight-limit-'),
       root = join(parent, 'folder')
     const history = new LocalHistory(join(parent, 'history'), 16)
     try {

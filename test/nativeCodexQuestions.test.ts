@@ -126,7 +126,10 @@ it('reads saved answers beyond the preview page and scopes cancellation to its o
     },
     3,
   )
+  // Populate the history page with one durable fixture write.
+  db.exec('BEGIN')
   for (let i = 0; i < 205; i++) add({ type: 'reasoning', id: 'step-' + i }, 10 + i)
+  db.exec('COMMIT')
   expect((await tracker.snapshot()).sessions[0]?.attention).toMatchObject({
     questions: [{ question: 'Any details?' }],
   })
