@@ -444,6 +444,7 @@ export interface ThreadlightApi {
     sessionId: string,
     kind: import('./liveVoice').PlaybackBoundary,
     turnId: string,
+    transcript?: string,
   ): void
   agentLiveStop(sessionId: string): void
   onAgentLive(listener: (event: LiveVoiceEvent) => void): () => void

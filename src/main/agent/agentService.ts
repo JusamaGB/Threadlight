@@ -268,9 +268,10 @@ export class AgentService {
     id: string,
     kind: import('../../shared/liveVoice').PlaybackBoundary,
     turn: string,
+    transcript?: string,
   ) {
     if (id === this.voiceSession && this.run instanceof CodexAgentRun)
-      this.run.playbackBoundary(kind, turn)
+      this.run.playbackBoundary(kind, turn, transcript)
   }
 
   async openLive(id: unknown, text: unknown): Promise<AgentResult> {
