@@ -1,8 +1,12 @@
 import { AppControlService, controlSettingsRevision } from './appControl/service'
+import { ChangeWorkflowService } from './changeWorkflow'
+import { findGitRepository } from './sessions/gitRepository'
 import { restartAction } from './restart'
+import { closeOwnedProcesses } from './agent/ownedProcess'
 import { controlWorkspaces } from './appControl/workspaces'
 import { observerActive } from './appControl/restartGuard'
 import { AppControlServer } from './appControl/server'
+import { openSpaceProvider, startSpaceChat } from './appControl/startSpaceChat'
 import { registerAppControl } from './appControl/integration'
 import { OwnedRequests } from './communication/ownedRequests'
 import { withManagedQuestions } from '../shared/managedQuestions'
@@ -10,20 +14,36 @@ import type { CommunicationQuestion } from '../shared/communication'
 import { codexCommunicationAdmitted } from './communication/admission'
 import { codexHeld } from './codex/live'
 import { CommunicationCatalog } from './communication/catalog'
+import { AccountChatTransport } from './communication/accountChatTransport'
+import { accountChatTarget } from '../shared/communicationTargets'
+import { setLiveTimingFile, recordLiveTiming } from './agent/liveTiming'
 import { appendFile, mkdir, realpath, stat, writeFile } from 'node:fs/promises'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { join, win32 } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { app, clipboard, ipcMain, nativeTheme, session, shell, type WebContents } from 'electron'
+import {
+  app,
+  clipboard,
+  ipcMain,
+  nativeTheme,
+  Notification,
+  session,
+  shell,
+  type WebContents,
+} from 'electron'
 import { registerArtifacts } from './artifactIntegration'
+import { registerPerplexity } from './perplexity/integration'
+import { registerAccountChats } from './accountChats/integration'
 import { registerThreadTimeline } from './threadTimelineIntegration'
 
 import { agentBusy } from '../shared/agent'
 import { IPC } from '../shared/ipc'
 import { registerMicIndicator } from './micIndicator'
+import { LiveScreen } from './liveScreen'
+import { ScreenRegionHelp, ScreenReplySpeech } from './screenRegionHelp'
 import type { Settings } from '../shared/settings'
-import { voiceHotkeyMode } from '../shared/settings'
+import { isGptLiveShortcut, voiceHotkeyMode } from '../shared/settings'
 import type { Provider, Session, Snapshot, ThreadNode, RelayStatus } from '../shared/types'
 import {
   combinedSnapshot,
@@ -33,9 +53,14 @@ import {
 } from '../shared/providers'
 import { isClaudeAppRunning, openThread } from './claudeApp'
 import { DEFAULT_HOOK_PORT, startHookServer } from './hookServer'
-import { TalkHotkey } from './hotkeys'
+import { BRAINSTORM_HOTKEY, TalkHotkey, LiveMuteShortcut } from './hotkeys'
+import { windowsMuteKeys } from './windowsMuteKeys'
+import { sameAccelerator } from '../shared/accelerator'
 import { ModifierStepper } from './modifierStepper'
 import { AgentService } from './agent/agentService'
+import { ScreenReplyVoice } from './agent/screenReplyVoice'
+import { EditorCoach } from './editorCoach'
+import { RecentAgent } from './agent/recentAgent'
 import { excludeAgentChats } from './agent/briefing'
 import { isObject } from './sessions/json'
 import { foregroundTitle, foregroundWindowId } from './keyState'
@@ -46,10 +71,12 @@ import { findClaudeCli, isHeld, type CliCommand } from './relay'
 import { RelayService } from './relayService'
 import { HookStateStore } from './sessions/hookState'
 import { agentPaths, codexPaths, defaultPaths, messagingPaths } from './sessions/paths'
+import { PinnedCodeStore } from './pinnedCode'
 import { MessageStore } from './messaging/store'
 import { MESSAGE_LIMIT } from '../shared/messaging'
 import { CodexTracker } from './codex/tracker'
 import { NativeCodexQuestions } from './codex/nativeQuestions'
+import { QuestionObserver } from './codex/questionObserver'
 import { NativeCodexMessages } from './codex/nativeMessages'
 import { CodexQueue } from './codex/queue'
 import type { QueueCommand } from '../shared/codexQueue'
@@ -67,11 +94,15 @@ import { SessionService } from './sessions/service'
 import { ProviderSnapshots } from './sessions/providerSnapshots'
 import { PLAN_CONTEXT, readStepActivity } from './sessions/stepActivity'
 import { ThreadChanges } from './sessions/threadChanges'
+import { captureGit, retainedPatch, retainedPath, forgetComparisons, within } from './changes/git'
+import { LocalHistory } from './changes/store'
+import type { ChangeLens, TrackingAction } from '../shared/changes'
 import { IgnoredInput } from './ignoredInput'
 import { GitStates } from './sessions/gitDiff'
 import { inside, listChanges, readFileDiff } from './sessions/gitChanges'
 import { Tracker } from './sessions/tracker'
 import { SettingsStore } from './settings'
+import { inspectLocalRuntime } from './kimi/runtime'
 import { runSetup, setupArgs } from './setupMode'
 import { SttService } from './stt/service'
 import { createTray } from './tray'
@@ -122,9 +153,44 @@ async function start(): Promise<void> {
 
   const hooks = new HookStateStore()
   const windows = new WindowManager()
-  registerMicIndicator(windows)
+  const liveScreen = new LiveScreen(
+    join(app.getAppPath(), 'resources', 'live-screen.ps1'),
+    (id, image) => {
+      if (!id) outsideHelp.receive(image)
+      else {
+        const owner =
+          id === agent.activeLiveSession
+            ? agent
+            : id === spaces?.agent.activeLiveSession
+              ? spaces.agent
+              : null
+        if (owner) {
+          notifyRegion('Screen region captured. Sending to Live…')
+          void owner
+            .shareLiveRegion(id, image)
+            .then((result) => {
+              if (owner.activeLiveSession === id)
+                notifyRegion(
+                  result.ok ? (result.notice ?? 'Screen region sent to Live.') : result.reason,
+                )
+            })
+            .catch(() => {
+              if (owner.activeLiveSession === id)
+                notifyRegion('Screen region delivery was not confirmed.')
+            })
+        }
+      }
+    },
+    (id, reason) => {
+      if (!id) notifyRegion(reason)
+      else if (id === agent.activeLiveSession) agent.liveScreenError(id, reason)
+      else spaces?.agent.liveScreenError(id, reason)
+    },
+  )
+  registerMicIndicator(windows, (level) => liveScreen.voice(level))
   // The agent's own folder; its conversations stay out of the thread list unless shown.
   const agentFiles = agentPaths(app.getPath('userData'))
+  const recentAgent = new RecentAgent(join(app.getPath('userData'), 'recent-agent.json'))
   const agentWorkspace = agentFiles.workspace
   const agentSessionIds = new Set<string>()
   // Cards held so they can be answered here (holds.ts); any change is shown at once.
@@ -139,7 +205,9 @@ async function start(): Promise<void> {
     publish()
   })
   // Requests the user has set aside in Threadlight: they stop holding a place in Recent.
-  const ignoredInput = new IgnoredInput()
+  const ignoredInput = new IgnoredInput(
+    join(app.getPath('userData'), 'dismissed-codex-questions.json'),
+  )
   const pinned = (session: Session) => session.state !== 'idle' && !ignoredInput.isIgnored(session)
   const tracker = new Tracker({
     paths,
@@ -187,6 +255,7 @@ async function start(): Promise<void> {
     if (windows.panel && !windows.panel.isDestroyed())
       windows.panel.webContents.send(IPC.communicationChanged)
   })
+  const questionObserver = new QuestionObserver(() => void codexSessions.refresh())
   const codexTracker = new CodexTracker(
     codex,
     codexHolds,
@@ -196,6 +265,8 @@ async function start(): Promise<void> {
       win32.normalize(cwd.replace(/^\\\\\?\\/, '')).toLowerCase() ===
         win32.normalize(agentWorkspace.replace(/^\\\\\?\\/, '')).toLowerCase(),
     pinned,
+    questionObserver,
+    (id, ref) => ignoredInput.isQuestionDismissed(id, ref),
   )
   codexTracker.configure(initial.listWindowHours, initial.maxSessions)
   const codexSessions = new SessionService(
@@ -205,7 +276,16 @@ async function start(): Promise<void> {
     },
     reportSlowScan('Codex'),
   )
+  const localHistory = new LocalHistory(join(app.getPath('userData'), 'local-change-history'))
+  void localHistory.start().catch(() => {
+    /* A newer/unavailable store must not prevent app startup. */
+  })
   const threadChanges = new ThreadChanges({
+    recordEvidence: (session, ledger) =>
+      localHistory.recordEvidence(session.git?.root ?? session.cwd, session.id, ledger),
+    recordedEvidence: (session) =>
+      localHistory.recordedEvidence(session.git?.root ?? session.cwd, session.id),
+    folderComparison: (session) => localHistory.comparison(session.cwd),
     history: codex.history,
     transcript: (id) => tracker.transcriptPath(id),
     changed: () => publish(),
@@ -227,6 +307,7 @@ async function start(): Promise<void> {
     if (publishTimer) return
     publishTimer = setTimeout(() => {
       publishTimer = null
+      if (windows.panel.isDestroyed()) return
       const snapshot = sessions.snapshot
       windows.setAttention(snapshot.sessions)
       windows.send(IPC.sessionsChanged, snapshot.sessions)
@@ -404,6 +485,25 @@ async function start(): Promise<void> {
   })
 
   ipcMain.handle(IPC.getVersion, () => app.getVersion())
+  const perplexity = registerPerplexity(windows.panel, app.getPath('userData'))
+  const accountChats = registerAccountChats(
+    windows.panel,
+    async () => {
+      await codexSessions.refresh()
+      const snapshot = codexSessions.snapshot
+      return everySession(snapshot)
+        .filter((s) => s.id.startsWith('codex:'))
+        .sort(
+          (a, b) =>
+            Number(b.id === snapshot.currentThreadId) - Number(a.id === snapshot.currentThreadId) ||
+            b.lastActiveAt - a.lastActiveAt,
+        )
+        .slice(0, 200)
+        .map((s) => ({ id: s.id.slice(6), title: s.title }))
+    },
+    (source) => settings.settings.chatSources.includes(source),
+  )
+  app.once('will-quit', () => accountChats.close())
   ipcMain.handle(IPC.getSessions, () => sessions.sessions)
   ipcMain.handle(IPC.getSnapshot, () => sessions.snapshot)
   ipcMain.on(IPC.setTreeView, (_event, view: unknown) => {
@@ -423,10 +523,40 @@ async function start(): Promise<void> {
   )
   ipcMain.on(IPC.dotDragEnd, () => windows.endDrag())
   ipcMain.on(IPC.resetDotPosition, () => windows.resetDotPosition())
+  ipcMain.handle(IPC.canvasExpanded, (_event, on: unknown) => windows.setCanvasExpanded(on))
   ipcMain.on(IPC.panelResize, (_event, height: unknown) => windows.resizePanel(Number(height)))
   ipcMain.handle(IPC.getAttentionMotion, () => windows.attentionMotion)
   ipcMain.on(IPC.panelClose, () => windows.closePanel())
   ipcMain.on(IPC.panelLeave, () => windows.closeOnPointerLeave())
+  const pins = new PinnedCodeStore(
+    join(app.getPath('userData'), 'pinned-references.json'),
+    (state) => windows.pinsChanged(state),
+  )
+  ipcMain.handle(IPC.pinnedCode, (event, command: unknown) => {
+    if (event.senderFrame !== event.sender.mainFrame || !windows.codeWindow(event.sender))
+      throw Error('Pinned references are unavailable in this window.')
+    return pins.request(command)
+  })
+  ipcMain.on(IPC.pinnedCodeSize, (event, visible: unknown, height: unknown) => {
+    if (
+      event.senderFrame === event.sender.mainFrame &&
+      windows.codeWindow(event.sender) &&
+      typeof visible === 'boolean' &&
+      typeof height === 'number' &&
+      Number.isFinite(height)
+    )
+      windows.setPinnedCode(!!pins.current?.files.length, height)
+  })
+  ipcMain.on(IPC.codePan, (event, id: unknown, active: unknown) => {
+    const win = windows.codeWindow(event.sender)
+    if (
+      win &&
+      event.senderFrame === event.sender.mainFrame &&
+      typeof id === 'string' &&
+      /^[a-z0-9-]{1,64}$/i.test(id)
+    )
+      windows.codePan(id, active === true, win)
+  })
   ipcMain.on(IPC.panelStayOpen, (_event, on: unknown) => windows.setStayOpen(on === true))
   ipcMain.on(IPC.workspaceWireControl, (event, bounds: unknown) => {
     if (event.sender === windows.panel.webContents) windows.setWorkspaceWireControl(bounds)
@@ -457,6 +587,21 @@ async function start(): Promise<void> {
     // The lists pick their pinned places again, then everything is republished.
     publish()
     void sessions.refresh()
+  })
+  ipcMain.handle(IPC.dismissCodexQuestion, (event, id, ref) => {
+    if (
+      event.sender !== windows.panel.webContents ||
+      event.senderFrame !== event.sender.mainFrame ||
+      typeof id !== 'string' ||
+      !ref ||
+      typeof ref !== 'object'
+    )
+      return false
+    const session = everySession(sessions.snapshot).find((item) => item.id === id)
+    if (!session || !ignoredInput.dismiss(session, ref)) return false
+    publish()
+    void sessions.refresh()
+    return true
   })
   ipcMain.on(IPC.openInClaude, (_event, appId: unknown) => {
     if (typeof appId !== 'string') return
@@ -525,9 +670,13 @@ async function start(): Promise<void> {
   // Recorded thread changes, independent of HEAD and every other writer in its worktree.
   const changeSession = (sessionId: unknown) =>
     typeof sessionId === 'string'
-      ? everySession(sessions.snapshot).find((s) => s.id === sessionId)
+      ? everySession(sessions.snapshot).find(
+          (s) => s.id === sessionId && enabled(sessionProvider(s.id)),
+        )
       : null
-  ipcMain.handle(IPC.getChanges, async (_event, sessionId: unknown) => {
+  ipcMain.handle(IPC.getChanges, async (event, sessionId: unknown) => {
+    if (event.sender !== windows.panel.webContents || event.senderFrame !== event.sender.mainFrame)
+      return null
     const session = changeSession(sessionId)
     return session ? threadChanges.changes(session) : null
   })
@@ -574,45 +723,216 @@ async function start(): Promise<void> {
     ),
   )
   // Worktree actions use the scan's exact Git root and the existing HEAD-based viewer.
-  const changedWorktreePath = async (sessionId: unknown, path: unknown) => {
-    const root = changeSession(sessionId)?.git?.root
+  const changedWorktreePath = async (sessionId: unknown, path: unknown, revision?: unknown) => {
+    const session = changeSession(sessionId)
+    let root = localRoot(sessionId)
+    if (session && typeof revision === 'string' && typeof path === 'string') {
+      root =
+        (await threadChanges.roots(session)).find((group) =>
+          retainedPath(group.root, revision, path),
+        )?.root ?? null
+    }
     if (!root || typeof path !== 'string' || !inside(root, path)) return null
+    if (typeof revision === 'string')
+      return retainedPath(root, revision, path) ? { root, path } : null
     return (await listChanges(root)).some((file) => file.path === path) ? { root, path } : null
   }
-  ipcMain.handle(IPC.getWorktreeChanges, async (_event, sessionId: unknown) => {
-    const git = changeSession(sessionId)?.git
-    return git?.root ? { branch: git.branch, files: await listChanges(git.root) } : null
+  const localRoot = (sessionId: unknown) => {
+    const session = changeSession(sessionId)
+    return session?.git?.root ?? session?.cwd ?? null
+  }
+  const changeWorkflow = new ChangeWorkflowService(
+    join(app.getPath('userData'), 'change-workflows'),
+  )
+  ipcMain.handle(
+    IPC.changeWorkflow,
+    async (event, sessionId: unknown, command: unknown, rootId: unknown) => {
+      if (
+        event.sender !== windows.panel.webContents ||
+        event.senderFrame !== event.sender.mainFrame
+      )
+        return { kind: 'error', reason: 'Change workflows are available only from the panel.' }
+      const session = changeSession(sessionId)
+      if (!session || typeof sessionId !== 'string')
+        return { kind: 'error', reason: 'Thread checkout unavailable.' }
+      const found = await Promise.all(
+        (await threadChanges.workflowRoots(session)).map((folder) => findGitRepository(folder)),
+      )
+      const roots = [
+        ...new Set(found.flatMap((repository) => (repository ? [repository.root] : []))),
+      ].map((root) => ({ root, id: createHash('sha256').update(root).digest('hex') }))
+      if (
+        command &&
+        typeof command === 'object' &&
+        'action' in command &&
+        command.action === 'roots'
+      )
+        return { kind: 'roots', roots }
+      const selected =
+        typeof rootId === 'string'
+          ? roots.find((root) => root.id === rootId)
+          : roots.length === 1
+            ? roots[0]
+            : null
+      return selected
+        ? changeWorkflow.request(sessionId, selected.root, command)
+        : { kind: 'error', reason: 'Choose one available checkout before preparing changes.' }
+    },
+  )
+  const selectedRoot = async (sessionId: unknown, rootId?: unknown) => {
+    if (rootId === undefined) return localRoot(sessionId)
+    const session = changeSession(sessionId)
+    return session && typeof rootId === 'string'
+      ? ((await threadChanges.roots(session)).find((group) => group.rootId === rootId)?.root ??
+          null)
+      : null
+  }
+  const worktreeChanges = async (
+    sessionId: unknown,
+    lens: unknown = 'git-current',
+    rootId?: unknown,
+  ) => {
+    const session = changeSession(sessionId),
+      root = await selectedRoot(sessionId, rootId)
+    if (
+      !session ||
+      !root ||
+      !['git-current', 'git-staged', 'git-unstaged', 'folder-baseline'].includes(String(lens))
+    )
+      return null
+    try {
+      const result =
+        lens === 'folder-baseline'
+          ? await localHistory.comparison(root)
+          : await captureGit(root, lens as ChangeLens)
+      if (!result) return null
+      const {
+        patches: _patches,
+        evidence: _evidence,
+        root: _root,
+        rootId: _rootId,
+        ...view
+      } = result
+      return view
+    } catch {
+      return null
+    }
+  }
+  ipcMain.handle(
+    IPC.getWorktreeChanges,
+    (event, sessionId: unknown, lens: unknown, rootId: unknown) =>
+      event.sender === windows.panel.webContents && event.senderFrame === event.sender.mainFrame
+        ? worktreeChanges(sessionId, lens, rootId)
+        : null,
+  )
+  ipcMain.handle(
+    IPC.getWorktreeFileDiff,
+    async (event, sessionId: unknown, path: unknown, revision: unknown) => {
+      if (
+        event.sender !== windows.panel.webContents ||
+        event.senderFrame !== event.sender.mainFrame
+      )
+        return { kind: 'unavailable' }
+      const found =
+        typeof revision === 'string' ? await changedWorktreePath(sessionId, path, revision) : null
+      const root = found?.root ?? localRoot(sessionId)
+      if (!root || typeof path !== 'string' || !inside(root, path)) return { kind: 'unavailable' }
+      if (typeof revision === 'string')
+        return found
+          ? retainedPatch(root, revision, path)
+          : { kind: 'unavailable', reason: 'This revision is no longer available; refresh.' }
+      return readFileDiff(root, path)
+    },
+  )
+  ipcMain.handle(IPC.getLocalTracking, async (event, sessionId: unknown, rootId: unknown) => {
+    if (event.sender !== windows.panel.webContents || event.senderFrame !== event.sender.mainFrame)
+      return null
+    const root = await selectedRoot(sessionId, rootId)
+    return root ? localHistory.state(root).catch(() => null) : null
   })
-  ipcMain.handle(IPC.getWorktreeFileDiff, async (_event, sessionId: unknown, path: unknown) => {
-    const found = await changedWorktreePath(sessionId, path)
-    return found ? readFileDiff(found.root, found.path) : { kind: 'unavailable' }
-  })
-  ipcMain.on(IPC.openWorktreeChangedFile, (_event, sessionId: unknown, path: unknown) => {
-    void changedWorktreePath(sessionId, path).then((found) => {
-      if (found) void shell.openPath(join(found.root, found.path))
-    })
-  })
+  ipcMain.handle(
+    IPC.configureLocalTracking,
+    async (event, sessionId: unknown, action: unknown, expected: unknown, rootId: unknown) => {
+      if (
+        event.sender !== windows.panel.webContents ||
+        event.senderFrame !== event.sender.mainFrame ||
+        !['enable', 'pause', 'forget', 'baseline'].includes(String(action)) ||
+        !Number.isInteger(expected)
+      )
+        throw Error('Invalid recording settings request')
+      const root = await selectedRoot(sessionId, rootId)
+      if (!root) throw Error('Folder unavailable')
+      const state = await localHistory.configure(root, action as TrackingAction, expected as number)
+      if (action === 'forget') {
+        forgetComparisons(root)
+        threadChanges.forget(root)
+      }
+      threadChanges.invalidate(root)
+      return state
+    },
+  )
+  ipcMain.on(
+    IPC.openWorktreeChangedFile,
+    (event, sessionId: unknown, path: unknown, revision: unknown) => {
+      if (
+        event.sender !== windows.panel.webContents ||
+        event.senderFrame !== event.sender.mainFrame
+      )
+        return
+      void changedWorktreePath(sessionId, path, revision)
+        .then(async (found) => {
+          if (found) {
+            const target = await realpath(join(found.root, found.path))
+            if (within(await realpath(found.root), target)) await shell.openPath(target)
+          }
+        })
+        .catch(() => {})
+    },
+  )
   // A plan step's activity, read from the thread's own transcript, which Threadlight's scan found.
   ipcMain.handle(IPC.getStepActivity, (_event, sessionId: unknown, step: unknown) => {
     if (typeof sessionId !== 'string' || typeof step !== 'string') return null
     const path = tracker.transcriptPath(sessionId)
     return path ? readStepActivity(path, step) : null
   })
-  ipcMain.handle(IPC.getFileDiff, async (_event, sessionId: unknown, path: unknown) => {
-    const session = changeSession(sessionId)
-    return session && typeof path === 'string'
-      ? threadChanges.file(session, path)
-      : { kind: 'unavailable' }
-  })
-  ipcMain.on(IPC.openChangedFile, (_event, sessionId: unknown, path: unknown) => {
+  ipcMain.handle(
+    IPC.getFileDiff,
+    async (event, sessionId: unknown, path: unknown, revision: unknown) => {
+      if (
+        event.sender !== windows.panel.webContents ||
+        event.senderFrame !== event.sender.mainFrame
+      )
+        return { kind: 'unavailable' }
+      const session = changeSession(sessionId)
+      return session && typeof path === 'string'
+        ? threadChanges.file(session, path, typeof revision === 'string' ? revision : undefined)
+        : { kind: 'unavailable' }
+    },
+  )
+  ipcMain.on(IPC.openChangedFile, (event, sessionId: unknown, path: unknown, revision: unknown) => {
+    if (event.sender !== windows.panel.webContents || event.senderFrame !== event.sender.mainFrame)
+      return
     const session = changeSession(sessionId)
     if (session && typeof path === 'string')
-      void threadChanges.absolute(session, path).then((found) => {
-        if (found) void shell.openPath(found)
-      })
+      void threadChanges
+        .absolute(session, path, typeof revision === 'string' ? revision : undefined)
+        .then(async (found) => {
+          if (found) {
+            const target = await realpath(found),
+              root = await threadChanges.sourceRoot(
+                session,
+                path,
+                typeof revision === 'string' ? revision : undefined,
+              )
+            if (root && within(await realpath(root), target)) await shell.openPath(target)
+          }
+        })
+        .catch(() => {})
   })
-  ipcMain.on(IPC.copyText, (_event, text: unknown) => {
-    if (typeof text === 'string' && text.length <= 20_000) clipboard.writeText(text)
+  ipcMain.handle(IPC.copyText, (_event, text: unknown) => {
+    if (typeof text !== 'string' || text.length > 20_000) return false
+    clipboard.writeText(text)
+    return true
   })
   ipcMain.on(IPC.releaseHold, (_event, sessionId: unknown) => {
     if (typeof sessionId === 'string') {
@@ -631,6 +951,9 @@ async function start(): Promise<void> {
   const nativeCodexQuestions = new NativeCodexQuestions(
     codex.history,
     join(app.getPath('userData'), 'codex-native-answers'),
+    undefined,
+    (id, turn) => questionObserver.state(id, turn),
+    (id, turn, ids) => questionObserver.confirm(id, turn, ids),
   )
   ipcMain.handle(
     IPC.answerNativeCodexQuestion,
@@ -752,7 +1075,7 @@ async function start(): Promise<void> {
       sessionId: unknown,
       text: unknown,
       attachmentIds: unknown = [],
-      mode: unknown = 'queue',
+      mode: unknown = 'auto',
     ) => {
       if (
         event.sender !== windows.panel.webContents ||
@@ -761,7 +1084,7 @@ async function start(): Promise<void> {
         typeof text !== 'string' ||
         !Array.isArray(attachmentIds) ||
         !attachmentIds.every((id) => typeof id === 'string') ||
-        (mode !== 'queue' && mode !== 'steer')
+        (mode !== 'auto' && mode !== 'queue' && mode !== 'steer')
       )
         return { ok: false, reason: 'Invalid message caller.' }
       if (!sessionId.startsWith('codex:'))
@@ -775,7 +1098,14 @@ async function start(): Promise<void> {
         const result =
           mode === 'steer'
             ? await nativeCodexMessages.send(sessionId, text, files)
-            : await codexQueue.add(sessionId, text, files)
+            : await codexQueue.add(
+                sessionId,
+                text,
+                files,
+                mode === 'auto'
+                  ? () => nativeCodexMessages.send(sessionId, text, files, 'send')
+                  : undefined,
+              )
         if (result.ok && files.length) {
           // A cleanup failure must never turn an acknowledged send into a retryable failure.
           await composerAttachments
@@ -807,6 +1137,8 @@ async function start(): Promise<void> {
     (id) => memoryRuntime.current?.destination(id) ?? Promise.resolve(undefined),
   )
   const communicationOwners: AgentService[] = []
+  const accountChatTransport = new AccountChatTransport(accountChats)
+  app.once('will-quit', () => accountChatTransport.close())
   const ownedCommunicationRequests = new OwnedRequests(() => communicationOwners)
   const stopMemory = await startMemory(app.getPath('userData'), windows.panel, {
     questionsChanged: (questions) => {
@@ -814,7 +1146,21 @@ async function start(): Promise<void> {
       publish()
     },
     conversationOwner: () => communicationOwners[0]?.current.conversationId ?? undefined,
-    destinations: (target, query) => communicationCatalog.find(target, query),
+    destinations: async (target, query) => {
+      if (target)
+        return accountChatTarget(target)
+          ? accountChatTransport.find(target, query)
+          : communicationCatalog.find(target, query)
+      if (['perplexity', 'chatgpt'].includes(query?.trim().toLowerCase() ?? ''))
+        return accountChatTransport.find(undefined, query)
+      const [work, chats] = await Promise.all([
+        communicationCatalog.find(undefined, query),
+        accountChatTransport.find(undefined, query),
+      ])
+      return [...work, ...chats]
+    },
+    accountChatDelivery: (message, destination, accepted) =>
+      accountChatTransport.deliver(message, destination, accepted),
     nativeRequests: () => [
       ...holds.communicationRequests(),
       ...codexHolds.communicationRequests(),
@@ -931,13 +1277,16 @@ async function start(): Promise<void> {
   let spaces: SpacesService | null = null
   const control: AppControlService = new AppControlService(
     {
+      pins,
       availability: (name) =>
-        name === 'threadlight_create_space' || name === 'threadlight_list_spaces'
-          ? {
-              available: !!spaces,
-              reason: spaces ? undefined : 'Shared Spaces service unavailable.',
-            }
-          : { available: true },
+        name === 'threadlight_editor_coach'
+          ? editorCoach.availability()
+          : name === 'threadlight_create_space' || name === 'threadlight_list_spaces'
+            ? {
+                available: !!spaces,
+                reason: spaces ? undefined : 'Shared Spaces service unavailable.',
+              }
+            : { available: true },
       settings: () => settings.settings,
       hasChat: (id) => !!changeSession(id),
       chatInfo: (id) => {
@@ -961,20 +1310,46 @@ async function start(): Promise<void> {
         }))
       },
       artifacts: (id) => controlArtifacts(id),
-      changes: async (id, scope) => {
+      changes: async (id, scope, lens, rootId) => {
         const session = changeSession(id)
         if (!session) return null
         const result =
           scope === 'thread'
             ? await threadChanges.changes(session)
-            : session.git?.root
-              ? { branch: session.git.branch, files: await listChanges(session.git.root) }
-              : null
-        return result ? { branch: result.branch, files: result.files.slice(0, 100) } : null
+            : await worktreeChanges(id, lens, rootId)
+        return result
+          ? {
+              ...result,
+              complete: result.complete !== false && result.files.length <= 100,
+              files: result.files.slice(0, 100),
+            }
+          : null
       },
       createSpace: async (title, root, id) => {
         const result = await spaces?.request({ action: 'create_space', title, root, id })
         return result?.ok ? { ok: true, spaceId: result.spaceId } : { ok: false }
+      },
+      startSpaceChat: async (input, actionId) => {
+        const memory = stopMemory.store(),
+          communication = stopMemory.communication()
+        if (!memory || !communication)
+          return { outcome: 'unavailable', reason: 'Shared Space communication unavailable.' }
+        return startSpaceChat(input, actionId, {
+          project: (id) => ({ ...memory.space(id), root: memory.executionContext(id)?.root ?? '' }),
+          workflow: (id) => communication.workflow(id),
+          reserve: (id) => memory.reserveCommunication(id, () => {}),
+          enabled: (provider) =>
+            provider === 'claude' ? enabled('claude') : accountChats.enabled('perplexity'),
+          start: (request, root, id, beforeSend) =>
+            openSpaceProvider(request, root, id, beforeSend, {
+              claude: async () => (cli ??= await findClaudeCli(paths)),
+              paths,
+              chats: accountChats,
+            }),
+          save: (workflow, revision) => {
+            communication.configure(workflow, revision, { id: 'human', kind: 'human' })
+          },
+        })
       },
       createChat: async (cwd, operationId) => {
         const result = await newChats.create({ provider: 'codex', cwd, operationId })
@@ -1003,7 +1378,17 @@ async function start(): Promise<void> {
   await appControl.start()
   registerAppControl(windows.panel, control)
   app.once('will-quit', () => appControl.close())
+  const editorCoach = new EditorCoach(
+    () => agent.activeLiveSession,
+    (id, text, first, proposal) => agent.speakCoachStep(id, text, first, proposal),
+    undefined,
+    (id, event) => agent.coachEvent(id, event),
+    (id) => agent.interruptProposal(id),
+  )
+  app.once('will-quit', () => editorCoach.close())
   const agent: AgentService = new AgentService({
+    editorCoach: (id, command) => editorCoach.run(id, command),
+    foregroundWindow: (id, inspect) => liveScreen.observe(id, inspect),
     appControl,
     announcements: {
       next: (owner, since) => {
@@ -1030,11 +1415,15 @@ async function start(): Promise<void> {
     cli: async (provider) =>
       provider === 'codex' ? findCodexCli(codex) : (cli ??= await findClaudeCli(paths)),
     onChange: (state) => {
+      editorCoach.sync()
+      syncScreenHelp()
+      recentAgent.observe(state)
+      windows.setAgentAttention(recentAgent.current?.waiting ? recentAgent.current.provider : null)
       if (state.sessionId)
         agentSessionIds.add(
           state.provider === 'codex' ? `codex:${state.sessionId}` : state.sessionId,
         )
-      windows.panel.webContents.send(IPC.agentChanged, state)
+      windows.panel.webContents.send(IPC.agentChanged, { ...state, recent: recentAgent.current })
       windows.panel.webContents.send(IPC.communicationChanged)
     },
     onConversation: (state, spaceId) => {
@@ -1055,6 +1444,54 @@ async function start(): Promise<void> {
     onRateLimit: (info) => usage.note(info),
     onLive: (event) => windows.panel.webContents.send(IPC.agentLiveEvent, event),
   })
+  let regionToast: Notification | undefined
+  function notifyRegion(message: string) {
+    if (windows.panel.isDestroyed()) return
+    windows.panel.webContents.send(IPC.screenHelpNotice, { message, open: false })
+    if (!Notification.isSupported()) return
+    regionToast?.close()
+    const toast = new Notification({ title: 'Threadlight', body: message, silent: true })
+    regionToast = toast
+    toast.once('click', () => {
+      if (!windows.panel.isDestroyed()) {
+        windows.openPanel({ focus: true, fresh: false })
+        windows.panel.webContents.send(IPC.screenHelpNotice, { message, open: true })
+      }
+    })
+    toast.show()
+  }
+  const regionSpeech = new ScreenReplySpeech(
+    join(app.getAppPath(), 'resources', 'screen-reply.ps1'),
+    notifyRegion,
+    () => settings.settings.agentVoicePace,
+  )
+  const screenVoice = new ScreenReplyVoice(
+    () => agent.connectCodex(),
+    (event) => {
+      if (!windows.panel.isDestroyed()) windows.panel.webContents.send(IPC.screenVoiceEvent, event)
+    },
+    notifyRegion,
+    () => settings.settings.agentVoicePace,
+  )
+  const outsideHelp = new ScreenRegionHelp({
+    available: () => agent.canStartRegion && !spaces?.agent.current.live,
+    start: (region) => agent.startRegion(region),
+    state: () => agent.current,
+    notify: notifyRegion,
+    speak: (text) => (agent.current.provider === 'codex' ? screenVoice : regionSpeech).speak(text),
+  })
+  function syncScreenHelp() {
+    const liveId = agent.activeLiveSession ?? spaces?.agent.activeLiveSession ?? null
+    const live = !!(agent.current.live || spaces?.agent.current.live)
+    const modes = settings.settings.screenRegionModes
+    liveScreen.sync(liveId, live && !liveId ? [] : modes)
+    if (live || !modes.includes('outside') || !settings.settings.speakScreenReply) {
+      screenVoice.stop()
+      regionSpeech.stop()
+    }
+    outsideHelp.configure(modes.includes('outside'), settings.settings.speakScreenReply && !live)
+  }
+  syncScreenHelp()
   communicationOwners.push(agent)
   await agent.store
     .load()
@@ -1072,6 +1509,17 @@ async function start(): Promise<void> {
       record.provider === 'codex' ? `codex:${record.providerId}` : record.providerId,
     )
   }
+  void recentAgent
+    .restore(agent.store.all(), (id) => agent.read(id))
+    .then(() => {
+      windows.setAgentAttention(recentAgent.current?.waiting ? recentAgent.current.provider : null)
+      if (!windows.panel.isDestroyed())
+        windows.panel.webContents.send(IPC.agentChanged, {
+          ...agent.current,
+          recent: recentAgent.current,
+        })
+    })
+    .catch(() => {})
   // Complete previously requested cleanup before allowing a history continuation to race it.
   await agent.retryArchives().catch(() => {})
   let spacesIssue = ''
@@ -1101,7 +1549,9 @@ async function start(): Promise<void> {
         }),
         cli: async (provider) =>
           provider === 'codex' ? findCodexCli(codex) : (cli ??= await findClaudeCli(paths)),
+        onLive: (event) => windows.panel.webContents.send(IPC.agentLiveEvent, event),
         onChange: (state) => {
+          syncScreenHelp()
           windows.panel.webContents.send(IPC.communicationChanged)
           if (state.sessionId)
             agentSessionIds.add(
@@ -1142,16 +1592,13 @@ async function start(): Promise<void> {
   } catch (error) {
     spacesIssue = error instanceof Error ? error.message : 'Shared Spaces could not load.'
   }
-  registerSpaces(windows.panel, spacesIssue ? null : spaces, spacesIssue)
+  registerSpaces(windows.panel, spacesIssue ? null : spaces, spacesIssue, () => settings.settings)
   const trustedAgentInput = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) =>
     event.sender === windows.panel.webContents && event.senderFrame === event.sender.mainFrame
-  ipcMain.handle(IPC.agentGet, () => agent.current)
+  ipcMain.handle(IPC.agentGet, () => ({ ...agent.current, recent: recentAgent.current }))
+  let shortcutSession: { id: string; expires: number } | undefined
   ipcMain.handle(IPC.agentAnnouncement, (event, id: unknown, command: unknown) => {
-    if (
-      event.sender !== windows.panel.webContents ||
-      event.senderFrame !== event.sender.mainFrame ||
-      settings.settings.voiceMode !== 'gpt-live'
-    )
+    if (event.sender !== windows.panel.webContents || event.senderFrame !== event.sender.mainFrame)
       return { ok: false, reason: 'Not the active panel.' }
     const c = command as { action?: string; id?: string; outcome?: string }
     if (
@@ -1167,21 +1614,71 @@ async function start(): Promise<void> {
       command as import('./../shared/conversationEvents').AnnouncementCommand,
     )
   })
-  ipcMain.handle(IPC.agentLiveStart, (event, id: unknown, sdp: unknown) =>
-    trustedAgentInput(event) && settings.settings.voiceMode === 'gpt-live'
-      ? agent.startLive(id, sdp)
-      : { ok: false, reason: 'Select GPT Live in the panel to start live audio.' },
+  ipcMain.handle(IPC.screenVoiceCommand, (event, id: unknown, action: unknown, sdp: unknown) =>
+    trustedAgentInput(event)
+      ? screenVoice.command(id, action, sdp)
+      : { ok: false, reason: 'Invalid playback source.' },
   )
+  ipcMain.handle(IPC.agentLiveStart, (event, id: unknown, sdp: unknown) => {
+    if (!trustedAgentInput(event))
+      return { ok: false, reason: 'Live is only available in the panel.' }
+    const viaShortcut =
+      shortcutSession && id === shortcutSession.id && Date.now() < shortcutSession.expires
+    if (id === shortcutSession?.id) shortcutSession = undefined
+    return settings.settings.voiceMode === 'gpt-live' ||
+      (viaShortcut && isGptLiveShortcut(settings.settings))
+      ? agent.startLive(id, sdp)
+      : { ok: false, reason: 'Press the GPT Live shortcut or select GPT Live in Settings.' }
+  })
   ipcMain.handle(IPC.agentLiveOpen, (event, id: unknown, text: unknown) =>
     trustedAgentInput(event)
       ? agent.openLive(id, text)
       : { ok: false, reason: 'Live is only available in the panel.' },
   )
+  ipcMain.handle(IPC.liveRemainder, (event, id, token) => {
+    if (
+      !trustedAgentInput(event) ||
+      typeof id !== 'string' ||
+      typeof token !== 'string' ||
+      token.length > 80
+    )
+      return { ok: false, reason: 'Invalid readout.' }
+    return (
+      agent.readRemaining(id, token) ??
+      spaces?.agent.readRemaining(id, token) ?? {
+        ok: false,
+        reason: 'This Live session has ended.',
+      }
+    )
+  })
+  setLiveTimingFile(join(app.getPath('userData'), 'live-timing.jsonl'))
+  ipcMain.on(IPC.liveTiming, (event, mark) => {
+    if (trustedAgentInput(event)) recordLiveTiming(mark)
+  })
+  ipcMain.on(IPC.livePlaybackBoundary, (event, id, kind, turn) => {
+    if (
+      !trustedAgentInput(event) ||
+      typeof id !== 'string' ||
+      typeof turn !== 'string' ||
+      turn.length > 256 ||
+      !['assistant', 'done', 'user', 'skip'].includes(kind)
+    )
+      return
+    agent.playbackBoundary(id, kind, turn)
+    spaces?.agent.playbackBoundary(id, kind, turn)
+  })
   ipcMain.on(IPC.agentLiveStop, (event, id: unknown) => {
     if (trustedAgentInput(event) && typeof id === 'string') void agent.stopLive(id)
   })
-  windows.panel.webContents.on('render-process-gone', () => void agent.stopLive())
-  windows.panel.webContents.on('did-start-loading', () => void agent.stopLive())
+  windows.panel.webContents.on('render-process-gone', () => {
+    screenVoice.stop()
+    void agent.stopLive()
+  })
+  windows.panel.webContents.on('did-start-loading', () => {
+    shortcutSession = undefined
+    screenVoice.stop()
+    void agent.stopLive()
+  })
   ipcMain.handle(IPC.agentSend, (event, text: unknown) =>
     trustedAgentInput(event)
       ? agent.send(text)
@@ -1200,6 +1697,11 @@ async function start(): Promise<void> {
     if (trustedAgentInput(event) && typeof id === 'string') agent.decide(id, allow === true)
   })
   ipcMain.on(IPC.agentClose, () => agent.close())
+  ipcMain.handle(IPC.finishCallChat, (event, id, choice) =>
+    trustedAgentInput(event)
+      ? agent.finishCallChat(id, choice)
+      : { ok: false, reason: 'Unavailable outside the panel.' },
+  )
   ipcMain.handle(IPC.agentHistory, () => agent.history())
   ipcMain.handle(IPC.agentReadPast, async (_event, id: unknown) => (await agent.read(id)).items)
   ipcMain.handle(IPC.agentReadPage, (_event, id: unknown, cursor: unknown) =>
@@ -1242,26 +1744,126 @@ async function start(): Promise<void> {
   // The talk hotkey drives recording in the (possibly hidden) panel, which does the rest:
   // toggle sends one event per press; press-and-hold sends "down" and, on release, "up".
   const modifierStepper = new ModifierStepper((stage) => windows.setModifierStage(stage))
+  let voiceTraceSequence = 0
+  const traceVoice = (stage: string, destination: string) => {
+    // Local event names only: no audio, transcript, chat or project contents.
+    void appendFile(
+      join(app.getPath('userData'), 'voice-shortcut.log'),
+      JSON.stringify({
+        at: new Date().toISOString(),
+        sequence: ++voiceTraceSequence,
+        stage,
+        destination,
+      }) + '\n',
+    ).catch(() => {})
+  }
+  ipcMain.on(IPC.voiceShortcutTrace, (event, stage: unknown, destination: unknown) => {
+    if (
+      trustedAgentInput(event) &&
+      ['agent', 'brainstorm'].includes(String(destination)) &&
+      [
+        'request',
+        'microphone-requested',
+        'listening',
+        'blocked',
+        'no-project',
+        'needs-stt',
+      ].includes(String(stage))
+    )
+      traceVoice(String(stage), String(destination))
+  })
+  const toggleAgentVoice = (destination?: 'brainstorm') => {
+    traceVoice('hotkey', destination ?? 'agent')
+    modifierStepper.yieldToTalk()
+    shortcutSession =
+      !destination && isGptLiveShortcut(settings.settings)
+        ? { id: randomUUID(), expires: Date.now() + 30_000 }
+        : undefined
+    windows.panel.webContents.send(
+      IPC.talkToggle,
+      shortcutSession ? { liveSessionId: shortcutSession.id } : destination,
+    )
+  }
+  ipcMain.on(IPC.startAgentVoice, (event) => {
+    if (trustedAgentInput(event)) toggleAgentVoice()
+  })
   const hotkey = new TalkHotkey({
-    toggle: () => {
-      modifierStepper.yieldToTalk()
-      windows.panel.webContents.send(IPC.talkToggle)
-    },
+    toggle: () => toggleAgentVoice(),
     hold: (phase) => {
       if (phase === 'down') modifierStepper.yieldToTalk()
       windows.panel.webContents.send(IPC.talkHold, phase)
     },
   })
   modifierStepper.start()
-  let hotkeyProblem = hotkey.set(initial.talkHotkey) ?? hotkey.setMode(voiceHotkeyMode(initial))
-  const reportHotkey = () => windows.panel.webContents.send(IPC.hotkeyProblem, hotkeyProblem)
+  const brainstormHotkey = new TalkHotkey({
+    toggle: () => toggleAgentVoice('brainstorm'),
+    hold: () => {},
+  })
+  let brainstormHotkeyProblem = brainstormHotkey.set(BRAINSTORM_HOTKEY)
+  const reservedBrainstormHotkey = (key: string) => sameAccelerator(key, BRAINSTORM_HOTKEY)
+  let hotkeyProblem = reservedBrainstormHotkey(initial.talkHotkey)
+    ? 'Ctrl+Alt+B is reserved for Brainstorm voice. Choose a different talk hotkey in Settings.'
+    : (hotkey.set(initial.talkHotkey) ?? hotkey.setMode(voiceHotkeyMode(initial)))
+  let trayPaused = false
+  let liveCall = false,
+    capturingShortcut = false,
+    muteProblem: string | null = null
+  const muteBinding = new LiveMuteShortcut(() => {
+    modifierStepper.yieldToTalk()
+    windows.panel.webContents.send(IPC.liveMuteShortcut)
+  }, windowsMuteKeys(windows.panel))
+  const syncMuteShortcut = () => {
+    muteProblem = muteBinding.update(
+      liveCall,
+      liveCall && (trayPaused || capturingShortcut),
+      settings.settings.talkHotkey,
+    )
+  }
+  const currentHotkeyProblem = () =>
+    [hotkeyProblem, brainstormHotkeyProblem, muteProblem].filter(Boolean).join(' ') || null
+  ipcMain.handle(IPC.getHotkeyProblem, currentHotkeyProblem)
+  const reportHotkey = () => {
+    if (!windows.panel.isDestroyed() && !windows.panel.webContents.isDestroyed())
+      windows.panel.webContents.send(IPC.hotkeyProblem, currentHotkeyProblem())
+  }
+  ipcMain.on(IPC.liveCallControls, (event, active) => {
+    if (!trustedAgentInput(event) || typeof active !== 'boolean') return
+    liveCall = active
+    syncMuteShortcut()
+    reportHotkey()
+  })
+  const suspendHotkeys = (suspended: boolean) => {
+    if (hotkey.isPaused !== suspended) {
+      const problem = hotkey.setPaused(suspended)
+      if (!suspended && !reservedBrainstormHotkey(settings.settings.talkHotkey))
+        hotkeyProblem =
+          problem ??
+          hotkey.set(settings.settings.talkHotkey) ??
+          hotkey.setMode(voiceHotkeyMode(settings.settings))
+    }
+    if (brainstormHotkey.isPaused !== suspended) {
+      const problem = brainstormHotkey.setPaused(suspended)
+      if (!suspended) brainstormHotkeyProblem = problem ?? brainstormHotkey.set(BRAINSTORM_HOTKEY)
+    }
+    syncMuteShortcut()
+    modifierStepper.setPaused(suspended)
+    reportHotkey()
+  }
+  const clearCall = () => {
+    liveCall = false
+    capturingShortcut = false
+    suspendHotkeys(trayPaused)
+  }
+  windows.panel.webContents.on('did-start-loading', clearCall)
+  windows.panel.webContents.on('render-process-gone', clearCall)
   windows.panel.webContents.on('did-finish-load', reportHotkey)
   // While a new hotkey is typed into Settings, the current one must not swallow the keys.
   // (The settings view resumes it before saving, so the new key is still checked for clashes.)
   // A pause chosen in the tray wins: capturing never quietly turns the hotkey back on.
-  ipcMain.on(IPC.hotkeyCapture, (_event, capturing: unknown) => {
-    if (!trayPaused) hotkey.setPaused(capturing === true)
-    modifierStepper.setPaused(trayPaused || capturing === true)
+  ipcMain.on(IPC.hotkeyCapture, (event, capturing: unknown) => {
+    if (event.sender !== windows.panel.webContents || typeof capturing !== 'boolean') return
+    capturingShortcut = capturing
+    suspendHotkeys(trayPaused || capturing)
   })
   ipcMain.on(IPC.talkState, (_event, state: unknown) => {
     if (state === 'idle' || state === 'listening' || state === 'transcribing') {
@@ -1286,38 +1888,73 @@ async function start(): Promise<void> {
     publish()
     windows.send(IPC.settingsChanged, next)
   }
+  ipcMain.handle(IPC.inspectKimiLocalRuntime, (event, input: unknown) => {
+    if (event.sender !== windows.panel.webContents || event.senderFrame !== event.sender.mainFrame)
+      throw Error('Invalid Kimi inspection request')
+    return inspectLocalRuntime(input)
+  })
   ipcMain.handle(IPC.getSettings, () => settings.settings)
   async function updateApplicationSettings(patch: unknown, expectedRevision?: string) {
     const previousSettings = settings.settings
     const previousProviders = settings.settings.enabledProviders
     const previousVoiceMode = settings.settings.voiceMode
-    const result = await settings.update(patch, (next, previous) => {
-      if (expectedRevision && controlSettingsRevision(previous) !== expectedRevision)
-        return 'Settings changed; read the current revision.'
-      const hotkeyError =
-        next.talkHotkey === previous.talkHotkey ? null : hotkey.set(next.talkHotkey)
-      if (hotkeyError) return hotkeyError
-      if (next.launchAtSignIn !== previous.launchAtSignIn) {
-        try {
-          setLaunchAtSignIn(next.launchAtSignIn)
-        } catch (error) {
-          if (next.talkHotkey !== previous.talkHotkey) hotkey.set(previous.talkHotkey)
-          return `Could not update Windows startup: ${error instanceof Error ? error.message : String(error)}`
+    let switchedTalk: string | undefined
+    const result = await settings
+      .update(patch, (next, previous) => {
+        if (reservedBrainstormHotkey(next.talkHotkey))
+          return 'Ctrl+Alt+B is reserved for Brainstorm voice.'
+        if (expectedRevision && controlSettingsRevision(previous) !== expectedRevision)
+          return 'Settings changed; read the current revision.'
+        if (next.talkHotkey !== previous.talkHotkey) muteBinding.yieldToTalk(next.talkHotkey)
+        const hotkeyError =
+          next.talkHotkey === previous.talkHotkey ? null : hotkey.set(next.talkHotkey)
+        if (hotkeyError) {
+          syncMuteShortcut()
+          reportHotkey()
+          return hotkeyError
         }
-      }
-      return null
-    })
+        if (next.talkHotkey !== previous.talkHotkey) switchedTalk = next.talkHotkey
+        if (next.launchAtSignIn !== previous.launchAtSignIn) {
+          try {
+            setLaunchAtSignIn(next.launchAtSignIn)
+          } catch (error) {
+            if (next.talkHotkey !== previous.talkHotkey) {
+              hotkey.set(previous.talkHotkey)
+              syncMuteShortcut()
+              reportHotkey()
+            }
+            return `Could not update Windows startup: ${error instanceof Error ? error.message : String(error)}`
+          }
+        }
+        return null
+      })
+      .catch((error: unknown) => {
+        if (switchedTalk && hotkey.accelerator === switchedTalk) {
+          const savedTalk = settings.settings.talkHotkey
+          muteBinding.yieldToTalk(savedTalk)
+          hotkeyProblem = hotkey.set(savedTalk)
+          syncMuteShortcut()
+          reportHotkey()
+        }
+        return {
+          ok: false as const,
+          reason: error instanceof Error ? error.message : 'Could not save settings.',
+        }
+      })
     if (result.ok) {
-      if (previousVoiceMode !== result.settings.voiceMode) await agent.stopLive()
+      if (previousVoiceMode !== result.settings.voiceMode)
+        await Promise.all([agent.stopLive(), spaces?.stopLive()])
       if (result.settings.enabledProviders.join() !== previousProviders.join()) {
         if (!enabled('claude')) holds.releaseAll()
         if (!enabled('codex')) codexHolds.releaseAll()
         syncPolling(SCAN_INTERVAL_MS)
       }
-      hotkeyProblem = hotkey.setMode(voiceHotkeyMode(result.settings))
+      if (previousSettings.talkHotkey !== result.settings.talkHotkey) syncMuteShortcut()
+      if (hotkey.accelerator) hotkeyProblem = hotkey.setMode(voiceHotkeyMode(result.settings))
       reportHotkey()
       agent.refreshDefaults()
       applyLive(result.settings, previousSettings)
+      syncScreenHelp()
     }
     return result
   }
@@ -1329,7 +1966,6 @@ async function start(): Promise<void> {
     console.error('Could not restore Windows startup:', error)
   }
 
-  let trayPaused = false
   const tray = createTray({
     showSessions: () => windows.openPanel(),
     openSettings: () => {
@@ -1338,9 +1974,7 @@ async function start(): Promise<void> {
     },
     setPaused: (paused) => {
       trayPaused = paused
-      hotkeyProblem = hotkey.setPaused(paused)
-      modifierStepper.setPaused(paused)
-      reportHotkey()
+      suspendHotkeys(paused || capturingShortcut)
     },
     isPaused: () => trayPaused,
     restart,
@@ -1353,17 +1987,29 @@ async function start(): Promise<void> {
   }, SCAN_INTERVAL_MS)
   let agentRetiredForQuit = false
   let retiringForQuit = false
+  let providerCheckTimer: ReturnType<typeof setInterval> | null = null
+  let onTopTimer: ReturnType<typeof setInterval> | null = null
   app.on('before-quit', (event) => {
+    questionObserver.close()
+    liveScreen.close()
+    outsideHelp.close()
+    regionSpeech.stop()
+    screenVoice.stop()
+    regionToast?.close()
     if (agentRetiredForQuit) return
     event.preventDefault()
     if (retiringForQuit) return
     retiringForQuit = true
+    if (providerCheckTimer) clearInterval(providerCheckTimer)
+    if (onTopTimer) clearInterval(onTopTimer)
     void Promise.allSettled([
+      perplexity.close(),
       agent.close(),
       spaces?.close(),
       messageStore.flush(),
       gitStates.close(),
-    ]).finally(() => {
+    ]).finally(async () => {
+      await closeOwnedProcesses()
       agentRetiredForQuit = true
       app.quit()
     })
@@ -1375,6 +2021,8 @@ async function start(): Promise<void> {
     holds.releaseAll() // Claude carries on with every held card itself from here on
     codexHolds.releaseAll()
     hotkey.dispose()
+    brainstormHotkey.dispose()
+    muteBinding.dispose()
     modifierStepper.dispose()
     stt.stop()
     tray.destroy()
@@ -1385,11 +2033,13 @@ async function start(): Promise<void> {
 
   // Keep a paused dot accessible when both sources are off, so Settings is still one click away.
   const checkProviders = async () => {
+    if (retiringForQuit) return
     // The launcher watches either app, independently of the selected chat sources.
     const running = await Promise.all([
       isClaudeAppRunning(paths.appLockFile),
       codexProcesses().then((result) => result.running),
     ])
+    if (retiringForQuit) return
     windows.setClaudeRunning(
       settings.settings.enabledProviders.length === 0 ||
         running.some(Boolean) ||
@@ -1397,11 +2047,12 @@ async function start(): Promise<void> {
     )
   }
   void checkProviders()
-  setInterval(() => void checkProviders(), CLAUDE_CHECK_INTERVAL_MS)
+  providerCheckTimer = setInterval(() => void checkProviders(), CLAUDE_CHECK_INTERVAL_MS)
 
   // Each time another window comes to the front, the dot is raised again (windows.ts keepOnTop).
   let inFront: bigint | null = null
-  setInterval(() => {
+  onTopTimer = setInterval(() => {
+    if (retiringForQuit) return
     const now = foregroundWindowId()
     // Codex does not persist a reliable foreground-chat identifier. Release conservatively
     // when its app comes forward, as well as immediately for our own Open actions.
@@ -1412,6 +2063,8 @@ async function start(): Promise<void> {
   }, ON_TOP_CHECK_MS)
 
   if (!app.isPackaged) devAids(windows)
+  // No renderer can invoke a half-registered backend during asynchronous startup.
+  await windows.loadRenderers()
 }
 
 /**

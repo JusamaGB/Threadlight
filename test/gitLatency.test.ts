@@ -45,6 +45,48 @@ const deferred = <T>() => {
 
 describe('Git startup scheduling', () => {
   it.each([false, true])(
+    'retains a verified fallback while a new preferred folder resolves (found: %s)',
+    async (found) => {
+      const root = join(tmpdir(), 'existing-diff-root')
+      const preferred = join(tmpdir(), 'new-diff-root')
+      const discovery = deferred<ReturnType<typeof repository> | null>()
+      const locate = vi.fn(async (folder: string) =>
+        folder === preferred ? discovery.promise : repository(root),
+      )
+      const states = new GitStates(
+        () => {},
+        Date.now,
+        async (folder) => state(folder),
+        locate,
+      )
+      const original = session('chat', root)
+      const next = { ...original, gitFolders: [preferred, root] }
+      try {
+        states.annotate(snapshot([original]))
+        await vi.waitFor(() =>
+          expect(states.annotate(snapshot([original])).sessions[0]!.git?.root).toBe(root),
+        )
+        for (let n = 0; n < 3; n++) {
+          expect(states.annotate(snapshot([next])).sessions[0]).toMatchObject({
+            gitStatus: 'ready',
+            git: { root },
+          })
+        }
+        discovery.resolve(found ? repository(preferred) : null)
+        await vi.waitFor(() =>
+          expect(states.annotate(snapshot([next])).sessions[0]!.git?.root).toBe(
+            found ? preferred : root,
+          ),
+        )
+        expect(locate).toHaveBeenCalledTimes(2)
+      } finally {
+        discovery.resolve(null)
+        await states.close()
+      }
+    },
+  )
+
+  it.each([false, true])(
     'keeps verified Git data during an earlier negative-folder recheck (repository appears: %s)',
     async (appears) => {
       const root = join(tmpdir(), 'not-created-git-fallback')

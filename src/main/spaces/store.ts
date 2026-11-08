@@ -1,11 +1,13 @@
 import { DatabaseSync } from 'node:sqlite'
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import type { MemorySaver } from '../../shared/memory'
 import {
   ideaSchema,
   spacesInput,
   type SpaceIdea,
+  type SourcePin,
   type SpacesInput,
   type SpaceWorkspace,
   type SpaceDocument,
@@ -46,7 +48,8 @@ export class SpacesStore {
       CREATE TABLE IF NOT EXISTS space_owners (space TEXT PRIMARY KEY, workspace TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS documents (workspace TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(workspace,id));
       CREATE TABLE IF NOT EXISTS space_locations (space TEXT PRIMARY KEY, request TEXT NOT NULL UNIQUE, data TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS note_revisions(id TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(id,revision));`)
+      CREATE TABLE IF NOT EXISTS note_revisions(id TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(id,revision));
+      CREATE TABLE IF NOT EXISTS note_operations(principal TEXT NOT NULL,operation TEXT NOT NULL,digest TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(principal,operation));`)
     try {
       if (version.user_version < 4) {
         for (const row of this.db.prepare('SELECT data FROM ideas').all()) {
@@ -151,8 +154,12 @@ export class SpacesStore {
   }
   /** Validate document persistence before committing an editable idea revision. */
   beforeSave: (idea: SpaceIdea) => void = () => {}
+  externalNotes: () => SpaceIdea[] = () => []
+  externalRevision: (id: string, revision: number) => SpaceIdea = () => {
+    throw Error('This note is unavailable.')
+  }
   all(): SpaceIdea[] {
-    return this.records().filter((n) => n.recordKind !== 'discussion')
+    return [...this.records().filter((n) => n.recordKind !== 'discussion'), ...this.externalNotes()]
   }
   discussions(): SpaceIdea[] {
     return this.records().filter((n) => n.recordKind === 'discussion')
@@ -165,10 +172,15 @@ export class SpacesStore {
   }
   get(id: string): SpaceIdea {
     const row = this.db.prepare('SELECT data FROM ideas WHERE id=?').get(id)
-    if (!row) throw new Error('This note is unavailable.')
+    if (!row) {
+      const external = this.externalNotes().find((n) => n.id === id)
+      if (external) return external
+      throw new Error('This note is unavailable.')
+    }
     return ideaSchema.parse(JSON.parse(String(row.data)))
   }
   private put(idea: SpaceIdea) {
+    if (idea.memoryItem) throw Error('Edit shared notes through their original memory item.')
     idea = ideaSchema.parse(idea)
     this.db
       .prepare(
@@ -181,7 +193,7 @@ export class SpacesStore {
     return idea
   }
   revision(id: string, revision: number): SpaceIdea {
-    this.get(id)
+    if (this.get(id).memoryItem) return this.externalRevision(id, revision)
     const row = this.db
       .prepare('SELECT data FROM note_revisions WHERE id=? AND revision=?')
       .get(id, revision)
@@ -191,29 +203,34 @@ export class SpacesStore {
   discussion(
     input: Extract<SpacesInput, { action: 'create_discussion' }>,
     workspaceId: string,
+    pin?: SourcePin,
   ): SpaceIdea {
     const noteIds = [...new Set(input.noteIds ?? [])]
-    for (const id of noteIds) {
-      const note = this.get(id)
-      if (note.recordKind === 'discussion' || note.sharedSpaceId !== input.spaceId)
-        throw Error('Choose notes in this space.')
-    }
     const existing = this.records().find((n) => n.id === input.id)
     if (existing) {
       if (
         existing.recordKind !== 'discussion' ||
         existing.sharedSpaceId !== input.spaceId ||
         existing.title !== input.title ||
+        existing.sourcePin?.itemId !== pin?.itemId ||
+        existing.sourcePin?.hash !== pin?.hash ||
+        existing.sourcePin?.revision !== pin?.revision ||
         JSON.stringify(existing.noteIds) !== JSON.stringify(noteIds)
       )
         throw Error('This discussion request was already used for different content.')
       return existing
+    }
+    for (const id of noteIds) {
+      const note = this.get(id)
+      if (note.recordKind === 'discussion' || note.sharedSpaceId !== input.spaceId)
+        throw Error('Choose notes in this space.')
     }
     return this.put(
       ideaSchema.parse({
         id: input.id,
         recordKind: 'discussion',
         noteIds,
+        sourcePin: pin,
         sharedSpaceId: input.spaceId,
         workspaceId,
         revision: 1,
@@ -228,10 +245,42 @@ export class SpacesStore {
       }),
     )
   }
-  edit(value: SpacesInput): SpaceIdea {
+  recordSourceRead(id: string, pin: SourcePin, through: number) {
+    const current = this.get(id)
+    if (
+      current.sourcePin &&
+      (current.sourcePin.itemId !== pin.itemId ||
+        current.sourcePin.hash !== pin.hash ||
+        current.sourcePin.revision !== pin.revision)
+    )
+      throw Error('This discussion already reviews another snapshot.')
+    return this.put({
+      ...current,
+      sourcePin: pin,
+      sourceReadThrough: Math.max(current.sourceReadThrough ?? 0, through),
+    })
+  }
+  edit(
+    value: SpacesInput,
+    hosted?: { principal: string; operationId: string; request: unknown; saver: MemorySaver },
+  ): SpaceIdea {
     const input = spacesInput.parse(value)
+    const digest = hosted
+      ? createHash('sha256').update(JSON.stringify(hosted.request)).digest('hex')
+      : ''
     this.db.exec('BEGIN IMMEDIATE')
     try {
+      if (hosted) {
+        const previous = this.db
+          .prepare('SELECT digest,result FROM note_operations WHERE principal=? AND operation=?')
+          .get(hosted.principal, hosted.operationId)
+        if (previous) {
+          if (previous.digest !== digest)
+            throw Error('This operation ID belongs to different input.')
+          this.db.exec('COMMIT')
+          return ideaSchema.parse(JSON.parse(String(previous.result)))
+        }
+      }
       let idea: SpaceIdea
       if (input.action === 'create') {
         const existing = this.db.prepare('SELECT data FROM ideas WHERE id=?').get(input.id)
@@ -257,6 +306,7 @@ export class SpacesStore {
               conversationId: null,
               prepared: null,
               at: Date.now(),
+              saver: hosted?.saver ?? { provider: 'human', at: Date.now() },
               workspaceId: input.workspaceId ?? null,
               sharedSpaceId: input.sharedSpaceId ?? null,
             }),
@@ -271,9 +321,19 @@ export class SpacesStore {
           )
         if (new Set(input.assignments.map((a) => a.id)).size !== input.assignments.length)
           throw new Error('Assignment IDs must be unique.')
-        idea = this.put({ ...old, ...input, revision: old.revision + 1, at: Date.now() })
+        idea = this.put({
+          ...old,
+          ...input,
+          revision: old.revision + 1,
+          at: Date.now(),
+          saver: hosted?.saver ?? { provider: 'human', at: Date.now() },
+        })
       } else throw new Error('Unsupported note edit.')
       this.beforeSave(idea)
+      if (hosted)
+        this.db
+          .prepare('INSERT INTO note_operations VALUES(?,?,?,?)')
+          .run(hosted.principal, hosted.operationId, digest, JSON.stringify(idea))
       this.db.exec('COMMIT')
       return idea
     } catch (error) {

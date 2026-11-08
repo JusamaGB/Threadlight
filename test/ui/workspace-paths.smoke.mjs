@@ -130,7 +130,7 @@ async function checkDriveRoots(page, capture) {
       await page.getByRole('menuitem', { name: 'Workspace', exact: true }).click()
     }
   }
-  await fixture({ claude: 'Z:/General', codex: 'C:/Projects/other' }, true)
+  await fixture({ claude: 'Z:/FixtureProjects', codex: 'C:/Projects/other' }, true)
   await chooseDrive('Z')
   await waitCount(1)
   assert.deepEqual(
@@ -145,7 +145,7 @@ async function checkDriveRoots(page, capture) {
   )
   await capture('workspace-drive-root-known')
 
-  const paths = { claude: 'Z:/General', codex: '\\\\?\\Z:\\General\\nested' }
+  const paths = { claude: 'Z:/FixtureProjects', codex: '\\\\?\\Z:\\FixtureProjects\\nested' }
   await fixture(paths, false)
   await chooseDrive('Z')
   await waitCount(2)
@@ -194,7 +194,7 @@ async function checkDriveRoots(page, capture) {
 }
 
 async function checkAllDrivesWorkspace(page, capture) {
-  const paths = { claude: 'C:/Projects/shared', codex: 'Z:/General' }
+  const paths = { claude: 'C:/Projects/shared', codex: 'Z:/FixtureProjects' }
   await page.evaluate(async (paths) => {
     await window.threadlight.updateSettings({
       enabledProviders: ['claude', 'codex'],
@@ -249,7 +249,7 @@ async function checkAllDrivesWorkspace(page, capture) {
   )
   await page.getByRole('button', { name: 'Search', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Search workspaces' }).fill('General')
-  await page.locator('#workspace-folders button[title="Z:/General"]').click()
+  await page.locator('#workspace-folders button[title="Z:/FixtureProjects"]').click()
   await page.waitForFunction(() => document.querySelectorAll('[data-session-id]').length === 1)
   assert.equal(
     await page.evaluate(async () => (await window.threadlight.getSettings()).workspaceAllDrives),

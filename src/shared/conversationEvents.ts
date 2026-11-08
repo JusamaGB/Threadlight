@@ -97,6 +97,9 @@ export type ConversationRecord = z.infer<typeof conversationSchema>
 export type ConversationCard = Omit<ConversationRecord['cards'][number], 'request' | 'question'> & {
   request?: NativeCommunicationRequest
   question?: CommunicationQuestion
+  /** Reader-only placement when the original native item is on an earlier page. */
+  afterLiveItem?: string
+  recordedAnswer?: string
 }
 export interface ConversationFeed {
   owner: string

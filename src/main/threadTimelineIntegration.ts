@@ -6,6 +6,7 @@ import { isObject } from './sessions/json'
 import { sessionProvider } from '../shared/providers'
 import type { ClaudePaths, CodexPaths } from './sessions/paths'
 import { CodexReadAdapter } from './threadRead/codex'
+import { codexReplyMarkdown } from './codex/presentation'
 import { ClaudeReadAdapter } from './threadRead/claude'
 import { followCodexThread } from './codex/threadStream'
 import { ThreadTimelineService } from './threadTimeline'
@@ -40,6 +41,8 @@ export function registerThreadTimeline(
           locator: transcript(id) ?? undefined,
         },
         cursor,
+        false,
+        codexReplyMarkdown,
       )
     },
     follow: followCodexThread,

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import {
   parseSettings,
+  applySettingsPatch,
   SETTINGS_VERSION,
   validatePatch,
   type Settings,
@@ -50,7 +51,7 @@ export class SettingsStore {
     const checked = validatePatch(patch)
     if (!checked.ok) return checked
     const previous = this.current
-    const next = { ...previous, ...(checked.patch as SettingsPatch) }
+    const next = applySettingsPatch(previous, checked.patch as SettingsPatch)
     const problem = apply(next, previous)
     if (problem) return { ok: false, reason: problem }
     await this.save(next)

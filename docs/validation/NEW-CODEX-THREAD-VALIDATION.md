@@ -1,5 +1,7 @@
 # Native Codex thread creation proof
 
+> Public copy: local proof paths and native identifiers are generalised; raw evidence remains private.
+
 Date: 28 October 2026. The user authorized the next technical proof for Codex
 only; Claude testing remains pending. This validates a creation/handoff route,
 not the proposed header menu or automatic smart-view navigation.
@@ -12,7 +14,7 @@ read-only sandbox and on-request approvals. No initial prompt or synthetic turn
 was sent. The creation response returned the native ID, and `thread/read` could
 read it after naming it **Threadlight new-thread proof (disposable)**.
 
-Native ID: `e98dfed9-45fb-53dc-be6e-5a77d7a6387b`.
+Native ID: `REDACTED-NATIVE-ID`.
 
 The bootstrap app server was closed before desktop ownership or message tests.
 The existing desktop coordination connection initially returned `no-client-found`.
@@ -40,13 +42,13 @@ executed it. No Codex database or transcript was written directly.
 | Check                     | Evidence                                                                                             |
 | ------------------------- | ---------------------------------------------------------------------------------------------------- |
 | First message             | Accepted in 370 ms; completed with `CODEX_NEW_THREAD_OK`                                             |
-| First-turn identity       | `d80dec7b-2994-569b-b550-f1a61168262a`; one native user item matching its client message ID          |
+| First-turn identity       | `REDACTED-NATIVE-ID`; one native user item matching its client message ID                            |
 | Follow-up                 | Accepted in 660 ms; completed with `CODEX_FOLLOWUP_OK` in the same chat                              |
-| Follow-up identity        | `f0831e63-d423-5442-9e86-450c3023810a`; one native user item matching its client message ID          |
+| Follow-up identity        | `REDACTED-NATIVE-ID`; one native user item matching its client message ID                            |
 | Smart-view transport      | Production `followCodexThread` received a live stream with both user/reply pairs                     |
 | Focus independence        | Follow-up and streaming succeeded after navigating back to the originating chat                      |
 | Desktop tool availability | Native history records a completed `codex_app.list_artifacts` call with empty artifacts and no error |
-| Desktop-tool turn         | `75c957ed-3b3d-537a-9b5a-0e827f9353b3`; final reply `CODEX_DESKTOP_TOOLS_OK`                         |
+| Desktop-tool turn         | `REDACTED-NATIVE-ID`; final reply `CODEX_DESKTOP_TOOLS_OK`                                           |
 
 ## Local checks
 

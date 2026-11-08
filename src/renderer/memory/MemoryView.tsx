@@ -1,3 +1,5 @@
+import { HandoffsCanvas } from './HandoffsCanvas'
+import type { SpaceIdea } from '../../shared/spaces'
 import { CommunicationView } from '../communication/CommunicationView'
 import { useNavigationHistory } from '../hooks/useNavigationHistory'
 import type { NavigationDirection } from '../../shared/navigationHistory'
@@ -11,6 +13,7 @@ import {
   type Ref,
 } from 'react'
 import type {
+  MemoryManualConnection,
   MemoryFolder,
   MemoryInput,
   MemoryItem,
@@ -21,6 +24,7 @@ import type {
 } from '../../shared/memory'
 import type { Session } from '../../shared/types'
 import { scopeMemory } from '../../shared/memory'
+import { isSourceFile } from '../../shared/sourceReview'
 import styles from './MemoryView.module.css'
 
 type Route = {
@@ -65,6 +69,9 @@ export function MemoryView({
   navigationRef,
   spaceIds,
   initialSpaceId,
+  discussions = [],
+  openSource,
+  explainFile,
 }: {
   visible: boolean
   sessions: Session[]
@@ -76,6 +83,9 @@ export function MemoryView({
   }>
   spaceIds?: string[]
   initialSpaceId?: string
+  discussions?: SpaceIdea[]
+  explainFile?: (itemId: string, revision: number, filename: string) => Promise<void>
+  openSource?: (id: string) => void
 }) {
   const [rawData, setData] = useState(empty)
   const data = spaceIds ? scopeMemory(rawData, spaceIds) : rawData
@@ -83,13 +93,14 @@ export function MemoryView({
     initialSpaceId ? [{ kind: 'space', id: initialSpaceId }] : [],
   )
   const [mode, setMode] = useState<'map' | 'list'>('map')
+  const [storageOpen, setStorageOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState<FormKind | null>(null)
   const [read, setRead] = useState<MemoryRead | null>(null)
   const [version, setVersion] = useState<number | undefined>()
-  const [connection, setConnection] = useState<{ token: string; label: string } | null>(null)
+  const [connection, setConnection] = useState<MemoryManualConnection | null>(null)
   const [pairingId, setPairingId] = useState<string | null>(null)
   const pairing = data.connections?.find((c) => c.id === pairingId)
   const [confirm, setConfirm] = useState<MemoryInput | null>(null)
@@ -243,7 +254,9 @@ export function MemoryView({
   const childFolders = data.folders.filter(
     (f) => f.spaceId === spaceId && f.parentId === (folder?.id ?? null) && !f.archived,
   )
-  const childItems = data.items.filter((i) => i.folderId === folder?.id && !i.archived)
+  const childItems = data.items.filter(
+    (i) => i.folderId === folder?.id && !i.archived && i.purpose !== 'note',
+  )
   const heading =
     folder?.title ??
     item?.title ??
@@ -265,8 +278,11 @@ export function MemoryView({
     >
       <strong>{f.title}</strong>
       <span>
-        {data.items.filter((i) => i.folderId === f.id && !i.archived).length} items ·{' '}
-        {data.folders.filter((c) => c.parentId === f.id && !c.archived).length} folders{' '}
+        {
+          data.items.filter((i) => i.folderId === f.id && !i.archived && i.purpose !== 'note')
+            .length
+        }{' '}
+        items · {data.folders.filter((c) => c.parentId === f.id && !c.archived).length} folders{' '}
         {newFolder(f) && '· New'}
       </span>
     </button>
@@ -295,14 +311,16 @@ export function MemoryView({
 
   return (
     <section className={styles.view} hidden={!visible} aria-label="Handoffs">
-      {route && <p className={styles.hint}>Handoffs / {heading}</p>}
+      {route && route.kind !== 'space' && <p className={styles.hint}>Handoffs / {heading}</p>}
       {error && (
         <p className={styles.error} role="alert">
           {error}
         </p>
       )}
       <div ref={body} className={styles.body}>
-        {spaceId && !confirm && <CommunicationView spaceId={spaceId} sessions={sessions} />}
+        {spaceId && !confirm && route?.kind !== 'space' && (
+          <CommunicationView compact spaceId={spaceId} sessions={sessions} />
+        )}
         {confirm ? (
           <div className={styles.details}>
             <h3>Confirm {confirm.action.replaceAll('_', ' ')}</h3>
@@ -322,56 +340,23 @@ export function MemoryView({
           <div className={styles.details}>
             <h3>Connect {connection.label}</h3>
             <p>
-              This capability grants access to the selected scope. It identifies this enrollment,
-              not a verified native chat. Keep the configuration private. The token is shown once.
+              This configuration works until Threadlight restarts. It identifies this enrollment,
+              not a verified native chat. Keep the configuration private and enroll again after a
+              restart, or use the provider plugin for normal pairing.
             </p>
-            <p>Claude Code HTTP MCP configuration:</p>
-            <pre>
-              {JSON.stringify(
-                {
-                  mcpServers: {
-                    threadlight: {
-                      type: 'http',
-                      url: data.endpoint,
-                      headers: { Authorization: `Bearer ${connection.token}` },
-                    },
-                  },
-                },
-                null,
-                2,
-              )}
-            </pre>
+            <p>Claude Code MCP configuration:</p>
+            <pre>{connection.claude}</pre>
             <button
               className={styles.action}
-              onClick={() =>
-                window.threadlight.copyText(
-                  JSON.stringify(
-                    {
-                      mcpServers: {
-                        threadlight: {
-                          type: 'http',
-                          url: data.endpoint,
-                          headers: { Authorization: `Bearer ${connection.token}` },
-                        },
-                      },
-                    },
-                    null,
-                    2,
-                  ),
-                )
-              }
+              onClick={() => window.threadlight.copyText(connection.claude)}
             >
               Copy Claude configuration
             </button>
             <p>Codex config.toml:</p>
-            <pre>{`[mcp_servers.threadlight]\nurl = "${data.endpoint}"\nhttp_headers = { Authorization = "Bearer ${connection.token}" }`}</pre>
+            <pre>{connection.codex}</pre>
             <button
               className={styles.action}
-              onClick={() =>
-                window.threadlight.copyText(
-                  `[mcp_servers.threadlight]\nurl = "${data.endpoint}"\nhttp_headers = { Authorization = "Bearer ${connection.token}" }`,
-                )
-              }
+              onClick={() => window.threadlight.copyText(connection.codex)}
             >
               Copy Codex configuration
             </button>
@@ -422,6 +407,7 @@ export function MemoryView({
                 case 'note':
                   input = {
                     action: 'create_item',
+                    purpose: 'work_context',
                     folderId: folder?.id,
                     title: values.title,
                     body: values.body,
@@ -517,8 +503,9 @@ export function MemoryView({
                 setForm(null)
                 if (form === 'grant') {
                   setPairingId(null)
-                  const grant = result.value as { token?: string; label: string }
-                  if (grant.token) setConnection({ token: grant.token, label: grant.label })
+                  const grant = result.value as Partial<MemoryManualConnection>
+                  if (grant.claude && grant.codex && grant.label)
+                    setConnection(grant as MemoryManualConnection)
                 }
               }
             }}
@@ -529,7 +516,9 @@ export function MemoryView({
               Context, decisions and handoffs between your Claude and Codex chats. Share only what
               collaborators need; each provider keeps its own memory.
             </p>
-            {(data.connections ?? []).some((c) => c.state === 'pending') && (
+            {(data.connections ?? []).some(
+              (c) => c.spaceId === spaceId && c.state === 'pending',
+            ) && (
               <p role="status" className={styles.hint}>
                 Plugin connection requests are waiting. Choose a space, then Agent access to review
                 them.
@@ -569,138 +558,170 @@ export function MemoryView({
           </>
         ) : route.kind === 'space' || route.kind === 'folder' ? (
           <>
-            <div className={styles.toolbar}>
-              <input
-                aria-label="Search shared context"
-                placeholder="Search notes and folders…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+            {route.kind === 'space' && (
+              <HandoffsCanvas
+                key={spaceId}
+                spaceId={spaceId!}
+                memory={data}
+                discussions={discussions}
+                sessions={sessions}
+                openSource={openSource}
+                openTask={(id) => navigate({ kind: 'task', id })}
+                openItem={(id, revision) => {
+                  navigate({ kind: 'item', id })
+                  setVersion(revision)
+                }}
               />
-              <button onClick={() => setMode(mode === 'map' ? 'list' : 'map')}>
-                {mode === 'map' ? 'List' : 'Map'}
-              </button>
-            </div>
-            {folder && (
-              <p className={styles.hint}>
-                {folder.description}
-                {folder.archived && ' · Archived'}
-                {folder.redirectId && (
-                  <button onClick={() => navigate({ kind: 'folder', id: folder.redirectId! })}>
-                    Open merged destination
-                  </button>
-                )}
-              </p>
             )}
-            {query ? (
-              <MemorySearch query={query} spaceId={spaceId} navigate={navigate} />
-            ) : (
-              <>
-                {mode === 'map' && childFolders.length > 0 ? (
-                  <div className={styles.map}>
-                    <div className={styles.hub}>{folder?.title ?? space?.title}</div>
-                    <div className={styles.nodes}>
-                      {childFolders.slice(0, 6).map((f) => (
-                        <button
-                          className={styles.node}
-                          key={f.id}
-                          onClick={() => navigate({ kind: 'folder', id: f.id })}
-                        >
-                          <strong>{f.title}</strong>
-                          <span>
-                            {data.items.filter((i) => i.folderId === f.id && !i.archived).length}{' '}
-                            items {newFolder(f) && '· New'}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                    {childFolders.length > 6 && (
-                      <button className={styles.action} onClick={() => setMode('list')}>
-                        More folders · {childFolders.length - 6}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  childFolders.map(folderRow)
-                )}
-                {childItems.map(itemRow)}
-                {!childFolders.length && !childItems.length && (
-                  <p className={styles.hint}>
-                    No material here yet. Add a folder, note or attachment.
-                  </p>
-                )}
-              </>
+            {route.kind === 'space' && (
+              <CommunicationView compact spaceId={spaceId} sessions={sessions} />
             )}
-            <div className={styles.actions}>
-              <button onClick={() => setForm('folder')}>New folder</button>
+            <details
+              open={route.kind === 'folder' || storageOpen}
+              onToggle={(e) => {
+                if (route.kind === 'space') setStorageOpen(e.currentTarget.open)
+              }}
+            >
+              <summary className={styles.storage}>Folders & controls</summary>
+              <div className={styles.toolbar}>
+                <input
+                  aria-label="Search shared context"
+                  placeholder="Search notes and folders…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                <button onClick={() => setMode(mode === 'map' ? 'list' : 'map')}>
+                  {mode === 'map' ? 'List' : 'Map'}
+                </button>
+              </div>
               {folder && (
+                <p className={styles.hint}>
+                  {folder.description}
+                  {folder.archived && ' · Archived'}
+                  {folder.redirectId && (
+                    <button onClick={() => navigate({ kind: 'folder', id: folder.redirectId! })}>
+                      Open merged destination
+                    </button>
+                  )}
+                </p>
+              )}
+              {query ? (
+                <MemorySearch query={query} spaceId={spaceId} navigate={navigate} />
+              ) : (
                 <>
-                  <button onClick={() => setForm('note')}>New note</button>
-                  <button
-                    onClick={() =>
-                      void window.threadlight.memoryImport(folder.id).then(acceptReply)
-                    }
-                  >
-                    Add file
-                  </button>
-                  <button onClick={() => setForm('rename')}>Rename</button>
-                  <button onClick={() => setForm('move')}>Move</button>
-                  <button onClick={() => setForm('merge')}>Merge</button>
-                  <button onClick={() => setForm('subscribe')}>Watch for changes</button>
-                  <button
-                    onClick={() =>
-                      setConfirm({
-                        action: 'update_folder',
-                        id: folder.id,
-                        expectedRevision: folder.revision,
-                        archived: !folder.archived,
-                      })
-                    }
-                  >
-                    {folder.archived ? 'Restore folder' : 'Archive folder'}
-                  </button>
+                  {mode === 'map' && childFolders.length > 0 ? (
+                    <div className={styles.map}>
+                      <div className={styles.hub}>{folder?.title ?? space?.title}</div>
+                      <div className={styles.nodes}>
+                        {childFolders.slice(0, 6).map((f) => (
+                          <button
+                            className={styles.node}
+                            key={f.id}
+                            onClick={() => navigate({ kind: 'folder', id: f.id })}
+                          >
+                            <strong>{f.title}</strong>
+                            <span>
+                              {
+                                data.items.filter(
+                                  (i) => i.folderId === f.id && !i.archived && i.purpose !== 'note',
+                                ).length
+                              }{' '}
+                              items {newFolder(f) && '· New'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                      {childFolders.length > 6 && (
+                        <button className={styles.action} onClick={() => setMode('list')}>
+                          More folders · {childFolders.length - 6}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    childFolders.map(folderRow)
+                  )}
+                  {childItems.map(itemRow)}
+                  {!childFolders.length && !childItems.length && (
+                    <p className={styles.hint}>
+                      No material here yet. Add a folder, note or attachment.
+                    </p>
+                  )}
                 </>
               )}
-              <button onClick={() => navigate({ kind: 'activity', id: spaceId! })}>Activity</button>
-              <button onClick={() => navigate({ kind: 'access', id: spaceId! })}>
-                Agent access
-              </button>
-              <button onClick={() => setForm('task')}>Delegate</button>
-              <button onClick={() => setForm('policy')}>Coordination</button>
-              <button onClick={() => void request({ action: 'mark_seen', cursor: data.cursor })}>
-                Mark changes seen
-              </button>
-            </div>
-            <h3 className={styles.label}>Tasks</h3>
-            {data.subscriptions
-              .filter(
-                (s) => s.active && s.spaceId === spaceId && (!folder || s.folderId === folder.id),
-              )
-              .map((s) => (
-                <div className={styles.message} key={s.id}>
-                  <strong>{s.title}</strong>
-                  <p>
-                    Change reviews for{' '}
-                    {sessions.find((c) => c.id === s.assignee)?.title ?? s.assignee}
-                  </p>
-                  <button
-                    className={styles.action}
-                    onClick={() => void request({ action: 'unsubscribe', id: s.id })}
-                  >
-                    Stop watching
-                  </button>
-                </div>
-              ))}
-            {data.tasks
-              .filter((t) => t.spaceId === spaceId && (!folder || t.folderId === folder.id))
-              .map(taskRow)}
+              <div className={styles.actions}>
+                <button onClick={() => setForm('folder')}>New folder</button>
+                {folder && (
+                  <>
+                    <button onClick={() => setForm('note')}>New note</button>
+                    <button
+                      onClick={() =>
+                        void window.threadlight.memoryImport(folder.id).then(acceptReply)
+                      }
+                    >
+                      Add file
+                    </button>
+                    <button onClick={() => setForm('rename')}>Rename</button>
+                    <button onClick={() => setForm('move')}>Move</button>
+                    <button onClick={() => setForm('merge')}>Merge</button>
+                    <button onClick={() => setForm('subscribe')}>Watch for changes</button>
+                    <button
+                      onClick={() =>
+                        setConfirm({
+                          action: 'update_folder',
+                          id: folder.id,
+                          expectedRevision: folder.revision,
+                          archived: !folder.archived,
+                        })
+                      }
+                    >
+                      {folder.archived ? 'Restore folder' : 'Archive folder'}
+                    </button>
+                  </>
+                )}
+                <button onClick={() => navigate({ kind: 'activity', id: spaceId! })}>
+                  Activity
+                </button>
+                <button onClick={() => navigate({ kind: 'access', id: spaceId! })}>
+                  Agent access
+                </button>
+                <button onClick={() => setForm('task')}>Delegate</button>
+                <button onClick={() => setForm('policy')}>Coordination</button>
+                <button onClick={() => void request({ action: 'mark_seen', cursor: data.cursor })}>
+                  Mark changes seen
+                </button>
+              </div>
+              <h3 className={styles.label}>Tasks</h3>
+              {data.subscriptions
+                .filter(
+                  (s) => s.active && s.spaceId === spaceId && (!folder || s.folderId === folder.id),
+                )
+                .map((s) => (
+                  <div className={styles.message} key={s.id}>
+                    <strong>{s.title}</strong>
+                    <p>
+                      Change reviews for{' '}
+                      {sessions.find((c) => c.id === s.assignee)?.title ?? s.assignee}
+                    </p>
+                    <button
+                      className={styles.action}
+                      onClick={() => void request({ action: 'unsubscribe', id: s.id })}
+                    >
+                      Stop watching
+                    </button>
+                  </div>
+                ))}
+              {data.tasks
+                .filter((t) => t.spaceId === spaceId && (!folder || t.folderId === folder.id))
+                .map(taskRow)}
 
-            <details>
-              <summary>Archived folders</summary>
-              {data.folders.filter((f) => f.spaceId === spaceId && f.archived).map(folderRow)}
-            </details>
-            <details>
-              <summary>Archived items</summary>
-              {data.items.filter((i) => i.spaceId === spaceId && i.archived).map(itemRow)}
+              <details>
+                <summary>Archived folders</summary>
+                {data.folders.filter((f) => f.spaceId === spaceId && f.archived).map(folderRow)}
+              </details>
+              <details>
+                <summary>Archived items</summary>
+                {data.items.filter((i) => i.spaceId === spaceId && i.archived).map(itemRow)}
+              </details>
             </details>
           </>
         ) : route.kind === 'item' && item ? (
@@ -728,6 +749,30 @@ export function MemoryView({
                 {read.dataUrl?.startsWith('data:image/') && (
                   <img className={styles.image} src={read.dataUrl} alt={item.title} />
                 )}
+                {explainFile &&
+                  !item.archived &&
+                  read.revision.mime === 'text/plain' &&
+                  isSourceFile(read.revision.filename) &&
+                  read.revision.revision === (version ?? item.revision) && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusy(true)
+                        try {
+                          await explainFile(
+                            item.id,
+                            read.revision.revision,
+                            read.revision.filename!,
+                          )
+                        } finally {
+                          setBusy(false)
+                        }
+                      }}
+                    >
+                      Explain this file
+                    </button>
+                  )}
                 <div className={styles.text}>{read.revision.body}</div>
                 {read.dataUrl && !read.dataUrl.startsWith('data:image/') && (
                   <a href={read.dataUrl} download={read.revision.filename}>
@@ -921,7 +966,7 @@ export function MemoryView({
                 : 'Collaboration tools are offline. Check whether another application owns port 47618.'}
             </p>
             {(data.connections ?? [])
-              .filter((c) => c.state === 'pending')
+              .filter((c) => c.spaceId === spaceId && c.state === 'pending')
               .map((c) => (
                 <div className={styles.message} key={c.id}>
                   <strong>

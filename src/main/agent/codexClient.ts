@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { CliCommand } from '../relay'
 import { isObject, type JsonObject } from '../sessions/json'
+import { spawnOwnedProcess, stopOwnedProcess } from './ownedProcess'
 
 export type RpcId = number | string
 export class CodexRpcError extends Error {
@@ -16,7 +17,7 @@ export interface CodexTransport {
   respond(id: RpcId, result: JsonObject): void
   onEvent: (method: string, params: JsonObject, id?: RpcId) => void
   onFailure: (error: Error) => void
-  close(): void
+  close(): void | Promise<void>
 }
 
 /** One owned stdio connection. Request IDs are typed, never coerced across the wire. */
@@ -35,18 +36,22 @@ export class CodexClient implements CodexTransport {
   private next = 0
   private buffer = ''
   private closed = false
+  private cleanup?: Promise<void>
 
   constructor(cli: CliCommand, cwd: string, start = spawn) {
     const env = { ...process.env }
     for (const key of ['CODEX_THREAD_ID', 'CODEX_TURN_ID', 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE'])
       delete env[key]
-    this.child = start(cli.command, [...cli.prefixArgs, 'app-server'], {
-      cwd,
-      env,
-      windowsHide: true,
-      shell: false,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }) as ChildProcessWithoutNullStreams
+    this.child =
+      start === spawn
+        ? spawnOwnedProcess(cli.command, [...cli.prefixArgs, 'app-server'], cwd, env)
+        : (start(cli.command, [...cli.prefixArgs, 'app-server'], {
+            cwd,
+            env,
+            windowsHide: true,
+            shell: false,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          }) as ChildProcessWithoutNullStreams)
     this.child.stdout.setEncoding('utf8').on('data', (chunk: string) => this.read(chunk))
     // Diagnostics may include credentials/tool inputs. Consume without echoing or persisting them.
     this.child.stderr.resume()
@@ -96,16 +101,16 @@ export class CodexClient implements CodexTransport {
     this.write({ id, result })
   }
 
-  close(): void {
-    if (this.closed) return
+  close(): Promise<void> {
+    if (this.closed) return this.cleanup ?? Promise.resolve()
     this.closed = true
-    this.child.stdin.end()
-    this.child.kill()
+    this.cleanup = stopOwnedProcess(this.child)
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer)
       pending.reject(new Error('Codex connection ended.'))
     }
     this.pending.clear()
+    return this.cleanup
   }
 
   private write(value: object): void {

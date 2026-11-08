@@ -1,4 +1,18 @@
 /* global window */
+export async function selectConversationFilter(page, value) {
+  const control = page.locator('header [data-thread-filter]')
+  if ((await control.getAttribute('data-thread-filter')) === value) return
+  await control.click()
+  await page
+    .getByRole('menu', { name: 'Thread filter', exact: true })
+    .getByRole('menuitem', {
+      name: { all: 'All', chat: 'Chat', 'code-computer': 'Code & Computer' }[value],
+      exact: true,
+    })
+    .click()
+  await page.locator(`header [data-thread-filter="${value}"]`).waitFor()
+}
+
 /** Exercise the public header entry point, including from nested pages. */
 export async function openHeaderPage(page, name) {
   await page.locator('header[aria-label="Panel header"]').click({ button: 'right' })
@@ -20,8 +34,12 @@ export async function selectThreadView(page, mode) {
   } else {
     const view = page.locator('header [data-thread-view]')
     for (let step = 0; step < 3; step++) {
-      if ((await view.getAttribute('data-thread-view')) === mode) break
+      const before = await view.getAttribute('data-thread-view')
+      if (before === mode) break
       await view.click()
+      // Settings updates are asynchronous; do not click the old view again.
+      const next = before === 'active' ? 'recent' : before === 'recent' ? 'workspace' : 'active'
+      await page.locator(`header [data-thread-view="${next}"]`).waitFor()
     }
   }
   await page.locator(`header [data-thread-view="${mode}"]`).waitFor()

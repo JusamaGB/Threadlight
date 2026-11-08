@@ -15,9 +15,9 @@ type Thread = {
   diff?: [number, number]
 }
 type Group = { key: string; name: string; colour: string; threads: Thread[]; lane: number }
-const main = 'C:/Example/threadlight'
+const main = 'C:/demo/Threadlight'
 const linkedin = 'C:/demo/communications'
-const quiz = 'C:/demo/ExampleProject'
+const quiz = 'C:/demo/QuizShorts'
 const samples: Thread[] = [
   {
     id: 'review',
@@ -35,7 +35,7 @@ const samples: Thread[] = [
     id: 'motion',
     title: 'Plan Threadlight generative motion',
     provider: 'claude',
-    cwd: 'C:\\Example\\threadlight\\',
+    cwd: 'c:\\demo\\THREADLIGHT\\',
     state: 'working',
     stage: 'Thinking',
     context: 0.68,
@@ -46,7 +46,7 @@ const samples: Thread[] = [
     id: 'other-worktree',
     title: 'Fix panel keyboard focus',
     provider: 'codex',
-    cwd: 'C:/Example/threadlight-ui',
+    cwd: 'C:/demo/Threadlight-ui',
     state: 'idle',
     stage: 'Separate worktree · ready for review',
     context: 0.32,
@@ -77,7 +77,7 @@ const samples: Thread[] = [
     id: 'agent',
     title: 'Refine Agent status',
     provider: 'claude',
-    cwd: '\\\\?\\C:\\Example\\threadlight',
+    cwd: '\\\\?\\C:\\demo\\Threadlight',
     state: 'waiting',
     stage: 'Ready for your review',
     context: 0.81,

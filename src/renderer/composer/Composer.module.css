@@ -11,27 +11,65 @@
   background-position: top;
   background-repeat: no-repeat;
 }
+.shortcut {
+  flex: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.shortcut kbd {
+  font: inherit;
+}
+.pill > button.shortcut {
+  height: 20px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  padding: 0 2px;
+  cursor: pointer;
+}
+button.shortcut:hover {
+  color: var(--fg);
+}
+button.shortcut[aria-pressed='true'] {
+  color: var(--accent);
+}
+button.shortcut:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
 
 .composer[data-embedded] {
   background-image: none;
   padding: 2px 2px 3px;
 }
 
-.composer[data-embedded] .pill {
+.composer[data-embedded] .pill,
+.pill[data-embedded] {
   min-height: 28px;
   padding: 3px 5px;
   border-radius: 8px;
   gap: 4px;
 }
-.composer[data-embedded] .entry {
+.composer[data-embedded] .entry,
+.pill[data-embedded] .entry {
   min-height: 20px;
   justify-content: center;
 }
 .composer[data-embedded] .attach,
+.pill[data-embedded] .mic,
 .composer[data-embedded] .mic {
   width: 20px;
   height: 20px;
   margin: 0;
+}
+
+.answerComposer {
+  min-width: 0;
+  margin: 10px 8px 8px;
 }
 
 .composer[data-provider='claude'] {
@@ -134,10 +172,14 @@
   gap: 4px;
 }
 
-.input {
+.pill .input {
+  /* Native sizing avoids collapsing the field to measure every keystroke. */
+  field-sizing: content;
   width: 100%;
   box-sizing: border-box;
   resize: none;
+  min-height: 18px;
+  max-height: 72px;
   border: 0;
   outline: none;
   padding: 0;
@@ -153,8 +195,11 @@
   color: var(--muted);
   font-style: italic;
 }
+.pill .input:focus-visible {
+  outline: none;
+}
 
-.send {
+.pill .send {
   flex: none;
   width: 20px;
   height: 18px;
@@ -162,6 +207,13 @@
   line-height: 18px;
   text-align: center;
   color: var(--fg);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+.pill .send:hover {
+  background: transparent;
 }
 
 .send:disabled {
@@ -406,4 +458,14 @@
 .queue button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+.mutedWave {
+  display: block;
+  width: 100%;
+  height: 18px;
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }

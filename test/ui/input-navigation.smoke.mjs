@@ -1,4 +1,4 @@
-import { openHeaderPage } from './header-navigation.mjs'
+import { openHeaderPage, selectThreadView } from './header-navigation.mjs'
 import { setupLegacySpace } from './space-navigation.mjs'
 /* global window, document, MouseEvent */
 import assert from 'node:assert/strict'
@@ -39,6 +39,7 @@ export async function checkInputNavigation(page, capture) {
   await threads()
   await openHeaderPage(page, 'Agent')
   await mouse('forward')
+  await page.getByRole('button', { name: 'Reply to Agent' }).click()
   const draft = page.getByPlaceholder('Ask your agent…')
   await draft.waitFor()
   await draft.fill('Keep this unsent draft while I peek')
@@ -58,6 +59,11 @@ export async function checkInputNavigation(page, capture) {
     before,
     'peek sends no commands',
   )
+  const gear = page.getByRole('button', { name: 'Agent settings', exact: true })
+  await gear.click()
+  await page.getByRole('button', { name: 'Back to Agent' }).click()
+  assert.equal(await draft.inputValue(), 'Keep this unsent draft while I peek')
+  await gear.click()
   await page.getByRole('button', { name: /Earlier/ }).click()
   await page.getByRole('button', { name: /Synthetic earlier agent/ }).click()
   await page.getByText('A saved reply', { exact: true }).waitFor()
@@ -82,6 +88,7 @@ export async function checkInputNavigation(page, capture) {
   await setupLegacySpace(page)
   const handoffs = page.getByRole('region', { name: 'Handoffs', exact: true })
   await handoffs.getByRole('button', { name: /shared Workspace collaboration/ }).click()
+  await handoffs.getByText('Folders & controls', { exact: true }).click()
   await handoffs.getByRole('button', { name: 'New folder', exact: true }).click()
   await handoffs.getByLabel('Title', { exact: true }).waitFor()
   await mouse('back')
@@ -89,7 +96,54 @@ export async function checkInputNavigation(page, capture) {
   await mouse('forward')
   await handoffs.getByLabel('Title', { exact: true }).waitFor()
   await capture('mouse-navigation-nested-form')
+  const wire = page.locator('[data-wire-toggle]')
+  await page.getByRole('button', { name: 'Return to Active', exact: true }).click()
+  await threads()
+  await handoffs.waitFor({ state: 'hidden' })
+  for (const mode of ['active', 'recent', 'workspace']) {
+    await selectThreadView(page, mode)
+    const label = mode[0].toUpperCase() + mode.slice(1)
+    for (const workspaceWires of [false, true]) {
+      await page.evaluate(
+        (workspaceWires) =>
+          window.threadlight.updateSettings({ workspaceWires, panelLayout: 'dual' }),
+        workspaceWires,
+      )
+      const saved = await page.evaluate(() => window.threadlight.getSettings())
+      for (const destination of ['Settings', 'Agent', 'Workspace picker']) {
+        if (destination === 'Settings') await settings()
+        else if (destination === 'Agent') await openHeaderPage(page, 'Agent')
+        else await page.getByRole('button', { name: /^Choose workspace:/ }).click()
+        const home = page.getByRole('button', { name: `Return to ${label}`, exact: true })
+        await home.waitFor()
+        assert.equal(await home.getAttribute('aria-pressed'), null, 'home is a navigation action')
+        assert.equal(await home.getAttribute('data-connected'), String(workspaceWires))
+        await home.press('Enter')
+        await page.locator(`[data-thread-view="${mode}"]`).waitFor()
+        assert.deepEqual(
+          await page.evaluate(() => window.threadlight.getSettings()),
+          saved,
+          `${destination}: returning home preserves wires, layout and folder scope`,
+        )
+        assert.equal(
+          await page.locator('[data-card]').locator('..').locator('..').getAttribute('data-dual'),
+          mode === 'active' ? null : 'true',
+          'return restores the saved dual layout where supported',
+        )
+      }
+      await wire.click()
+      await page.waitForFunction(
+        async (before) => (await window.threadlight.getSettings()).workspaceWires !== before,
+        workspaceWires,
+      )
+      assert.equal(await wire.getAttribute('aria-pressed'), String(!workspaceWires))
+    }
+  }
+  await openHeaderPage(page, 'Agent')
+  assert.equal(await draft.inputValue(), 'Keep this unsent draft while I peek')
+  await page.getByRole('button', { name: 'Return to Workspace', exact: true }).click()
+  await capture('wire-home-workspace-dual')
   console.log(
-    'PASS: mouse/native back-forward, on-screen Back retaining Forward, new-route truncation, Agent reading across remount, nested Shared Spaces forms, and temporary Active preserving the unsent Agent draft without commands.',
+    'PASS: mouse/native back-forward, nested Shared Spaces, Active peek, wire home from subpages, retained Agent draft, saved main views and dual layout, and wire toggling only on main views.',
   )
 }

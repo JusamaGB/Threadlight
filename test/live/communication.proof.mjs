@@ -1,3 +1,4 @@
+import { memoryFixture } from './memory-transport.fixture.mjs'
 // Real authenticated peer MCP calls. Disposable chats, private test memory, no native desktop takeover.
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
@@ -25,7 +26,8 @@ const { findClaudeCli, relayMessage } = require('../../src/main/relay.ts'),
 const { defaultPaths, codexPaths } = require('../../src/main/sessions/paths.ts')
 const root = mkdtempSync(join(tmpdir(), 'threadlight-peer-proof-'))
 const store = new MemoryStore(join(root, 'memory.sqlite')),
-  server = new MemoryServer(store)
+  transportAuth = memoryFixture(root),
+  server = new MemoryServer(store, transportAuth)
 const execute = (input) => store.execute({ operationId: randomUUID(), ...input })
 const env = { ...process.env }
 for (const key of [

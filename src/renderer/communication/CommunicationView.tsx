@@ -10,18 +10,22 @@ import type {
   CommunicationMessage,
 } from '../../shared/communication'
 import type { Session } from '../../shared/types'
+import { accountChatTarget } from '../../shared/communicationTargets'
 import styles from './CommunicationView.module.css'
+import { WorkflowGraphEditor } from './WorkflowGraphEditor'
 
 export function CommunicationView({
   spaceId,
   sessions = [],
   owner,
   compact = false,
+  mode = 'messages',
 }: {
   spaceId?: string
   sessions?: Session[]
   owner?: string | null
   compact?: boolean
+  mode?: 'messages' | 'workflow'
 }) {
   const [data, setData] = useState<CommunicationSnapshot | null>(null)
   const [older, setOlder] = useState<CommunicationMessage[]>([])
@@ -86,12 +90,31 @@ export function CommunicationView({
     data?.questions.filter(
       (q) => (!spaceId ? q.audience === 'human' : q.spaceId === spaceId) && q.state === 'pending',
     ) ?? []
+  if (mode === 'workflow')
+    return (
+      <section className={styles.root} aria-label="Project workflow">
+        {error && <p role="alert">{error}</p>}
+        {spaceId && data && (
+          <WorkflowGraphEditor key={spaceId} spaceId={spaceId} data={data} refresh={refresh} />
+        )}
+        {spaceId && data && (
+          <WorkflowEditor
+            key={`${spaceId}:${workflow?.revision ?? 0}`}
+            workflow={workflow}
+            spaceId={spaceId}
+            sessions={sessions}
+            busy={busy}
+            save={(w, revision) => call('configure', w, revision)}
+          />
+        )}
+      </section>
+    )
   if (compact && !messages.length && !questions.length && !data?.nativeRequests?.length) return null
   return (
     <section className={styles.root} aria-label="Thread communication">
       <details open={!compact}>
         <summary>
-          {spaceId ? 'Project communication and workflow' : 'Background messages'}
+          {spaceId ? 'Project communication' : 'Background messages'}
           {messages.length ? ` · ${messages.length}` : ''}
         </summary>
         {spaceId && (
@@ -101,16 +124,6 @@ export function CommunicationView({
           </p>
         )}
         {error && <p role="alert">{error}</p>}
-        {spaceId && (
-          <WorkflowEditor
-            key={workflow?.revision ?? 0}
-            workflow={workflow}
-            spaceId={spaceId}
-            sessions={sessions}
-            busy={busy}
-            save={(w, revision) => call('configure', w, revision)}
-          />
-        )}
         {!compact && (
           <form
             onSubmit={async (e) => {
@@ -432,7 +445,8 @@ function WorkflowEditor({
 }) {
   const [available, setAvailable] = useState<Destination[]>([])
   const [discoveryError, setDiscoveryError] = useState('')
-  const choices = available.length
+  const [participants, setParticipants] = useState<Participant[]>(workflow?.participants ?? [])
+  const discovered = available.length
     ? available
     : sessions.map((s) => ({
         id: s.id,
@@ -440,7 +454,19 @@ function WorkflowEditor({
         title: s.title,
         model: s.model,
       }))
-  const [participants, setParticipants] = useState<Participant[]>(workflow?.participants ?? [])
+  const choices = [
+    ...discovered,
+    ...participants
+      .filter((p) => !discovered.some((d) => d.id === p.target))
+      .map((p) => ({
+        id: p.target,
+        title: p.role,
+        model: p.model,
+        provider:
+          accountChatTarget(p.target)?.source ??
+          (p.target.startsWith('codex:') ? 'codex' : 'claude'),
+      })),
+  ]
   const [mode, setMode] = useState<Workflow['mode']>(workflow?.mode ?? 'manual')
   const [paused, setPaused] = useState(workflow?.paused ?? true)
   const [budget, setBudget] = useState(workflow?.maxDispatches ?? 20)
@@ -516,7 +542,13 @@ function WorkflowEditor({
                 value={p.target}
                 onChange={(e) => {
                   const s = choices.find((s) => s.id === e.target.value)
-                  edit(p.id, { target: e.target.value, model: s?.model ?? '' })
+                  const account = !!accountChatTarget(e.target.value)
+                  edit(p.id, {
+                    target: e.target.value,
+                    model: account ? 'Current native model' : (s?.model ?? ''),
+                    modelPolicy: account ? 'current' : 'exact',
+                    ...(account ? { requestWork: false } : {}),
+                  })
                 }}
               >
                 <option value="">Choose a chat</option>
@@ -529,7 +561,11 @@ function WorkflowEditor({
             </label>
             <label>
               Model
-              <input value={p.model} onChange={(e) => edit(p.id, { model: e.target.value })} />
+              <input
+                value={p.model}
+                readOnly={p.modelPolicy === 'current'}
+                onChange={(e) => edit(p.id, { model: e.target.value })}
+              />
             </label>
             <label>
               <input
@@ -543,6 +579,7 @@ function WorkflowEditor({
               <input
                 type="checkbox"
                 checked={p.requestWork}
+                disabled={!!accountChatTarget(p.target)}
                 onChange={(e) => edit(p.id, { requestWork: e.target.checked })}
               />
               Allow requests for work
@@ -654,18 +691,22 @@ export function NativeRequest({
   busy,
   focus,
   answer,
+  direct = false,
 }: {
   request: NativeCommunicationRequest
   busy: boolean
   focus: () => Promise<boolean>
   answer: (response: NativeCommunicationResponse) => Promise<boolean>
+  direct?: boolean
 }) {
   const [focused, setFocused] = useState(false)
   return (
     <article aria-label="Live request">
-      <button disabled={busy} onClick={async () => setFocused(await focus())}>
-        {focused ? 'Selected for your next Agent answer' : 'Answer through Agent'}
-      </button>
+      {!direct && (
+        <button disabled={busy} onClick={async () => setFocused(await focus())}>
+          {focused ? 'Selected for your next Agent answer' : 'Answer through Agent'}
+        </button>
+      )}
       <AgentRequestCard
         request={{
           id: request.id,

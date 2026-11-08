@@ -372,8 +372,8 @@ export async function checkDualDetails(page, capture) {
   }
 }
 
-/** A very long list still splits into its two columns, just without the gliding animation. */
-export async function checkDualLong(page) {
+/** Long histories must still visibly split and merge, including in a scrolled Workspace. */
+export async function checkDualLong(page, capture) {
   const initial = await page.evaluate(() => window.threadlight.getSettings())
   try {
     // Every snapshot the panel receives carries 140 idle threads, however settings change.
@@ -392,7 +392,16 @@ export async function checkDualLong(page) {
           provider: i % 2 ? 'codex' : 'claude',
           lastActiveAt: Date.now() - i * 60000,
         }))
-        return { ...snap, sessions, workspaces: [] }
+        return {
+          ...snap,
+          sessions,
+          workspaces: snap.workspaces
+            .map((workspace) => ({
+              ...workspace,
+              threads: sessions.map((session) => ({ session, children: [] })),
+            }))
+            .slice(0, 1),
+        }
       }
       window.threadlight = new Proxy(real, {
         get(target, name) {
@@ -417,28 +426,56 @@ export async function checkDualLong(page) {
       await selectThreadView(page, 'recent')
     }
     await page.waitForFunction(() => document.querySelectorAll('[data-session-id]').length === 140)
+    for (const mode of ['recent', 'workspace']) {
+      await selectThreadView(page, mode)
+      for (const scroll of [0, 1200, 100000]) {
+        await page.locator('#thread-list').evaluate((list, top) => {
+          list.scrollTop = top
+        }, scroll)
+        await checkRowMotion(
+          page,
+          'dual',
+          mode + ' split, scroll ' + scroll,
+          scroll === 0 && capture,
+        )
+        await checkRowMotion(
+          page,
+          'single',
+          mode + ' merge, scroll ' + scroll,
+          scroll === 0 && capture,
+        )
+      }
+    }
+    // Reverse during card growth, during row travel, and while the merge is opening gaps.
+    for (const delay of [120, 450, 700]) {
+      await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'dual' }))
+      await page.waitForTimeout(delay)
+      await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'single' }))
+      await page.waitForTimeout(120)
+      await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'dual' }))
+      await page.waitForTimeout(1200)
+      await settled(page)
+      assert.equal(await cardWidth(page), 475, 'rapid reversal settles to the latest choice')
+      assert.equal(await page.locator('[data-session-id]').count(), 140)
+      const claude = await rowBox(page, 'claude')
+      const codex = await rowBox(page, 'codex')
+      assert.ok(claude.left < codex.left && Math.abs(claude.top - codex.top) < 1)
+      await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'single' }))
+      await page.waitForFunction(() => !document.querySelector('[data-wide]'))
+    }
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'dual' }))
-    await page.waitForFunction(() => {
-      const left = document.querySelector('[data-session-id="long-0"]')
-      const right = document.querySelector('[data-session-id="codex:long-1"]')
-      return (
-        left &&
-        right &&
-        left.getBoundingClientRect().left < right.getBoundingClientRect().left &&
-        Math.abs(left.getBoundingClientRect().top - right.getBoundingClientRect().top) < 1
-      )
-    })
+    await page.waitForFunction(() => document.querySelector('[data-dual]'))
     assert.equal(
-      await page.evaluate(
-        () =>
-          [...document.querySelectorAll('[data-session-id]')].filter(
-            (row) => row.getAnimations().length > 0,
-          ).length,
-      ),
+      await page
+        .locator('[data-session-id]')
+        .evaluateAll((rows) => rows.filter((row) => row.getAnimations().length).length),
       0,
-      'a long list is rearranged without animating every row',
     )
-    console.log('PASS: a list of 140 threads splits into its columns without per-row animation.')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    console.log(
+      'PASS: 140-thread Recent and Workspace lists visibly split and merge at top and scrolled positions; reduced motion stays instant.',
+    )
   } finally {
     await page.evaluate((settings) => window.threadlight.updateSettings(settings), {
       enabledProviders: initial.enabledProviders,
@@ -447,4 +484,87 @@ export async function checkDualLong(page) {
       maxSessions: initial.maxSessions,
     })
   }
+}
+
+/** Sample actual painted positions throughout both phases, not just the final columns. */
+async function checkRowMotion(page, layout, label, capture) {
+  const recording = page.evaluate(async (layout) => {
+    const list = document.querySelector('#thread-list')
+    const original = [...list.querySelectorAll('[data-session-id]')]
+    const scrollBefore = list.scrollTop
+    const samples = []
+    const started = performance.now()
+    const done = new Promise((resolve) => {
+      const sample = () => {
+        const rows = [...list.querySelectorAll('[data-session-id]')]
+        const visible = list.getBoundingClientRect()
+        const row = rows.find(
+          (row) =>
+            row.dataset.provider === 'claude' &&
+            row.getBoundingClientRect().bottom > visible.top &&
+            row.getBoundingClientRect().top < visible.bottom,
+        )
+        samples.push({
+          time: performance.now() - started,
+          left: row?.getBoundingClientRect().left,
+          moving: rows.filter((row) => row.getAnimations().some((a) => a.playState === 'running'))
+            .length,
+          same: original.every((row) => row.isConnected),
+          scroll: list.scrollTop,
+          maxScroll: list.scrollHeight - list.clientHeight,
+        })
+        if (performance.now() - started < 1400) requestAnimationFrame(sample)
+        else resolve()
+      }
+      requestAnimationFrame(sample)
+    })
+    await window.threadlight.updateSettings({ panelLayout: layout })
+    await done
+    return { samples, scrollBefore }
+  }, layout)
+  if (capture) {
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('[data-session-id]')].some((row) =>
+        row.getAnimations().some((a) => a.playState === 'running' && a.currentTime > 100),
+      ),
+    )
+    await capture('motion-' + label.replaceAll(/[^a-z0-9]+/g, '-'))
+  }
+  const proof = await recording
+  assert.ok(
+    proof.samples.some((s) => s.moving > 0),
+    label + ': rows glide',
+  )
+  assert.ok(
+    proof.samples.every((s) => s.moving <= 120),
+    label + ': animation work is bounded',
+  )
+  const movingX = proof.samples
+    .filter((s) => s.moving && s.left !== undefined)
+    .map((s) => Math.round(s.left))
+  assert.ok(new Set(movingX).size > 3, label + ': intermediate horizontal positions are painted')
+  if (layout === 'dual') {
+    const growing = proof.samples.filter((s) => s.time < 250)
+    assert.ok(
+      growing.length > 0 && growing.every((s) => s.same),
+      label + ': growing the card preserves row elements',
+    )
+    assert.ok(
+      growing.every((s) => Math.abs(s.scroll - Math.min(proof.scrollBefore, s.maxScroll)) < 1),
+      label + ': growth preserves scrolling, allowing only a clamp at the bottom',
+    )
+  }
+  await settled(page)
+  const rows = await page
+    .locator('[data-session-id]')
+    .evaluateAll((rows) =>
+      rows.map((row) => ({ id: row.dataset.sessionId, x: row.getBoundingClientRect().left })),
+    )
+  assert.equal(new Set(rows.map((row) => row.id)).size, 140, label + ': every thread occurs once')
+  const left = rows.find((row) => row.id === 'long-0').x
+  const right = rows.find((row) => row.id === 'codex:long-1').x
+  assert.ok(
+    layout === 'dual' ? left < right : left === right,
+    label + ': final columns are correct',
+  )
 }

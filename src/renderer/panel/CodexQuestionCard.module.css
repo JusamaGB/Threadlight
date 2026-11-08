@@ -111,40 +111,6 @@
   color: var(--muted);
   font-size: 15px;
 }
-.response {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  margin: 12px 5px 8px;
-  color: var(--muted);
-}
-.response > svg {
-  margin-top: 6px;
-  flex: none;
-}
-.response textarea {
-  flex: 1;
-  min-width: 0;
-  resize: none;
-  field-sizing: content;
-  min-height: 26px;
-  max-height: 110px;
-  padding: 4px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  line-height: 1.5;
-}
-.response textarea::placeholder {
-  color: var(--faint);
-}
-.response textarea:focus {
-  outline: none;
-  border-color: var(--provider-codex);
-  background: var(--bg);
-}
 .footer {
   display: flex;
   flex-wrap: wrap;

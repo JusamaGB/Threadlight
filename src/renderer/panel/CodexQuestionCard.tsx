@@ -2,6 +2,7 @@ import { useId, useRef, useState } from 'react'
 import type { CodexQuestionRef } from '../../shared/codexQuestions'
 import type { CardQuestion, Session } from '../../shared/types'
 import { useDraft } from '../lib/drafts'
+import { AnswerComposer } from '../composer/AnswerComposer'
 import styles from './CodexQuestionCard.module.css'
 
 interface Answer {
@@ -25,6 +26,7 @@ export function CodexQuestionCard({
   const key = `${session.id}:questions:${JSON.stringify(native)}:${JSON.stringify(questions)}`
   const sending = useRef(false)
   const [busy, setBusy] = useState(false)
+  const [dictating, setDictating] = useState(false)
   const [error, setError] = useState('')
   const [blocked, setBlocked] = useState(false)
   const [sent, setSent] = useState(false)
@@ -43,7 +45,7 @@ export function CodexQuestionCard({
   )
   const question = questions[index]
   const answer = answers[index]
-  if (!question || !answer) return null
+  if (!question || !answer || sent) return null
   const update = (next: Answer) =>
     setAnswers((previous) => previous.map((value, i) => (i === index ? next : value)))
   const pick = (label: string) => {
@@ -59,7 +61,7 @@ export function CodexQuestionCard({
   const ready = values.every(Boolean)
   const open = () => session.appId && window.threadlight.openInClaude(session.appId)
   const copyAndOpen = () => {
-    if (!ready || !session.appId) return
+    if (!ready || !session.appId || dictating) return
     window.threadlight.copyText(
       questions.length === 1
         ? values[0]!
@@ -69,7 +71,7 @@ export function CodexQuestionCard({
   }
   const submit = async () => {
     if (!native) return copyAndOpen()
-    if (!ready || sending.current || blocked || sent) return
+    if (!ready || sending.current || blocked || sent || dictating) return
     sending.current = true
     setBusy(true)
     setError('')
@@ -77,7 +79,6 @@ export function CodexQuestionCard({
       const result = await window.threadlight.answerNativeCodexQuestion(session.id, native, values)
       if (result.ok) {
         setSent(true)
-        onCollapse()
       } else {
         setError(result.reason)
         setBlocked(!result.retryable)
@@ -118,7 +119,24 @@ export function CodexQuestionCard({
             </button>
           </nav>
         )}
-        <button className={styles.close} aria-label="Collapse question" onClick={onCollapse}>
+        <button
+          className={styles.close}
+          aria-label={native ? 'Dismiss question in Threadlight' : 'Collapse question'}
+          disabled={busy}
+          onClick={
+            native
+              ? async () => {
+                  const ok = await window.threadlight
+                    .dismissCodexQuestion(session.id, native)
+                    .catch(() => false)
+                  if (!ok)
+                    setError(
+                      'Could not dismiss this question. Check the current card and try again.',
+                    )
+                }
+              : onCollapse
+          }
+        >
           ×
         </button>
       </div>
@@ -153,33 +171,16 @@ export function CodexQuestionCard({
           )
         })}
       </div>
-      <div className={styles.response}>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          aria-hidden="true"
-        >
-          <path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15l-1 6Z" />
-        </svg>
-        <textarea
-          aria-label="Answer for this Codex question"
-          placeholder="Or write your own response"
-          rows={1}
-          value={answer.text}
-          disabled={busy || sent || blocked}
-          onChange={(event) => update({ ...answer, text: event.target.value })}
-          onKeyDown={(event) => {
-            if (event.ctrlKey && event.key === 'Enter') {
-              event.preventDefault()
-              void submit()
-            }
-          }}
-        />
-      </div>
+      <AnswerComposer
+        id={`${key}:${index}`}
+        label="Answer for this Codex question"
+        value={answer.text}
+        disabled={busy || sent || blocked}
+        sendDisabled={!ready || !session.appId || busy || sent || blocked}
+        onChange={(text) => update({ ...answer, text })}
+        onSend={() => void submit()}
+        onActivityChange={setDictating}
+      />
       <div className={styles.footer}>
         <span className={styles.note} role={error ? 'alert' : 'status'}>
           {error ||
@@ -197,7 +198,7 @@ export function CodexQuestionCard({
         )}
         <button
           className={styles.submit}
-          disabled={!ready || !session.appId || busy || sent || blocked}
+          disabled={!ready || !session.appId || busy || sent || blocked || dictating}
           onClick={() => void submit()}
         >
           {native ? (busy ? 'Sending…' : sent ? 'Sent' : 'Send answer') : 'Copy & open'}

@@ -176,7 +176,7 @@ export async function checkHelpModes(page, row, capture) {
       await page.getByRole('radio', { name: 'Off', exact: true }).getAttribute('aria-checked'),
       'true',
     )
-    await page.getByRole('radio', { name: 'Info', exact: true }).click()
+    await page.getByRole('radio', { name: 'Full', exact: true }).click()
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
     await capture('help-modes-settings-restored')
     console.log(

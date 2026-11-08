@@ -1,12 +1,31 @@
 import { LiveAnnouncements } from './liveAnnouncements'
-import type { LiveVoicePhase } from '../../shared/liveVoice'
+import type { LiveVoiceEvent, LiveVoicePhase, LiveVoiceResult } from '../../shared/liveVoice'
+import type { AgentResult, AgentState } from '../../shared/agent'
 import { SILENT_AUDIO, type AudioEnergy } from '../../shared/motion'
 import { AudioEnergyMeter } from './audioEnergy'
+import { timing, type LivePhase } from '../../shared/liveTiming'
 import { LiveAudioBuffer } from './liveAudioBuffer'
+
+/** Selects the owning conversation without changing the audio transport. */
+export interface LiveVoicePort {
+  start: (id: string, sdp: string) => Promise<LiveVoiceResult>
+  open: (id: string, text: string) => Promise<AgentResult>
+  stop: (id: string) => void
+  subscribe: (listener: (event: LiveVoiceEvent) => void) => () => void
+  state: () => Promise<AgentState | null>
+  announcements?: boolean
+}
+const agentPort = (): LiveVoicePort => ({
+  start: (id, sdp) => window.threadlight.agentLiveStart(id, sdp),
+  open: (id, text) => window.threadlight.agentLiveOpen(id, text),
+  stop: (id) => window.threadlight.agentLiveStop(id),
+  subscribe: (listener) => window.threadlight.onAgentLive(listener),
+  state: () => window.threadlight.getAgent(),
+  announcements: true,
+})
 
 /** One hotkey-owned transport. Startup speech is held locally until the service is ready. */
 export class LiveVoiceConnection {
-  readonly id = crypto.randomUUID()
   private peer = new RTCPeerConnection()
   private audio = new Audio()
   private channel: RTCDataChannel
@@ -16,7 +35,25 @@ export class LiveVoiceConnection {
   private opening = false
   private backlog: LiveAudioBuffer
   private bufferAudio = false
+  private reportedPcm = false
+  private pendingQueueSince?: number
+  private queueCheckpoint = false
+  private mark(phase: LivePhase, queue = false) {
+    window.threadlight?.reportLiveTiming?.(
+      timing(this.id, phase, queue ? this.bufferedSeconds * 1000 : undefined),
+    )
+  }
+  microphoneReady() {
+    this.mark('mic-ready')
+  }
   private paused = false
+  private inputMuted = false
+  private holdInterruptedSpeech = false
+  private outputMuted = false
+  private assistantTurn: string | undefined
+  private speechStopped = false
+  private assistantOpen = false
+  private outputBeforeTurn = false
   private ready = false
   private sessionStarted = false
   private replyStarted = false
@@ -34,9 +71,11 @@ export class LiveVoiceConnection {
     private sampleRate: number,
     private onState: (phase: LiveVoicePhase, error?: string) => void,
     private audioContext?: AudioContext,
+    private port: LiveVoicePort = agentPort(),
+    readonly id: string = crypto.randomUUID(),
   ) {
     this.backlog = new LiveAudioBuffer(sampleRate)
-    if (window.threadlight.agentAnnouncement) {
+    if (port.announcements && window.threadlight.agentAnnouncement) {
       this.announcements = new LiveAnnouncements((command) =>
         window.threadlight.agentAnnouncement(this.id, command),
       )
@@ -48,6 +87,7 @@ export class LiveVoiceConnection {
           void this.announcements?.tick(
             this.active &&
               !this.paused &&
+              !this.inputMuted &&
               !this.opening &&
               this.backlog.length === 0 &&
               !this.audio.paused &&
@@ -65,7 +105,7 @@ export class LiveVoiceConnection {
     // early session.started cannot be missed, and gate the opening on that signal.
     this.channel.onmessage = ({ data }) => {
       if (this.cancelled) return
-      let event: { type?: string }
+      let event: { type?: string; turn?: { role?: string; id?: string } }
       try {
         event = JSON.parse(data)
       } catch {
@@ -73,6 +113,41 @@ export class LiveVoiceConnection {
       }
       if (!event || typeof event !== 'object') return
       this.announcements?.event(event)
+      if (event.type === 'turn.created' && event.turn?.role === 'user' && event.turn.id) {
+        this.holdInterruptedSpeech = false
+        window.threadlight?.livePlaybackBoundary?.(this.id, 'user', event.turn.id)
+      }
+      if (
+        event.type === 'output_transcript.added' &&
+        !this.assistantOpen &&
+        !this.outputBeforeTurn
+      ) {
+        this.outputBeforeTurn = true
+        this.reportedPcm = false
+        this.speechStopped = this.holdInterruptedSpeech
+        this.syncPlayback()
+      } else if (
+        event.type === 'turn.created' &&
+        event.turn?.role === 'assistant' &&
+        event.turn.id
+      ) {
+        if (this.assistantTurn !== event.turn.id && !this.outputBeforeTurn)
+          this.speechStopped = this.holdInterruptedSpeech
+        this.holdInterruptedSpeech = false
+        window.threadlight?.livePlaybackBoundary?.(this.id, 'assistant', event.turn.id)
+        if (this.assistantTurn !== event.turn.id && !this.outputBeforeTurn) this.reportedPcm = false
+        this.assistantTurn = event.turn.id
+        this.assistantOpen = true
+        this.outputBeforeTurn = false
+        this.syncPlayback()
+      } else if (
+        event.type === 'turn.done' &&
+        event.turn?.id &&
+        event.turn.id === this.assistantTurn
+      ) {
+        this.assistantOpen = false
+        window.threadlight?.livePlaybackBoundary?.(this.id, 'done', event.turn.id)
+      }
       if (event.type === 'session.started') {
         this.sessionStarted = true
         this.checkConnection?.()
@@ -117,8 +192,16 @@ export class LiveVoiceConnection {
         .play()
         .catch(() => this.fail('Audio playback was blocked. Reopen the mic to try again.'))
     }
-    this.unsubscribe = window.threadlight.onAgentLive((event) => {
+    this.unsubscribe = port.subscribe((event) => {
       if (event.sessionId !== this.id || this.cancelled) return
+      if (event.type === 'interrupt-narration') {
+        if (event.turnId ? event.turnId === this.assistantTurn : !this.assistantOpen) {
+          this.holdInterruptedSpeech = !event.turnId
+          this.speechStopped = true
+          this.syncPlayback()
+        }
+        return
+      }
       if (event.type === 'closed') {
         this.stop()
         this.onState('off')
@@ -136,22 +219,48 @@ export class LiveVoiceConnection {
     return this.backlog.length / this.sampleRate
   }
   get outputEnergy(): AudioEnergy {
-    if (
-      this.cancelled ||
-      this.audio.paused ||
-      this.audio.muted ||
-      this.audioContext?.state !== 'running'
-    )
-      return SILENT_AUDIO
-    return this.meter?.read() ?? SILENT_AUDIO
+    if (this.cancelled || this.audioContext?.state !== 'running') return SILENT_AUDIO
+    const energy = this.meter?.read() ?? SILENT_AUDIO
+    if (!this.reportedPcm && energy.level > 0) {
+      this.reportedPcm = true
+      this.mark('remote-pcm')
+    }
+    return this.audio.paused || this.audio.muted ? SILENT_AUDIO : energy
   }
   setPaused(paused: boolean): void {
     this.paused = paused
-    this.audio.muted = paused || !this.handedOver || this.opening
+    this.syncPlayback()
+  }
+
+  private syncPlayback() {
+    this.audio.muted =
+      this.cancelled ||
+      this.paused ||
+      !this.handedOver ||
+      this.opening ||
+      this.outputMuted ||
+      this.speechStopped
+  }
+  setOutputMuted(muted: boolean) {
+    this.outputMuted = muted
+    this.syncPlayback()
+  }
+  stopSpeaking() {
+    window.threadlight?.livePlaybackBoundary?.(this.id, 'skip', this.assistantTurn ?? '')
+    if (!this.assistantOpen && this.outputEnergy.level > 0.012) this.outputBeforeTurn = true
+    this.speechStopped = true
+    this.syncPlayback()
+  }
+
+  /** Composer dictation borrows only the microphone. Keep the remote speaker connected. */
+  setInputMuted(muted: boolean): void {
+    if (muted && !this.inputMuted) this.backlog.clear()
+    this.inputMuted = muted
   }
 
   async start({ bufferAudio = false }: { bufferAudio?: boolean } = {}): Promise<void> {
     if (this.cancelled) return
+    this.mark('connect')
     this.bufferAudio = bufferAudio
     this.onState('connecting')
     this.timer = setTimeout(
@@ -164,12 +273,9 @@ export class LiveVoiceConnection {
     try {
       await this.peer.setLocalDescription(await this.peer.createOffer())
       if (this.cancelled) return
-      const result = await window.threadlight.agentLiveStart(
-        this.id,
-        this.peer.localDescription!.sdp,
-      )
+      const result = await this.port.start(this.id, this.peer.localDescription!.sdp)
       if (this.cancelled) {
-        window.threadlight.agentLiveStop(this.id)
+        this.port.stop(this.id)
         return
       }
       if (!result.ok) throw new Error(result.reason)
@@ -198,6 +304,8 @@ export class LiveVoiceConnection {
       })
       if (!this.cancelled) {
         this.ready = true
+        this.mark('ready', true)
+        if (this.backlog.length) this.pendingQueueSince = performance.now()
         this.onState('ready')
         if (this.bufferAudio) this.listen()
       }
@@ -213,10 +321,11 @@ export class LiveVoiceConnection {
     // Every subsequent frame belongs to Live, even while the text acknowledgement is pending.
     this.handedOver = true
     try {
-      const result = await window.threadlight.agentLiveOpen(this.id, text)
+      const result = await this.port.open(this.id, text)
       if (this.cancelled) return
       if (!result.ok) throw new Error(result.reason)
       this.opening = false
+      this.syncPlayback()
       this.onState(this.replyStarted ? 'live' : 'waiting')
       if (!this.replyStarted) this.waitForReply()
     } catch (error) {
@@ -228,13 +337,13 @@ export class LiveVoiceConnection {
   listen(): void {
     if (!this.connected || this.handedOver) return
     this.handedOver = true
-    this.audio.muted = this.paused
+    this.syncPlayback()
     this.onState('live')
   }
 
   private waitForReply(): void {
     this.replyTimer = setTimeout(async () => {
-      const state = await window.threadlight.getAgent().catch(() => null)
+      const state = await this.port.state().catch(() => null)
       if (this.cancelled || this.replyStarted) return
       // Tool work and approval waits can legitimately outlast the voice deadline.
       if (state?.live && ['starting', 'working', 'waiting', 'stopping'].includes(state.status)) {
@@ -250,8 +359,9 @@ export class LiveVoiceConnection {
   /** Called on the existing audio clock. Bounded buffering preserves the handoff boundary. */
   process(input: Float32Array, output: Float32Array): void {
     output.fill(0)
-    if (!this.paused && this.active) this.announcements?.input(input)
-    if (this.cancelled || this.paused || (!this.active && !this.bufferAudio)) return
+    if (this.cancelled || this.paused || this.inputMuted || (!this.active && !this.bufferAudio))
+      return
+    if (this.active) this.announcements?.input(input)
     if (
       !this.backlog.append(input, this.bufferAudio && (!this.active || this.backlog.length > 0))
     ) {
@@ -262,6 +372,15 @@ export class LiveVoiceConnection {
     }
     if (!this.active || this.opening) return
     this.backlog.read(output)
+    if (this.pendingQueueSince !== undefined) {
+      if (!this.backlog.length) {
+        this.mark('queue-drained', true)
+        this.pendingQueueSince = undefined
+      } else if (!this.queueCheckpoint && performance.now() - this.pendingQueueSince > 5000) {
+        this.queueCheckpoint = true
+        this.mark('queue-still-pending', true)
+      }
+    }
   }
 
   stop(): void {
@@ -282,7 +401,7 @@ export class LiveVoiceConnection {
     this.meter = undefined
     this.peer.close()
     this.backlog.clear()
-    window.threadlight.agentLiveStop(this.id)
+    this.port.stop(this.id)
   }
 
   private fail(message: string): void {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import {
   IDLE_MOTION,
+  SILENT_AUDIO,
   type AudioEnergy,
   type MotionMode,
   type MotionSnapshot,
@@ -23,23 +24,44 @@ export function useMotion(
   input: EnergySource,
   output: EnergySource,
   publishToDot = true,
+  inputMuted = false,
+  agentWorking = false,
+  provider?: MotionSnapshot['provider'],
+  listeningPaused = false,
 ) {
   const source = useRef<MotionSnapshot>(IDLE_MOTION)
-  const latest = useRef({ mode, input, output })
+  const latest = useRef({
+    mode,
+    input,
+    output,
+    inputMuted,
+    agentWorking,
+    provider,
+    listeningPaused,
+  })
   const [label, setLabel] = useState(labels[mode])
   useEffect(() => {
-    latest.current = { mode, input, output }
-  }, [mode, input, output])
+    latest.current = { mode, input, output, inputMuted, agentWorking, provider, listeningPaused }
+  }, [mode, input, output, inputMuted, agentWorking, provider, listeningPaused])
   useEffect(() => {
     let spoken = 0
     let speakingLabel = ''
     let lastSent = ''
     const update = () => {
-      const { mode, input, output } = latest.current
-      const value = { mode, input: read(input), output: read(output) }
+      const { mode, input, output, inputMuted, agentWorking, provider, listeningPaused } =
+        latest.current
+      const value = {
+        mode,
+        input: inputMuted ? SILENT_AUDIO : read(input),
+        output: read(output),
+        provider,
+        ...(listeningPaused && { listeningPaused: true as const }),
+        ...(inputMuted && { inputMuted: true as const }),
+        ...(agentWorking && { agentWorking: true as const }),
+      }
       source.current = value
-      const human = value.input.level > 0.035
-      const agent = value.output.level > 0.035
+      const human = value.input.level > 0.012
+      const agent = value.output.level > 0.012
       if (human || agent) {
         spoken = performance.now()
         speakingLabel =

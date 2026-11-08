@@ -37,6 +37,7 @@ type FileState = {
   baselineNewline?: boolean
 }
 export interface RecordedFile {
+  root?: string
   absolute: string
   file: ChangedFile
   diff: FileDiff
@@ -190,11 +191,23 @@ function contextWindows(lines: (DiffLine | null)[]): DiffLine[] {
 
 /** Keeps only provider-recorded mutations. It never reads the edited file or consults Git. */
 export class ThreadDiffLedger {
+  /** Completed native operations, kept separate from computed net file totals. */
+  readonly mutations: { id: string; change: RecordedChange }[] = []
   private entries = new Map<string, FileState>()
   private bytes = 0
   complete = true
 
-  record(change: RecordedChange): void {
+  record(change: RecordedChange, nativeId?: string): void {
+    if (nativeId && this.mutations.some((item) => item.id === nativeId)) {
+      if (
+        JSON.stringify(this.mutations.find((item) => item.id === nativeId)!.change) !==
+        JSON.stringify(change)
+      )
+        this.complete = false
+      return
+    }
+    if (this.mutations.length < 5000 && this.bytes < 8 * 1024 * 1024)
+      this.mutations.push({ id: nativeId ?? `unidentified:${this.mutations.length}`, change })
     const key = pathKey(change.path)
     let file = this.entries.get(key)
     if (!file) {

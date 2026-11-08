@@ -1,6 +1,10 @@
 # Codex composer queue — 28 October 2026
 
-The human composer defaults to native queue submission. Pending messages appear
+> Public copy: local proof paths and native identifiers are generalised; raw evidence remains private.
+
+The original implementation defaulted to native queue submission. The 29 October
+follow-up below now routes automatic sends directly when the chat is confirmed
+idle and queues only for a confirmed active turn. Pending messages appear
 above the entry box with Edit and Remove. Steer appears on a queued message when
 hovered or keyboard-focused (always visible on touch devices). There is no timing
 dropdown. Steer retains the native queue client message ID and full input, uses
@@ -19,7 +23,7 @@ the rejected receipt so the input can be corrected.
 
 ## Live proof
 
-User-authorized disposable chat: `e87e16bc-f85d-5529-8d86-f96fd7c15baf`.
+User-authorized disposable chat: `REDACTED-NATIVE-ID`.
 
 - Added a message during an active wait. Queue listing showed it persisted while
   native history had no accepted user message with that client ID.
@@ -54,9 +58,33 @@ must surface as retained drafts and queue errors rather than a fallback send.
 
 Live proof on the same disposable chat queued an image message, then invoked
 the production queue `steer` action. Native history confirmed the existing
-client message ID in the active turn `5074d897-ef10-5156-a03e-305c023d33d0`,
+client message ID in the active turn `REDACTED-NATIVE-ID`,
 which returned `QUEUED_STEER_PROOF`. The queue was empty afterward.
 Focused tests cover identity/input preservation, other queued entries, uncertain
 steering across restart, reconciliation and a turn finishing before the click.
 The UI smoke test checks no dropdown, hover/focus visibility, and dispatching
 the selected queue entry by ID without sending the composer draft.
+
+## Automatic idle-send routing — 29 October 2026
+
+The human composer's automatic mode first attempts delivery through the existing
+native desktop owner. A confirmed idle or known-empty chat starts its message
+directly. Only an explicit active-turn result (`inProgress` or `in_progress`)
+permits fallback to the native queue. This does not automatically steer a turn.
+Explicit queue and Steer actions keep their separate behavior. Claude is unchanged.
+
+Missing history or owner, a disconnected runtime, explicit rejection and uncertain
+delivery retain the draft/error instead of triggering queue fallback. A previous
+uncertain queue receipt is reconciled before attempting direct delivery, preventing
+a new route from duplicating the pending message.
+
+The final focused rerun passed **34 tests across `nativeCodexMessages` and
+`codexQueue`**. Coverage includes idle delivery without a queue connection, a known
+empty chat, both active status spellings with image input, idle transitions,
+unavailable owner/history, uncertain direct delivery followed by an active turn,
+and uncertain queued delivery followed by an idle state.
+
+These are automated adapter tests. No new live-provider proof of automatic idle
+routing was performed in this follow-up; the earlier real queue and Steer proofs
+above establish their stated paths only. Source inspection confirms the production
+automatic route supplies the idle-send callback to the queue coordinator.

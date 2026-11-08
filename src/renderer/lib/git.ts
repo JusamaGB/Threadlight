@@ -34,11 +34,14 @@ export function gitSentence(git: GitState): string {
       : null
   return [
     en.git.worktreeTotal,
+    git.complete === false && 'Partial counts',
+    git.stale && 'Stale comparison',
+    git.hasOtherLensChanges && 'Staged changes',
     git.root,
     git.branch ?? en.git.noBranch,
     git.pending
       ? 'Repository counts loading'
-      : (changed ?? (git.ahead || git.behind ? null : en.git.clean)),
+      : (changed ?? (git.ahead || git.behind || git.complete === false ? null : en.git.clean)),
     git.ahead > 0 && en.git.toPush(git.ahead),
     git.behind > 0 && en.git.behind(git.behind),
   ]
@@ -58,6 +61,8 @@ export function threadDiffSentence(diff: ThreadDiffSummary): string {
     diff.removed > 0 && `−${compact(diff.removed)}`,
     en.changes.uncommitted,
     !diff.complete && en.changes.partialShort,
+    (diff.groups?.length ?? 0) > 1 && `${diff.groups!.length} source folders or checkouts`,
+    diff.stale && 'Showing the last available comparison.',
   ]
     .filter(Boolean)
     .join(' · ')

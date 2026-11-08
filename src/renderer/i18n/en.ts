@@ -16,7 +16,7 @@ export const en = {
   openMic: {
     pill: 'Microphone is open',
     stop: 'Close microphone',
-    showThreads: 'Show threads while microphone is open',
+    showThreads: 'Open voice panel',
     on: 'Open mic is listening: click to close it',
     off: 'Open the mic for voice commands',
     blocked: 'The microphone is blocked',
@@ -47,14 +47,15 @@ export const en = {
     pinHint: 'Double-click the header to pin this view open.',
     header: {
       views: {
-        active: 'Active: working threads, threads waiting for you, and unread finished replies.',
-        recent: 'Recent: your latest threads, newest first.',
+        active:
+          'Active: working threads, threads waiting for you, and unread finished replies in the selected workspace scope.',
+        recent: 'Recent: the latest threads in the selected workspace scope, newest first.',
         workspace: 'Workspace: the threads in the workspace you have chosen.',
         all: 'All: every thread, grouped by workspace.',
       },
       viewHelp:
         'Click to switch between Active, Recent and Workspace. Right-click the header for New, Spaces, Agent and every view.',
-      sessionsListed: 'How many threads Recent lists (3 to 25).',
+      sessionsListed: 'How many threads Recent lists within the selected scope (3 to 50).',
       sources: {
         both: 'Showing Claude and Codex threads together.',
         claude: 'Showing Claude threads only.',
@@ -62,7 +63,8 @@ export const en = {
       },
       sourceHelp: 'Click to show Claude, Codex or both.',
       workspaceInfo: (name: string) => `Workspace: ${name}`,
-      workspaceHelp: 'Click to choose which workspace to show.',
+      workspaceHelp:
+        'Choose a folder, drive or All drives. Active, Recent and Workspace share this scope.',
       sharedSpaces:
         'Shared Spaces: notes, decisions and handoffs that Claude and Codex can both use.',
     },
@@ -187,9 +189,9 @@ export const en = {
     loading: 'Reading changes…',
     none: 'No uncommitted changes from this thread.',
     historyUnavailable: "This thread's recorded changes are unavailable.",
-    partialShort: 'Incomplete attribution',
+    partialShort: 'Partial attribution',
     partial:
-      'Some uncommitted edits could not be attributed. Only matching recorded changes are shown.',
+      'Showing current changes supported by this chat’s available edit records. Coverage is partial; additional edits may not be recorded or matchable.',
     mark: { added: 'new', modified: 'edit', deleted: 'gone' } as Record<
       'added' | 'modified' | 'deleted',
       string
@@ -316,6 +318,7 @@ export const en = {
     launchAtSignIn: 'Launch at sign-in',
     restart: 'Restart',
     restartButton: 'Restart now',
+    restarting: 'Restarting…',
     agent: 'Agent',
     lifetime: (minutes: number) =>
       minutes === 0 ? 'Until ended' : minutes < 60 ? `${minutes} min` : `${minutes / 60} h`,
@@ -373,7 +376,7 @@ export const en = {
       },
       hoverHelp: {
         info: 'How much hover help to show.',
-        tour: 'Tour shows all available help at once, Info shows normal hints, and Off hides them.',
+        tour: 'Tour explains controls, Full shows normal information, Teach explains concepts and consequences, and Off hides optional help.',
       },
       openOn: {
         info: 'Hover opens the panel when you point at the dot. Click needs a click.',
@@ -392,8 +395,8 @@ export const en = {
         tour: 'Nothing opens until Claude or Codex opens. Quitting Threadlight is respected until one of them opens again. Turning this off stops the launcher.',
       },
     },
-    footer: (version: string) => `Threadlight ${version} · Haail`,
-    notMadeBy: 'Not made by Anthropic or OpenAI.',
+    footer: (version: string) => `Threadlight ${version}`,
+    attribution: 'An independent open-source project by HAAIL.',
   },
   relay: {
     sending: '…',

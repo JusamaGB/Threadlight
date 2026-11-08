@@ -156,7 +156,7 @@ export async function checkSpaces(page, proof, memory, capture) {
   await view
     .getByLabel('Message to Agent', { exact: true })
     .fill('What is the smallest useful version?')
-  await view.getByRole('button', { name: 'Discuss with Agent', exact: true }).click()
+  await view.getByRole('button', { name: 'Send', exact: true }).click()
   await view
     .getByText(
       'Start with one shared activity summary. Show blockers and link to the original chat.',
@@ -164,6 +164,7 @@ export async function checkSpaces(page, proof, memory, capture) {
     )
     .waitFor()
   assert.equal(proof.calls.length, 1)
+  await view.getByText('Plan and assignments', { exact: true }).click()
   await view.getByRole('button', { name: 'Use latest reply as draft plan' }).click()
   await view.getByRole('button', { name: 'Add assignment' }).click()
   let assignment = view.getByRole('group', { name: 'Assignment 1', exact: true })
@@ -212,10 +213,9 @@ export async function checkSpaces(page, proof, memory, capture) {
   const workspace = proof.store.workspace(original.workspaceId)
   assert.equal((await proof.service.request({ action: 'setup', root: proof.secondRoot })).ok, true)
   await view.getByRole('tab', { name: 'Brainstorm', exact: true }).click()
-  await view.getByRole('button', { name: /A shared activity recap/ }).click()
   proof.hold()
   await view.getByLabel('Message to Agent').fill('Wait while I inspect another workspace.')
-  await view.getByRole('button', { name: 'Discuss with Agent', exact: true }).click()
+  await view.getByRole('button', { name: 'Send', exact: true }).click()
   await view.getByRole('button', { name: 'Stop brainstorm', exact: true }).waitFor()
   await view.getByLabel('Message to Agent').fill('Unsent draft for the first workspace')
   await openSpace(page, 'second-workspace')
@@ -233,7 +233,6 @@ export async function checkSpaces(page, proof, memory, capture) {
   await openSpace(page)
   assert.equal(await view.getByRole('button', { name: /Only in the second workspace/ }).count(), 0)
   await view.getByRole('tab', { name: 'Brainstorm', exact: true }).click()
-  await view.getByRole('button', { name: /A shared activity recap/ }).click()
   await view.getByText('Late reply for the original workspace only.', { exact: true }).waitFor()
   assert.equal(
     await view.getByLabel('Message to Agent').inputValue(),
@@ -261,7 +260,8 @@ export async function checkSpaces(page, proof, memory, capture) {
   assert.equal(existsSync(proof.store.documents().find((d) => d.id === legacy.id).path), true)
   assert.equal(proof.calls.length, 2)
   // The space library remains independent of the parent thread-view workspace.
-  await view.getByRole('button', { name: 'Spaces', exact: true }).click()
+  await openSpace(page)
+  await page.getByRole('button', { name: 'Back in Shared Spaces', exact: true }).click()
   await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
   await page.locator('header [data-thread-view]').click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Workspace', exact: true }).click()

@@ -16,6 +16,17 @@ preferences, named spaces, native chats and restart. Inspect capabilities and cu
 state first. Resolve ambiguous chat names using the existing chat reader and pass its
 exact reference. Discover artifact and card identities before opening them.
 
+For a question about pinned code, use `threadlight_list_pins`, then
+`threadlight_read_pin` with the returned ID and revision. Use the selected ID when
+the person refers to their selected pin. Clarify ambiguous filenames. A path is
+source information. Read the snapshot through these tools. For a requested edit,
+read the latest revision explicitly. A read reports the version shown, the
+version read and the latest revision. Pass the version read and the expected
+latest revision for later pages. Use `threadlight_replace_pin` with the latest
+revision, an operation ID and either replacement text or `mode: append` with
+only the added text. Check the decision receipt. Updates create a new latest
+version. Browsing preserves the original file and every saved snapshot.
+
 Read-only discovery never opens a view or marks a chat read. Navigation preserves
 unsent drafts and acknowledges committed renderer state. A card preview contains
 only that selected card's captured patch; thread and worktree scopes have different

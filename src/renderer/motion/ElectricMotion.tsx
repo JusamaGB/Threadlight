@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { IDLE_MOTION, type MotionSnapshot } from '../../shared/motion'
+import { IDLE_MOTION, SILENT_AUDIO, type MotionSnapshot } from '../../shared/motion'
 import { advancePose, MotionGeometry, restingPose } from './geometry'
 import { createCanvasRenderer, createWebGLRenderer } from './render'
 import type { PROVIDER_COLOURS } from './provider-colours'
@@ -11,6 +11,7 @@ interface Props {
   label: string
   className?: string
   provider?: keyof typeof PROVIDER_COLOURS
+  waveformOnly?: boolean
   edgeToEdge?: boolean
 }
 
@@ -21,6 +22,7 @@ export function ElectricMotion({
   label,
   className = '',
   edgeToEdge = false,
+  waveformOnly = false,
   provider,
 }: Props) {
   const host = useRef<HTMLSpanElement>(null)
@@ -95,18 +97,22 @@ export function ElectricMotion({
       if (disposed || document.hidden || !inView) return
       const delta = previous ? Math.min(100, now - previous) : 16
       previous = now
-      const value = source?.current ?? latest.current
+      const measured = source?.current ?? latest.current
+      const value = waveformOnly ? { ...measured, mode: 'idle' as const } : measured
+      if (waveformOnly && value.inputMuted) Object.assign(pose.input, SILENT_AUDIO)
       const telemetry = JSON.stringify(value)
       settled = telemetry === lastTelemetry ? settled + delta : 0
       lastTelemetry = telemetry
       advancePose(pose, value, delta, edgeToEdge)
       const quiet = pose.input.level < 0.008 && pose.output.level < 0.008
       const staticMode = value.mode === 'idle' || value.mode === 'waiting' || value.mode === 'error'
-      // The quiet header keeps a slow colour drift. Waiting/error indicators and
-      // reduced motion remain still; other surfaces retain their resting policy.
+      // Audio ribbons rest in silence, even when the Agent is working.
       const still =
         motion.matches ||
-        (quiet && staticMode && !pose.headerOpening && (!edgeToEdge || value.mode !== 'idle'))
+        (quiet &&
+          staticMode &&
+          !pose.headerOpening &&
+          (waveformOnly || !edgeToEdge || value.mode !== 'idle'))
       if (!still) clock += delta / 1000
       const resting = still && settled > 1200
       if (width > 0 && height > 0 && renderer && (!resting || needsPaint)) {
@@ -119,6 +125,7 @@ export function ElectricMotion({
           edgeToEdge,
           value.mode === 'thinking' || value.mode === 'transcribing',
           providerRef.current,
+          waveformOnly ? (value.inputMuted ? 'muted' : 'audio') : undefined,
         )
         renderer.draw(vertices, width, height, scale)
         needsPaint = false
@@ -160,7 +167,7 @@ export function ElectricMotion({
       renderer?.dispose()
       element.replaceChildren()
     }
-  }, [source, edgeToEdge])
+  }, [source, edgeToEdge, waveformOnly])
 
   return (
     <span
@@ -169,6 +176,8 @@ export function ElectricMotion({
       role="img"
       aria-label={label}
       data-edge-to-edge={edgeToEdge || undefined}
+      data-provider={provider}
+      data-waveform-only={waveformOnly || undefined}
     />
   )
 }

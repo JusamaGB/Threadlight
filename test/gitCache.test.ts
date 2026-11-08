@@ -1,38 +1,50 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ThreadDiffLedger } from '../src/main/sessions/threadDiff'
-import { UncommittedThreads } from '../src/main/sessions/threadUncommitted'
-import { runGit } from '../src/main/sessions/gitProcess'
+import { CaptureCache } from '../src/main/changes/cache'
 
-vi.mock('../src/main/sessions/gitProcess', () => ({ runGit: vi.fn() }))
-
-describe('shared uncommitted snapshot', () => {
+describe('shared root comparison capture', () => {
   it('keeps one in-flight scan even when the cache age has elapsed', async () => {
-    const pending: ((value: string) => void)[] = []
-    vi.mocked(runGit).mockImplementation(() => new Promise((resolve) => pending.push(resolve)))
-    const cache = new UncommittedThreads(),
-      ledger = new ThreadDiffLedger()
-    const first = cache.project(ledger, '/same-repo', 0)
-    const second = cache.project(ledger, '/same-repo', 6000)
-    expect(runGit).toHaveBeenCalledTimes(3)
-    pending.forEach((resolve) => resolve(''))
-    expect((await first)?.summary.files).toBe(0)
-    expect((await second)?.summary.files).toBe(0)
+    let finish!: (value: number) => void
+    const read = vi.fn(
+      () =>
+        new Promise<number>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const cache = new CaptureCache<number>()
+    const first = cache.get('root/current', read, 0)
+    const second = cache.get('root/current', read, 6000)
+    expect(read).toHaveBeenCalledTimes(1)
+    finish(42)
+    expect(await first).toBe(42)
+    expect(await second).toBe(42)
   })
-
-  it('waits for invalidated in-flight work and then obtains a new snapshot', async () => {
-    vi.mocked(runGit).mockReset()
-    const pending: ((value: string) => void)[] = []
-    vi.mocked(runGit).mockImplementation(() => new Promise((resolve) => pending.push(resolve)))
-    const cache = new UncommittedThreads(),
-      ledger = new ThreadDiffLedger()
-    const old = cache.project(ledger, '/same-repo', 0)
-    cache.invalidate('/same-repo')
-    const fresh = cache.project(ledger, '/same-repo', 0)
-    expect(runGit).toHaveBeenCalledTimes(3)
-    pending.splice(0).forEach((resolve) => resolve(''))
-    await old
-    await vi.waitFor(() => expect(runGit).toHaveBeenCalledTimes(6))
-    pending.splice(0).forEach((resolve) => resolve(''))
-    expect((await fresh)?.summary.files).toBe(0)
+  it('drains invalidated work before capturing a fresh generation', async () => {
+    const pending: ((value: number) => void)[] = []
+    const read = vi.fn(() => new Promise<number>((resolve) => pending.push(resolve)))
+    const cache = new CaptureCache<number>()
+    const old = cache.get('root/current', read, 0)
+    cache.invalidate((key) => key === 'root/current')
+    const fresh = cache.get('root/current', read, 0)
+    expect(read).toHaveBeenCalledTimes(1)
+    pending.shift()!(1)
+    expect(await old).toBe(1)
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    pending.shift()!(2)
+    expect(await fresh).toBe(2)
+  })
+  it('never shares captures across worktrees or lenses and retries failures', async () => {
+    const cache = new CaptureCache<number>()
+    await expect(
+      cache.get(
+        'root/current',
+        async () => {
+          throw Error('offline')
+        },
+        0,
+      ),
+    ).rejects.toThrow('offline')
+    expect(await cache.get('root/current', async () => 1, 0)).toBe(1)
+    expect(await cache.get('root/staged', async () => 2, 0)).toBe(2)
+    expect(await cache.get('worktree/current', async () => 3, 0)).toBe(3)
   })
 })

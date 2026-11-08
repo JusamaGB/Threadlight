@@ -1,6 +1,7 @@
-import { connect, type Socket } from 'node:net'
+import type { Duplex } from 'node:stream'
 import { randomUUID } from 'node:crypto'
 import { isObject } from '../sessions/json'
+import { openVerifiedCodexPipe } from './verifiedPipe'
 
 type Message = Record<string, unknown>
 export interface DesktopConnection {
@@ -22,12 +23,12 @@ export interface StreamingDesktopConnection extends DesktopConnection {
 /** Codex's local client-coordination channel. Never claims thread ownership or hosts a router. */
 export async function connectCodexDesktop(): Promise<StreamingDesktopConnection> {
   if (process.platform !== 'win32') throw new Error('Native Codex answers require Windows.')
-  const socket = connect('\\\\.\\pipe\\codex-ipc')
+  const socket = await openVerifiedCodexPipe()
   return initializeDesktopConnection(socket)
 }
 
 export async function initializeDesktopConnection(
-  socket: Socket,
+  socket: Duplex,
 ): Promise<StreamingDesktopConnection> {
   let buffer = Buffer.alloc(0),
     clientId: string | undefined,
@@ -36,7 +37,13 @@ export async function initializeDesktopConnection(
   const closedListeners = new Set<() => void>()
   const pending = new Map<
     string,
-    { resolve: (value: Message) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+    {
+      resolve: (value: Message) => void
+      reject: (error: Error) => void
+      timer: NodeJS.Timeout
+      method: string
+      target?: string
+    }
   >()
   const close = () => {
     if (closed) return
@@ -55,11 +62,16 @@ export async function initializeDesktopConnection(
     if (closed) throw new Error('Codex connection ended.')
     const body = Buffer.from(JSON.stringify(value)),
       header = Buffer.alloc(4)
+    if (body.length > 16 * 1024 * 1024 || socket.writableLength > 16 * 1024 * 1024) {
+      close()
+      throw new Error('Codex connection capacity exceeded.')
+    }
     header.writeUInt32LE(body.length)
     socket.write(Buffer.concat([header, body]))
   }
   const request: DesktopConnection['request'] = (method, params, version = 0, targetClientId) => {
     if (closed) return Promise.reject(new Error('Codex connection ended.'))
+    if (pending.size >= 128) return Promise.reject(new Error('Too many pending Codex requests.'))
     const requestId = randomUUID()
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -67,7 +79,7 @@ export async function initializeDesktopConnection(
         reject(new Error('Codex did not confirm the request.'))
         close()
       }, 8000)
-      pending.set(requestId, { resolve, reject, timer })
+      pending.set(requestId, { resolve, reject, timer, method, target: targetClientId })
       try {
         write({
           type: 'request',
@@ -98,11 +110,29 @@ export async function initializeDesktopConnection(
         if (message.type === 'response' && typeof message.requestId === 'string') {
           const task = pending.get(message.requestId)
           if (task) {
+            // Correlation is defense in depth. The upstream router must authenticate senders.
+            if (message.resultType === 'success') {
+              if (
+                message.method !== task.method ||
+                typeof message.handledByClientId !== 'string' ||
+                !message.handledByClientId ||
+                (task.target && message.handledByClientId !== task.target)
+              )
+                return close()
+            } else if (
+              message.resultType !== 'error' ||
+              typeof message.error !== 'string' ||
+              (task.target &&
+                message.handledByClientId !== undefined &&
+                message.handledByClientId !== task.target)
+            )
+              return close()
             pending.delete(message.requestId)
             clearTimeout(task.timer)
             task.resolve(message)
           }
         } else if (
+          clientId &&
           message.type === 'client-discovery-request' &&
           typeof message.requestId === 'string'
         ) {
@@ -112,7 +142,17 @@ export async function initializeDesktopConnection(
             response: { canHandle: false },
           })
         }
-        if (message.type === 'broadcast') for (const listener of broadcasts) listener(message)
+        if (
+          clientId &&
+          message.type === 'broadcast' &&
+          typeof message.sourceClientId === 'string' &&
+          typeof message.method === 'string' &&
+          Number.isInteger(message.version) &&
+          isObject(message.params) &&
+          (message.targetClientIds === undefined ||
+            (Array.isArray(message.targetClientIds) && message.targetClientIds.includes(clientId)))
+        )
+          for (const listener of broadcasts) listener(message)
       }
     } catch {
       close()
@@ -123,7 +163,9 @@ export async function initializeDesktopConnection(
     if (
       result.resultType !== 'success' ||
       !isObject(result.result) ||
-      typeof result.result.clientId !== 'string'
+      typeof result.result.clientId !== 'string' ||
+      !result.result.clientId ||
+      result.handledByClientId !== result.result.clientId
     )
       throw new Error('Codex did not initialize the connection.')
     clientId = result.result.clientId

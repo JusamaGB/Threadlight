@@ -1,0 +1,111 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
+  height: 350px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  flex: none;
+}
+.toolbar input {
+  min-width: 0;
+  width: 70px;
+  flex: 1;
+  padding: 3px !important;
+}
+.toolbar button,
+.detail button {
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--raised);
+}
+.canvas {
+  position: relative;
+  flex: 1;
+  min-height: 210px;
+  overflow: clip;
+  touch-action: none;
+  cursor: grab;
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.canvas:active {
+  cursor: grabbing;
+}
+.world {
+  position: absolute;
+  transform-origin: 0 0;
+}
+.edges {
+  position: absolute;
+  pointer-events: none;
+  color: var(--muted);
+  overflow: visible;
+}
+.group {
+  position: absolute;
+  top: 4px;
+  width: 210px;
+  display: flex;
+  gap: 3px;
+}
+.group button {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px;
+  background: var(--bg);
+}
+.node {
+  position: absolute;
+  width: 210px;
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.node strong,
+.node span {
+  white-space: nowrap;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, black 92%, transparent);
+}
+.node span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.node[data-selected] {
+  border-color: var(--fg);
+}
+.root button:focus-visible,
+.canvas:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: -2px;
+}
+.empty {
+  margin: 12px;
+  color: var(--muted);
+}
+.legend {
+  padding: 3px 6px;
+  color: var(--muted);
+}
+.detail {
+  overflow: auto;
+  padding: 8px;
+}
+.detail p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

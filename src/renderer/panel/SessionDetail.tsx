@@ -20,6 +20,7 @@ import type { ThreadTimelineState } from '../hooks/useThreadTimeline'
 const MARKS: Record<PlanItem['status'], string> = { completed: '✓', in_progress: '●', pending: '○' }
 
 interface SessionDetailProps {
+  pendingCard?: ReactNode
   session: Session
   relay: RelayStatus | undefined
   now: number
@@ -33,6 +34,7 @@ export function SessionDetail({
   now,
   timelineState,
   onOpenArtifact,
+  pendingCard,
 }: SessionDetailProps) {
   if (
     typeof window.threadlight.threadTimeline === 'function' &&
@@ -46,6 +48,7 @@ export function SessionDetail({
         now={now}
         timelineState={timelineState}
         onOpenArtifact={onOpenArtifact}
+        pendingCard={pendingCard}
       />
     )
   return <SummaryDetail session={session} relay={relay} now={now} />

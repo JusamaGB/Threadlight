@@ -79,15 +79,19 @@ try {
     fixturePath: globalThis.artifactProof.fixturePath,
     transcript: globalThis.artifactProof.transcript,
   }))
-  const tile = page.getByRole('button', { name: 'Open artifact: Artifact test.html', exact: true })
-  await tile.waitFor()
+  const thread = page.getByRole('button', { name: /Artifact test thread/ })
+  await thread.waitFor()
+  const openArtifact = async () => {
+    await thread.click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Artifacts', exact: true }).click()
+  }
   assert.equal(
     existsSync(join(paths.directory, 'thread-artifacts')),
     false,
     'automatic discovery writes no copies or index files',
   )
   await page.getByRole('button', { name: /Artifact test thread/ }).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Artifacts…', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Artifacts', exact: true }).click()
   await page.waitForFunction(
     () => document.querySelector('[data-card]').getBoundingClientRect().width > 450,
   )
@@ -97,7 +101,7 @@ try {
     .getByRole('button', { name: 'Open artifact 1: Artifact test.html', exact: true })
     .waitFor({ state: 'attached' })
   await page.getByRole('button', { name: 'Back to threads' }).click()
-  await tile.click()
+  await openArtifact()
   await waitPreview(`document.querySelector('h1')?.textContent === 'Native artifact test'`)
   // A finished reply arrives while the viewer stays open. No Link or Refresh action.
   const livePath = join(paths.directory, 'Live storyboard.html')
@@ -314,8 +318,8 @@ try {
     contents.focus()
     contents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
   })
-  await tile.waitFor()
-  await tile.click()
+  await thread.waitFor()
+  await openArtifact()
   await waitPreview(`document.querySelector('#counter')?.textContent === 'Count: 0'`)
   const files = await page.evaluate(() =>
     window.threadlight.artifacts('codex:artifact-native-test', 'list'),
@@ -359,7 +363,7 @@ try {
   assert.equal(wrong.ok, false)
   assert.match(wrong.reason, /not found in this thread/)
   await page.reload()
-  await tile.first().click()
+  await openArtifact()
   await page
     .getByRole('alert')
     .filter({ hasText: 'The original file has moved or been deleted.' })

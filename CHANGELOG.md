@@ -6,7 +6,443 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- The Windows source installer supports Codex-only setup without Claude. It registers and checks the selected coding plugin and includes the Windows tray images in fresh downloads.
+- Agent Settings has a keyboard-accessible **Voice pace** slider. Its five choices apply to the next GPT Live call or spoken screen reply, and the setting survives restarts.
+
+- Live Coach clears stale guide highlights quietly during typing. A known exact line edit can trigger a fresh check automatically. Natural done or next requests also check the current buffer.
+- The live pill can display code from the learner’s verified delegated turn as soon as the backing answer arrives, and retain the current example when its follow-up identifies it.
+
+- Answered Agent questions and approvals stay with the conversation that prompted them. Only pending decisions appear beneath the latest message, including when the request is on an earlier history page.
+
+- GPT Live gives one brief connection cue after the microphone and native session are ready. Speaker mute silences it, and cancelled startup never signals success. Live Coach 0.6.2 lets native ghost text follow typing without repeatedly requesting VS Code’s inline-suggestion sound. Guide continuation still waits for the learner.
+
+- The Agent bar uses compact icons for composing, calling, starting fresh and closing the current conversation. Toggling the reply box preserves its draft, and closed chats remain in Earlier.
+- Code blocks in Agent, Smart Thread and pinned references use a two-card Copy icon with clipboard feedback. Pinned blocks copy the displayed version.
+- The recent Agent shortcut uses the four-point sparkle from the November 7 artwork and retains its purple glow and waiting indicator.
+- The Agent reply pencil sits beside the four live-call controls in one centered row. Settings credits Threadlight as an independent open-source project by HAAIL.
+- Agent actions are centered above the transcript, and the compact resize handle leaves room for replies. Smart Thread and Agent assistant replies share a slightly larger text size.
+- Agent Settings can show the latest GPT Live reply inside the waveform pill. It sizes itself to the centered spoken caption, keeping short replies compact and linked code left-aligned. It widens before unfolding and folds in reverse. Dismiss one reply with the ×. The next opens automatically.
+- The collapsed live waveform reaches both rounded ends of the pill. Right-clicking the live microphone waveform or pressing Shift+F10 opens listening, playback and hang-up actions. Stop speaking appears during audible playback.
+- Hovering the waveform for half a second opens the ongoing Agent or Brainstorm conversation centered on the waveform. The panel stays open under a stationary pointer after the pill has been moved. Dragging the waveform moves the pill and its attached reply. Right-click anywhere on the pill for call actions. Leaving the panel can collapse it back to the pill while the call continues. Other pages offer a compact return action.
+
+- The compact Reply icon opens the composer, and scrolled messages fade at the reader’s upper edge. Inline code is easier to spot alongside a walkthrough; multiline Python examples retain highlighting, indentation and copy controls.
+
+- The [Threadlight website](https://threadlight.jocosewasp4.chatgpt.site/) leads with a copyable assisted-setup prompt, Windows Git Bash and PowerShell instructions and provider and privacy FAQs. The prompt heading has a right-aligned copy icon, with the installer note centered below the prompt. The hero retains the release spiral’s blue glow. The footer credits HAAIL. Both product panels show the current development renderer. The simulated Agent call shows five controls in one row, two thread sources and a highlighted Python example. The FAQ distinguishes local Windows integrations from browser chats and describes development-only account-chat support. See the [public website claim review](docs/validation/PUBLIC-WEBSITE-CLAIMS.md).
+
+- The Agent header has a settings gear beside Back. It opens provider, model, effort, conversation lifetime and Earlier chats. Back returns to the open conversation and its draft.
+
+- Press Pause/Break or Ctrl+Alt+M during an Agent or Brainstorm call to toggle the microphone, including when Threadlight is hidden. Settings → Hotkeys lists the current Talk binding, contextual shortcuts and VS Code companion defaults.
+
+- Shared Spaces can explain a selected Python, JavaScript or TypeScript attachment in plain language. File discussions follow the exact snapshot, show reading progress, and open cited source lines without editing or running the code.
+
+- Scroll continuously through the Agent and Earlier. Expand **Audio received** for the voice details, use **Reply** or the green phone at the top to type or speak, or choose **Needs input** to reach a decision. The reader remembers its height and keeps your place as updates arrive.
+- GPT Live can speak the opening of a streaming answer and then its remaining prose once. If it cannot identify the opening playback, **Read remaining** lets you request the rest. Matching captions stay under **Spoken reply** in both the current chat and Earlier. Live retains the opening microphone audio while connecting and catches up during sustained quiet pauses. Editor work keeps a visible status below the conversation and can give a brief spoken update during a long read.
+
+- Pin reply code or a recorded text file from its header menu. The resizable reference lists independently folding snapshots by filename or snippet, with source details in the footer. The spinning logo sits over the detached reference at the matching corner. Shift+wheel scrolls code sideways and Ctrl-drag pans in either direction, including at a display edge.
+- Pinned files use the reference’s full width. Drag the resize edge or focus it and use the arrow keys. Approved Agent replacements and appends create per-file versions. Browse earlier versions from the entry menu and copy the displayed version.
+- Live calls have independent mic and speaker mute, a Ctrl+Alt+M mic shortcut and a control to silence the current spoken reply. The centered call controls disconnect voice while keeping the chat open. The Agent header keeps conversation actions available when the call ends. Two blue highlights on the floating waveform indicate active Agent work. The working logo stays below the reader while the Agent is busy. Earlier tool details remain expandable.
+- Repeated captures of identical pixels are coalesced while queued or sending and for five seconds after delivery. Standalone Codex image chats follow the usual Agent archive lifecycle and remain accessible from Earlier.
+- VS Code coaching accepts longer hints, shows a compact clickable label with the full hint on hover, and reports invalid guide fields separately from connection failures.
+- Ask foreground GPT Live to review the whole active VS Code file, including unsaved changes. The read-only review follows one buffer version, checks up to 32,768 UTF-16 units and includes available editor diagnostics. If the connected window is still running an older companion without review support, Live reports zero coverage and explains how to activate the update.
+
+- VS Code reviews give brief, line-first findings. Ask for one step at a time to start a highlighted walkthrough of the current issue. Spoken “next” and **Next step** advance it, **Finish guide** confirms completion in Live, and editing pauses the guide for a fresh read when you’re ready.
+- Ask Live to show the next line to type in VS Code. Trace displays ghost text at a verified insertion point, including between existing lines or at the end of a file. Type along, indent with Tab, backspace, or dismiss with Esc. An explicit next-step request rechecks the learner’s code.
+- Ask for inline diffs across the open file. Coach locates each change, shows one proposal at a time, and can explain the visible change aloud. Tab accepts one undoable edit or group. Use Alt+] to navigate or Esc to dismiss. Selected alternatives and separate read-only comparisons remain available.
+- Turn on **Automatic Python suggestions** in Threadlight Settings, or ask the Agent to turn them on. Live Coach 0.6.1 starts local completions and related-edit suggestions whenever you open a trusted Python file. The preference persists across restarts. You can also follow the VS Code checkbox and optionally choose a model in VS Code.
+- Screen regions can be enabled independently in Live and outside Live. The Agent follows your words and the relevant conversation when you share an image. Without a clear request, it explains an unmistakable visible issue or asks what you want help with. Outside Live, a region starts a fresh conversation with the configured Agent. Codex reads its answer in the GPT Live voice, and Claude uses Windows speech. Both leave the microphone closed. Busy Agents finish their current turn before handling queued regions.
+- Smart Thread opens a needs-input card at the bottom of its normal-height reader, immediately above the composer. The first upward scroll reveals the preceding text immediately. Use Jump to live to return to the card.
+- The Agent diamond reopens the most recent screen-region or foreground Live conversation. Only a current input request activates its pulse and the floating drips.
+- Native Codex question cards follow confirmed answers and turn completion. Use × to dismiss a single question in Threadlight across rescans and restarts. **Stop ignoring** restores it. Revised and new cards can signal again.
+- Codex GPT Live can identify the foreground Windows app for a spoken question and inspect its window on request. Hold Ctrl, right-drag to outline a region, then release Ctrl to send the image into the same Live conversation, including when you are silent.
+- Code blocks in Smart Thread, Agent, ChatGPT and Perplexity replies open as language-labelled cards with syntax colouring, preserved indentation and a Copy button. Hold Ctrl and left-drag inside the code to pan horizontally or vertically. Existing Codex replies recover their formatting when reopened.
+- Pinned Active threads expand in place beneath the current page. Back collapses the reader while preserving the open page and its drafts. During thread dictation, GPT Live stays connected and its floating waveform turns red. Live can hear you again when dictation ends.
+- Fixed a Windows restart error when a late pointer-leave event tried to show the floating dot after its window had closed.
+
+- GPT Live now sends the Agent’s completed answer to speech when a voice request needs tools or current information. This fixes follow-ups that displayed the answer but spoke only an acknowledgement.
+
+- Source setup accepts Claude Code, Codex and Perplexity individually or together. On fresh Windows installations it verifies and extracts the desktop runtime using Windows tar. The source distribution includes the tray icons. Claude and Codex bundle the conversational setup skill, and Perplexity Computer users can upload its standalone Markdown version. See [Windows setup checks](docs/validation/CONVERSATIONAL-SETUP.md).
+
+- Agent conversations use expandable request turns, keeping replies, activity, decision cards and source links together. Earlier turns show their last reply when folded; a new pending decision opens its owning turn. Replies support formatting, links, tables and collapsible code with Copy. See [validation](docs/validation/AGENT-GROUPED-TURNS-2026-11-07.md).
+
+- The foreground Agent can request a Claude Code or ordinary Perplexity chat in a named Shared Space. The decision card shows the provider, named space, role and opening message in a readable summary, with compact approval buttons. Pending cards stay visible as Agent replies arrive. Connection failures before the opening message leave the space dispatch budget intact. Perplexity lookup in a space resolves its participants even when their titles omit the provider name.
+
+- The floating microphone waveform opens the current panel and keeps it visible during the conversation. The square beside it has a larger Stop target and remains available while listening, even if a monitored provider window closes.
+- Ctrl+Alt+Q starts or stops GPT Live for the Codex Agent even when Local STT is selected. The saved voice preference still applies to other voice controls. Live unmutes replies after the opening message is acknowledged.
+- Assistant replies in Smart Thread view support text selection and copying, including emoji and code. Right-click selected conversation text for **Copy** in the usual context menu, or open it with **Shift+F10**.
+- Selected chat providers are checked when the panel loads. Connection errors appear beside a red light in the bottom info area, including in Settings and Shared Spaces. Failed refreshes retain the last list.
+
+- Fixed workflow chat discovery hiding Codex behind large Claude catalogues.
+  Hosted Brainstorm now receives scoped, paged output-folder IDs and an explicit
+  explanation that workflow operation limits count join and finish steps too.
+
+- Added ordinary ChatGPT and Perplexity destinations to shared-space messaging.
+  Authorized briefs use the common journal and return correlated text replies to
+  the sender inbox. Native model selection is preserved. Ordinary chats do not
+  gain memory tools, filesystem access or automatic sender wakeup.
+  An amber Chat list warning identifies a rate-limited account-chat refresh. ChatGPT discovery checks once at startup and then at most once a minute while its list is visible. Repeated limits increase the cooldown even if an intervening refresh succeeds. A longer provider retry time takes precedence.
+
+- Sanitised published Git history to remove personal author email, native chat
+  identifiers and local-only screenshots/build artifacts. Existing clones need
+  [the history-cleanup guidance](docs/security/HISTORY-CLEANUP.md) before pushing.
+
+- Prepared the 0.1.0-alpha.1 Windows source preview: Kimi setup and its provider
+  choice are hidden while development continues. Existing configuration is retained.
+  Added a concise setup guide, explicit provider limitations and roadmap, corrected
+  privacy documentation, and sanitised public validation examples.
+
+- Fixed ordinary-chat drafts remaining after a successful send when the reader
+  closed before delivery finished. Composers now use the full thread width;
+  background polling no longer dims controls. Removed the duplicate conversation
+  heading and inline Refresh button, and reused the shared history-boundary control.
+
+- ChatGPT and Perplexity answers now display formatting, links, tables and
+  collapsible code. Perplexity sources, reported plan steps and follow-up
+  suggestions appear in compact disclosures inside the conversation. Suggestions
+  fill an empty composer for review without sending or replacing an existing draft.
+
+- Added ordinary ChatGPT and Perplexity replies through the shared composer,
+  saved drafts, provider-reported activity and automatic conversation updates.
+  Delivery receipts prevent duplicate retries after interruption. One authorized
+  test message and reply were verified in each existing test chat. Updates poll
+  snapshots; token streaming and full attachment/approval parity remain unavailable.
+
+- Settings immediately highlights **Restarting…** after Restart is clicked and
+  disables repeat clicks while the app closes and reopens.
+
+- Replaced Applications with compact **Providers shown** choices for Claude,
+  OpenAI, Perplexity and Kimi, plus an All shortcut. Ordinary ChatGPT and
+  Perplexity chats have independent choices. Kimi setup hides when deselected,
+  retaining its saved configuration and in-progress draft.
+  Removed the redundant Chat connections counts and controls; older chat history
+  is available from the row menu, and connection retry appears only on failure.
+
+- Added the shared right-click menu to Perplexity and ChatGPT chat rows, with
+  Read/Close, Refresh and existing layout actions. Shift+F10 opens it; Escape
+  closes it and returns focus. Chat rows omit code-only actions.
+
+- Fixed an “Object has been destroyed” error during Restart: window polling stops
+  before shutdown, and delayed window callbacks ignore windows that have closed.
+
+- Fixed single-column Recent to interleave account chats and coding threads in
+  one chronological list with one shared count limit. ChatGPT and Perplexity now
+  identify their provider in the secondary line. Mapped future Triple/Quad layouts
+  in a [planning document](docs/specs/PROVIDER-LAYOUT-MAP.md); those layouts remain unimplemented.
+
+- Moved the Threads filter into the compact Apps/workspace header group, replacing
+  its separate dropdown row with the shared click-to-change menu. Only the Threads
+  control fades at rest and reveals on group hover, keyboard focus or while its
+  menu is open. Apps and the workspace label remain fully readable.
+
+- Added read-only **ChatGPT** and **Perplexity** conversations in Threads, with a
+  saved **All / Chat / Code & Computer** filter and separate chat-source choices.
+  Ordinary chats use the existing thread-row style with provider colors; empty
+  sources do not occupy the list, and setup stays in Settings. ChatGPT resolves an
+  existing local Codex chat automatically. Active requires reported activity;
+  Recent applies time/count limits, and account chats stay out of Workspace.
+  Perplexity reads
+  recent ordinary chats and older messages through its
+  verified desktop connection. Chat reading has no send or task controls and does
+  not enroll chats in shared memory. [Setup and limits](docs/ACCOUNT-CHATS.md).
+
+- Added a **Perplexity** preview under **Settings → Applications**, using a compact,
+  theme-matched disclosure instead of a panel in Threads. Desktop discovery reads chat titles
+  and previews through a verified Windows pipe; Computer connects through official
+  OAuth MCP with encrypted sign-in storage, task controls and guarded retries.
+  Live discovery, sign-in and catalogue reads passed. A live model reply remains
+  unverified because Perplexity rejected the test for insufficient account credits.
+  [Setup and limits](docs/PERPLEXITY.md).
+
+- Added a Kimi workspace preview through Settings, with clearly simulated activity,
+  permission and Stop/Continue states, read-only example files and changes.
+  Real Kimi execution remains unavailable.
+
+- Added non-executing **Settings → Kimi** setup for Local model, Server model and
+  Moonshot API, with a separate agent location, saved non-secret configuration and
+  explicit local package inspection. Model connections remain untested and Kimi
+  agent execution is not enabled.
+
+- Removed routine **Evidence** tags from thread rows and shortened their info area
+  to change counts, status and source folders. Multi-root counts and their folder
+  explanation remain; detailed attribution records stay in the diff viewer.
+
+- Added **Settings → Shared Spaces → Add to .gitignore**. Enabling it offers an
+  unchecked choice for each new space; selecting it appends only that space's
+  folder to the workspace `.gitignore`, preserving existing rules. Existing spaces
+  are unchanged, and retrying creation does not duplicate the ignore entry.
+
+- Added versioned workflow graphs shared by agent tools and a compact visual editor,
+  with scoped context, local scripts, AI assignments, evidence review, branches,
+  parallel joins, waits and bounded routines. Manual, assignment-event and
+  timezone-aware cron triggers require revision-specific human authority. Handoffs
+  retains run progress and recovery evidence; interrupted effects are never blindly
+  replayed. Existing policies and assignments are preserved. See the
+  [workflow guide](docs/WORKFLOWS.md).
+
+- Restored amplified voice waveform movement for quiet speech and connected its
+  spatial bass/mid/treble response to measured spectral power. GPT Live playback
+  fades into the active conversation's provider color, including Brainstorm,
+  instead of taking the hosted Agent's color. GPT Live strands use varied blue
+  shades with a deep-to-ice-blue gradient along their length. Audio volume is unchanged.
+
+- Hosted Brainstorm now saves and revises requested notes with Codex/Claude
+  attribution, preserves revision history, and reads/edits workflow drafts through
+  project-scoped tools. It can inspect run evidence and invoke only existing
+  human-authorized revisions under automatic project policy. Comparison projects
+  remain read-only; retries retain operation IDs. See the
+  [operating guide](docs/BRAINSTORM-OPERATING-GUIDE.md).
+
+- Right-click the electric wire to pin or unpin a live Active preview below the
+  current page and above the info and usage bars. The preview scrolls independently,
+  preserves the page and drafts, follows the Active folder scope, and remembers the
+  choice across restarts without changing wires or window pinning. The main Active
+  view shows its existing list once. Keyboard access uses Shift+F10 on the wire.
+
+- Handoffs now opens a navigable work canvas grouped by explicit objectives, with
+  attention/search jumps, pinned source/result links, collapse and pan/zoom controls.
+  Submitted results and uncertain delivery stay distinct from accepted completion.
+  Folders remain available below the canvas. Handoffs and Workflow can temporarily
+  expand into a work-area-bounded square overlay without changing saved panel layout.
+  See [isolated validation](docs/validation/HANDOFFS-CANVAS-2026-10-29.md).
+
+- Codex and Claude can discover eligible project names and stable IDs before
+  enrollment and request access to the named project. Requests appear only in that
+  project's Chats list, and backend approval enforces the stored project and supplied
+  native chat. Older destinationless requests require an updated plugin and fresh
+  request; discovery grants no content access. See
+  [validation](docs/validation/PROJECT-DISCOVERY-VALIDATION.md).
+
+- Route explicit-purpose Codex and Claude saves to Notes, Handoffs or Results.
+  Notes shows authenticated saver attribution and keeps the original shared item
+  and revision history when edited or discussed. Saving notes or checkpoints does
+  not dispatch work. Existing records and callers retain legacy routing.
+
+- Fixed a restart/quit error after approving a shared-memory chat: connection
+  cleanup no longer tries to sync files through an already closed Spaces database.
+  Temporary connection grants are still revoked during shutdown.
+
+- Notes now uses the shared compact composer with dictation, Enter to save and
+  Shift+Enter for a new line. Removed repeated guidance and excess empty spacing;
+  saving a note still does not start an Agent. New notes take their title from the
+  first sentence; list titles stay on one line with a fade. Right-click a note for
+  Rename or Discuss instead of a separate discussion button in each row.
+
+- Shared-memory chats can receive human approval through a bounded active tool
+  wait, with exact request/chat binding, grant verification and duplicate-signal
+  suppression. This removes the manual reply while the chat is waiting; idle or
+  closed local chats still cannot be woken through a supported plugin callback.
+
+- The electric wire button now returns from other pages directly to the main
+  Active, Recent or Workspace view and its saved layout without changing the wires.
+  On the main views, it continues to show or hide workspace wires.
+
+- Startup now registers the backend before loading the panel and dot renderers,
+  preventing first-load failures in Codex usage, settings and Shared Spaces.
+  A newer Spaces snapshot clears an obsolete load error without clearing an
+  unrelated action error.
+
+- Thread diffs automatically reconcile recorded edits with local Git history and
+  retain non-Git evidence alongside current comparisons. Source groups distinguish
+  matching checkout commits, separate branch history, pending changes and specific
+  remaining coverage limits. Removed checkout history can be recovered through a
+  previously observed common-repository binding; no commits or merges are made.
+
+- Fixed the live/Smart Thread composer rapidly hiding and reappearing once a draft
+  reaches several lines. Multiline and wrapped drafts keep focus, remain editable
+  and send with Enter; intentional history scrolling still preserves the draft.
+
+- Hosted Agent and Brainstorm now own their CLI process trees on Windows, including
+  descendants and short-lived discovery/archiving helpers. End, replacement, idle
+  expiry and full quit await cleanup; hiding the panel keeps conversations alive.
+  Windows job ownership is established before provider launch and also cleans up
+  after abrupt app exit. Fixed Claude stream-error cleanup and serialized Brainstorm
+  End against starting another discussion.
+
+- Diff refreshes keep the current file list and open preview visible, updating them
+  in place when the new result arrives. The open preview retains its wrap setting.
+  Switching comparisons still clears the old view. Removed the informational
+  **Git and file changes** section from Settings.
+
+- Codex's public activity headings stay visible through related commands and generic
+  tool events; explicit tool descriptions retain priority. New activities without a
+  heading show **Working…** instead of the previous command. Saved-history status
+  also reads public headings. Only the short heading is displayed.
+
+- Compact command activity now describes recognized work such as UI checks,
+  tests, builds and file reads instead of displaying a long executable path.
+  Live Codex commands are labelled before truncation; expanded activity retains
+  the original command and output. Unknown commands use a neutral action label.
+
+- Diff coverage labels such as **Partial · 2 roots** sit on the second row after
+  the branch details, leaving line counts beside the title. Their hover explains
+  incomplete attribution and the number of source folders/checkouts. Git discovery
+  retains a verified fallback while a new preferred folder resolves, avoiding a
+  temporary disappearance of the existing diff badge.
+
+- Active, Recent and Workspace now share the header's selected folder, drive or
+  All drives scope. Recent applies its count limit after filtering; a temporarily
+  empty saved folder stays selected instead of switching to another project.
+  Launching a different Threadlight checkout preserves the saved selection.
+
+- The compact header fades long workspace names, halves the
+  leading inset and reserves space beside Settings for dragging, double-click
+  pinning and the header context menu.
+
+- **Integrated test branch:** combined the completed primary-checkout security,
+  composer, Brainstorm, activity and change-tracking work with guided review and
+  the Workflow tab. Normalized Windows root identities and stopped an initial
+  changes request from waiting on a newer background scan. See
+  [integration validation](docs/validation/INTEGRATED-TEST-BRANCH.md).
+
+Documentation reconciled with the primary checkout on **29 October 2026**.
+These changes are unreleased. Linked records distinguish automated fixtures,
+installed-provider proofs and remaining acceptance gates. Earlier entries retain
+previous development behavior; the README describes current supported scope.
+
+### Fixed
+
+- The Notes composer stays below the notes list, with long lists scrolling above it.
+
+- Chat request review now centers the title, verification code, access description
+  and approval button, uses a compact **Confirm** checkbox, and reduces the space
+  above the title and below the approval button.
+
+- Shared Spaces project tabs now span the full width of the Threadlight panel,
+  and the Chats request heading has half the spacing above and below it.
+  Connected chat details start higher without an unnecessary leading divider.
+
+- Removed the redundant space-name tooltip from the Shared Spaces project header.
+
+- The Chats tab lists connected chats and shows **Requests (count)** only when
+  requests are waiting. Open a request to match its code and review access on one
+  page; the separate Connect a chat entry and setup steps are removed. Empty spaces
+  show a short invitation to request access. Capability details stay collapsed.
+  Request approval now includes publishing shared notes and returns directly to
+  Chats. Removed repeated chat labels, permission toggles, decision-card setup,
+  and the duplicate back button from request review; the header back control remains.
+  Connection review uses the open space. Chats
+  in other working folders can now be linked; requests carrying a native chat ID
+  show the matching chat directly. Older requests have a searchable fallback and
+  missing chats have recovery guidance instead of an unexplained empty picker.
+
+### Added
+
+- **Guided change review:** thread/worktree diffs offer explicit
+  file and text-section selection, exact candidate review, local checks and a
+  commit on a new branch, preserving the original checkout and staging. Added
+  **Teach** beside Tour, Full and Off with contextual Git explanations at the
+  bottom of the panel. Publishing, PR merging and automation remain future phases.
+  See [tested scope and limitations](docs/validation/GUIDED-CHANGE-WORKFLOW-VALIDATION.md).
+- Integrated the previously separate Shared Spaces **Workflow** tab and guided
+  review into primary main, preserving the project connection setup fix and all
+  later activity, workspace-scope and diff updates.
+
+- Added local Git **Current**, **Staged** and **Unstaged** comparisons, source-folder
+  selection and multi-repository groups that keep identical filenames distinct.
+  Counts, file lists and opened patches share a captured revision. Ordinary folders
+  support opt-in baseline recording, pause, reset and Forget. This is the initial
+  local implementation, with fixed exclusions and explicit coverage limits; see
+  [validation and remaining acceptance work](docs/validation/LOCAL-CHANGE-TRACKING-VALIDATION.md).
+- Added foreground Agent application tools for acknowledged navigation, scoped
+  artifact/diff reads, supported settings, named-space and native Codex chat creation,
+  guarded restart and durable action receipts. The Agent can select each comparison
+  mode and a known repository. Claude native creation and captured-card navigation
+  remain unavailable. See [application-control evidence](docs/validation/THREADLIGHT-AGENT-CONTROL-VALIDATION.md).
+- Added native Codex chat creation from the header context menu, with workspace
+  selection, recovery receipts and a focused empty composer. The desktop adopts the
+  chat without an initial prompt. Claude creation remains visibly unavailable.
+  [Creation and real-provider evidence](docs/validation/HEADER-THREAD-PICKER-VALIDATION.md).
+- Added live expanded Codex conversations with saved-history fallback, anchored
+  history reading, grouped tool activity, image galleries and an inline shared
+  composer. Claude uses saved-history polling. Local Codex messages support pasted,
+  dropped and selected file/image attachments; this is not a cloud file uploader.
+  [Implementation and test scope](docs/validation/LIVE-THREAD-VIEW-VALIDATION.md).
+- Added native Codex queue inspection, attachment-preserving Edit, Remove and
+  explicit Steer, with receipt reconciliation for uncertain writes.
+  [Queue and Steer live proofs](docs/validation/CODEX-QUEUE-VALIDATION.md).
+- Added local artifact discovery from transcript links and Codex visualization
+  markers, refresh/link/save-copy actions and isolated interactive HTML previews.
+  Self-contained scripts, controls and canvas work; external assets, persistent
+  browser state and cloud artifacts remain unsupported.
+  [Reference evidence](docs/validation/ARTIFACT-REFERENCES-VALIDATION.md) and
+  [interactive-preview evidence](docs/validation/INTERACTIVE-ARTIFACTS-VALIDATION.md).
+- Added project participant capability reports, human verification and evidence-based
+  destination suggestions, retaining reviewed rationale in unsent handoffs.
+  [Participant validation](docs/validation/PROJECT-PARTICIPANTS-VALIDATION.md).
+
+### Changed
+
+- Brainstorm now uses the shared Agent conversation and voice interface, with
+  project-specific history, drafts, sources and reviewed plan/assignment preparation.
+  Notes and discussions remain separate. Ctrl+Alt+B opens Brainstorm voice;
+  Ctrl+Alt+Q opens ordinary Agent voice. Project tools do not gain application
+  control or independent dispatch. See [conversation UI](docs/validation/BRAINSTORM-CHAT-VALIDATION.md)
+  and [voice validation](docs/validation/BRAINSTORM-VOICE-VALIDATION.md).
+- Codex next-step, native-question and managed-question answers now share the
+  standard composer and microphone. Dictation fills a draft for review; the original
+  card-specific submission path remains. Closing a card prevents late transcription
+  from changing its reopened draft. Voice checks used synthetic audio.
+- Consecutive edits, commands and public activity headings share a collapsible smart
+  thread stack. Messages, turn boundaries and compaction separate stacks; each edit
+  retains its own counts and recorded-patch View action.
+- Moved Agent, Shared Spaces and New thread into the header context menu. Removed
+  thread-row artifact checker strips and their reserved space; Artifacts remains
+  available from the thread context menu and viewer navigation.
+- Reconciled the README and plugin guide with implemented behavior and explicit
+  limitations. Repository instructions now require same-session Unreleased entries
+  and affected documentation updates before user-visible work is reported complete.
+
+### Fixed
+
+- Collapsing Smart Thread releases its workspace wire and group highlight so pointer
+  movement and scrolling trace the thread under the mouse again. Keyboard focus
+  tracing remains available; browser regression checks cover single and dual layouts.
+- Automatic human Codex messages now send immediately to a confirmed idle chat;
+  only a confirmed active turn falls back to the native queue. Unknown or rejected
+  delivery preserves the draft/error instead of silently queueing or steering.
+  Previous uncertain queue receipts are reconciled before a direct retry.
+  The routing change has focused automated coverage; earlier live queue proofs
+  do not certify the new routing. [Evidence](docs/validation/CODEX-QUEUE-VALIDATION.md).
+- Thread diffs now explain partial attribution and unknown metrics, preserve supported
+  edits after lines move, and avoid reporting zero known edits as a clean folder.
+  Switching scope, mode or repository cannot apply stale replies to the new view;
+  opening a file uses its captured comparison revision. Large-file preview limits
+  no longer truncate available count evidence. Nonempty thread attribution remains
+  partial and does not prove exclusive authorship.
+- Unwrapped Added/Removed diff sections now have independent horizontal scrollbars.
+  Wrapping removes the overflow. Browser checks cover thumb dragging, wheel input
+  and section independence.
+
+### Security
+
+- Added server authentication and encryption to the separate shared-memory MCP
+  connection for both Claude and Codex, including enrollment and Claude runtime
+  credentials. Agent communication, chat-reader, space-context and app-control
+  connections use the same transport. Plaintext routes are rejected; capabilities
+  remain scoped and revocable. Refresh the app and both complete plugin packages
+  together, then reconnect and pair again. Manual configuration is now stdio and
+  must be regenerated after app restart.
+- Removed MCP credentials and Claude relay prompts from provider command lines,
+  bounded relay output, and added Windows user/logon checks to Claude inbox writes.
+  Same-user hostile code, upstream Codex router authentication and the real Claude
+  Desktop inbox release gate remain explicit limits. See
+  [follow-up security validation](docs/validation/CLAUDE-MEMORY-SECURITY.md).
+
+- Verify the Codex desktop pipe server's Windows user/logon, packaged executable
+  and signature before sending initialization or chat data, retaining the verified
+  handle. Tightened response correlation and bounded transport resources. This
+  does not authenticate every participant on the upstream Codex coordination bus.
+- Provider hook requests and replies now require authenticated encryption, protected
+  per-start credentials and replay checks. Refresh the app and both plugin packages
+  together; old plaintext hooks are rejected. These protections retain the Windows
+  user trust boundary and do not isolate hostile same-account code.
+  See [local IPC security, upgrade steps and remaining limits](docs/security/LOCAL-IPC.md).
+
+### Earlier development history
+
+<details>
+<summary>Earlier unreleased notes, through 27 October 2026</summary>
+
+These entries are preserved as development history. Later entries above supersede
+older behavior and limits; they are not a second current-feature checklist.
 
 - "Needs your input" now has the bottom right corner of a thread's second row. The branch counts and task timer step aside while it shows and return when it goes, so the title keeps the whole top row (it was squeezed out by the diff counts, and vanished entirely on an open thread).
 - The question and approval cards no longer carry the "Waiting for you here · opening it in Claude answers it there instead" note.
@@ -634,3 +1070,5 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and Show desktop no longer leave it hidden behind them.
 - A session whose Claude Code process ended (for example after a background reply) no
   longer flips back to "working" for 30 seconds.
+
+</details>

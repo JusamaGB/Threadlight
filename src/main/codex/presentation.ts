@@ -1,4 +1,9 @@
 import { isObject, str } from '../sessions/json'
+import { commandActivity } from '../../shared/commandActivity'
+
+/** Smart Thread renders the provider's Markdown. The voice-mode marker is desktop UI metadata. */
+export const codexReplyMarkdown = (text: string): string =>
+  text.replace(/^::codex-realtime-inline\{\}\r?\n/, '')
 
 /** Display text only: never load attachment URLs or interpret HTML from a transcript. */
 export function codexDisplayText(text: string): string {
@@ -48,24 +53,24 @@ export function codexUserRequest(text: string): string | null {
   return codexDisplayText(request) || null
 }
 
+/** Only the short public display heading, never the summary body or raw content. */
+export function publicActivityHeading(raw: Record<string, unknown>): string | undefined {
+  if (!Array.isArray(raw.summary)) return undefined
+  for (const part of raw.summary.toReversed()) {
+    if (typeof part !== 'string') continue
+    const heading = part.match(/^\s*\*\*([^\r\n]{1,160}?)\*\*/)?.[1]?.trim()
+    if (heading) return heading
+  }
+  return undefined
+}
+
 /** A fallback for periods without an agent progress update; never expose launcher commands. */
 export function codexToolActivity(name: string, input: Record<string, unknown> = {}): string {
   const description = str(input['description'])
   if (description?.trim()) return codexDisplayText(description).slice(0, 300)
   const tool = name.split(/[.:]/).at(-1) || name
   const command = str(input['command']) || str(input['cmd']) || ''
-  if (/exec_command|shell|Bash|commandExecution/.test(tool)) {
-    if (/\b(?:vitest|pytest|jest|cargo test|npm (?:run )?test)\b/i.test(command))
-      return 'Running tests'
-    if (/\b(?:tsc|typecheck)\b/i.test(command)) return 'Checking types'
-    if (/\b(?:eslint|prettier|lint)\b/i.test(command)) return 'Checking code style'
-    if (/\b(?:npm run build|vite build|cargo build)\b/i.test(command))
-      return 'Building the application'
-    if (/\bgit\s+(?:status|diff|log)\b/i.test(command)) return 'Reviewing repository changes'
-    if (/\b(?:rg|grep|findstr)\b/i.test(command)) return 'Searching the project'
-    if (/\b(?:Get-Content|cat|sed|head|tail)\b/i.test(command)) return 'Reading project files'
-    return 'Running a command'
-  }
+  if (/exec_command|shell|Bash|commandExecution/.test(tool)) return commandActivity(command)
   if (/apply_patch|edit_file|write_file/.test(tool)) return 'Updating project files'
   if (/request_user_input/.test(tool)) return 'Waiting for your answer'
   if (/update_plan/.test(tool)) return 'Updating the plan'

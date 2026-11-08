@@ -1,3 +1,4 @@
+import { memoryTestTransport } from '../memoryTransportHelper'
 import { app } from 'electron'
 import { join } from 'node:path'
 import { mkdtempSync, writeFileSync } from 'node:fs'
@@ -54,17 +55,24 @@ void app.whenReady().then(async () => {
     cards: async () => null,
     approve: (_id, _title, _detail, decide) => decide(true),
   }
-  const server = new AppControlServer(service)
+  const auth = memoryTestTransport(directory)
+  const server = new AppControlServer(service, auth)
   await server.start()
   const connection = server.connect(caller)
   app.on('before-quit', () => writeFileSync(join(directory, 'cleanup.txt'), 'Graceful cleanup ran'))
   app.on('will-quit', () => server.close())
+  if (process.argv.includes('--stall-exit'))
+    app.on('will-quit', () => {
+      // Reproduce teardown with no runnable JavaScript timeout. Only the independent
+      // helper can release the old process and let Electron's relauncher continue.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+    })
   Object.assign(globalThis, {
     restartProof: {
       directory,
       instanceId: service.instanceId,
       call: async (name: string, args: unknown) => {
-        const response = await fetch(connection.endpoint, {
+        const response = await auth.fetch(connection.endpoint, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${connection.token}`,

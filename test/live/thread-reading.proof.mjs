@@ -1,3 +1,4 @@
+import { memoryFixture } from './memory-transport.fixture.mjs'
 // Opt-in: authenticated owned runtimes, synthetic named target chats, real local adapters.
 // Evidence stays outside the repository. No physical microphone or speakers are opened.
 import assert from 'node:assert/strict'
@@ -70,7 +71,7 @@ const sources = new ThreadReadService(
   [new ClaudeReadAdapter(defaultPaths()), new CodexReadAdapter(codexPaths())],
   () => readProviders,
 )
-const server = new ThreadReadServer(sources)
+const server = new ThreadReadServer(sources, memoryFixture(root))
 await server.start()
 const services = [],
   report = { startedAt: new Date().toISOString(), checks: [] }

@@ -7,11 +7,10 @@ export const CardChangesContext = createContext<
 >(null)
 
 function Counts({ added, removed }: { added: number | null; removed: number | null }) {
-  return added === null || removed === null ? (
-    <span className={styles.fileUnknown}>Counts unavailable</span>
-  ) : (
+  return added === null || removed === null ? null : (
     <span className={styles.fileCounts}>
       <span>+{added}</span>
+      <span aria-hidden="true">—</span>
       <span>−{removed}</span>
     </span>
   )
@@ -30,19 +29,10 @@ export function ThreadFileChanges({ item, threadId }: { item: TimelineItem; thre
   return (
     <section className={styles.fileCard} data-message-id={item.id} aria-label={item.text}>
       <header>
-        <svg
-          viewBox="0 0 20 20"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          aria-hidden="true"
-        >
-          <rect x="4" y="2" width="12" height="16" rx="3" />
-          <path d="M7 8h6m-3-3v6m-3 3h6" />
-        </svg>
+        <Counts added={added} removed={removed} />
         <div className={styles.fileHeading}>
           <strong>{item.text}</strong>
-          <Counts added={added} removed={removed} />
+          {!known && <span className={styles.fileUnknown}>Counts unavailable</span>}
         </div>
         <button
           type="button"
@@ -50,7 +40,7 @@ export function ThreadFileChanges({ item, threadId }: { item: TimelineItem; thre
           aria-description="View only the changes recorded on this card."
           onClick={() => openChanges?.(threadId, item)}
         >
-          View changes
+          View
         </button>
       </header>
     </section>

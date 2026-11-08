@@ -11,6 +11,7 @@ export async function checkCodexQueue(page, compose, capture) {
       { id: 'existing', text: 'Already queued in Codex', images: 0, editable: true },
     ]
     window.proof.queueCalls = []
+    window.proof.chatActive = true
     window.threadlight.codexQueue = async (_id, cmd) => {
       window.proof.queueCalls.push(cmd)
       if (cmd.action === 'list' && window.proof.pauseQueueRead) {
@@ -27,7 +28,7 @@ export async function checkCodexQueue(page, compose, capture) {
     }
     window.threadlight.sendMessage = async (...args) => {
       window.proof.queueCalls.push({ action: 'send', args })
-      if (args[3] === 'queue')
+      if (args[3] === 'auto' && window.proof.chatActive)
         window.proof.queue.push({ id: 'new', text: args[1], images: 1, editable: true })
       return { ok: true }
     }
@@ -78,7 +79,7 @@ export async function checkCodexQueue(page, compose, capture) {
     await page.evaluate(() =>
       window.proof.queueCalls.filter((c) => c.action === 'send').map((c) => c.args[3]),
     ),
-    ['queue'],
+    ['auto'],
   )
   const queueBounds = await queue.boundingBox(),
     boxBounds = await box.boundingBox()
@@ -91,5 +92,24 @@ export async function checkCodexQueue(page, compose, capture) {
   assert.deepEqual(
     await page.evaluate(() => window.proof.queueCalls.filter((c) => c.action === 'steer')),
     [{ action: 'steer', id: 'existing' }],
+  )
+  await page.evaluate(async () => {
+    window.proof.chatActive = false
+    await window.proof.patch({ state: 'idle' })
+  })
+  await box.fill('Send this immediately')
+  await composer.getByRole('button', { name: 'Send', exact: true }).click()
+  await page.waitForFunction(() =>
+    window.proof.queueCalls.some(
+      (c) => c.action === 'send' && c.args[1] === 'Send this immediately',
+    ),
+  )
+  assert.equal(await box.inputValue(), '')
+  assert.equal(await queue.count(), 0)
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.proof.queueCalls.filter((c) => c.action === 'send').map((c) => c.args[3]),
+    ),
+    ['auto', 'auto'],
   )
 }

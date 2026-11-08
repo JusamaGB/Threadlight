@@ -69,6 +69,7 @@ try {
   }
   assert.equal((await navigate({ page: 'list', mode: 'recent' })).outcome, 'ok')
   assert.equal((await navigate({ page: 'agent' })).outcome, 'ok')
+  await page.getByRole('button', { name: 'Reply to Agent' }).click()
   const agentDraft = page.getByPlaceholder('Ask your agent…')
   await agentDraft.fill('Unsent Agent draft')
   await agentDraft.evaluate((input) => input.setSelectionRange(3, 8))
@@ -95,6 +96,24 @@ try {
     (await navigate({ page: 'artifact', threadRef: 'resolved', artifactId: 'missing' })).outcome,
     'not_found',
   )
+  for (const lens of ['git-staged', 'git-unstaged', 'folder-baseline', 'git-current']) {
+    const route = {
+      page: 'changes',
+      threadRef: 'resolved',
+      scope: 'worktree',
+      lens,
+      rootId: 'secondary',
+    }
+    assert.equal((await navigate(route)).outcome, 'ok')
+    assert.equal(await page.getByRole('combobox', { name: 'Change comparison' }).inputValue(), lens)
+    const state = await call('threadlight_get_app_state')
+    assert.equal(state.data.snapshot.route.lens, lens)
+    assert.equal(state.data.snapshot.route.rootId, 'secondary')
+    const calls = await app.evaluate(() => globalThis.controlProof.comparisonCalls)
+    assert.ok(
+      calls.some((call) => call[1] === 'worktree' && call[2] === lens && call[3] === 'secondary'),
+    )
+  }
   for (const scope of ['thread', 'worktree', 'card'])
     assert.equal(
       (

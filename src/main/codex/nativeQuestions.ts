@@ -7,19 +7,18 @@ import { isObject } from '../sessions/json'
 import { codexId, CODEX_UUID } from './identity'
 import { connectCodexDesktop, type DesktopConnection } from './desktopConnection'
 
+import {
+  pendingQuestion,
+  questionId,
+  questionRecords,
+  type OwnerQuestionState,
+} from './questionLifecycle'
+
 export function nativeQuestionRef(
   records: Record<string, unknown>[],
   turnId: unknown,
 ): CodexQuestionRef | undefined {
-  if (typeof turnId !== 'string' || !CODEX_UUID.test(turnId)) return
-  const item = records.findLast(
-    (r) =>
-      r.type === 'agentMessage' &&
-      r.delivery === 'async' &&
-      Array.isArray(r.questions) &&
-      r.questions.length > 0,
-  )
-  if (typeof item?.id === 'string') return { turnId, itemId: item.id }
+  return pendingQuestion(records, turnId)?.ref
 }
 
 /** Re-read the source immediately before sending; a renderer snapshot is not authority to answer. */
@@ -28,7 +27,18 @@ export function readNativeAnswer(
   id: string,
   ref: CodexQuestionRef,
   answers: string[],
+  ownerState?: OwnerQuestionState,
 ): string {
+  return prepareAnswer(history, id, ref, answers, ownerState).text
+}
+
+function prepareAnswer(
+  history: string,
+  id: string,
+  ref: CodexQuestionRef,
+  answers: string[],
+  ownerState?: OwnerQuestionState,
+) {
   const db = new DatabaseSync(history, { readOnly: true })
   try {
     db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=100; BEGIN')
@@ -42,58 +52,35 @@ export function readNativeAnswer(
       !['inProgress', 'in_progress'].includes(String(turn.status))
     )
       throw new Error('This question has expired. Refresh the thread.')
-    const rows = db
-      .prepare(
-        "SELECT item_json FROM thread_items WHERE thread_id=? AND turn_id=? AND item_type IN ('agentMessage','userMessage') ORDER BY rollout_ordinal DESC LIMIT 200",
-      )
-      .all(id, ref.turnId)
-    const records = rows
-      .reverse()
-      .map((r) => JSON.parse(String(r.item_json)) as Record<string, unknown>)
-    const current = nativeQuestionRef(records, ref.turnId)
-    if (current?.itemId !== ref.itemId)
-      throw new Error('This question has changed. Refresh the thread.')
-    const item = records.find((r) => r.id === ref.itemId)!
-    if (!Array.isArray(item.questions) || item.questions.length !== answers.length)
-      throw new Error('Answer each question before sending.')
-    const ids = answers.map((_, index) =>
-      JSON.stringify(['request_user_input_async', ref.itemId, index]),
+    const records = questionRecords(db, id, ref.turnId)
+    const pending = pendingQuestion(
+      records,
+      ref.turnId,
+      ownerState,
+      (candidate) => candidate.itemId === ref.itemId,
     )
-    for (const record of records) {
-      if (record.type !== 'userMessage' || !Array.isArray(record.content)) continue
-      const text = record.content
-        .filter(isObject)
-        .map((c) => (typeof c.text === 'string' ? c.text : ''))
-        .join('\n')
-      const match = text
-        .trim()
-        .match(
-          /^<send_user_message_question_reply>\s*([\s\S]+?)\s*<\/send_user_message_question_reply>$/,
-        )
-      if (!match) continue
-      let replies: unknown
-      try {
-        replies = JSON.parse(match[1]!)
-      } catch {
-        continue
-      }
-      if (
-        (Array.isArray(replies) ? replies : [replies]).some(
-          (r) => isObject(r) && ids.includes(String(r.questionItemId)),
-        )
-      )
-        throw new Error('This question has already been answered in Codex.')
-    }
-    const replies = item.questions.map((question, index) => {
+    if (
+      !pending ||
+      pending.ref.itemId !== ref.itemId ||
+      (ref.generation && ref.generation !== pending.ref.generation)
+    )
+      throw new Error('This question has changed or has already been answered in Codex.')
+    if (pending.questions.length !== answers.length)
+      throw new Error('Answer each question before sending.')
+    const replies = pending.questions.map((question, index) => {
       if (!isObject(question) || typeof question.title !== 'string')
         throw new Error('Unsupported Codex question.')
       return {
-        questionItemId: ids[index],
+        questionItemId: questionId(ref.itemId, pending.indexes[index]!),
         question: question.title,
         answer: answers[index]!.trim(),
       }
     })
-    return `<send_user_message_question_reply>\n${JSON.stringify(replies)}\n</send_user_message_question_reply>`
+    return {
+      generation: pending.ref.generation,
+      ids: replies.map((reply) => reply.questionItemId),
+      text: `<send_user_message_question_reply>\n${JSON.stringify(replies)}\n</send_user_message_question_reply>`,
+    }
   } finally {
     db.close()
   }
@@ -105,6 +92,8 @@ export class NativeCodexQuestions {
     private history: string,
     private journal: string,
     private connect: () => Promise<DesktopConnection> = connectCodexDesktop,
+    private ownerState?: (id: string, turn: string) => OwnerQuestionState | undefined,
+    private confirmed?: (id: string, turn: string, ids: string[]) => void,
   ) {}
   async answer(key: unknown, reference: unknown, values: unknown): Promise<CodexQuestionResult> {
     const id = typeof key === 'string' ? codexId(key) : null
@@ -115,19 +104,43 @@ export class NativeCodexQuestions {
       !CODEX_UUID.test(reference.turnId) ||
       typeof reference.itemId !== 'string' ||
       reference.itemId.length > 200 ||
+      (reference.generation !== undefined &&
+        (typeof reference.generation !== 'string' ||
+          !/^[0-9a-f]{64}$/.test(reference.generation))) ||
       !Array.isArray(values) ||
       values.length < 1 ||
       values.length > 10 ||
       !values.every((v) => typeof v === 'string' && !!v.trim() && v.length <= 4000)
     )
       return { ok: false, reason: 'Invalid Codex question answer.', retryable: false }
-    const ref = { turnId: reference.turnId, itemId: reference.itemId },
+    const ref = {
+        turnId: reference.turnId,
+        itemId: reference.itemId,
+        generation: reference.generation as string | undefined,
+      },
       answers = values as string[]
+    try {
+      ref.generation = prepareAnswer(
+        this.history,
+        id,
+        ref,
+        answers,
+        this.ownerState?.(id, ref.turnId),
+      ).generation
+    } catch (error) {
+      return { ok: false, reason: (error as Error).message, retryable: false }
+    }
     const token = createHash('sha256')
-      .update(JSON.stringify([this.history, id, ref.turnId, ref.itemId]))
+      .update(JSON.stringify([this.history, id, ref.turnId, ref.itemId, ref.generation ?? null]))
       .digest('hex')
     const receipt = join(this.journal, `${token}.json`)
-    if (this.busy.has(id) || existsSync(receipt))
+    const legacyReceipt = join(
+      this.journal,
+      createHash('sha256')
+        .update(JSON.stringify([this.history, id, ref.turnId, ref.itemId]))
+        .digest('hex') + '.json',
+    )
+    if (this.busy.has(id) || existsSync(receipt) || existsSync(legacyReceipt))
       return {
         ok: false,
         reason: 'An answer was already submitted. Check Codex before trying again.',
@@ -138,7 +151,6 @@ export class NativeCodexQuestions {
       attempted = false,
       claimed = false
     try {
-      readNativeAnswer(this.history, id, ref, answers)
       connection = await this.connect()
       const owner = await connection.request(
         'thread-owner-discovery',
@@ -159,7 +171,13 @@ export class NativeCodexQuestions {
         { flag: 'wx' },
       )
       claimed = true
-      const text = readNativeAnswer(this.history, id, ref, answers)
+      const { text, ids } = prepareAnswer(
+        this.history,
+        id,
+        ref,
+        answers,
+        this.ownerState?.(id, ref.turnId),
+      )
       attempted = true
       const result = await connection.request(
         'thread-follower-steer-turn',
@@ -185,6 +203,7 @@ export class NativeCodexQuestions {
             'Codex did not confirm this answer for the original turn. Check the chat before sending again.',
           retryable: false,
         }
+      this.confirmed?.(id, ref.turnId, ids)
       return { ok: true }
     } catch (error) {
       let receiptRetained = false

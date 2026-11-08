@@ -1,0 +1,166 @@
+.card {
+  position: relative;
+  min-width: 0;
+  margin: 5px 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--fg);
+  user-select: text;
+}
+.card summary {
+  cursor: pointer;
+  padding: 5px 30px 5px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.card pre {
+  cursor: text;
+  box-sizing: border-box;
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--border);
+  padding: 7px;
+  line-height: 1.5;
+}
+:global(html[data-code-grab]) .card pre {
+  cursor: grab;
+}
+:global(html[data-code-grab]) .card pre[data-code-panning] {
+  cursor: grabbing;
+  user-select: none;
+}
+.card pre,
+.card pre code {
+  white-space: pre;
+  overflow-wrap: normal;
+  font:
+    11px/1.5 'Cascadia Mono',
+    Consolas,
+    monospace;
+  tab-size: 4;
+}
+.copy {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  width: 24px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.copy:hover,
+.copy:focus-visible {
+  color: var(--fg);
+  background: var(--hover);
+}
+.copy:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.copyStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.dock {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  padding: 0;
+}
+.dock pre {
+  max-height: min(
+    calc(var(--reference-height) - 62px),
+    calc(var(--panel-room, 800px) * 0.65 - 62px)
+  );
+}
+.dock summary {
+  padding-right: 70px;
+}
+.dock summary {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dock .card {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.dock .card[data-selected] summary {
+  background: var(--raised);
+}
+.version {
+  display: block;
+  margin: 0 6px 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.dock pre {
+  padding: 5px 3px;
+}
+.headerText {
+  display: inline-flex;
+  vertical-align: middle;
+  max-width: calc(100% - 1.2em);
+  align-items: baseline;
+}
+.headerText > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.origin {
+  flex: none;
+  margin-left: 4px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.sourceInfo {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.unpin {
+  position: absolute;
+  top: 1px;
+  right: 28px;
+  padding: 2px 5px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.dock p {
+  margin: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.card :global(.hljs-keyword),
+.card :global(.hljs-literal) {
+  color: #ed9bc4;
+}
+.card :global(.hljs-string),
+.card :global(.hljs-attr) {
+  color: #a4ce98;
+}
+.card :global(.hljs-number),
+.card :global(.hljs-built_in) {
+  color: #c4a4ef;
+}
+.card :global(.hljs-title),
+.card :global(.hljs-tag) {
+  color: #9dc8f3;
+}
+.card :global(.hljs-comment) {
+  color: var(--muted);
+}

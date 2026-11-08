@@ -1,6 +1,6 @@
 // Real artifact IPC, store, preload and viewer. No provider processes or real profile.
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, toNamespacedPath } from 'node:path'
 import { registerArtifacts } from '../../src/main/artifactIntegration'
@@ -10,6 +10,9 @@ import { IDLE_AGENT } from '../../src/shared/agent'
 import { IDLE_MOTION } from '../../src/shared/motion'
 
 const directory = mkdtempSync(join(tmpdir(), 'threadlight-artifacts-native-'))
+const allowedAlias = `${directory}-allowed`
+symlinkSync(directory, allowedAlias, process.platform === 'win32' ? 'junction' : 'dir')
+app.once('will-quit', () => unlinkSync(allowedAlias))
 app.setPath('userData', directory)
 void app.whenReady().then(async () => {
   const panel = new BrowserWindow({
@@ -121,7 +124,8 @@ void app.whenReady().then(async () => {
             transcript,
             transcriptRoots: [directory],
             cwd: toNamespacedPath(directory),
-            roots: [toNamespacedPath(directory)],
+            // The viewer must accept the real file path through a configured profile junction.
+            roots: [toNamespacedPath(allowedAlias)],
           }
         : null,
   )

@@ -1,3 +1,5 @@
+import { reviewSource } from './sourceReview'
+import { memoryNote } from './memoryNotes'
 import { agentBusy, type AgentResponse } from '../../shared/agent'
 import {
   brainstormPrompt,
@@ -30,6 +32,8 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { SpaceContextService } from './context'
 import { SpaceContextServer } from './contextServer'
+import { ignoreSpaceFolder } from './gitignore'
+import { validVoiceOffer, validVoiceSession, type LiveVoiceResult } from '../../shared/liveVoice'
 
 export class SpacesService {
   readonly context: SpaceContextService
@@ -38,7 +42,13 @@ export class SpacesService {
   readonly agent: AgentService
   private activeId: string | null = null
   private switching = false
+  private voice: { sessionId: string; spaceId: string; discussionId: string | null } | null = null
+  private voiceReady = false
+  private voiceRetirement: Promise<void> = Promise.resolve()
   private issue = ''
+  private closing: Promise<void> | null = null
+  private releaseMemory = () => {}
+  private ignoreChoiceEnabled: () => boolean
   readonly documents: SpaceDocuments
   constructor(
     readonly store: SpacesStore,
@@ -48,12 +58,21 @@ export class SpacesService {
     private changed: (snapshot: SpacesSnapshot) => void,
     private knownRoots: () => string[] = () => sessions().map((s) => s.cwd),
   ) {
+    this.ignoreChoiceEnabled = () => options.settings().sharedSpacesGitignore
     this.context = new SpaceContextService(
       store,
       memory,
       sessions,
       options.threadReads,
       (id, cursor) => this.agent.read(id, cursor),
+      {
+        identity: () => {
+          const state = this.agent.current
+          if (!state.provider) return undefined
+          return { provider: state.provider, chatId: state.conversationId ?? undefined }
+        },
+        changed: () => this.publish(),
+      },
     )
     this.contextServer = new SpaceContextServer(this.context)
     this.documents = new SpaceDocuments(store)
@@ -68,7 +87,20 @@ export class SpacesService {
     }
     const shared = memory()
     if (shared) {
-      shared.executionContext = (spaceId, assignee) => {
+      store.externalNotes = () =>
+        shared
+          .snapshot()
+          .items.filter(
+            (item) => item.purpose === 'note' && !item.archived && store.owners()[item.spaceId],
+          )
+          .map((item) => memoryNote(shared, item.id, store.owners()[item.spaceId]!))
+      store.externalRevision = (id, revision) => {
+        const item = shared.read({}, id).item
+        const owner = store.owners()[item.spaceId]
+        if (!owner) throw Error('This note is unavailable.')
+        return memoryNote(shared, id, owner, revision)
+      }
+      const executionContext: MemoryStore['executionContext'] = (spaceId, assignee) => {
         const workspace = this.requireSpace(spaceId)
         if (assignee) {
           const session = this.sessions().find((s) => s.id === assignee)
@@ -87,19 +119,91 @@ export class SpacesService {
           documentsRoot: documentsRoot(workspace),
         }
       }
-      shared.beforeCommit = () => this.syncMemory()
+      const connectionProjects = () =>
+        shared.projectIdentities().flatMap((space) => {
+          try {
+            this.requireSpace(space.id)
+            return [{ id: space.id, name: space.name }]
+          } catch {
+            return []
+          }
+        })
+      shared.connectionProjects = connectionProjects
+      const syncMemory = () => this.syncMemory()
+      shared.executionContext = executionContext
+      shared.beforeCommit = syncMemory
+      const previousChange = shared.onChange
+      const changed = () => {
+        previousChange()
+        this.publish()
+      }
+      shared.onChange = changed
+      this.releaseMemory = () => {
+        // Memory outlives Spaces during quit and still revokes ephemeral grants.
+        // Those transactions must not call back into a closed Spaces database.
+        if (shared.connectionProjects === connectionProjects) shared.connectionProjects = () => []
+        if (shared.onChange === changed) shared.onChange = previousChange
+        if (shared.beforeCommit === syncMemory) shared.beforeCommit = () => {}
+        if (shared.executionContext === executionContext)
+          shared.executionContext = () => {
+            throw new Error('Shared Spaces is closed.')
+          }
+      }
     }
     this.agent = new AgentService({
       ...options,
       appControl: undefined,
       communication: undefined,
       threadReads: undefined,
+      onLive: (event) => {
+        options.onLive?.(event)
+        if (this.voice?.sessionId === event.sessionId) void this.stopLive(event.sessionId)
+      },
       spaceContext: () => {
+        if (!this.activeId && this.voice)
+          return this.contextServer.connectProject(this.voice.spaceId)
         if (!this.activeId) throw Error('Open a space discussion first.')
         return this.contextServer.connect(this.activeId, this.comparisons)
       },
       communicationProject: () => (this.activeId ? this.projectFor(this.activeId) : undefined),
       onChange: (state) => {
+        // Native audio needs a scoped transport immediately, but an empty mic session
+        // must not create a discussion. Commit on speech or an accepted user image.
+        if (
+          this.voiceReady &&
+          this.voice &&
+          !this.voice.discussionId &&
+          state.live &&
+          !state.ended
+        ) {
+          const speech = state.items.find(
+            (i) =>
+              i.kind === 'you' &&
+              (i.liveComplete || (i.screenPreview && i.text === 'Shared screen region')) &&
+              i.text.trim(),
+          )
+          if (speech) {
+            try {
+              const workspace = this.requireSpace(this.voice.spaceId)
+              const discussion = store.discussion(
+                {
+                  action: 'create_discussion',
+                  id: randomUUID(),
+                  spaceId: this.voice.spaceId,
+                  title: (speech.text.trim().split('\n')[0] ?? speech.text).slice(0, 80),
+                  noteIds: [],
+                },
+                workspace.id,
+              )
+              this.activeId = discussion.id
+              this.voice.discussionId = discussion.id
+              this.documents.publish(workspace, ideaDocuments(discussion))
+            } catch {
+              this.issue =
+                'Could not save this voice discussion. Keep this conversation open and copy important text.'
+            }
+          }
+        }
         if (this.activeId && state.conversationId) {
           try {
             store.bind(this.activeId, state.conversationId)
@@ -158,11 +262,82 @@ export class SpacesService {
       ideas: this.store.all(),
       discussions: this.store.discussions(),
       activeId: this.activeId,
+      ...(this.voice ? { voice: { ...this.voice } } : {}),
       agent: this.issue ? { ...agent, error: this.issue } : agent,
     }
   }
   private publish() {
     this.changed(this.snapshot())
+  }
+  async startLive(
+    sessionId: unknown,
+    sdp: unknown,
+    spaceId: unknown,
+    discussionId: unknown,
+  ): Promise<LiveVoiceResult> {
+    if (
+      !validVoiceSession(sessionId) ||
+      !validVoiceOffer(sdp) ||
+      typeof spaceId !== 'string' ||
+      (discussionId !== null && typeof discussionId !== 'string')
+    )
+      return { ok: false, reason: 'Invalid Brainstorm voice connection.' }
+    if (this.switching || this.voice || agentBusy(this.agent.current))
+      return {
+        ok: false,
+        reason: 'Finish or stop the current brainstorm turn before starting voice.',
+      }
+    this.switching = true
+    const voice = { sessionId, spaceId, discussionId }
+    try {
+      this.requireSpace(spaceId)
+      const discussion = discussionId ? this.store.get(discussionId) : null
+      if (
+        discussion &&
+        (discussion.recordKind !== 'discussion' || discussion.sharedSpaceId !== spaceId)
+      )
+        throw Error('Choose a discussion in this project.')
+      this.voice = voice
+      this.voiceReady = false
+      this.activeId = null
+      await this.voiceRetirement
+      if (this.voice !== voice) throw Error('Brainstorm voice was cancelled.')
+      await this.agent.close()
+      if (this.voice !== voice) throw Error('Brainstorm voice was cancelled.')
+      this.voiceReady = true
+      this.comparisons = []
+      this.activeId = discussion?.id ?? null
+      if (discussion?.conversationId) {
+        const resumed = await this.agent.resume(discussion.conversationId)
+        if (!resumed.ok) throw Error(resumed.reason)
+      }
+      if (this.voice !== voice) throw Error('Brainstorm voice was cancelled.')
+      const result = await this.agent.startLive(sessionId, sdp)
+      if (!result.ok) throw Error(result.reason)
+      if (this.voice !== voice) throw Error('Brainstorm voice was cancelled.')
+      this.publish()
+      return result
+    } catch (error) {
+      if (this.voice === voice) await this.stopLive(sessionId)
+      return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+    } finally {
+      this.switching = false
+    }
+  }
+  async stopLive(sessionId?: unknown) {
+    const voice = this.voice
+    if (!voice) return this.voiceRetirement
+    if (sessionId !== undefined && voice.sessionId !== sessionId) return
+    this.voice = null
+    this.voiceReady = false
+    const previous = this.voiceRetirement
+    this.voiceRetirement = (async () => {
+      await previous
+      await this.agent.stopLive(voice.sessionId)
+      if (!voice.discussionId) await this.agent.close()
+      this.publish()
+    })()
+    return this.voiceRetirement
   }
   requireWorkspace(id: string | null | undefined): SpaceWorkspace {
     if (!id)
@@ -198,6 +373,8 @@ export class SpacesService {
   private createSpace(
     input: Extract<import('../../shared/spaces').SpacesInput, { action: 'create_space' }>,
   ) {
+    if (input.addToGitignore && !this.ignoreChoiceEnabled())
+      throw Error('Enable Add to .gitignore in Settings → Shared Spaces first.')
     if (
       !this.knownRoots().some(
         (r) => pathKey(r.replace(/^(claude|codex):/, '')) === pathKey(input.root),
@@ -224,6 +401,7 @@ export class SpacesService {
       existing &&
       (existing.workspaceId !== workspace?.id ||
         existing.title !== input.title ||
+        (existing.addToGitignore ?? false) !== (input.addToGitignore ?? false) ||
         existing.directory !== directory)
     )
       throw new Error('This creation request was already used for another space.')
@@ -256,6 +434,7 @@ export class SpacesService {
       requestId: input.id,
       title: input.title,
       directory,
+      addToGitignore: input.addToGitignore ?? false,
     }
     this.store.putLocation(location)
     checkSpace(workspace, location, true)
@@ -269,6 +448,16 @@ export class SpacesService {
         description: `${title} for ${input.title}.`,
         reason: 'Shared space creation.',
       })
+    if (input.addToGitignore) {
+      try {
+        ignoreSpaceFolder(root, directory)
+      } catch (error) {
+        throw Error(
+          `Space created, but .gitignore could not be updated. Retry this request after fixing the file. ${error instanceof Error ? error.message : ''}`,
+          { cause: error },
+        )
+      }
+    }
     return space.id
   }
   private setup(root: string) {
@@ -410,9 +599,32 @@ export class SpacesService {
       }
       if (input.action === 'create_discussion') {
         const workspace = this.requireSpace(input.spaceId)
-        const discussion = this.store.discussion(input, workspace.id)
+        const pin = input.file
+          ? reviewSource(this.memory()!, input.spaceId, input.file.itemId, input.file.revision).pin
+          : undefined
+        const discussion = this.store.discussion(input, workspace.id, pin)
         this.publish()
         return { ok: true, snapshot: this.snapshot(), discussionId: discussion.id }
+      }
+      if (input.action === 'source_lines') {
+        const discussion = this.store.get(input.id),
+          pin = discussion.sourcePin
+        if (!discussion.sharedSpaceId || !pin) throw Error('Choose a file discussion.')
+        this.requireSpace(discussion.sharedSpaceId)
+        const { lines } = reviewSource(
+          this.memory()!,
+          discussion.sharedSpaceId,
+          pin.itemId,
+          pin.revision,
+          pin.hash,
+        )
+        if (input.last < input.first || input.last > lines.length)
+          throw Error('These lines are outside the pinned file.')
+        return {
+          ok: true,
+          snapshot: this.snapshot(),
+          sourceLines: { first: input.first, lines: lines.slice(input.first - 1, input.last) },
+        }
       }
       if (input.action === 'context' || input.action === 'source') {
         if (input.action === 'source')
@@ -459,6 +671,8 @@ export class SpacesService {
           if (discussion.recordKind !== 'discussion')
             throw Error('Only discussions can link notes.')
           for (const id of input.noteIds) {
+            // Existing links keep their stable IDs after an explicit purpose correction.
+            if (discussion.noteIds?.includes(id)) continue
             const note = this.store.get(id)
             if (
               note.recordKind === 'discussion' ||
@@ -485,7 +699,23 @@ export class SpacesService {
           if (!this.memory()?.communicationService?.workflow(input.workflowSpaceId))
             throw new Error('Configure this project workflow first.')
         }
-        this.store.edit(input)
+        if (input.action === 'save' && this.store.get(input.id).memoryItem) {
+          if (
+            input.plan ||
+            input.assignments.length ||
+            input.stage !== 'idea' ||
+            input.workflowSpaceId
+          )
+            throw Error('Discuss this note in Brainstorm to save a plan or assignments.')
+          this.memory()!.execute({
+            action: 'revise_item',
+            id: input.id,
+            expectedRevision: input.revision,
+            title: input.title,
+            body: input.text,
+            operationId: randomUUID(),
+          })
+        } else this.store.edit(input)
       } else if (input.action === 'prepare') {
         const idea = this.store.get(input.id),
           memory = this.memory()
@@ -553,7 +783,7 @@ export class SpacesService {
         }
         this.store.prepared(idea.id, { folderId: folder.id, taskIds })
       } else if (input.action === 'chat' || input.action === 'resume') {
-        if (this.switching || agentBusy(this.agent.current))
+        if (this.switching || this.voice || agentBusy(this.agent.current))
           throw new Error('Finish or stop the current brainstorm turn first.')
         this.switching = true
         try {
@@ -561,12 +791,22 @@ export class SpacesService {
           const workspace = idea.sharedSpaceId
             ? this.requireSpace(idea.sharedSpaceId)
             : this.requireWorkspace(idea.workspaceId)
-          this.documents.publish(workspace, ideaDocuments(idea))
+          if (!idea.sourcePin) this.documents.publish(workspace, ideaDocuments(idea))
+          else
+            reviewSource(
+              this.memory()!,
+              idea.sharedSpaceId!,
+              idea.sourcePin.itemId,
+              idea.sourcePin.revision,
+              idea.sourcePin.hash,
+            )
           if (idea.stage !== 'brainstorm')
             throw new Error('Start a discussion in Brainstorm first.')
           if (input.action === 'resume' && !idea.conversationId)
             throw new Error('This note has no saved discussion yet.')
           const comparisons = input.action === 'chat' ? input.compareSpaceIds : []
+          if (idea.sourcePin && comparisons.length)
+            throw Error('A file review stays in its selected Space.')
           for (const id of comparisons) this.requireSpace(id)
           if (
             this.activeId !== idea.id ||
@@ -606,7 +846,7 @@ export class SpacesService {
                   reason:
                     'Large space. Retrieve paginated context with threadlight_get_space_context.',
                 })
-          const prompt = `Bound discussion: ${idea.id}. This turn is read, track and propose only. Comparison spaces explicitly selected by the user for this request: ${JSON.stringify(this.comparisons)}.\n<space-context>${boundedOverview}</space-context>\n${brainstormPrompt(idea, input.text)}`
+          const prompt = `Bound discussion: ${idea.id}. Use only the scoped project tools under their note, draft and authorized-runtime rules. Comparison spaces explicitly selected by the user for this request: ${JSON.stringify(this.comparisons)}.\n<space-context>${boundedOverview}</space-context>\n${brainstormPrompt(idea, input.text)}`
           const sent = await this.agent.send(prompt, input.text)
           if (!sent.ok) throw new Error(sent.reason)
         } finally {
@@ -624,6 +864,31 @@ export class SpacesService {
           snapshot: this.snapshot(),
           items: history.items,
           historyCursor: history.cursor,
+        }
+      } else if (input.action === 'finish_call_chat') {
+        if (this.switching || input.id !== this.activeId)
+          throw Error('The selected discussion changed or is busy.')
+        this.switching = true
+        try {
+          const result = await this.agent.finishCallChat(input.conversationId, input.choice)
+          if (!result.ok) throw Error(result.reason)
+          this.activeId = null
+          this.comparisons = []
+        } finally {
+          this.switching = false
+        }
+      } else if (input.action === 'close') {
+        if (input.id === this.activeId) {
+          if (this.switching) throw new Error('Wait for the current discussion change to finish.')
+          this.switching = true
+          try {
+            await this.stopLive()
+            await this.agent.close()
+            this.activeId = null
+            this.comparisons = []
+          } finally {
+            this.switching = false
+          }
         }
       } else if (input.action === 'stop') {
         if (input.id !== this.activeId) throw new Error('This brainstorm is not running.')
@@ -649,10 +914,17 @@ export class SpacesService {
       return { ok: false as const, reason: 'This request belongs to another brainstorm.' }
     return this.agent.respond(requestId, response)
   }
-  async close() {
+  close() {
+    return (this.closing ??= this.finishClose())
+  }
+  private async finishClose() {
+    this.voice = null
+    this.voiceReady = false
+    await this.voiceRetirement
     this.contextServer.close()
     await this.agent.close()
     await this.agent.store.flush()
+    this.releaseMemory()
     this.store.close()
   }
 }

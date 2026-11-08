@@ -1,5 +1,18 @@
+import { createPortal } from 'react-dom'
+import { IDLE_MOTION } from '../../shared/motion'
+import { ElectricMotion } from '../motion/ElectricMotion'
+import { timing } from '../../shared/liveTiming'
+import { ComposerInput } from '../composer/ComposerInput'
 import { ConversationTimeline } from '../communication/ConversationTimeline'
-import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from 'react'
 import { useNavigationHistory } from '../hooks/useNavigationHistory'
 import type { NavigationHandle } from '../../shared/navigationHistory'
 
@@ -7,12 +20,46 @@ import { agentBusy, type AgentConversation, type AgentItem } from '../../shared/
 import { AgentRequestCard } from './AgentRequestCard'
 import { useAgent } from '../hooks/useAgent'
 import { useSettings } from '../hooks/useSettings'
+import { acceleratorLabel } from '../../shared/accelerator'
 import { useNow } from '../hooks/useNow'
 import { en } from '../i18n/en'
+import { useTranscriptScroll } from './useTranscriptScroll'
+import { AgentReadingGrip, savedReadingHeight } from './AgentReadingGrip'
+import { AgentSettings } from '../settings/AgentSettings'
 import { AgentIdentity } from './AgentIdentity'
 import { ageText } from '../lib/format'
-import { acceleratorLabel } from '../../shared/accelerator'
+import { CallIcon } from './CallIcon'
 import styles from './Panel.module.css'
+import type { AgentClient } from '../lib/agentClient'
+import { agentDisplayText, voiceInput } from '../../shared/agentTranscript'
+import { AgentMessageContent } from './AgentMessageContent'
+import threadStyles from './AgentThread.module.css'
+
+export interface AgentNavigation extends NavigationHandle {
+  showCurrent(): void
+}
+
+function ConversationIcon({ action }: { action: 'compose' | 'new' | 'close' }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {action === 'compose' && <path d="m3 10 7.5-7.5 3 3L6 13l-4 1zM9 4l3 3" />}
+      {action === 'new' && (
+        <path d="M8 3H3a1 1 0 0 0-1 1v9l3-2h7a1 1 0 0 0 1-1V8M12 1v5m-2.5-2.5h5" />
+      )}
+      {action === 'close' && <path d="M2.5 4.5h11M6 4.5v-2h4v2M4 4.5l.6 9h6.8l.6-9M7 7v4m2-4v4" />}
+    </svg>
+  )
+}
 
 /** A past conversation open to read. */
 interface Reading {
@@ -21,21 +68,97 @@ interface Reading {
   cursor: string | null
 }
 
+function RequestText({ item, format }: { item: AgentItem; format?: (text: string) => ReactNode }) {
+  const spoken = item.kind === 'you' ? voiceInput(item.text) : null
+  if (spoken !== null || item.audioDetails?.length)
+    return (
+      <>
+        <p className={threadStyles.plain}>
+          {format ? format(spoken ?? item.text) : (spoken ?? item.text)}
+        </p>
+        <details className={threadStyles.audio}>
+          <summary>Audio received</summary>
+          {(item.audioDetails ?? [agentDisplayText(item.text)]).map((record, index) => (
+            <pre key={index}>{record}</pre>
+          ))}
+        </details>
+      </>
+    )
+  const text = agentDisplayText(item.text)
+  return <p className={threadStyles.plain}>{format ? format(text) : text}</p>
+}
+
 /** The lines of a conversation: what you asked, what it said, and its steps. */
+const paintedAnswers = new Set<string>()
+function SpokenAnswer({ item, format }: { item: AgentItem; format?: (text: string) => ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const hasText = !!item.text.trim()
+  useEffect(() => {
+    const el = ref.current,
+      session = item.timingSession
+    if (!session || !el || !hasText || !item.id) return
+    const key = session + '/' + item.id
+    if (paintedAnswers.has(key)) return
+    let frame = 0
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting) || document.hidden) return
+      observer.disconnect()
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          if (el.isConnected && !document.hidden && !paintedAnswers.has(key)) {
+            if (paintedAnswers.size >= 512)
+              paintedAnswers.delete(paintedAnswers.values().next().value!)
+            paintedAnswers.add(key)
+            window.threadlight?.reportLiveTiming?.(timing(session, 'answer-frame'))
+          }
+        })
+      })
+    })
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+    }
+  }, [item.id, item.timingSession, hasText])
+  if (!item.timingSession && !item.spokenDetails?.length)
+    return <AgentMessageContent text={item.text} format={format} />
+  return (
+    <div ref={ref}>
+      <AgentMessageContent text={item.text} format={format} />
+      {!!item.spokenDetails?.length && (
+        <details className={threadStyles.audio}>
+          <summary>Spoken reply</summary>
+          {item.spokenDetails.map((text, index) => (
+            <p key={index}>{text}</p>
+          ))}
+        </details>
+      )}
+    </div>
+  )
+}
+
 function Lines({
   items,
+  itemKey,
   select,
   historical = false,
+  format,
 }: {
   items: AgentItem[]
+  itemKey?: string
   select?: (ref: string) => void
   historical?: boolean
+  format?: (text: string) => ReactNode
 }) {
   return (
     <>
       {items.map((item, index) =>
         item.source ? (
-          <details key={item.id ?? index} className={styles.agentItem}>
+          <details
+            key={item.id ?? index}
+            data-message-id={item.id ?? itemKey}
+            className={styles.agentItem}
+          >
             <summary>
               Source ·{' '}
               {'thread' in item.source.result ? item.source.result.thread.title : 'Chat search'}
@@ -102,9 +225,25 @@ function Lines({
             ))}
           </details>
         ) : (
-          <p key={index} className={styles.agentItem} data-kind={item.kind}>
-            {item.text}
-          </p>
+          <div
+            key={item.id ?? index}
+            data-message-id={item.id ?? itemKey}
+            className={`${styles.agentItem} ${threadStyles.message}`}
+            data-kind={item.kind}
+          >
+            {item.screenPreview && (
+              <img
+                className={threadStyles.screenPreview}
+                src={`data:image/jpeg;base64,${item.screenPreview}`}
+                alt="Selected screen region"
+              />
+            )}
+            {item.kind === 'agent' ? (
+              <SpokenAnswer item={item} format={format} />
+            ) : (
+              <RequestText item={item} format={format} />
+            )}
+          </div>
         ),
       )}
     </>
@@ -119,23 +258,26 @@ function Earlier({
   current,
   onOpen,
   identity,
+  client,
 }: {
   current: string | null
   onOpen: (id: string) => void
-  identity: ReactNode
+  identity?: ReactNode
+  client: AgentClient
 }) {
   const [open, setOpen] = useState(false)
   const [past, setPast] = useState<AgentConversation[] | null>(null)
   const now = useNow()
   useEffect(() => {
     let live = true
-    void window.threadlight.agentHistory().then((found) => live && setPast(found))
+    void client.agentHistory().then((found) => live && setPast(found))
     return () => {
       live = false
     }
-  }, [open, current])
+  }, [open, current, client])
   const shown = (past ?? []).filter((conversation) => conversation.id !== current)
   const hasHistory = !past || shown.length > 0
+  if (!hasHistory && !identity) return null
   return (
     <div className={styles.agentEarlier}>
       <div className={styles.agentFooter}>
@@ -148,9 +290,11 @@ function Earlier({
             {en.agent.earlier(shown.length)}
           </button>
         )}
-        <div className={styles.agentIdentity} role="group" aria-label="Agent settings">
-          {identity}
-        </div>
+        {identity && (
+          <div className={styles.agentIdentity} role="group" aria-label="Agent settings">
+            {identity}
+          </div>
+        )}
       </div>
       {open && hasHistory && (
         <div className={styles.agentPast}>
@@ -180,16 +324,113 @@ function Earlier({
  */
 export function AgentView({
   navigationRef,
+  settingsOpen = false,
+  onCloseSettings,
   visible = true,
-}: { navigationRef?: Ref<NavigationHandle>; visible?: boolean } = {}) {
-  const agent = useAgent()
+  client = window.threadlight,
+  shortcut,
+  onVoiceToggle,
+  voiceActive = false,
+  formatText,
+  discussionStatus,
+  readingResize,
+  callPreparing = false,
+  callReplySlot,
+  historyKey = 'agent-reading',
+  recentEntry,
+  onRecentOpened,
+}: {
+  settingsOpen?: boolean
+  onCloseSettings?: () => void
+  navigationRef?: Ref<AgentNavigation>
+  visible?: boolean
+  client?: AgentClient
+  shortcut?: string
+  onVoiceToggle?: () => void
+  voiceActive?: boolean
+  formatText?: (text: string, historyId?: string) => ReactNode
+  discussionStatus?: (historyId?: string) => ReactNode
+  readingResize?: { opensDown: boolean }
+  callPreparing?: boolean
+  callReplySlot?: HTMLElement | null
+  historyKey?: string
+  recentEntry?: { id: string } | null
+  onRecentOpened?: () => void
+} = {}) {
+  const agent = useAgent(client)
   const settings = useSettings()
-  const [text, setText] = useState('')
+  const [text, updateText] = useState(() => client.readDraft?.() ?? '')
+  const setText = (value: string) => {
+    client.writeDraft?.(value)
+    updateText(value)
+  }
+  useEffect(() => {
+    if (!client.readDraft) return
+    // Synchronize a project draft transferred when the backend binds the first message.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    updateText(client.readDraft())
+  }, [client, agent.revision])
+  const [finishing, setFinishing] = useState(false)
+  const finishingRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [reading, setReading] = useState<Reading | null>(null)
+  useEffect(() => {
+    if (!recentEntry) return
+    let current = true
+    const open = async () => {
+      const state = await client.getAgent()
+      if (!current) return
+      if (state.conversationId === recentEntry.id && !state.ended) {
+        setReading(null)
+        return
+      }
+      if ((!state.conversationId || state.ended) && !agentBusy(state) && !state.live) {
+        const result = await client.agentResume(recentEntry.id)
+        if (!current) return
+        if (result.ok) {
+          setReading(null)
+          return
+        }
+        setError(result.reason)
+      }
+      const page = await client.agentReadPage(recentEntry.id)
+      if (current) {
+        setReading({ id: recentEntry.id, items: page.items, cursor: page.cursor })
+        if (page.error) setError(page.error)
+      }
+    }
+    void open()
+      .catch(() => {
+        if (current) setError('Could not open the recent Agent conversation.')
+      })
+      .finally(() => {
+        if (current) onRecentOpened?.()
+      })
+    return () => {
+      current = false
+    }
+  }, [client, recentEntry, onRecentOpened])
+  const input = useRef<HTMLTextAreaElement>(null)
+  const [composing, setComposing] = useState(false)
+  const reply = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    if (composing && visible && !reading) input.current?.focus({ preventScroll: true })
+  }, [composing, visible, reading])
+  useLayoutEffect(() => {
+    const element = input.current
+    const id = client.historyCurrentId?.() ?? null
+    if (!element) return
+    const selection = client.readDraftSelection?.(id)
+    if (selection) element.setSelectionRange(selection.start, selection.end)
+    return () =>
+      client.writeDraftSelection?.(id, {
+        start: element.selectionStart ?? 0,
+        end: element.selectionEnd ?? 0,
+      })
+  }, [client, reading?.id, composing])
   const read = async (id: string) => {
     try {
-      const page = await window.threadlight.agentReadPage(id)
+      const page = await client.agentReadPage(id)
       setError(page.error ?? null)
       setReading({ id, items: page.items, cursor: page.cursor })
     } catch {
@@ -212,10 +453,16 @@ export function AgentView({
       }
     },
     true,
-    'agent-reading',
+    historyKey,
   )
-  useImperativeHandle(navigationRef, () => location, [location])
-  const log = useRef<HTMLDivElement>(null)
+  useImperativeHandle(navigationRef, () => ({ ...location, showCurrent: () => setReading(null) }), [
+    location,
+  ])
+  const { log, trackScroll, unread, pending, jumpToLatest, jumpToDecision, holdPosition } =
+    useTranscriptScroll(
+      visible,
+      reading ? 'history:' + reading.id : 'current:' + agent.conversationId,
+    )
   const busy = agentBusy(agent) || !!agent.live
   const [sending, setSending] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
@@ -244,62 +491,158 @@ export function AgentView({
   const model = hasConversation ? agent.model : selectedModel
   const reasoning = hasConversation ? agent.reasoning : selectedReasoning
 
-  const following = useRef(true)
-  const [unread, setUnread] = useState(false)
-  const trackScroll = () => {
-    if (!visible) return
-    const element = log.current
-    if (!element) return
-    following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48
-    if (following.current) setUnread(false)
+  const [readingHeight, setReadingHeight] = useState(savedReadingHeight)
+  const resizeScroll = useRef<{ top: number; atBottom: boolean } | null>(null)
+  const resizeReader = (height: number) => {
+    const reader = log.current
+    if (!reader || height === readingHeight) return
+    const atBottom = reader.scrollHeight - reader.clientHeight - reader.scrollTop <= 2
+    trackScroll()
+    resizeScroll.current = { top: reader.scrollTop, atBottom }
+    setReadingHeight(height)
   }
-  const showUpdates = () => {
-    following.current = true
-    setUnread(false)
-    log.current?.scrollTo({ top: log.current.scrollHeight })
+  useLayoutEffect(() => {
+    const anchor = resizeScroll.current
+    if (anchor && log.current)
+      log.current.scrollTo({ top: anchor.atBottom ? log.current.scrollHeight : anchor.top })
+    resizeScroll.current = null
+  }, [readingHeight, log])
+  const readerActions = (
+    <>
+      {pending && !reading && (
+        <button className={styles.agentEnd} onClick={jumpToDecision}>
+          Needs input
+        </button>
+      )}
+      {unread && (
+        <button
+          className={styles.agentEnd}
+          onClick={jumpToLatest}
+          title="Jump to the latest message"
+        >
+          New updates ↓
+        </button>
+      )}
+    </>
+  )
+  async function finishChat(choice: 'archive' | 'fresh') {
+    const id = agent.conversationId
+    if (!id || finishingRef.current || busy || sending || agent.requests.length || agent.approval)
+      return
+    finishingRef.current = true
+    setFinishing(true)
+    try {
+      const result = await client.finishCallChat(id, choice)
+      setError(result.ok ? null : result.reason)
+      if (result.ok) {
+        setComposing(false)
+        reply.current?.focus({ preventScroll: true })
+      }
+    } catch {
+      setError('Could not finish the chat. Check Earlier before retrying.')
+    } finally {
+      finishingRef.current = false
+      setFinishing(false)
+    }
   }
-  useEffect(() => {
-    const element = log.current
-    if (!element || !visible) return
-    const observer = new MutationObserver(() => {
-      if (following.current) element.scrollTo({ top: element.scrollHeight })
-      else setUnread(true)
-    })
-    observer.observe(element, { childList: true, subtree: true, characterData: true })
-    return () => observer.disconnect()
-  }, [reading?.id, visible])
-
   const carryOn = async () => {
     if (!reading) return
-    const result = await window.threadlight.agentResume(reading.id)
+    const result = await client.agentResume(reading.id)
     if (result.ok) setReading(null)
     setError(result.ok ? null : result.reason)
   }
 
+  const identity = (
+    <AgentIdentity
+      appearance={onCloseSettings ? 'agent-settings' : 'footer'}
+      provider={provider}
+      model={model}
+      reasoning={reasoning}
+      hasConversation={hasConversation}
+      settings={settings}
+      onError={setError}
+    />
+  )
+  const selectionNotice = selectionChanged && (
+    <div className={styles.agentSelection} role="status">
+      <p>
+        This conversation keeps its original model. Your next conversation will use{' '}
+        {selectedProvider === 'codex' ? 'Codex' : 'Claude'} · {selectedModel ?? 'Runtime default'}
+        {selectedReasoning ? ` · ${selectedReasoning}` : ''}.
+      </p>
+      <button
+        className={styles.agentEnd}
+        disabled={busy || sending}
+        onClick={() => client.agentClose()}
+      >
+        Use selected model
+      </button>
+      <span>
+        {busy
+          ? 'Stop or finish this turn first.'
+          : 'Ends this conversation; its history stays in Earlier.'}
+      </span>
+    </div>
+  )
+  const present = (chat: ReactNode) =>
+    onCloseSettings ? (
+      <>
+        <div hidden={settingsOpen} style={settingsOpen ? undefined : { display: 'contents' }}>
+          {chat}
+        </div>
+        {settingsOpen && (
+          <section className={styles.agent} aria-label="Agent preferences">
+            {settings && (
+              <AgentSettings
+                settings={settings}
+                identity={identity}
+                save={async (patch) => (await window.threadlight.updateSettings(patch)).ok}
+              />
+            )}
+            {selectionNotice}
+            {error && <p role="alert">{error}</p>}
+            <Earlier
+              client={client}
+              current={agent.ended ? null : (client.historyCurrentId?.() ?? agent.conversationId)}
+              onOpen={(id) => {
+                void read(id)
+                onCloseSettings()
+              }}
+            />
+          </section>
+        )}
+      </>
+    ) : (
+      chat
+    )
   // A past conversation, read-only: Back returns to the current one, Continue makes it current.
   if (reading) {
-    return (
-      <div className={styles.agent}>
-        {unread && (
-          <button className={styles.agentEnd} onClick={showUpdates}>
-            New updates
-          </button>
-        )}
-        <div className={styles.agentLog} ref={log} onScroll={trackScroll}>
-          <ConversationTimeline
-            owner={reading.id}
-            items={reading.items}
-            historical
-            lines={(items) => <Lines items={items} historical />}
-          />
+    return present(
+      <div
+        className={styles.agent}
+        data-agent-conversation=""
+        data-resizable={!!readingResize || undefined}
+      >
+        {discussionStatus?.(reading.id)}
+        <div
+          className={styles.agentLog}
+          ref={log}
+          onScroll={trackScroll}
+          style={
+            readingResize && readingHeight !== undefined
+              ? { height: readingHeight, maxHeight: 'none' }
+              : undefined
+          }
+        >
           {reading.cursor && (
             <button
               className={styles.agentEnd}
               disabled={loadingHistory}
               onClick={async () => {
+                holdPosition()
                 setLoadingHistory(true)
                 try {
-                  const page = await window.threadlight.agentReadPage(reading.id, reading.cursor)
+                  const page = await client.agentReadPage(reading.id, reading.cursor)
                   setError(page.error ?? null)
                   if (!page.error)
                     setReading((old) =>
@@ -316,12 +659,29 @@ export function AgentView({
             </button>
           )}
           {error && <p className={styles.qError}>{error}</p>}
+          <ConversationTimeline
+            owner={reading.id}
+            items={reading.items}
+            historical
+            lines={(items, itemKey) => (
+              <Lines
+                items={items}
+                itemKey={itemKey}
+                historical
+                format={formatText && ((text) => formatText(text, reading.id))}
+              />
+            )}
+          />
         </div>
         <div className={styles.agentInput}>
+          {readerActions}
           <button className={styles.agentEnd} onClick={() => setReading(null)}>
             {en.agent.back}
           </button>
           <span className={styles.agentSpacer} />
+          {readingResize && (
+            <AgentReadingGrip log={log} upward={!readingResize.opensDown} resize={resizeReader} />
+          )}
           <button
             className={`${styles.agentEnd} ${styles.agentContinue}`}
             onClick={() => void carryOn()}
@@ -331,7 +691,7 @@ export function AgentView({
             {en.agent.continue}
           </button>
         </div>
-      </div>
+      </div>,
     )
   }
 
@@ -339,8 +699,16 @@ export function AgentView({
     if (sending || busy) return
     setSending(true)
     try {
-      const result = await window.threadlight.agentSend(text)
-      if (result.ok) setText('')
+      const submission = client.historyCurrentId?.()
+      const result = await client.agentSend(text)
+      if (result.ok && (!client.historyCurrentId || client.historyCurrentId() === submission)) {
+        const hadFocus = input.current
+          ?.closest('[data-composer-input]')
+          ?.contains(document.activeElement)
+        setText('')
+        setComposing(false)
+        if (hadFocus) reply.current?.focus({ preventScroll: true })
+      }
       setError(result.ok ? null : result.reason)
     } catch {
       setError('Could not send. Check the conversation before retrying.')
@@ -349,158 +717,268 @@ export function AgentView({
     }
   }
 
-  return (
-    <div className={styles.agent}>
-      {selectionChanged && (
-        <div className={styles.agentSelection} role="status">
-          <p>
-            This conversation keeps its original model. Your next conversation will use{' '}
-            {selectedProvider === 'codex' ? 'Codex' : 'Claude'} ·{' '}
-            {selectedModel ?? 'Runtime default'}
-            {selectedReasoning ? ` · ${selectedReasoning}` : ''}.
-          </p>
-          <button
-            className={styles.agentEnd}
-            disabled={busy || sending}
-            onClick={() => window.threadlight.agentClose()}
-          >
-            Use selected model
-          </button>
-          <span>
-            {busy
-              ? 'Stop or finish this turn first.'
-              : 'Ends this conversation; its history stays in Earlier.'}
-          </span>
+  const voiceButton = (shortcut || settings) && !voiceActive && (
+    <button
+      type="button"
+      className={styles.startCall}
+      aria-label="Start Agent voice"
+      title={`Start Agent voice (${acceleratorLabel(shortcut ?? settings!.talkHotkey)})`}
+      onClick={onVoiceToggle}
+    >
+      <CallIcon action="start" />
+    </button>
+  )
+  const stopButton = busy && !voiceActive && !agent.live && (
+    <button
+      className={styles.agentEnd}
+      aria-label={agent.status === 'stopping' ? 'Stopping…' : 'Stop'}
+      title="Stop Agent work"
+      disabled={agent.status === 'stopping'}
+      onClick={async () => {
+        const result = await client.agentInterrupt()
+        setError(result.ok ? null : result.reason)
+      }}
+    >
+      {readingResize ? (
+        <CallIcon action="stop" />
+      ) : agent.status === 'stopping' ? (
+        'Stopping…'
+      ) : (
+        'Stop'
+      )}
+    </button>
+  )
+  const replyButton = (
+    <button
+      ref={reply}
+      type="button"
+      title={composing ? 'Hide reply box' : 'Write a reply'}
+      aria-label="Reply to Agent"
+      aria-expanded={composing}
+      aria-controls={composing ? 'foreground-agent-composer' : undefined}
+      onClick={() => {
+        setComposing((open) => !open)
+        if (composing) reply.current?.focus({ preventScroll: true })
+      }}
+    >
+      <ConversationIcon action="compose" />
+    </button>
+  )
+  return present(
+    <div
+      className={styles.agent}
+      data-agent-conversation=""
+      data-resizable={!!readingResize || undefined}
+    >
+      {discussionStatus?.()}
+      {readingResize && callReplySlot && createPortal(replyButton, callReplySlot)}
+      {readingResize && !callReplySlot && (
+        <div className={styles.agentTop} role="group" aria-label="Agent conversation controls">
+          {replyButton}
+          {!callPreparing && voiceButton}
+          {stopButton}
+          {!voiceActive &&
+            !agent.live &&
+            !callPreparing &&
+            !agent.ended &&
+            agent.conversationId && (
+              <>
+                <button
+                  disabled={
+                    finishing || busy || sending || !!agent.approval || !!agent.requests.length
+                  }
+                  onClick={() => void finishChat('fresh')}
+                  aria-label="Start fresh"
+                  title="Start a new conversation and keep this one in Earlier"
+                >
+                  <ConversationIcon action="new" />
+                </button>
+                <button
+                  className={styles.secondaryAction}
+                  disabled={
+                    finishing || busy || sending || !!agent.approval || !!agent.requests.length
+                  }
+                  onClick={() => void finishChat('archive')}
+                  aria-label="Close conversation"
+                  title="Close this conversation and keep it in Earlier"
+                >
+                  <ConversationIcon action="close" />
+                </button>
+              </>
+            )}
         </div>
       )}
-      {unread && (
-        <button className={styles.agentEnd} onClick={showUpdates}>
-          New updates
-        </button>
-      )}
-      <div className={styles.agentLog} ref={log} onScroll={trackScroll}>
+      {!settingsOpen && selectionNotice}
+      <div
+        className={styles.agentLog}
+        ref={log}
+        onScroll={trackScroll}
+        style={
+          readingResize && readingHeight !== undefined
+            ? { height: readingHeight, maxHeight: 'none' }
+            : undefined
+        }
+      >
         <ConversationTimeline
           owner={agent.conversationId}
           live={!!agent.live}
+          target={
+            agent.sessionId
+              ? `${agent.provider === 'codex' ? 'codex:' : ''}${agent.sessionId}`
+              : undefined
+          }
           items={agent.items}
-          lines={(items) => (
+          lines={(items, itemKey) => (
             <Lines
               items={items}
+              itemKey={itemKey}
+              format={formatText}
               select={
                 busy || sending
                   ? undefined
                   : (ref) => {
-                      void window.threadlight
+                      void client
                         .agentSend(`Read the selected chat using threadRef ${ref}.`)
                         .then((result) => setError(result.ok ? null : result.reason))
                     }
               }
             />
           )}
-        />
-        {agentBusy(agent) && (
-          <p className={styles.agentProgress}>
-            <span className={styles.spinner} />
-            {agent.progress ?? en.agent.working}
-          </p>
-        )}
-        {!agent.requests.length && agent.approval && (
-          <div className={styles.qCard}>
-            <div className={styles.qHead}>
-              <p className={`${styles.qText} ${styles.qHeadText}`}>
-                {en.agent.allow(agent.approval.title)}
-              </p>
-            </div>
-            <pre className={styles.agentDetail}>{agent.approval.detail}</pre>
-            <div className={styles.qButtons}>
-              <button
-                className={styles.qSkip}
-                onClick={() => window.threadlight.agentDecide(agent.approval!.id, false)}
-              >
-                {en.agent.deny}
-              </button>
-              <button
-                className={styles.qNext}
-                onClick={() => window.threadlight.agentDecide(agent.approval!.id, true)}
-              >
-                {en.agent.allowButton}
-              </button>
-            </div>
-          </div>
-        )}
-        {!agent.conversationId && agent.requests[0] && (
-          <AgentRequestCard
-            key={agent.requests[0].id}
-            request={agent.requests[0]}
-            count={agent.requests.length}
-          />
-        )}
-        {agent.status === 'interrupted' && (
-          <p className={styles.agentEmpty}>Turn stopped. You can continue this conversation.</p>
-        )}
-        {(agent.error || error) && (
-          <p className={styles.qError} role="alert">
-            {agent.error ?? error}
-          </p>
-        )}
-        {agent.ended && <p className={styles.agentEmpty}>{en.agent.ended}</p>}
-      </div>
-      <div className={styles.agentInput}>
-        <input
-          className={styles.qOther}
-          value={text}
-          placeholder={
-            agent.status === 'idle' && agent.items.length === 0
-              ? en.agent.placeholder
-              : en.agent.followUp
+          tail={
+            <>
+              {!agent.requests.length && agent.approval && (
+                <div className={styles.qCard} data-agent-approval="">
+                  <div className={styles.qHead}>
+                    <p className={`${styles.qText} ${styles.qHeadText}`}>
+                      {en.agent.allow(agent.approval.title)}
+                    </p>
+                  </div>
+                  <pre className={styles.agentDetail}>{agent.approval.detail}</pre>
+                  <div className={styles.qButtons}>
+                    <button
+                      className={styles.qSkip}
+                      onClick={() => client.agentDecide(agent.approval!.id, false)}
+                    >
+                      {en.agent.deny}
+                    </button>
+                    <button
+                      className={styles.qNext}
+                      onClick={() => client.agentDecide(agent.approval!.id, true)}
+                    >
+                      {en.agent.allowButton}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {!agent.conversationId && agent.requests[0] && (
+                <AgentRequestCard
+                  onRespond={client.agentRespond}
+                  key={agent.requests[0].id}
+                  request={agent.requests[0]}
+                  count={agent.requests.length}
+                />
+              )}
+              {agent.status === 'interrupted' && (
+                <p className={styles.agentEmpty}>
+                  Turn stopped. You can continue this conversation.
+                </p>
+              )}
+              {(agent.error || error) && (
+                <p className={styles.qError} role="alert">
+                  {agent.error ?? error}
+                </p>
+              )}
+              {agent.ended && <p className={styles.agentEmpty}>{en.agent.ended}</p>}
+            </>
           }
-          disabled={busy || sending}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') void send()
-          }}
         />
-        {settings && (
-          <kbd className={styles.agentHotkey} title="Microphone shortcut">
-            {acceleratorLabel(settings.talkHotkey)}
-          </kbd>
-        )}
-        {busy && (
+      </div>
+      {agent.live && agent.pendingReadout && (
+        <div className={threadStyles.currentWork}>
+          <span>Opening playback unconfirmed.</span>
           <button
-            className={styles.agentEnd}
-            disabled={agent.status === 'stopping'}
-            onClick={async () => {
-              const result = await window.threadlight.agentInterrupt()
-              setError(result.ok ? null : result.reason)
+            type="button"
+            onClick={() => {
+              const pending = agent.pendingReadout!
+              void window.threadlight
+                .readLiveRemainder(pending.session, pending.token)
+                .then((result) => setError(result.ok ? null : result.reason))
+                .catch(() => setError('Could not request the remaining speech.'))
             }}
           >
-            {agent.status === 'stopping' ? 'Stopping…' : 'Stop'}
+            Read remaining
           </button>
-        )}
-        {(agent.status !== 'idle' || agent.items.length > 0) && (
-          <button
-            className={styles.agentEnd}
-            onClick={() => window.threadlight.agentClose()}
-            title={en.agent.endHint}
-          >
-            {en.agent.end}
-          </button>
-        )}
-      </div>
-      <Earlier
-        current={agent.ended ? null : agent.conversationId}
-        onOpen={(id) => void read(id)}
-        identity={
-          <AgentIdentity
-            provider={provider}
-            model={model}
-            reasoning={reasoning}
-            hasConversation={hasConversation}
-            settings={settings}
-            onError={setError}
+        </div>
+      )}
+      {agent.status === 'working' && !agent.requests.length && !agent.approval && (
+        <div className={threadStyles.currentWork} role="status" aria-label="Current Agent work">
+          <span className={threadStyles.workingMark}>
+            <ElectricMotion label="Agent working" snapshot={{ ...IDLE_MOTION, mode: 'thinking' }} />
+          </span>
+          <span>{agent.progress ?? en.agent.working}</span>
+        </div>
+      )}
+      {(!readingResize || composing) && (
+        <div
+          className={styles.agentInput}
+          id={readingResize ? 'foreground-agent-composer' : undefined}
+        >
+          <ComposerInput
+            inputRef={input}
+            input={{
+              'aria-label': 'Message to Agent',
+              value: text,
+              placeholder: !agent.items.length ? en.agent.placeholder : 'Message…',
+              disabled: sending || finishing,
+              onChange: (e) => setText(e.target.value),
+              onKeyDown: (e) => {
+                if (!readingResize || e.key !== 'Escape') return
+                e.stopPropagation()
+                if (!text) {
+                  setComposing(false)
+                  reply.current?.focus({ preventScroll: true })
+                }
+              },
+            }}
+            sendDisabled={busy || sending}
+            onSend={() => void send()}
           />
-        }
-      />
-    </div>
+          {!readingResize && (
+            <>
+              {readerActions}
+              {voiceButton}
+              {stopButton}
+              {!voiceActive &&
+                !agent.live &&
+                (agent.status !== 'idle' || agent.items.length > 0) && (
+                  <button
+                    className={styles.agentEnd}
+                    disabled={busy || !!agent.requests.length}
+                    onClick={() => client.agentClose()}
+                    title={en.agent.endHint}
+                  >
+                    {en.agent.end}
+                  </button>
+                )}
+            </>
+          )}
+        </div>
+      )}
+      {readingResize && ((pending && !reading) || unread) && (
+        <div className={styles.readerUpdates}>{readerActions}</div>
+      )}
+      {onCloseSettings ? (
+        readingResize && (
+          <AgentReadingGrip log={log} upward={!readingResize.opensDown} resize={resizeReader} />
+        )
+      ) : (
+        <Earlier
+          client={client}
+          current={agent.ended ? null : (client.historyCurrentId?.() ?? agent.conversationId)}
+          onOpen={(id) => void read(id)}
+          identity={identity}
+        />
+      )}
+    </div>,
   )
 }

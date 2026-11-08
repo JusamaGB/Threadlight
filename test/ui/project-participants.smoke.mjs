@@ -14,7 +14,11 @@ export async function checkProjectParticipants(page, memory, spaces, chats, capt
   await view.getByRole('button', { name: 'Create space', exact: true }).click()
   await view.getByRole('tab', { name: 'Chats', exact: true }).click()
   const team = view.getByRole('region', { name: 'Project participants', exact: true })
-  await team.getByText('No participants yet. Connect a chat to begin.', { exact: true }).waitFor()
+  await team
+    .getByText('There are no connected chats. Ask a chat to request if needed.', { exact: true })
+    .waitFor()
+  assert.equal(await team.getByRole('button', { name: 'Connect a chat', exact: true }).count(), 0)
+  assert.equal(await team.getByRole('region', { name: 'Chat requests', exact: true }).count(), 0)
   const spaceId = spaces.store.locations()[0].spaceId
   const pairs = []
   for (const provider of ['claude', 'codex']) {
@@ -24,6 +28,7 @@ export async function checkProjectParticipants(page, memory, spaces, chats, capt
       secret: randomBytes(32).toString('hex'),
       provider,
       label: `Synthetic ${provider}`,
+      spaceId,
     }
     memory.connections.request(request)
     memory.connections.approve(request.id, {
@@ -62,6 +67,7 @@ export async function checkProjectParticipants(page, memory, spaces, chats, capt
   const codex = team
     .locator('article')
     .filter({ has: page.getByRole('heading', { name: 'Synthetic Codex', exact: true }) })
+  await codex.getByText('Capabilities', { exact: true }).click()
   await codex.getByText('Chat reported · 4 capabilities', { exact: true }).click()
   await codex.getByText('Browser automation', { exact: true }).waitFor()
   await capture('project-participants')
@@ -110,7 +116,8 @@ export async function checkProjectParticipants(page, memory, spaces, chats, capt
   await view
     .getByLabel('Message to Agent', { exact: true })
     .fill('Which chat should inspect the browser?')
-  await view.getByRole('button', { name: 'Discuss with Agent', exact: true }).click()
+  await view.getByLabel('Message to Agent', { exact: true }).press('Enter')
+  await view.getByText('Plan and assignments', { exact: true }).click()
   await view.getByRole('button', { name: 'Use latest reply as draft plan', exact: true }).waitFor()
   assert.match(spaces.calls.at(-1), /Browser automation/)
   assert.match(spaces.calls.at(-1), /human review/)
@@ -156,8 +163,11 @@ export async function checkProjectParticipants(page, memory, spaces, chats, capt
   await capture('project-reviewed-handoff')
   await view.getByRole('tab', { name: 'Chats', exact: true }).click()
   memory.connections.reject(pairs[1].id)
-  await team.getByText(/Codex · Reconnect from chat/).waitFor()
-  await capture('project-reconnect')
+  await team
+    .getByRole('heading', { name: 'Synthetic Codex', exact: true })
+    .waitFor({ state: 'hidden' })
+  await team.getByRole('heading', { name: 'Synthetic Claude', exact: true }).waitFor()
+  await capture('project-revoked-chat-removed')
   const overflow = await team.evaluate((el) => el.scrollWidth > el.clientWidth + 1)
   assert.equal(overflow, false, 'participants fit the thin panel')
   console.log(

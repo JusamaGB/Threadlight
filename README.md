@@ -1,368 +1,243 @@
 # Threadlight
 
-A small status dot and mini composer for **Claude and Codex desktop chats** on Windows.
+**Keep your AI work in view without keeping every chat window in front.**
 
-> **Unofficial.** Threadlight is not made by, affiliated with or endorsed by Anthropic or OpenAI.
-> It reads files the Claude app and Claude Code keep on your PC, some of which are
-> undocumented, so a Claude update can break it. See [What it reads](#what-it-reads).
+Threadlight is a compact Windows desktop overlay for following AI chats, replying,
+reviewing code changes and keeping project context together. It lives at the edge
+of your screen and opens into a small, contextual panel when you need it.
 
-> **Status: early development.** Nothing is released yet. This README describes the
-> plan; features are ticked off in [CHANGELOG.md](CHANGELOG.md) as they land.
+**Early source preview · Windows only · MIT licensed**
 
-## Thread communication and workflows
+Visit the [Threadlight website](https://threadlight.jocosewasp4.chatgpt.site/) for an overview,
+a copyable assisted-setup prompt, manual instructions for the public source preview, and answers about compatibility and privacy.
 
-Shared Spaces now has a **Project communication and workflow** view. Configure existing chats as
-roles, select their exact models, enable project DMs, and choose manual, assisted or automatic
-progression. Project DMs, replies, questions, delivery receipts and saved results remain available
-for human review. Brainstorm can propose structured assignments and revise unsent work; the
-scheduler checks accepted dependencies, input versions, workspace conflicts and the project budget.
-
-Delivery is enabled only for verified native capabilities. The tested Codex CLI supports an idle
-resume with native writer exclusion. The tested Claude CLI allowed concurrent writers, so its
-native wakeup is disabled; enrolled Claude chats can exchange messages through their shared inbox
-inside an existing turn. Open desktop-owned and remote delivery are not claimed. Busy verified
-Codex destinations can queue until their native owner releases them. Unknown outcomes require
-review rather than an automatic retry. See [implementation and evidence](docs/validation/THREAD-COMMUNICATION-VALIDATION.md)
-for the precise supported paths and remaining voice acceptance test.
-
-Agent conversations now show background question and result cards inline, using the existing
-request controls. Cards retain their originating chat and exact response identity; several
-workers can wait independently. Active GPT Live sessions announce new events at a native
-conversation pause. Results and speech receipts are saved, and uncertain announcements are
-not replayed. Local STT does not start Live. See the
-[conversation event implementation and validation](docs/specs/CONVERSATION-EVENTS-SPEC.md).
-
-Native questions can be answered in their current cards. To answer a card through the Agent,
-select **Answer through Agent** on that card first, then give an explicit answer. Expired cards,
-replacement questions and peer requests cannot reuse a human decision. Closing the mic does not
-stop background work or reopen GPT Live.
-
-### Hosted Agent application control
-
-The Agent's role is **your Threadlight agent, powered by your selected provider, coordinating
-your Claude and Codex work**. Claude, Codex and live voice receive the same identity instructions.
-The conversation reached through the Agent view or hotkey is distinct from the work chats it
-creates or coordinates. Keeping its history exclusively in Threadlight is the intended behavior;
-provider-session storage isolation is not yet implemented, so CLI execution alone does not
-guarantee that the conversation is absent from provider history.
-
-The foreground Agent receives the same Threadlight page guide and typed application tools with
-Claude or Codex. Ask it to open Shared Spaces, select a known chat or artifact, show an exact
-edit card, or change a supported preference. Navigation waits for the panel to confirm the
-requested view; unsent drafts and Back/Forward history remain available.
-
-Settings changes, named-space creation, native Codex chat creation and restart use the existing
-Agent decision cards. The proposed target and values are shown before a write. Restart remains
-pending until the next application instance confirms startup. These tools belong to the hosted
-foreground Agent, not Shared Spaces workers or the shared-memory plugins. Claude chat creation
-and Claude captured-card diffs are unavailable. See the
-[implementation and validation report](docs/validation/THREADLIGHT-AGENT-CONTROL-VALIDATION.md)
-for supported settings, runtime evidence and remaining limitations.
+This is an independent community project, not an official product of Anthropic,
+OpenAI, Perplexity or Moonshot AI. Some integrations depend on private desktop
+interfaces and can break when those apps update. Expect rough edges and uneven
+provider support; this is not a production-stability promise.
 
 ## What it does
 
-- **A dot in the corner of your screen.** Green when none of your Claude Code sessions
-  is working, pulsing red when one is. It only shows while the Claude app is running.
-- **Click it** and it opens, in the same spot, into a list of your sessions: the ones
-  working now first, then recent ones. Click a session to see its task plan, the step
-  it is on and its last result.
-- **Right-click a session → Compose** to type or speak a message to that thread. It is
-  delivered in the background, without opening the Claude window.
-  ✓ means delivered, ✓✓ means the thread read it and replied.
-- **Hold shortcuts**: hold Control to hide the floating logo and click what's behind
-  it; add Alt for a temporary, unfocused Active preview. Release to restore the normal
-  logo or your already open page. The talk shortcut takes priority over this preview.
-- **Mouse back/forward**: use the mouse's side buttons to navigate pages, nested Shared
-  Spaces, earlier Agent conversations, artifact selections and file diffs.
-- **A talk hotkey** (default `Ctrl+Alt+Q`, press to start and again to stop, or push to
-  talk) works anywhere, even in a game: say _"message docs site, check the build passed"_
-  and Threadlight finds the thread, shows a short countdown you can cancel, and sends. Or
-  turn on Hold, and the message waits for you to click Send.
-- **Settings → Voice target** switches between **Local STT** and **GPT Live**.
-  Local STT transcribes on this PC; **Send text to** chooses **Agent conversation** or
-  **Thread message**. Both destinations support Toggle and Push to talk. Agent Toggle keeps listening between sentences;
-  Push to talk submits when released. Closing the mic keeps the Agent conversation available
-  until End or its inactivity limit. Thread messages use the review/countdown controls.
-  GPT Live uses native audio from the first spoken turn through the Codex Agent and your
-  ChatGPT sign-in. It does not require the local speech model. Its hotkey connects/disconnects
-  the conversation. The hotkey starts connection and microphone setup together; speech is
-  buffered in memory until Live is ready, then sent in order. Nothing is preconnected.
-  Cancellation, connection failure or a 30-second startup limit discards the buffer, with
-  an error on failure. A Claude conversation must be ended and
-  Codex selected before using GPT Live. Changing modes closes the mic and discards pending
-  transcription; it never silently switches engines or changes the Agent provider.
-  In Local STT's Agent destination, navigation commands are also available:
-  Say **“open”**, then pause for one second, to expand and pin the thread list. That
-  microphone session stays in command mode until closed; other speech is ignored.
-  Close and reopen to choose again. Start with ordinary speech instead to send it to
-  the Agent after a pause, keeping the mic open. Busy or failed sends remain visible
-  for retry. The thread composer's mic always stays dictation for that thread.
+- **Follow work:** Active, Recent and Workspace views, provider colours, plans,
+  questions and activity. Click a pinned Active thread to read or reply beneath
+  your current page. Back collapses the thread and keeps your place.
+- **Read and reply:** compact conversations, saved drafts, local dictation and
+  contextual history loading. Ordinary ChatGPT and Perplexity chats sit alongside
+  coding threads in Recent. Replies show code in expanded, copyable cards with
+  language labels and syntax colouring for supported languages. During a GPT Live conversation, a thread composer’s
+  mic takes over for dictation. The floating waveform turns red until Live can
+  hear you again. You can still hear the Agent while dictating.
+- **Review changes:** inspect recorded edits and Git changes with their source and
+  coverage shown. Preview local images, text and self-contained HTML artifacts.
+- **Understand a shared source file.** In a Space’s Handoffs, open a folder and use **Add file** to share a small Python, JavaScript or TypeScript file. Open the attachment and choose **Explain this file**. Brainstorm explains the selected copy, shows how many lines it read, and links its answers to the source. [File review guide](docs/BRAINSTORM-OPERATING-GUIDE.md#explain-a-shared-file)
+- **Keep context together:** Shared Spaces for notes, project discussions and
+  handoffs. Optional plugins connect individual Claude/Codex chats after approval.
+  The foreground Agent can request a new Claude Code or ordinary Perplexity chat
+  in a named Shared Space. Its decision card shows the provider, space, opening
+  message and role before you approve it.
+  Shared-space messaging can also send bounded briefs to ordinary ChatGPT and
+  Perplexity chats and collect their text replies in the sender inbox. See
+  [account-chat messaging and limits](docs/ACCOUNT-CHATS.md#shared-space-messaging).
+- **Explore workflows:** a hosted Agent, Brainstorm and workflow tools are included
+  as experimental features with explicit authorization and documented limitations.
+  Scroll continuously through Agent messages, activity, decisions and source
+  links. Replies display formatting, links, tables and collapsible, copyable code.
 
-Threadlight runs on your PC. Local STT transcribes speech locally; GPT Live sends audio to GPT.
-It has no telemetry or
-external Threadlight service. Shared Spaces exposes authenticated collaboration tools on loopback;
-agent turns still use your provider account.
+## Provider status
 
-### Shared Spaces
+| Provider        | In this preview                                                                                | Still catching up / not included                                                                                            |
+| --------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Codex**       | Coding threads, native messages and questions, activity, changes and queue integration         | Compatibility depends on the installed Windows desktop version; hosted Agent tools differ from desktop-chat tools           |
+| **ChatGPT**     | Ordinary chat history, replies, reported activity and formatted answers                        | Snapshot polling, not token streaming; interactive task cards, complete citations and attachment parity are not implemented |
+| **Perplexity**  | Ordinary chat history/replies, reported activity, sources, plan steps and suggested follow-ups | Computer integration is experimental; credit-backed execution and approval flows do not have full live acceptance           |
+| **Claude Code** | Existing session monitoring, saved-history reading, composer and plugin integration            | Catch-up and renewed live validation are priorities; new-chat creation and ordinary Claude account chats are not available  |
+| **Kimi**        | Development code retained in the repository                                                    | Hidden from the public UI. Runtime integration is being worked on; no usable Kimi execution is claimed                      |
 
-Open **Shared Spaces** (the brain icon in the panel header) and choose a named space.
-The tabs are **Handoffs**, **Chats**, **Notes** and **Brainstorm**. New readable snapshots
-use `notes/`, `plans/`, `handoffs/` and `results/` within the space's workspace folder.
-Existing `ideas/` snapshots and their links remain readable.
+Claude support has not kept pace with the newer Codex work. The preview keeps that
+limitation visible rather than implying feature parity. See [known limitations](docs/LIMITATIONS.md).
 
-Capture a note without calling a model. **Discuss in Brainstorm** starts a separate discussion
-linked to the note; the note remains in Notes. **New discussion** also works in an empty space.
-Each discussion keeps its own saved history, draft and optional linked notes.
+## Run from source
 
-Brainstorm uses the selected Claude or Codex provider with a shared Threadlight planning role
-and skills. It can retrieve saved notes, enrolled chat history, handoffs, results, assignments,
-questions and communication from its own space. Use the comparison controls to explicitly add
-another space for a request. Source references open available evidence; context and search
-results report their limits. Tracking runs when requested, without background model polling.
+In Claude Code, Codex, or an assistant with command access to your Windows PC, paste
+**“Set up https://github.com/JusamaGB/Threadlight on this PC. Read its setup skill,
+ask which providers I use, and verify the installation.”** A browser-only chat can
+walk you through the same commands. Use a durable source folder for the app.
 
-V1 reads, tracks and proposes. Its runtime exposes only the scoped read tools; it cannot send
-messages, dispatch work, answer approvals or control the app. Edit and save a mini plan, choose
-exact existing chats and **Prepare assignments for review** to create unsent task drafts.
-Review and authorise delivery separately in Handoffs. Independently enabled project workflows
-retain their existing controls; Brainstorm proposals do not advance them.
+The [setup skill](skills/setup/SKILL.md) is bundled with both coding plugins.
+The [standalone Perplexity setup skill](perplexity-skill/threadlight-setup/SKILL.md)
+is prepared for Computer accounts with **Plugins → Add custom → Upload plugin or skill**.
+Upload and automatic setup from Perplexity are unverified. A local assistant can read
+the setup instructions directly from a checkout that includes them.
 
-See the [implementation spec](docs/specs/SHARED-SPACES-BRAINSTORM-SPEC.md) and
-[validation and limits](docs/validation/SHARED-SPACES-BRAINSTORM-VALIDATION.md).
+There is no signed installer or automatic updater in this preview.
 
-Setup creates the workspace's collaboration space. In **Handoffs**, add named sectors/folders
-for notes, decisions, scratchpads, images and documents. The map, folder, item and task
-views stay inside the 300-pixel panel. Map/List, search, Back and saved drafts
-let you browse without starting agent work.
-
-Existing material stays **Unassigned** until you explicitly preview and confirm its
-workspace assignment. Readable Markdown snapshots retain stable document IDs and
-earlier versions. External edits are preserved and reported as conflicts. Brainstorms,
-assignments and late results keep their original workspace even when you switch views.
-Setup and destination checks also run in the main process before work can be dispatched.
-
-**Claude and Codex plugins** include shared-memory tools and a common workflow skill.
-Ask an installed plugin to connect this chat to Threadlight. It shows a verification
-code; match it under **Shared Spaces → Handoffs → choose a space → Agent access**, then choose
-the folder scope and permissions. Read-only is the default. Each chat uses its own
-connection ID; installation does not grant access to all memory. Connections expire
-after eight hours and need renewed approval after an app or bridge restart.
-
-**Agent access** also creates enrollments for background assignments. Advanced users
-can still copy a manual MCP configuration. A capability identifies an enrollment,
-not a verified native chat identity. See [plugin setup](docs/SHARED-MEMORY.md#plugin-setup)
-for installation, updates and reconnecting existing chats.
-
-**Delegate** creates a draft task with exact input versions and an output folder.
-Review and authorise it, then permit dispatch in **Coordination**. Live chats wait;
-closed idle chats use the existing background relay with temporary scoped tools.
-Saved results are submitted separately from human acceptance. Automatic coordination
-requires explicit permissions and is bounded by persisted time/turn limits, two
-concurrent destinations and causal-loop checks. Pausing stops new dispatches.
-
-See [SHARED-MEMORY.md](docs/SHARED-MEMORY.md) for access, recovery, backup and verification details.
-
-## Requirements
-
-### Hosted Agent
-
-Open **Settings → Agent → Provider** to choose Claude or Codex. The Agent works
-independently of the Applications monitoring toggles, including when both are off.
-Codex requires a signed-in native Codex CLI; Claude is not required for a Codex Agent.
-
-Codex models and reasoning choices come from the installed runtime and load when
-Agent settings opens. Select **Show additional models** to see hidden entries.
-Availability still depends on your account. Model and connected-app choices apply
-to new conversations; an existing or continued conversation keeps its selection.
-Claude retains its Haiku conversation model and Opus/Sonnet worker.
-
-The Agent streams replies, displays questions and approval cards, and keeps earlier
-conversations under **Earlier**. **Stop** interrupts the current turn; **End** closes
-the conversation. Continue resumes its original provider and model. An uncertain
-send is retained for recovery and is never automatically sent again.
-
-The same Agent conversation is reused until **Conversation lasts** expires (60 minutes
-after the last reply by default) or you choose **End**. For Codex, ending also archives
-the underlying thread. Its saved conversation stays in **Earlier**, outside the
-workspace thread lists; **Continue** restores that same thread. Closing the mic does
-not end the Agent conversation. Failed archive cleanup is saved for retry on startup.
-
-Configured Codex MCP servers require permission for each tool call. Desktop-only
-plugins and connectors are shown as unavailable until their permissions and
-execution support can be verified. Codex Agent conversations use their own runtime
-connection and are excluded from the monitored chat list. See the
-[implementation specification](docs/specs/AGENT-CODEX-SPEC.md) and
-[validation record](docs/validation/AGENT-CODEX-VALIDATION.md) for compatibility and test coverage.
-
-### Show one application or both
-
-**Settings → Applications** has independent **Claude** and **Codex** toggles. Enable
-both for one list, ordered by working/waiting state and then recent activity. Each
-row has a subtle right-edge tint (Codex blue, Claude orange); hovering identifies
-the application, and the composer's header fades down in its destination's colour. The time window and session
-limit apply to the combined recent list; workspace groups stay separate and are
-labelled with their application, even when they share a folder.
-
-Upgrading preserves the application you had selected. New installs keep Claude on
-and Codex off until changed. Your choices are saved, with separate workspace
-selections for Claude, Codex and the combined view.
-
-Both off pauses chat monitoring. The dimmed dot and Settings remain accessible.
-Disabling an application releases its held cards and prevents new background sends;
-already accepted work continues. Composer drafts are saved in Threadlight's own
-local recovery store and restored after restart; pending answer cards remain in
-memory. Changing the toggles cancels any voice-send countdown.
-
-An open Codex chat currently shows **Copy and open Codex** explicitly. This copies
-your draft and opens its destination for you to paste; it does not submit it.
-Enter and voice countdowns never trigger that fallback. Delivery into the existing
-desktop runtime remains gated on the connection proof in the
-[completion roadmap](docs/specs/CODEX-INTEGRATION-SPEC.md#28-selected-desktop-chat-messaging-completion-roadmap).
-
-### Installed applications
-
-Use Windows x64 (Windows 10 version 1803 or later, or Windows 11), curl.exe and Node.js 22.16 or later. Choose Codex Desktop with its native CLI, Claude Desktop with Claude Code, or both. A Codex-only installation requires no Claude software or configuration.
-
-## Install
-
-Paste the repository link into an AI that can run commands on your Windows PC and ask it to set up Threadlight for your provider. The project includes [setup instructions](skills/setup/SKILL.md). If your chat runs in the cloud, run these commands yourself.
-
-Clone the repository or extract its source ZIP into a folder you intend to keep. From that folder, for Codex alone, run:
+You need **Windows x64**, **Node.js 22.16 or later**, Git, and access to the provider
+apps you want to use. Install and sign in to those apps separately. Claude and
+hosted Agent features may also require the corresponding signed-in CLI. You can
+use Codex without installing Claude.
 
 ```powershell
-node scripts/install.mjs --check --providers codex
+git clone https://github.com/JusamaGB/Threadlight.git
+cd Threadlight
 node scripts/install.mjs --providers codex
-node scripts/install.mjs --check --providers codex
 ```
 
-The first check may report missing packages, build output or plugin registration. Setup installs dependencies, builds and starts Threadlight, registers its local Codex plugin and saves Codex as the application and Agent provider. Sign in through Codex, review its hooks in `/hooks`, and open a new local chat. Choose `--providers claude` or `--providers claude,codex` to install those integrations. Omitting the flag retains the original Claude setup.
+Choose `claude`, `codex`, `perplexity`, or a comma-separated combination.
+Setup builds and launches the overlay and installs the selected coding plugins.
+On first installation it selects those providers in Settings. With existing
+settings, review **Providers shown** and **Chat providers shown** in the app.
+Run `node scripts/install.mjs --check --providers codex` with your list for
+diagnostics. Review hook trust and sign-in in the provider app. Shared memory
+requires approving the intended chat and space in Threadlight. The manual
+build route is `npm ci`, `npm run build`, then `npm start`.
 
-Use `node scripts/install.mjs --help` for preferences, including the talk hotkey and launch at sign-in. To remove the installation, run `node scripts/install.mjs --uninstall`. It removes the integrations recorded by this installer and keeps saved data by default.
+If a manual build succeeds but Electron is missing, run the source setup command
+above with your providers. It verifies the Windows runtime archive against the
+checksum supplied by the installed Electron package and extracts it with Windows tar.
 
-The local voice model downloads on first use after confirmation.
+Open Settings from the panel or tray. Choose **Providers shown** and **Chat
+providers shown**, then select Active, Recent or Workspace. The footer identifies failed chat operations. An amber **Chat list** light means automatic list refresh paused after a rate limit. ChatGPT checks the list at startup and then at most once a minute while the list is on screen. Repeated limits space retries farther apart. Choose **Copy diagnostics** to capture the failure category and timestamps. ChatGPT account-chat
+access currently requires a compatible Codex desktop installation and an existing
+local Codex chat; it is not a standalone API integration.
 
-### Thread artifacts
+For hooks and shared memory, follow [Claude/shared-memory setup](docs/SHARED-MEMORY.md)
+and [Codex plugin setup](codex-plugin/README.md). Upgrade the app and its plugin
+packages together. Installing a plugin does not grant a chat access to project data.
 
-The existing thread status and expanded **Now** line show **Compacting context**
-while the provider explicitly reports compaction. Codex uses the active turn's
-unfinished compaction item in its local history; older history schemas without
-start/completion metadata cannot supply this cue. Claude uses its
-[PreCompact/PostCompact hooks](https://code.claude.com/docs/en/hooks#precompact).
-Normal progress returns when compaction finishes or work resumes. Claude sessions
-must load the updated Threadlight plugin hooks to report these events.
+- [Account chat setup and compatibility](docs/ACCOUNT-CHATS.md)
+- [Perplexity ordinary chats and Computer limitations](docs/PERPLEXITY.md)
+- [Detailed feature guide](docs/FEATURES.md)
+- [Workflows](docs/WORKFLOWS.md)
 
-Active, Recent and Workspace share the current in-memory snapshot. Workspace rows
-stay warm while another view is open, and background polls publish Claude and Codex
-together. Initial history loading is still bounded; very large or newly selected
-workspaces can fill in over subsequent scans.
+## Privacy and control
 
-Artifact chips and the viewer share a metadata cache across view changes. Visible
-threads are checked about every three seconds; hidden thread references warm in
-small background batches. File contents are read only when opened or refreshed;
-preloading does not create saved copies or run interactive artifacts.
+Threadlight runs locally and has no Threadlight account, telemetry service or
+hosted backend. **Provider requests are not offline:** replies, hosted Agent work,
+Perplexity Computer and GPT Live use your provider accounts and their services.
+Local speech transcription stays on your computer after the model download.
+During Codex GPT Live on Windows, ask “which app is this?” or ask for help with
+the window in front while you speak. To share a picture, **hold Ctrl, right-drag
+over the region, then release Ctrl**. Mouse-up fixes the outline. Ctrl-up sends
+it to the same Agent, even without a spoken question. Escape cancels the outline.
+The Agent uses the crop to answer your question. If your intent is unclear,
+it explains an unmistakable visible issue or briefly asks what you want help with.
+In **Settings → Voice → Screen regions**, choose **In Live**, **Outside Live**,
+both or neither. Outside Live starts a fresh Agent conversation and keeps the
+previous one in Earlier. Identical captures share one delivery while pending and
+for five seconds after acceptance. A different image can be sent immediately.
+Retired standalone Codex crops are archived and can be reopened in Earlier.
+**Speak reply** uses the GPT Live voice for Codex and
+the Windows voice for Claude. Your microphone stays closed. Outside Live is
+opt-in on new installations.
 
-Right-click a thread and choose **Artifacts…** to open a square viewer in the panel.
-The small chips centered on the Artifacts header divider jump directly to a file;
-hover for its name. The arrows cycle backward/forward and wrap at either end.
-The selected chip stays visible in long lists. The preview fills the panel without an inner frame;
-refresh, save-copy and link-file icons live in the header, with file details and action help below.
-Threadlight discovers local files explicitly attached or linked in that thread's
-Claude Code or Codex transcript. It reads the originals in place, without copying
-them or changing provider data. Discovery continues in bounded batches and the viewer
-reports incomplete scans. It retains the 200 most recently presented references.
-**Link file…** adds a reference to another local file; **Refresh** rereads the selected
-original. **Keep a copy** explicitly saves a snapshot under the thread (up to 20 saved
-copies). Existing saved copies remain available. If an original moves or is deleted,
-its reference reports that it is unavailable.
+After a screen region or foreground Live conversation, click the glowing Agent
+diamond beside Settings to return to that conversation. A current Agent input
+request pulses white and activates the floating drips while the panel and
+microphone are closed. Completed replies keep a quiet shortcut for 24 hours.
 
-The viewer supports PNG, JPEG, WebP, UTF-8 text/Markdown (displayed as text),
-and self-contained HTML, up to 5 MiB each.
-HTML opens in an isolated interactive preview: inline JavaScript, buttons, sliders,
-canvas and animations work. The preview has no Threadlight bridge, Node access,
-filesystem access or external resources. WebRTC, workers, popups and persistent browser
-storage are unavailable. Navigation away from the page falls back to a static preview;
-Refresh reopens the original. Escape returns to the thread list. JSX/TSX remains source
-text; external libraries, sibling assets and cloud runtimes are not included yet.
-Recognized PDF, Office and media files appear as references
-but cannot yet be previewed. Cloud-only artifacts and remote URLs are outside this
-local implementation. Automatic references are restricted to the thread's workspace,
-local temporary directory and Codex visualization directory.
+A Smart Thread waiting for input opens at its question or approval card above
+the composer. Scroll up within the reader to see the conversation that led to it.
+For a native Codex question, **×** dismisses that question in Threadlight. Use
+**Stop ignoring** in the thread menu to restore it. Codex keeps control of the
+answer. Threadlight clears the card when Codex confirms the matching answers
+or ends the turn. A voice transcript alone can leave the card pending.
+Over a code block or recorded text file, use **Shift+wheel** to scroll sideways,
+or hold **Ctrl** and left-drag to pan in either direction. Right-click its header
+(or press **Shift+F10**) and choose **Pin**. Each pinned file folds independently.
+Hover or focus its header for the full name and source details in the footer.
+Unnamed snippets show their first line. Drag the reference’s lower edge to resize
+it, or focus the edge and press **Up** or **Down**. A detached reference anchored
+at the bottom resizes from its upper edge. The spinning logo stays clickable.
+Right-click an entry for **Previous version** or **Next version**. Copy uses the
+version on screen. **Unpin** removes that entry and its saved versions.
 
-Threads with artifacts show a thin checker strip below the title and Now text: each tile is one
-artifact, with an overflow tile when needed. Hover for its name; click or focus and
-press Enter to open that artifact directly. Every thread reserves the same compact
-third line, so containers stay the same height with or without artifacts. Artifacts
-use dual width without changing the saved layout.
-See [the reference specification](docs/specs/ARTIFACT-REFERENCES-SPEC.md).
+To discuss a pin, click inside it and ask the foreground Agent, “Explain my
+selected pinned code.” You can also ask it to append to or replace the latest
+pinned copy. Review the change in the Agent decision card. Your editor and
+source file keep their contents.
 
-### Startup
+With Codex as the Agent provider and **Ctrl+Alt+Q** configured as the Talk shortcut, press it for spoken replies even when Local STT is selected. Press it again to stop. In an expanded Smart Thread, select reply text and right-click for **Copy**, press **Ctrl+C**, or open the Copy menu with **Shift+F10**.
+Open **Settings → Hotkeys** to see or change the Talk binding and browse Threadlight
+shortcuts and VS Code companion defaults. During an Agent or Brainstorm call,
+press **Pause/Break** or **Ctrl+Alt+M** to mute or unmute the microphone from any
+window. Use the keyboard's Pause function (some keyboards require Fn), or the
+microphone button if a shortcut is unavailable. The speaker button mutes playback independently. **Stop speaking**
+silences the current reply. **End call** disconnects voice and keeps the current chat
+available for typing or another call. The pencil sits beside the call controls during an Agent call. It toggles the reply box and keeps your draft. The new-chat icon starts fresh, and the bin closes the conversation and keeps it in Earlier. Both wait for active work and decisions. Hover over the floating waveform for half a second to open the call centered on it, or drag it to move the pill and its reply together. Right-click anywhere on the pill, or focus it and press **Shift+F10**, to pause or resume listening, stop an audible reply, or hang up. The waveform follows audible speech. A separate
+working mark in the Agent and travelling blue marks around the floating pill
+show when a task is running.
 
-In **Settings → App**, **Launch at sign-in** starts a small hidden launcher with
-Windows. Nothing opens until Claude or Codex opens; then Threadlight shows its dot
-within a few seconds. If either app is already open at sign-in, Threadlight starts
-straight away. This is the only startup setting.
-The launcher also starts immediately when you enable the setting; no sign-out is
-needed. It watches both apps independently of the chat monitoring toggles.
-Background CLI workers and the separate ChatGPT app do not trigger it.
+Open **Audio received** to read or copy the original voice delegation. Use
+**Reply** at the top of the Agent to open the message composer at the bottom, or
+use the green phone beside it to speak in the same chat. **New updates** returns to the latest message and **Needs input**
+takes you to a pending decision.
+Unanswered Agent questions and approvals appear below the latest message.
+Answered cards return to their place in history with the recorded response.
+If the original message is off-page, **Load earlier messages** in Earlier shows
+it when available. **Saved cards** keeps decisions readable when their position is unknown.
+Hover over the waveform or focus it and press **Enter** to return to the ongoing conversation. Moving away can collapse the panel while the call continues; other pages offer **Return to call**.
+Open the gear immediately left of **Back** for Agent settings and **Earlier** conversations. Enable **Show spoken replies in waveform pill** to follow the latest Agent reply while a GPT Live call is collapsed. The waveform centers the caption and widens as the words arrive, up to 296px before wrapping. Linked code stays left-aligned beneath it. A requested example can appear when its backing answer arrives, and a follow-up can refer to that same example without reopening the panel. Use the × to dismiss just that reply. The next reply opens automatically. The setting is off by default.
+Smart Thread and Agent use the same assistant reply text size and line spacing. Use the two-card Copy icon on a code block to copy its contents. A pinned block copies the version on screen. Drag the grip below the conversation to resize the reading area,
+or focus it and use the arrow keys. Threadlight remembers the height.
 
-Quitting Threadlight leaves it closed until another desktop app opens. Turning
-**Launch at sign-in** off stops the launcher and removes the sign-in entry.
-Uninstall also disables the launcher. It runs under your Windows account without a window or
-tray icon; it polls locally every two seconds and sends no data anywhere.
+For delegated answers, GPT Live can speak a complete opening sentence while the
+Agent continues writing. When Live confirms that opening finished, it can speak the
+remaining prose once. If playback is uncertain, choose **Read remaining** in the
+Agent. Expand **Spoken reply** beneath the written answer to read the actual caption.
+The full answer and code stay in the thread. A spoken request has one
+**Audio received** disclosure for its delegation records. A working indicator
+stays below the conversation while the Agent is waiting on the editor. [Timing and validation](docs/validation/AGENT-CONTINUOUS-LIVE.md)
 
-## What it reads
+In **Agent Settings → Voice pace**, choose Slower, Slightly slower, Normal, Slightly faster or Faster. The choice applies to the next call or spoken screen reply. GPT Live uses a speaking-style instruction and Windows screen replies use the synthesizer’s rate. Normal is the default.
 
-### Codex
+GPT Live gives a brief cue once the microphone and connection are ready; speaker mute silences it. Opening the call still buffers early speech while the native session connects.
 
-Enable **Settings → Applications → Codex** for local Codex chats. Leave Claude on
-to see both together; drafts remain with their chat. Read
-[Codex setup and behavior](codex-plugin/README.md) for plugin installation and trust,
-live-chat copy-and-open, held questions/approvals, and compatibility limits.
-Codex users need the signed-in Codex desktop app and native CLI instead of Claude.
+For optional code coaching, install the [VS Code desktop companion](vscode-coach/README.md).
+Run **Threadlight: Start Live Coaching** in the editor window you want to share.
+Ask foreground GPT Live “Review the whole file I have open and tell me what looks wrong, if anything.”
+It reads the active text tab, including unsaved edits, without a selection or screenshot.
+The review supports up to 32,768 UTF-16 units and leaves the file untouched.
+After upgrading the companion, reload the connected VS Code window and run
+**Threadlight: Start Live Coaching** again to activate the installed version.
+Place the cursor near your code, start foreground GPT Live and ask for a walkthrough.
+Findings start with a verified line number where available and a brief explanation.
+Ask “Could you show me one step at a time?” to walk through the issue just discussed.
+Typing clears the old highlight quietly. With a companion that supports verified guide edits, a step with one declared exact target line requests a fresh source check when that line matches. For open-ended steps or partial edits, say “I’m done,” “check this,” or “what’s next?” to have the coach check your work. **Next step** and **Refresh guide** are also available. **Finish guide** closes
+the last step and confirms completion in Live. To practise typing the next
+line, ask “Could you fill that line for me?” **Trace** places ghost text at a
+verified insertion point without requiring a selection. Type along, use Tab
+to indent, or press Esc to dismiss it. Companion 0.6.2 stops explicitly retriggering the inline-suggestion sound as you type. VS Code’s own accessibility preferences still control suggestion cues. When ready, say “I’m done, let’s move
+on” for a fresh check of your code. Ask “There are issues in my file; show me the inline diffs.” Coach reads the active
+buffer and brings each proposed change into view. You can type your own fix, press
+Tab to accept, Alt+] to see the next, Alt+Backspace to skip, or Esc to dismiss.
+Each accepted proposal or dependent group is one Undo. Ask for a spoken explanation
+while the change is visible. Selecting a range and asking for alternatives still
+supports ← / → to cycle versions. With companion 0.6.1 or newer, choose **Settings → VS Code → Automatic Python suggestions → On** in Threadlight, or ask the Agent “Turn on automatic Python suggestions.” Trusted Python editors then offer ghost text and related edits whenever you open them, even with Threadlight closed. The default **VS Code setting** follows the editor checkbox. Ask for a **separate diff**
+to compare read-only snapshots, including unsaved edits.
 
-Codex rows show the current numbered step when Codex has emitted a tracked plan.
-Expanded chats also show proposed plans from plan mode, formatted separately from
-completed/in-progress steps. Plans stay visible above waiting question cards.
-Ordinary replies are not converted into invented checklists.
+The app reads local chat metadata/history and talks to installed provider apps.
+Drafts, settings and recovery records are stored locally. Shared Spaces contain
+context you explicitly publish; connected chats need your approval. Screenshots,
+logs and exported project data can contain private information, so review them
+before sharing an issue.
 
-The separate blue usage line shows Codex's **weekly** account quota, read from local
-session reports. Hover for the percentage, reset time and when Codex last reported it.
-It updates as Codex records usage; Threadlight makes no probe requests. Missing or
-expired reports show an unavailable line rather than 0%. Claude keeps its own bar
-and window selection; with both applications enabled, the two lines are stacked.
+Read [Privacy](PRIVACY.md), [Security](SECURITY.md) and the
+[local IPC model](docs/security/LOCAL-IPC.md) before enabling advanced integrations.
+Existing subscriptions, credits and provider terms still apply.
 
-### Claude
+## Development and feedback
 
-All read-only, all on your PC:
+```powershell
+npm run dev
+npm run check
+npm run build
+```
 
-| What                                           | Where                                    | Documented by Anthropic? |
-| ---------------------------------------------- | ---------------------------------------- | ------------------------ |
-| Session activity from Claude Code hooks        | sent to Threadlight on `127.0.0.1`       | Yes                      |
-| Session transcripts                            | `%USERPROFILE%\.claude\projects\`        | No                       |
-| Claude app thread list (titles, archived flag) | `%APPDATA%\Claude\claude-code-sessions\` | No                       |
+Read [Contributing](CONTRIBUTING.md) for the architecture, focused UI tests and
+plugin packaging. The public preview is a starting point for feedback, especially
+around installation, provider compatibility, accessibility and compact UI behaviour.
+Please include your Windows/provider versions and a minimal reproduction, with
+private chat content removed. Report security issues privately as described in
+[SECURITY.md](SECURITY.md).
 
-Sending a message runs your own `claude` CLI (`claude --resume <session> -p "…"`),
-with that thread's own permission mode. Threadlight never sends to a thread the Claude
-app currently has open, and voice sends always count down first so you can cancel.
-
-## Development
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Licence
-
-[MIT](LICENSE) © 2026 Julius Deane. Third-party notices are in [NOTICE](NOTICE).
-
-### Claude runtime wakeup preview
-
-An enrolled Claude chat can now opt in with `memory_enable_wakeup`. Threadlight
-registers the existing runtime, sends inbox notifications, and records a durable
-recipient claim followed by an explicit completion acknowledgement. Duplicate
-wakeups cannot grant a second execution. Native credentials remain private to
-the bridge and application memory. `memory_disable_wakeup` revokes registration.
-
-Automatic delivery remains release-gated pending a real Claude Desktop
-conversation test on **Wednesday, 28 October 2026**. The local test switch
-`THREADLIGHT_CLAUDE_WAKEUP_TEST=1` admits only the already-probed runtime hash; it
-is for acceptance testing. It does not admit competing CLI resumes or closed
-Desktop chats. See the Wednesday checklist in
-[communication validation](docs/validation/THREAD-COMMUNICATION-VALIDATION.md).
+[Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md) · [MIT license](LICENSE)

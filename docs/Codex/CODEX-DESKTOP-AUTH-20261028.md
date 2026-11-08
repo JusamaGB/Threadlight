@@ -22,7 +22,7 @@ submission across restarts. An uncertain result preserves the draft and blocks
 automatic retries.
 
 Live proof on desktop **26.1023.6123.0** used the authorized disposable chat
-`eca91ec8-c3fc-5f90-ae47-2251ba237c1f`. The production service delivered both
+`REDACTED-NATIVE-ID`. The production service delivered both
 `Green sample` and `Free text reaches the same turn.` in **171 ms**. Read-only
 history verified one native answer in the original active turn, and the waiting
 agent acknowledged both answers. A second submission was blocked.
@@ -31,7 +31,8 @@ Implementation: [native question service](../../src/main/codex/nativeQuestions.t
 [desktop connection](../../src/main/codex/desktopConnection.ts), and
 [card UI](../../src/renderer/panel/CodexQuestionCard.tsx).
 The opt-in [live proof](../../test/live/codex-native-answer.proof.mjs) is restricted
-to that disposable chat and two exact test questions. Focused unit checks passed
+to an explicitly authorised disposable chat supplied through
+`THREADLIGHT_NATIVE_TEST_CHAT` and two exact test questions. Focused unit checks passed
 (31 tests across native questions, Codex tracking and compaction), as did the
 isolated renderer smoke test, typecheck, lint and production build. Renderer
 interaction and live provider delivery were tested separately.
@@ -154,7 +155,7 @@ of Shared Spaces. Managed questions are not the implementation of that requireme
 ## Follow-up: real desktop asynchronous cards
 
 The user authorized a disposable desktop chat for fresh native-card tests:
-`eca91ec8-c3fc-5f90-ae47-2251ba237c1f`. Claude hooks and messaging were not changed.
+`REDACTED-NATIVE-ID`. Claude hooks and messaging were not changed.
 
 Read-only inspection of this desktop build distinguishes two mechanisms:
 
@@ -169,7 +170,7 @@ establish whether asynchronous desktop answers can be delivered another way.
 
 The installed CLI's documented `codex queue` command was tested with an exact native
 question-reply envelope, using only the disposable chat. The CLI reported successful
-queueing of message `ffdf4285-5428-58ae-91a8-dc00f3a8aa7b` at 13:43:37 London time.
+queueing of message `REDACTED-NATIVE-ID` at 13:43:37 London time.
 The running test agent continued waiting and reported a timeout at 13:45:58. The
 queued answer then began a **new turn** at 13:45:59, which acknowledged `Blue sample`.
 History confirmed the exact question ID and answer were retained. This proves eventual

@@ -1,5 +1,37 @@
 # Thread-specific changes
 
+> Public copy: local proof paths and native identifiers are generalised; raw evidence remains private.
+
+## Current contract (29 October 2026)
+
+The local change tracking specification supersedes the historical behaviour below:
+see `LOCAL-CHANGE-TRACKING-SPEC.md`, including the review amendments in section 24,
+and `../validation/LOCAL-CHANGE-TRACKING-VALIDATION.md` for implementation status.
+
+Thread diff now projects supported recorded edits onto the current net comparison.
+Git current compares HEAD to working files, staged compares HEAD to index, and
+unstaged compares index to working files. The staged/working union described in
+the historical section is no longer used. A working reversal can therefore show
+zero current changes while staged activity remains separately visible.
+
+Partial results remain visible even with zero known lines. They do not prove that
+the folder is unchanged or that all edits by this chat were observed. Nonempty
+thread attribution is currently limited to available recorded operations.
+Folder comparisons remain independently available. Ordinary folders can use an
+explicitly enabled, durable baseline; pausing recording retains that baseline.
+
+Recorded edits in multiple roots are grouped explicitly. File actions retain both
+root and captured revision. Git mode and local-history controls select a published
+root; renderer and Agent callers cannot supply arbitrary filesystem roots.
+Card diffs remain historical operation evidence and are not summed into current
+thread or folder totals.
+
+The following sections retain the earlier design and validation history. Claims
+about staged unions, hidden zero-file badges, Git-only entry, first-root exclusion
+and the deferred investigation are superseded by the contract above.
+
+## Historical implementation
+
 The row's diff badge, hover, heading, file list and opened patch all describe the
 same provider-qualified chat. They show only current uncommitted Git changes that
 match that thread's recorded edits. Committing those changes clears the badge on
@@ -132,7 +164,7 @@ background load and the displayed worktrees affect the remaining counts. A direc
 reader measurement returned branch metadata in 4 ms and full counts in 337 ms.
 These are local observations, not cross-machine latency guarantees. Evidence:
 `C:/proof-temp/threadlight-git-latency-startup.json`; production UI screenshots:
-`C:/Example/threadlight-e2e/git-latency`.
+`C:/dev/threadlight-e2e/git-latency`.
 
 ## Follow-up: unexplained unattributed edits (26 October 2026)
 

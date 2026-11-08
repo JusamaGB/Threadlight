@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import type { Attention } from '../../shared/types'
 import { useDraft } from '../lib/drafts'
+import { AnswerComposer } from '../composer/AnswerComposer'
 import styles from './CodexQuestionCard.module.css'
 
 export function ManagedQuestionCard({
@@ -15,13 +16,14 @@ export function ManagedQuestionCard({
   const key = `managed:${request.id}:${request.generation}`
   const [answer, setAnswer] = useDraft(`${key}:answer`, '')
   const [busy, setBusy] = useState(false)
+  const [dictating, setDictating] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
   const inFlight = useRef(false)
   const operation = useRef<{ payload: string; id: string } | null>(null)
   const [expired, setExpired] = useState(false)
   async function send(cancel = false) {
-    if (inFlight.current || done) return
+    if (inFlight.current || done || (!cancel && dictating)) return
     if (!attention.answerableUntil || Date.now() >= attention.answerableUntil) {
       setExpired(true)
       return
@@ -92,23 +94,16 @@ export function ManagedQuestionCard({
         ))}
       </div>
       {(request.allowOther || !question.options.length) && (
-        <div className={styles.response}>
-          <textarea
-            aria-label="Your answer"
-            placeholder="Or write your own response"
-            maxLength={16000}
-            rows={1}
-            value={answer}
-            disabled={busy || done || expired}
-            onChange={(event) => setAnswer(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.ctrlKey && event.key === 'Enter') {
-                event.preventDefault()
-                void send()
-              }
-            }}
-          />
-        </div>
+        <AnswerComposer
+          id={key}
+          label="Your answer"
+          maxLength={16000}
+          value={answer}
+          disabled={busy || done || expired}
+          onChange={setAnswer}
+          onSend={() => void send()}
+          onActivityChange={setDictating}
+        />
       )}
       {error && <p role="alert">{error}</p>}
       <div className={styles.footer}>
@@ -124,7 +119,7 @@ export function ManagedQuestionCard({
         </button>
         <button
           className={styles.submit}
-          disabled={busy || done || expired || !answer.trim()}
+          disabled={busy || done || expired || dictating || !answer.trim()}
           onClick={() => void send()}
         >
           {busy ? 'Sending…' : 'Send answer'}

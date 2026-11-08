@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { NativeCodexMessages } from '../src/main/codex/nativeMessages'
 import type { DesktopConnection } from '../src/main/codex/desktopConnection'
+import { CodexQueue } from '../src/main/codex/queue'
+import type { CodexTransport } from '../src/main/agent/codexClient'
 
 const id = '11111111-1111-4111-8111-111111111111',
   key = `codex:${id}`
@@ -114,14 +116,14 @@ it('does not mistake missing history for an empty chat', async () => {
   db.exec('DELETE FROM thread_turns')
   const { service, connection } = fixture()
   expect((await service.send(key, 'First message')).ok).toBe(false)
-  expect(connection.request).toHaveBeenCalledTimes(1)
+  expect(connection.request).not.toHaveBeenCalled()
   expect(service.list()).toEqual([])
 })
 it('retains the draft when the empty-chat projection cannot be read', async () => {
   db.exec('DELETE FROM thread_turns; DROP TABLE thread_history_projection_state')
   const { service, connection } = fixture()
   expect((await service.send(key, 'First message')).ok).toBe(false)
-  expect(connection.request).toHaveBeenCalledTimes(1)
+  expect(connection.request).not.toHaveBeenCalled()
 })
 it('rejects invalid targets and messages before connecting', async () => {
   const { service, connect } = fixture()
@@ -239,4 +241,102 @@ it('does not deduplicate a new attachment against an acknowledged uncertain mess
   )
   expect((await service.send(key, 'Look', [{ ...file, id: 'second' }])).ok).toBe(false)
   expect(connection.request).toHaveBeenCalledTimes(4)
+})
+
+function composerFixture(native = fixture()) {
+  const entries: Record<string, unknown>[] = []
+  const request = vi.fn(async (method: string, params: Record<string, unknown>) => {
+    if (method === 'thread/queue/list') return { data: entries }
+    if (method !== 'thread/queue/add') throw Error('Unexpected queue operation')
+    const entry = { ...params, id: crypto.randomUUID() }
+    entries.push(entry)
+    return { queuedSubmission: entry }
+  })
+  const connect = vi.fn(async () => ({ request, close: vi.fn() }) as unknown as CodexTransport)
+  const queue = new CodexQueue(connect, join(root, 'queue-receipts'), history)
+  const send = (text: string, files: Parameters<NativeCodexMessages['send']>[2] = []) =>
+    queue.add(key, text, files, () => native.service.send(key, text, files, 'send'))
+  return { native, entries, request, connect, send }
+}
+
+it('automatically sends idle chats directly without even connecting to the queue', async () => {
+  const f = composerFixture()
+  expect(await f.send('Send now')).toEqual({ ok: true })
+  expect(f.native.connection.request).toHaveBeenLastCalledWith(
+    'thread-follower-start-turn',
+    expect.objectContaining({ conversationId: id }),
+    2,
+    'owner',
+  )
+  expect(f.connect).not.toHaveBeenCalled()
+})
+
+it('automatically sends the first message in a confirmed empty chat directly', async () => {
+  db.exec('DELETE FROM thread_turns')
+  db.prepare('INSERT INTO thread_history_projection_state VALUES (?)').run(id)
+  const f = composerFixture()
+  expect(await f.send('First message')).toEqual({ ok: true })
+  expect(f.native.service.list()[0]?.state).toBe('sent')
+  expect(f.connect).not.toHaveBeenCalled()
+})
+
+it.each(['inProgress', 'in_progress'])(
+  'queues active %s turns with attachments without steering',
+  async (status) => {
+    db.prepare('UPDATE thread_turns SET status=?').run(status)
+    const f = composerFixture()
+    const image = {
+      id: 'image',
+      name: 'photo.png',
+      path: 'C:/photo.png',
+      size: 10,
+      kind: 'image' as const,
+    }
+    expect(await f.send('Next', [image])).toEqual({ ok: true })
+    expect(f.entries).toHaveLength(1)
+    expect(f.entries[0]!.input).toContainEqual({ type: 'localImage', path: image.path })
+    expect(f.native.connect).not.toHaveBeenCalled()
+    // The same composer must resume direct sending once the active turn completes.
+    db.exec("UPDATE thread_turns SET status='completed'")
+    expect(await f.send('Now send directly')).toEqual({ ok: true })
+    expect(f.entries).toHaveLength(1)
+    expect(f.native.service.list()[0]?.state).toBe('sent')
+  },
+)
+
+it('retains the draft when history or the desktop owner is unavailable instead of queueing', async () => {
+  const f = composerFixture()
+  f.native.connect.mockRejectedValueOnce(Error('Disconnected'))
+  expect(await f.send('Keep this')).toMatchObject({ ok: false })
+  db.exec('DELETE FROM thread_turns')
+  expect(await f.send('Keep this too')).toMatchObject({ ok: false })
+  expect(f.connect).not.toHaveBeenCalled()
+})
+
+it('does not queue an uncertain direct send even when the chat becomes active', async () => {
+  const f = composerFixture(
+    fixture(async () => {
+      throw Error('Lost acknowledgement')
+    }),
+  )
+  expect(await f.send('Only once')).toMatchObject({ ok: false })
+  db.exec("UPDATE thread_turns SET status='inProgress'")
+  expect(await f.send('Only once')).toMatchObject({ ok: false })
+  expect(f.connect).not.toHaveBeenCalled()
+  expect(f.native.connection.request).toHaveBeenCalledTimes(2)
+})
+
+it('reconciles an uncertain queued send before direct sending when the chat becomes idle', async () => {
+  db.exec("UPDATE thread_turns SET status='inProgress'")
+  const f = composerFixture()
+  const original = f.request.getMockImplementation()!
+  f.request.mockImplementationOnce(async (method, params) => {
+    await original(method, params)
+    throw Error('Lost queue acknowledgement')
+  })
+  expect(await f.send('Only once')).toMatchObject({ ok: false })
+  db.exec("UPDATE thread_turns SET status='completed'")
+  expect(await f.send('Only once')).toEqual({ ok: true })
+  expect(f.entries).toHaveLength(1)
+  expect(f.native.connect).not.toHaveBeenCalled()
 })

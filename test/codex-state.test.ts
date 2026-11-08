@@ -27,10 +27,10 @@ describe('Codex status confidence', () => {
 })
 
 it('formats Windows display paths without damaging drive, UNC or other paths', () => {
-  expect(displayWindowsPath('\\\\?\\Z:\\General')).toBe('Z:\\General')
+  expect(displayWindowsPath('\\\\?\\Z:\\FixtureProjects')).toBe('Z:\\FixtureProjects')
   expect(displayWindowsPath('\\\\?\\UNC\\server\\share')).toBe('\\\\server\\share')
   for (const path of [
-    'Z:\\General',
+    'Z:\\FixtureProjects',
     '\\\\server\\share',
     '/home/project',
     '\\\\?\\Volume{example}\\',

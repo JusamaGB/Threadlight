@@ -39,7 +39,26 @@ function scroller(
 export function installFinerScroll(target: Window = window): () => void {
   const onWheel = (event: WheelEvent) => {
     // Zoom, a handler that took the wheel for itself, and page-sized steps are not ours.
-    if (event.defaultPrevented || event.ctrlKey || event.deltaMode === 2) return
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return
+    const file =
+      event.shiftKey &&
+      event.target instanceof Element &&
+      event.target.closest<HTMLElement>('pre[data-reply-code]')
+    if (file) {
+      const unit = event.deltaMode === 1 ? LINE : event.deltaMode === 2 ? file.clientWidth : 1
+      const delta = (event.deltaX || event.deltaY) * unit
+      const scale = event.deltaMode !== 2 && Math.abs(delta) >= NOTCH ? WHEEL_SCALE : 1
+      const left = Math.max(
+        0,
+        Math.min(file.scrollWidth - file.clientWidth, file.scrollLeft + delta * scale),
+      )
+      if (left !== file.scrollLeft && event.cancelable) {
+        event.preventDefault()
+        file.scrollLeft = left
+      }
+      return
+    }
+    if (event.deltaMode === 2) return
     const unit = event.deltaMode === 1 ? LINE : 1
     const dx = event.deltaX * unit
     const dy = event.deltaY * unit

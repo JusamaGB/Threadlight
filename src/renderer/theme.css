@@ -1,5 +1,7 @@
 /* Design tokens. Every colour and radius in the UI comes from here. */
 :root {
+  --conversation-prose-size: 12px;
+  --conversation-prose-leading: 1.45;
   --bg: #171717;
   --raised: #1e1e1e;
   --hover: #212121;

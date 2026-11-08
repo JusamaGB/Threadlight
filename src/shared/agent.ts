@@ -7,6 +7,14 @@ export type AgentStatus =
   'idle' | 'starting' | 'working' | 'waiting' | 'stopping' | 'ready' | 'interrupted' | 'error'
 
 export type AgentProvider = 'claude' | 'codex'
+export interface RecentAgentConversation {
+  id: string
+  provider: AgentProvider
+  at: number
+  waiting: boolean
+  summary: string
+}
+export const RECENT_AGENT_MS = 24 * 60 * 60 * 1000
 export type AgentResult = { ok: true } | { ok: false; reason: string }
 export interface AgentModel {
   id: string
@@ -38,8 +46,26 @@ export interface AgentHistoryPage {
 
 /** One line of the conversation: what you said, what it said, or a step it took. */
 export interface AgentItem {
+  screenPreview?: string
   /** Ephemeral native Live turn boundary; partial speech cannot authorize a response. */
   liveComplete?: boolean
+  backingTurnId?: string
+  voiceDelegationIds?: string[]
+  /** Display-only raw delegations attached to one observed Live user segment. */
+  audioDetails?: string[]
+  /** Projected captions only; the original native items remain in history. */
+  spokenDetails?: string[]
+  timingSession?: string
+  liveAfter?: string
+  narrationOf?: {
+    sessionId: string
+    turnId: string
+    itemId: string
+    excerpt?: string
+    tailAfter?: string
+    requestId?: string
+    playbackTurnId?: string
+  }
   source?: ThreadToolReceipt
   sourceHistorical?: boolean
   id?: string
@@ -57,6 +83,10 @@ export interface AgentApproval {
 }
 
 export interface AgentState {
+  /** Changes when the connected editor invalidates or replaces its highlighted step. */
+  coachGuideToken?: string
+  recent?: RecentAgentConversation
+  pendingReadout?: { session: string; token: string } | null
   live?: 'connecting' | 'ready' | 'active' | null
   revision: number
   provider: AgentProvider | null

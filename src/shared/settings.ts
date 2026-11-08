@@ -3,12 +3,34 @@
 // Settings are controlled through the panel and its settings view.
 
 import { z } from 'zod'
+import { VOICE_PACES } from './voicePace'
+import { DEFAULT_KIMI_SETUP, kimiSetupSchema } from './kimi'
 import { DEFAULT_ENABLED_PROVIDERS, PROVIDERS } from './providers'
+import { chatSource, conversationFilter } from './accountChats'
 
 export const SETTINGS_VERSION = 1
 export const SESSION_WINDOW_HOURS = [6, 12, 24, 72, 168] as const
+export const SHOWN_PROVIDERS = ['claude', 'codex', 'perplexity', 'kimi'] as const
+export type ShownProvider = (typeof SHOWN_PROVIDERS)[number]
 
 export const settingsSchema = z.object({
+  /** Work-provider visibility; ordinary chat sources remain independently selected. */
+  shownProviders: z
+    .array(z.enum(SHOWN_PROVIDERS))
+    .max(4)
+    .refine((values) => new Set(values).size === values.length, 'Choose each provider once')
+    .transform((values) => SHOWN_PROVIDERS.filter((provider) => values.includes(provider)))
+    .default(['claude', 'perplexity']),
+  conversationFilter: conversationFilter.default('code-computer'),
+  chatSources: z
+    .array(chatSource)
+    .max(2)
+    .refine((v) => new Set(v).size === v.length)
+    .default(['chatgpt', 'perplexity']),
+  /** Non-executing connection draft; no credentials or capability claims. */
+  kimiSetup: kimiSetupSchema.default(DEFAULT_KIMI_SETUP),
+  /** Offer a per-space ignore choice at creation; never changes existing spaces. */
+  sharedSpacesGitignore: z.boolean().default(false),
   enabledProviders: z
     .array(z.enum(['claude', 'codex']))
     .max(2)
@@ -29,14 +51,23 @@ export const settingsSchema = z.object({
   voiceTarget: z.enum(['agent', 'thread']).default('thread'),
   /** Explicit speech engine; independent of the local transcript's destination. */
   voiceMode: z.enum(['local-stt', 'gpt-live']).default('local-stt'),
+  pythonSuggestions: z.enum(['editor', 'on', 'off']).default('editor'),
+  screenRegionModes: z
+    .array(z.enum(['live', 'outside']))
+    .max(2)
+    .refine((values) => new Set(values).size === values.length)
+    .default(['live']),
+  speakScreenReply: z.boolean().default(true),
   /** Hover opens the panel straight away; click avoids opening it by accident in a game. */
   openOn: z.enum(['hover', 'click']).default('hover'),
   /** Tour explains all available hover targets immediately; Info preserves normal hints. */
-  hoverHelp: z.enum(['tour', 'info', 'off']).default('info'),
+  hoverHelp: z.enum(['tour', 'info', 'teach', 'off']).default('info'),
   /** At Windows sign-in, start a quiet launcher that waits for Claude or Codex. */
   launchAtSignIn: z.boolean().default(false),
   /** The header's wire clip connects/disconnects workspace links. Opt in on first use. */
   workspaceWires: z.boolean().default(false),
+  /** Keep a live Active preview below other pages; controlled from the wire's context menu. */
+  pinnedActiveThreads: z.boolean().default(false),
   /** Single is the narrow column; dual widens the panel for Claude and Codex side by side. */
   panelLayout: z.enum(['single', 'dual']).default('single'),
   /**
@@ -45,9 +76,9 @@ export const settingsSchema = z.object({
    * collapsible groups like the Claude sidebar.
    */
   listMode: z.enum(['recent', 'workspace', 'all']).default('recent'),
-  /** The workspace the Workspace list shows (its folder), or null to follow the Claude app. */
+  /** Shared folder scope for Active, Recent and Workspace; null follows the Claude app. */
   focusWorkspace: z.string().min(1).max(1000).nullable().default(null),
-  /** Workspace view combines all known folders from the enabled applications. */
+  /** Active, Recent and Workspace include all known folders from enabled applications. */
   workspaceAllDrives: z.boolean().default(false),
   /** Sessions active within this many hours are listed. There is always a limit. */
   listWindowHours: z.number().int().min(1).max(168).default(24),
@@ -59,6 +90,8 @@ export const settingsSchema = z.object({
    * How long an agent conversation stays open after its last reply, in minutes; then the next
    * message starts a fresh one (the old one stays on disk). 0: until it is ended by hand.
    */
+  spokenReplyCompanion: z.boolean().default(false),
+  agentVoicePace: z.enum(VOICE_PACES).default('normal'),
   agentLifetimeMinutes: z.number().int().min(0).max(1440).default(60),
   /** The model that does the agent's real work (the conversation itself stays on Haiku). */
   agentWorker: z.enum(['opus', 'sonnet']).default('opus'),
@@ -101,12 +134,39 @@ export function parseSettings(raw: unknown): Settings {
     const parsed = field.safeParse(migrated[key])
     result[key] = parsed.success ? parsed.data : DEFAULT_SETTINGS[key as keyof Settings]
   }
+  const shown = settingsSchema.shape.shownProviders.safeParse(stored['shownProviders'])
+  if (stored['shownProviders'] === undefined || !shown.success)
+    result.shownProviders = [
+      ...(result.enabledProviders as Settings['enabledProviders']),
+      'perplexity',
+    ]
+  else result.enabledProviders = PROVIDERS.filter((provider) => shown.data.includes(provider))
   return result as Settings
 }
 
+/** Keep the legacy coding filters and the four-provider selector in sync in every caller. */
+export function applySettingsPatch(previous: Settings, patch: SettingsPatch): Settings {
+  const next = { ...previous, ...patch }
+  if (patch.shownProviders !== undefined)
+    next.enabledProviders = PROVIDERS.filter((provider) => patch.shownProviders!.includes(provider))
+  else if (patch.enabledProviders !== undefined)
+    next.shownProviders = SHOWN_PROVIDERS.filter((provider) =>
+      provider === 'claude' || provider === 'codex'
+        ? patch.enabledProviders!.includes(provider)
+        : previous.shownProviders.includes(provider),
+    )
+  return next
+}
+
 /** Live is an open conversation; retain the separate local push-to-talk preference. */
-export const voiceHotkeyMode = (settings: Pick<Settings, 'voiceMode' | 'talkMode'>) =>
-  settings.voiceMode === 'gpt-live' ? 'toggle' : settings.talkMode
+export function isGptLiveShortcut(settings: Pick<Settings, 'talkHotkey' | 'agentProvider'>) {
+  const keys = settings.talkHotkey.toLowerCase().replace(/commandorcontrol|ctrl/g, 'control')
+  return settings.agentProvider === 'codex' && keys.split('+').sort().join('+') === 'alt+control+q'
+}
+export const voiceHotkeyMode = (
+  settings: Pick<Settings, 'voiceMode' | 'talkMode' | 'talkHotkey' | 'agentProvider'>,
+) =>
+  settings.voiceMode === 'gpt-live' || isGptLiveShortcut(settings) ? 'toggle' : settings.talkMode
 
 /** Validates a change strictly: unknown keys or bad values are refused with a reason. */
 export function validatePatch(

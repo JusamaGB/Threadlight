@@ -52,6 +52,9 @@ export class ClaudeThreadDiff {
         (typeof result['content'] === 'string' && /^Error\b/.test(result['content']))
       )
         continue
+      let mutationIndex = 0
+      const recordMutation = (change: RecordedChange) =>
+        this.ledger.record(change, `${id}:${mutationIndex++}`)
       const input = isObject(call['input']) ? call['input'] : {}
       const rawPath = text(input['file_path']) ?? text(input['notebook_path'])
       const path = rawPath && recordedPath(rawPath, this.cwd)
@@ -66,19 +69,19 @@ export class ClaudeThreadDiff {
       const name = call['name']
       if (name === 'Write') {
         const after = text(input['content'])
-        if (after === null) this.ledger.record({ path, kind: 'unknown' })
+        if (after === null) recordMutation({ path, kind: 'unknown' })
         else if (
           output['type'] === 'create' ||
           output['originalFile'] === null ||
           output['original_file'] === null
         )
-          this.ledger.record({ path, kind: 'add', diff: after })
-        else if (before !== null) this.ledger.record({ path, kind: 'update', before, after })
-        else this.ledger.record({ path, kind: 'unknown' })
+          recordMutation({ path, kind: 'add', diff: after })
+        else if (before !== null) recordMutation({ path, kind: 'update', before, after })
+        else recordMutation({ path, kind: 'unknown' })
         continue
       }
       if (name === 'NotebookEdit') {
-        this.ledger.record({ path, kind: 'unknown' })
+        recordMutation({ path, kind: 'unknown' })
         continue
       }
       const changes =
@@ -100,9 +103,7 @@ export class ClaudeThreadDiff {
               ? after.split(old).join(next)
               : after.replace(old, () => next)
         }
-        this.ledger.record(
-          valid ? { path, kind: 'update', before, after } : { path, kind: 'unknown' },
-        )
+        recordMutation(valid ? { path, kind: 'update', before, after } : { path, kind: 'unknown' })
       } else if (Array.isArray(output['structuredPatch'])) {
         const diff = output['structuredPatch']
           .filter(isObject)
@@ -111,13 +112,13 @@ export class ClaudeThreadDiff {
               `@@ -${hunk['oldStart']},${hunk['oldLines']} +${hunk['newStart']},${hunk['newLines']} @@\n${Array.isArray(hunk['lines']) ? hunk['lines'].join('\n') : ''}`,
           )
           .join('\n')
-        this.ledger.record({ path, kind: 'update', diff })
+        recordMutation({ path, kind: 'update', diff })
       } else {
         // Local fragments are attributable but have no reliable file line positions.
         for (const change of changes) {
           const old = text(change['old_string']),
             next = text(change['new_string'])
-          this.ledger.record(
+          recordMutation(
             old !== null && next !== null
               ? { path, kind: 'unknown', before: old, after: next }
               : { path, kind: 'unknown' },
@@ -195,17 +196,20 @@ export class ClaudeDiffReplay {
 /** The native projection contains provider-confirmed file changes, not inferred shell edits. */
 export function codexThreadDiff(records: JsonObject[], cwd: string): ThreadDiffLedger {
   const ledger = new ThreadDiffLedger()
-  const seen = new Set<string>()
+  const seen = new Map<string, string>()
   for (const record of records) {
     if (record['type'] !== 'fileChange' || record['status'] !== 'completed') continue
     const id = text(record['id'])
-    if (id && seen.has(id)) continue
-    if (id) seen.add(id)
+    if (id && seen.has(id)) {
+      if (seen.get(id) !== JSON.stringify(record)) ledger.complete = false
+      continue
+    }
+    if (id) seen.set(id, JSON.stringify(record))
     if (!Array.isArray(record['changes'])) {
       ledger.complete = false
       continue
     }
-    for (const change of record['changes'].filter(isObject)) {
+    for (const [index, change] of record['changes'].filter(isObject).entries()) {
       const path = text(change['path'])
       const absolute = path && recordedPath(path, cwd)
       if (!absolute) {
@@ -222,7 +226,7 @@ export function codexThreadDiff(records: JsonObject[], cwd: string): ThreadDiffL
       else mutation.kind = 'unknown'
       const move = text(kind['move_path'])
       if (move) mutation.move = recordedPath(move, cwd) ?? undefined
-      ledger.record(mutation)
+      ledger.record(mutation, id ? `${id}:${index}` : undefined)
     }
   }
   return ledger

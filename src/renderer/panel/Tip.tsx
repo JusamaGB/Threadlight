@@ -21,6 +21,7 @@ type Point = {
 
 interface TipProps extends HTMLAttributes<HTMLElement> {
   as?: 'span' | 'button'
+  disabled?: boolean
   /** What the tip says; shown while the pointer is over the anchor. */
   text: string
   /** Optional presentation of the same information; text remains the accessible anchor label. */
@@ -29,6 +30,7 @@ interface TipProps extends HTMLAttributes<HTMLElement> {
   actionHint?: string
   /** Additional help appears only in Tour, leaving Info's wording and timing unchanged. */
   tourHelp?: string
+  teachHelp?: string
   tourOnly?: boolean
   /** Wait for the pointer to stay still this long. Other tips remain immediate. */
   restDelay?: number
@@ -45,6 +47,7 @@ export function Tip({
   infoContent,
   actionHint,
   tourHelp,
+  teachHelp,
   tourOnly = false,
   restDelay = 0,
   children,
@@ -53,9 +56,9 @@ export function Tip({
   ...props
 }: TipProps) {
   const mode = useHelpMode()
-  const help = mode === 'tour' ? tourHelp : undefined
+  const help = mode === 'teach' ? (teachHelp ?? tourHelp) : mode === 'tour' ? tourHelp : undefined
   const hasInfo = !tourOnly && !!(infoText || infoContent)
-  const delay = mode === 'tour' ? 0 : restDelay
+  const delay = mode === 'tour' || mode === 'teach' ? 0 : restDelay
   const enabled = mode !== 'off' && !!(hasInfo || help || actionHint)
   const anchor = useRef<HTMLElement>(null)
   const setAnchor = useCallback((element: HTMLElement | null) => {

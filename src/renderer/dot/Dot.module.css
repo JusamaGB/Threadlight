@@ -17,42 +17,112 @@
 }
 
 .micPill {
-  width: 92px;
-  height: 18px;
+  width: var(--pill-width, 92px);
+  height: var(--pill-height, 24px);
   box-sizing: border-box;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 4px 1px 8px;
-  border: 1px solid var(--composer-edge);
-  border-radius: 999px;
+  align-items: stretch;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--composer-edge);
+  border-radius: 12px;
   background: var(--composer-bg);
 }
 
 .micWave {
-  flex: 1;
+  cursor: grab;
+  touch-action: none;
+  flex: none;
+  width: 100%;
+  height: 24px;
   min-width: 0;
-  height: 14px;
+  padding: 0 0 2px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   border-radius: 12px;
 }
 
-.micStop {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
+.micPill {
+  position: relative;
+  isolation: isolate;
+}
+.micPill[data-provider='codex'] {
+  --speech-colour: var(--provider-codex);
+}
+.micPill[data-provider='claude'] {
+  --speech-colour: var(--provider-claude);
+}
+.micPill[data-provider]::before {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px var(--speech-colour),
+    inset 0 0 6px color-mix(in srgb, var(--speech-colour) 75%, transparent),
+    inset 0 0 11px color-mix(in srgb, var(--speech-colour) 32%, transparent);
+  opacity: var(--speech-level);
+  transition: opacity 260ms ease-out;
+}
+.micPill[data-speaking]::before {
+  transition-duration: 150ms;
+}
+.micPill[data-agent-working]::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--busy-angle),
+    transparent 0deg 42deg,
+    #b8e5ff 65deg,
+    transparent 89deg 222deg,
+    #9cd9ff 245deg,
+    transparent 269deg
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  filter: drop-shadow(0 0 1px #9cd9ff80);
+  animation: busyOrbit 2.6s linear infinite;
+}
+@property --busy-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes busyOrbit {
+  to {
+    --busy-angle: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .micPill[data-provider]::before {
+    transition: none;
+    opacity: 0;
+  }
+  .micPill[data-provider][data-speaking]::before {
+    opacity: 0.7;
+  }
+  .micPill[data-agent-working]::after {
+    animation: none;
+  }
+}
+.micWave [data-renderer='unavailable']::after {
+  width: 100%;
 }
 
-.micStop:hover,
+.micWave:active {
+  cursor: grabbing;
+}
 .micWave:hover {
   background: rgb(255 255 255 / 7%);
 }
 
-.micStop:focus-visible,
 .micWave:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: -1px;

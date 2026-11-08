@@ -1,5 +1,7 @@
 # Threadlight Agent application knowledge and control
 
+> Public copy: local proof paths and native identifiers are generalised; raw evidence remains private.
+
 Date: 2026-10-28. Status: implementation handoff.
 
 ## Outcome
@@ -16,7 +18,7 @@ actions use the existing application services and navigation. They do not requir
 Playwright, a debug port, screenshots or mouse coordinates in the shipped product.
 
 Kris requested a capability map, this specification, and an Astra implementation
-chat. Implement this in the primary checkout at `C:/Example/threadlight`, preserving
+chat. Implement this in the primary checkout at `C:/dev/threadlight`, preserving
 other unfinished changes. Follow `AGENTS.md`; do not create a worktree or restart
 the regular app without first checking for active Agent work and live tests.
 

@@ -22,6 +22,7 @@ export function HoverInfo({
   point,
   children,
   className = styles.tip,
+  forceFooter = false,
   onDismiss,
 }: {
   anchor: RefObject<HTMLElement | null>
@@ -29,6 +30,7 @@ export function HoverInfo({
   point: HoverPoint
   children: ReactNode
   className?: string
+  forceFooter?: boolean
   onDismiss: () => void
 }) {
   const box = useRef<HTMLSpanElement>(null)
@@ -68,7 +70,7 @@ export function HoverInfo({
       const long =
         measured.width > maxWidth / 2 || (probe.textContent?.trim().split(/\s+/).length ?? 0) > 5
       probe.remove()
-      if (slot && (long || tour)) {
+      if (slot && (forceFooter || long || tour)) {
         target.setAttribute('data-hover-docked', '')
         const limit =
           Number.parseFloat(getComputedStyle(cardElement!).maxHeight) || window.innerHeight
@@ -106,7 +108,7 @@ export function HoverInfo({
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
-  }, [anchor, point, opensDown, extra, reserve, children, className, tour])
+  }, [anchor, point, opensDown, extra, reserve, children, className, tour, forceFooter])
   useEffect(() => {
     // Own this subscription: the anchor may also listen with the same dismissal callback.
     const dismiss = () => onDismiss()

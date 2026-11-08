@@ -73,6 +73,30 @@
   padding: 1px 0;
 }
 
+.voicePaceRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  font-size: 12px;
+}
+.voicePaceRow input {
+  flex: 1;
+  min-width: 36px;
+  max-width: 100px;
+  accent-color: var(--accent);
+}
+.voicePaceRow :is(span, button) {
+  font-size: 11px;
+  color: var(--faint);
+}
+.voicePaceRow button {
+  padding: 1px 3px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
 /* A single-line row only as tall as its control. */
 .rowSlim {
   min-height: 20px;
@@ -115,6 +139,46 @@
   flex: none;
   display: flex;
   align-items: center;
+}
+
+.hotkeys {
+  border-top: 1px solid var(--border);
+}
+.hotkeysToggle {
+  font-size: 12px;
+  padding: 4px 2px;
+}
+.hotkeysToggle:focus-visible {
+  outline: 1px solid var(--accent);
+}
+.hotkeysToggle span,
+.hotkeys p {
+  color: var(--muted);
+}
+.hotkeys p,
+.shortcuts {
+  font-size: 11px;
+  margin: 3px 0;
+}
+.hotkeys h4 {
+  margin: 7px 0 2px;
+  font-size: 11px;
+}
+.hotkeys .error {
+  color: var(--amber);
+}
+.shortcuts > div {
+  display: grid;
+  grid-template-columns: minmax(62px, 37%) 1fr;
+  gap: 4px;
+  padding: 2px 0;
+}
+.shortcuts dd {
+  margin: 0;
+  color: var(--muted);
+}
+.shortcuts dt {
+  overflow-wrap: anywhere;
 }
 
 /* ---------- controls ---------- */
@@ -284,6 +348,28 @@
   display: inline-block;
   width: 10px;
   color: var(--accent);
+}
+
+.providerHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.providerHeading button {
+  font-size: 10px;
+}
+.providerHeading button[aria-pressed='true'] {
+  color: var(--accent);
+}
+.providerChoices {
+  flex-wrap: wrap;
+  max-width: 100%;
+  margin-bottom: 3px;
+}
+.providerChoices button {
+  padding: 1px 2px;
 }
 
 /* With a separator ("Toggle / Push to talk"), the words sit closer to it. */

@@ -1,3 +1,4 @@
+import { memoryFixture } from './memory-transport.fixture.mjs'
 // Explicit opt-in. Only fresh disposable CLI conversations; never resumes a real chat.
 import { createRequire } from 'node:module'
 import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs'
@@ -20,14 +21,16 @@ require.extensions['.ts'] = (module, filename) =>
 const { MemoryStore } = require('../../src/main/memory/store.ts'),
   { MemoryServer } = require('../../src/main/memory/server.ts')
 const { findClaudeCli } = require('../../src/main/relay.ts'),
-  { findCodexCli } = require('../../src/main/codex/relay.ts'),
+  { findCodexCli, codexMemoryArgs } = require('../../src/main/codex/relay.ts'),
   { defaultPaths, codexPaths } = require('../../src/main/sessions/paths.ts')
+const { openMemoryProxy } = require('../../src/main/memory/transport.ts')
 const directory = mkdtempSync(join(tmpdir(), 'threadlight-memory-proof-')),
   store = new MemoryStore(join(directory, 'memory.sqlite')),
-  server = new MemoryServer(store)
-const run = (cli, args, prompt, token) =>
+  transportAuth = memoryFixture(directory),
+  server = new MemoryServer(store, transportAuth)
+const run = (cli, args, prompt) =>
   new Promise((resolveResult) => {
-    const env = { ...process.env, THREADLIGHT_MEMORY_TOKEN: token }
+    const env = { ...process.env }
     for (const key of [
       'CODEX_THREAD_ID',
       'CODEX_TURN_ID',
@@ -101,12 +104,12 @@ try {
       readOnly: false,
       createFolders: true,
     })
+    const proxy = openMemoryProxy(url, credentials.token)
     const configuration = JSON.stringify({
       mcpServers: {
         threadlight: {
-          type: 'http',
-          url,
-          headers: { Authorization: 'Bearer ${THREADLIGHT_MEMORY_TOKEN}' },
+          type: 'stdio',
+          ...proxy.mcp,
         },
       },
     })
@@ -126,12 +129,7 @@ try {
             '',
           ]
         : [
-            '-c',
-            `mcp_servers.threadlight.url=${JSON.stringify(url)}`,
-            '-c',
-            'mcp_servers.threadlight.bearer_token_env_var="THREADLIGHT_MEMORY_TOKEN"',
-            '-c',
-            'mcp_servers.threadlight.default_tools_approval_mode="approve"',
+            ...codexMemoryArgs(proxy.mcp),
             'exec',
             '--skip-git-repo-check',
             '--ephemeral',
@@ -142,7 +140,7 @@ try {
           ]
     const prompt = `This is an authorised disposable Threadlight integration test. Use only the Threadlight memory tools; do not use shell, filesystem, other tools or other chats. Read item ${item.id} at revision 1. Create or reuse a subfolder titled "${provider} proof" under ${folder.id} in space ${space.id}, with a short description and reason. Publish one note there titled "${provider} recalled evidence" containing the exact synthetic verification phrase from the item. Use fresh operationId UUIDs for writes. Finally reply with that verification phrase and the published item ID. Do nothing else.`
     console.log(`Testing ${provider} with a fresh disposable conversation…`)
-    const result = await run(cli, args, prompt, credentials.token)
+    const result = await run(cli, args, prompt).finally(proxy.close)
     const saved = store.snapshot().items.find((i) => i.title === `${provider} recalled evidence`)
     const verified = !!saved && store.read({}, saved.id).revision.body.includes('LIGHTHOUSE-286')
     results.push({

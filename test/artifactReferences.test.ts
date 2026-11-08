@@ -2,6 +2,7 @@ import {
   appendFile,
   mkdir,
   readFile,
+  realpath,
   readdir,
   rename,
   rm,
@@ -266,6 +267,30 @@ it('resets after truncation and refuses transcripts outside configured roots', a
   await expect(discovery.scan('two', { ...source, transcriptRoots: [source.cwd] })).rejects.toThrow(
     'outside',
   )
+})
+
+it('accepts a workspace junction and its canonical path as the same allowed location', async () => {
+  const alias = join(box.root, 'workspace-alias')
+  await symlink(source.cwd, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  try {
+    const linked = join(alias, 'story board.html')
+    source.provider = 'codex'
+    source.roots = [alias]
+    await writeFile(source.transcript, line(codex(visualize(linked))))
+    const [item] = (await new ArtifactDiscovery().scan('codex:junction', source)).items
+    expect(item?.path).toBe(linked)
+    // The viewer checks both the presented path and realpath before reading.
+    expect(await referenceAllowed(linked, source.roots)).toBe(true)
+    expect(await referenceAllowed(await realpath(linked), source.roots)).toBe(true)
+    expect(await referenceAllowed(linked, [source.cwd])).toBe(true)
+  } finally {
+    await rm(alias)
+  }
+})
+
+it('preserves missing-file entries only inside allowed locations', async () => {
+  expect(await referenceAllowed(join(source.cwd, 'deleted.html'), source.roots)).toBe(true)
+  expect(await referenceAllowed(join(box.root, 'outside-missing.html'), source.roots)).toBe(false)
 })
 
 it('retains the newest 200 references and explains the limit', async () => {
