@@ -220,38 +220,25 @@ desktop runtime remains gated on the connection proof in the
 
 ### Installed applications
 
-- Windows 10 (1803 or later) or Windows 11
-- The Claude desktop app with Claude Code sessions
-- The Claude Code CLI signed in (`claude auth login`) for background sending
+Use Windows x64 (Windows 10 version 1803 or later, or Windows 11), curl.exe and Node.js 22.16 or later. Choose Codex Desktop with its native CLI, Claude Desktop with Claude Code, or both. A Codex-only installation requires no Claude software or configuration.
 
 ## Install
 
-Until the first release, Threadlight runs from a copy of this repository. You need
-[Node 22.16 or later](https://nodejs.org) as well as the requirements above.
+Paste the repository link into an AI that can run commands on your Windows PC and ask it to set up Threadlight for your provider. The project includes [setup instructions](skills/setup/SKILL.md). If your chat runs in the cloud, run these commands yourself.
 
-**Ask Claude to do it.** Open Claude Code in the folder and say _"set up Threadlight"_. It
-follows [skills/setup/SKILL.md](skills/setup/SKILL.md): checks your PC, tells you what will
-change, asks for your talk hotkey and a few preferences, then runs the installer and checks
-that it works.
+Clone the repository or extract its source ZIP into a folder you intend to keep. From that folder, for Codex alone, run:
 
-**Or run the installer yourself** from the folder:
-
-```
-node scripts/install.mjs --hotkey Control+Alt+Q --countdown 5 --corner top-right --autostart
+```powershell
+node scripts/install.mjs --check --providers codex
+node scripts/install.mjs --providers codex
+node scripts/install.mjs --check --providers codex
 ```
 
-It installs the app's packages and builds it, installs the Threadlight plugin for Claude
-Code (the hooks that report session activity), saves your choices, and starts the app.
-Every option is optional. Running it again changes only what is not right yet.
+The first check may report missing packages, build output or plugin registration. Setup installs dependencies, builds and starts Threadlight, registers its local Codex plugin and saves Codex as the application and Agent provider. Sign in through Codex, review its hooks in `/hooks`, and open a new local chat. Choose `--providers claude` or `--providers claude,codex` to install those integrations. Omitting the flag retains the original Claude setup.
 
-- `node scripts/install.mjs --check` says what is and is not set up, and changes nothing.
-- `node scripts/install.mjs --check-keys Control+Alt+Q` says whether a hotkey is free.
-- `node scripts/install.mjs --uninstall` stops Threadlight, turns off start at sign-in and
-  removes the plugin, but only if the installer added it. Add `--remove-data` to also
-  delete your settings and the speech model (`%APPDATA%\Threadlight`).
+Use `node scripts/install.mjs --help` for preferences, including the talk hotkey and launch at sign-in. To remove the installation, run `node scripts/install.mjs --uninstall`. It removes the integrations recorded by this installer and keeps saved data by default.
 
-The hooks only reach Claude Code sessions started after the plugin is installed. The voice
-speech model (76 MB) downloads the first time you use voice, after you agree to it.
+The local voice model downloads on first use after confirmation.
 
 ### Thread artifacts
 

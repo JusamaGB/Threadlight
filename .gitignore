@@ -9,6 +9,9 @@ build/
 
 screenshots/
 *.png
+!resources/icon-16.png
+!resources/icon-32.png
+!resources/icon-64.png
 *.jpg
 *.jpeg
 *.gif
