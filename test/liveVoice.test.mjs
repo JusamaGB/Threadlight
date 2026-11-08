@@ -121,6 +121,15 @@ it('passes the native words on the completed playback boundary for the active as
       data: JSON.stringify({ type, turn: { id, role: 'assistant', transcript } }),
     })
   send('turn.created', 'progress')
+  for (const role of ['user', 'tool']) {
+    peer.channel.onmessage({
+      data: JSON.stringify({
+        type: 'turn.done',
+        turn: { id: 'progress', role, transcript: 'I’ll check the current buffer.' },
+      }),
+    })
+  }
+  expect(api.livePlaybackBoundary.mock.calls.filter(([, kind]) => kind === 'done')).toHaveLength(0)
   send('turn.done', 'stale', 'An unrelated completion.')
   expect(api.livePlaybackBoundary).not.toHaveBeenCalledWith(
     connection.id,

@@ -142,6 +142,7 @@ export class LiveVoiceConnection {
         this.syncPlayback()
       } else if (
         event.type === 'turn.done' &&
+        (event.turn?.role === undefined || event.turn.role === 'assistant') &&
         event.turn?.id &&
         event.turn.id === this.assistantTurn
       ) {
@@ -150,7 +151,7 @@ export class LiveVoiceConnection {
           this.id,
           'done',
           event.turn.id,
-          event.turn.transcript,
+          event.turn.role === 'assistant' ? event.turn.transcript : undefined,
         )
       }
       if (event.type === 'session.started') {

@@ -10,7 +10,10 @@ const voiced =
   'In this file, I see you said the server was restarted and the editor was reconnected, and then I confirmed the connection.'
 const tail = 'If you show me the example again, I can continue from there.'
 const voicedTail = 'If you show me the example again, I’ll continue from there.'
-function fixture(request = vi.fn(async () => ({}))) {
+function fixture(
+  request = vi.fn(async () => ({})),
+  readout?: (value: { session: string; token: string } | null) => void,
+) {
   const items = new Map<string, AgentItem>()
   const interrupt = vi.fn()
   const live = new CodexLive(
@@ -21,6 +24,7 @@ function fixture(request = vi.fn(async () => ({}))) {
     () => {},
     false,
     interrupt,
+    readout,
   )
   live.beginTurn('turn')
   const caption = (
@@ -141,12 +145,65 @@ describe('native answer and spoken captions', () => {
     },
   )
 
+  it('never releases an instruction on timeout after a foreign completion', async () => {
+    vi.useFakeTimers()
+    try {
+      const { live, request } = fixture()
+      live.completedCommentary('turn', acknowledgment)
+      const shown = live.coachStep('The verified proposal is visible.', true, true)
+      const timeout = expect(shown).rejects.toThrow(/confirmed playback boundary/)
+      live.playbackBoundary('assistant', 'foreign')
+      live.playbackBoundary('done', 'foreign', 'Unrelated words.')
+      await vi.advanceTimersByTimeAsync(30001)
+      await timeout
+      expect(request).toHaveBeenCalledTimes(1)
+      live.playbackBoundary('assistant', 'actual')
+      live.playbackBoundary('done', 'actual', acknowledgment.text)
+      await Promise.resolve()
+      expect(request).toHaveBeenCalledTimes(1)
+      live.disconnect('done')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('offers an explicit one-shot prose readout instead of submitting on an uncertain progress timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const offered = vi.fn()
+      const { live, request } = fixture(undefined, offered)
+      live.completedCommentary('turn', acknowledgment)
+      const finish = live.finishTurn({
+        id: 'turn',
+        status: 'completed',
+        items: [{ id: 'a', type: 'agentMessage', phase: 'final_answer', text: tail }],
+      })
+      live.playbackBoundary('assistant', 'other')
+      live.playbackBoundary('done', 'other', 'A separate reply.')
+      await vi.advanceTimersByTimeAsync(30001)
+      await finish
+      expect(request).toHaveBeenCalledTimes(1)
+      const token = offered.mock.lastCall?.[0]?.token
+      expect(token).toBeTypeOf('string')
+      await live.readRemaining(token)
+      expect(request).toHaveBeenCalledTimes(2)
+      expect(JSON.stringify(request.mock.lastCall)).toContain(tail)
+      await expect(live.readRemaining(token)).rejects.toThrow()
+      live.disconnect('done')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps uncertain instructions and raw tool output silent, with only observed read status eligible', async () => {
     vi.useFakeTimers()
     try {
       const { live, request } = fixture()
       for (const [id, text] of [
         ['filler', 'Just a sec.'],
+        ['mixed1', "I'll check the current buffer, but first indent line ten."],
+        ['mixed2', "I'll check the loop, but first move the return inside it."],
+        ['mixed3', "I'll check the editor and move the return inside the loop."],
         ['instruction', 'I’ll check the editor. Type a colon on line twenty.'],
         ['compound', 'I’ll check the editor, then change the return value.'],
         ['code', 'I’ll check `print(value)`.'],
@@ -156,7 +213,7 @@ describe('native answer and spoken captions', () => {
       live.editorActivity('turn', 'capabilities', false, {})
       live.editorActivity('turn', 'proposal_status', false, {})
       expect(request).not.toHaveBeenCalled()
-      await vi.advanceTimersByTimeAsync(6100)
+      await vi.advanceTimersByTimeAsync(1)
       expect(request).toHaveBeenCalledTimes(1)
       expect(JSON.stringify(request.mock.lastCall)).toContain('checking the editor status')
       live.disconnect('done')

@@ -69,6 +69,7 @@ export class CodexLive {
   private pendingCommentary?: { turn: string; itemId: string; text: string }
   private progressAck?: { turn: string; itemId: string; text: string; gate: LeadPlayback }
   private statusSent = false
+  private needsReadStatus = false
   private progressText = ''
   private progressRequest?: symbol
   private progressSpeaker: string | null = null
@@ -183,6 +184,7 @@ ${communicationInstructions}`
   }
 
   private clearProgress() {
+    this.needsReadStatus = false
     this.pendingCommentary = undefined
     if (this.progressTimer) clearTimeout(this.progressTimer)
     this.progressTimer = undefined
@@ -203,7 +205,6 @@ ${communicationInstructions}`
     this.commentaryIds.add(id)
     const text = progressAcknowledgment(item.text)
     if (
-      !text ||
       this.ended ||
       this.early ||
       this.guideActive ||
@@ -212,6 +213,11 @@ ${communicationInstructions}`
       this.suppressedTurn === turn
     )
       return
+    if (!text) {
+      // A real read can announce its own status; never read an ambiguous instruction.
+      this.needsReadStatus ||= item.text.length >= 30
+      return
+    }
     this.pendingCommentary = { turn, itemId: id, text }
     this.sendPendingCommentary()
   }
@@ -234,14 +240,14 @@ ${communicationInstructions}`
     const ack = (this.progressAck = { turn: item.turn, itemId: item.itemId, text: item.text, gate })
     // The progress utterance has its own caption and playback identity. Its
     // completion can release a queued proposal or opening, never an answer tail.
-    const deadline = Date.now() + 30_000
-    gate.onUncertain = () => {
-      if (Date.now() >= deadline) gate.retire()
-    }
-    void gate.wait().then(() => {
+    void gate.wait().then((confirmed) => {
       if (this.progressAck !== ack) return
       this.progressAck = undefined
-      this.resumePlayback()
+      if (confirmed) this.resumePlayback()
+      else {
+        this.deferredLead = undefined
+        this.waiting?.cancel()
+      }
     })
     const delivery = this.speakAnswer(item.text, {
       sessionId: this.sessionId,
@@ -271,8 +277,11 @@ ${communicationInstructions}`
 
   private scheduleProgress(turn: string, text: string) {
     this.progressText = text
-    if (this.progressTimer || this.statusSent || this.guideActive || this.protectedTurn === turn)
-      return
+    const immediate = this.needsReadStatus
+    this.needsReadStatus = false
+    if (this.statusSent || this.guideActive || this.protectedTurn === turn) return
+    if (this.progressTimer && !immediate) return
+    if (this.progressTimer) clearTimeout(this.progressTimer)
     this.progressTimer = setTimeout(
       () => {
         this.progressTimer = undefined
@@ -297,7 +306,7 @@ ${communicationInstructions}`
         this.progressRequest = this.speechRequest
         void delivery.catch(() => {})
       },
-      Math.max(500, 6000 - (Date.now() - this.turnStarted)),
+      immediate ? 0 : Math.max(500, 6000 - (Date.now() - this.turnStarted)),
     )
     this.progressTimer.unref?.()
   }
@@ -471,6 +480,7 @@ ${communicationInstructions}`
     turn: string | null,
     speak: () => Promise<void>,
     required = false,
+    onTimeout?: () => void,
   ): Promise<void> {
     if (this.ended || this.latestTurn !== turn || (turn && this.suppressedTurn === turn))
       return required ? Promise.reject(Error('The voice turn ended.')) : Promise.resolve()
@@ -483,7 +493,10 @@ ${communicationInstructions}`
       }
       const timer = setTimeout(() => {
         clear()
-        reject(Error('No confirmed playback boundary.'))
+        if (onTimeout) {
+          onTimeout()
+          resolve()
+        } else reject(Error('No confirmed playback boundary.'))
       }, 30000)
       timer.unref?.()
       this.waiting = {
@@ -583,14 +596,29 @@ ${communicationInstructions}`
         ? { sessionId: this.sessionId, turnId: id, itemId: answer.itemId }
         : undefined
       const spoken = completedSpeech(answer.text)
-      if (
-        origin &&
-        spoken !== answer.text &&
-        answer.text.startsWith(spoken) &&
-        spoken.length <= 512
-      )
-        return this.whenQuiet(id, () => this.speakAnswer(spoken, { ...origin, excerpt: spoken }))
-      await this.whenQuiet(id, () => this.speakAnswer(spoken, origin))
+      const deliveryOrigin =
+        origin && spoken !== answer.text && answer.text.startsWith(spoken) && spoken.length <= 512
+          ? { ...origin, excerpt: spoken }
+          : origin
+      const progress = this.progressAck
+      const offerReadout =
+        progress && deliveryOrigin
+          ? () => {
+              if (
+                this.progressAck !== progress ||
+                this.ended ||
+                this.latestTurn !== id ||
+                this.suppressedTurn === id ||
+                this.protectedTurn === id ||
+                this.guideActive
+              )
+                return
+              const token = randomUUID()
+              this.remainder = { token, turn: id, text: spoken, origin: deliveryOrigin }
+              this.onReadout?.({ session: this.sessionId, token })
+            }
+          : undefined
+      await this.whenQuiet(id, () => this.speakAnswer(spoken, deliveryOrigin), false, offerReadout)
     }
   }
 
@@ -614,6 +642,10 @@ ${communicationInstructions}`
       throw Error('This readout is no longer available.')
     this.clearRemainder()
     this.early?.playback.retire()
+    // A requested prose readout cannot authorize queued proposal narration.
+    this.progressAck?.gate.retire()
+    this.progressAck = undefined
+    this.waiting?.cancel()
     await this.speakAnswer(p.text, p.origin)
   }
   async readRemaining(token: string) {

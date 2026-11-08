@@ -37,27 +37,38 @@ export function spokenLead(text: string): string | null {
   return null
 }
 
-/** Only narrate short, plain statements about the Agent's own read/check.
- * Instructional prose and code wait for the corresponding editor receipt. */
+/** A bounded vocabulary of read targets keeps an instruction embedded in an
+ * otherwise plausible status from being spoken before the editor receipt. */
+function editorRead(clause: string): boolean {
+  const action =
+    /^(?:check(?:ing)?|read(?:ing)?|review(?:ing)?|inspect(?:ing)?|confirm(?:ing)?|verify(?:ing)?|look(?:ing)? (?:at|into)) (.+)$/i.exec(
+      clause,
+    )
+  if (!action) return false
+  const target = action[1]!
+  const state =
+    /^(?:if|whether) (.+?) (?:is|are) (?:available|open|ready|connected|visible|accessible|loaded)(?: again| now)?$/i.exec(
+      target,
+    )
+  return /^(?:(?:the|this|that|my|your|our|its|current|active|open|saved|unsaved|selected|highlighted|visible|source|editor|VS Code) )*(?:VS Code|coach|editor|connection|status|context|file|code|buffer|document|selection|function|line|window|screen|proposal|guide|workspace|example)(?: again| now| first)?$/i.test(
+    state?.[1] ?? target,
+  )
+}
+
 export function progressAcknowledgment(raw: string): string | null {
   const text = raw.trim()
   if (!text || text.length > 400 || /[\r\n`{}<>[\]()_#*=|\\?;:"“”—]/.test(text)) return null
-  const sentences = text.split(/(?<=[.!])\s+/)
-  const reading =
-    /^(?:I(?:['’]ll| will|['’]m| am) |Let me )(?:(?:first|now|quickly) |going to )?(?:check(?:ing)?|read(?:ing)?|review(?:ing)?|inspect(?:ing)?|confirm(?:ing)?|verify(?:ing)?|look(?:ing)? (?:at|into))\b/i
-  const continuity = /^(?:I (?:still )?(?:have|remember)|I['’]ve (?:still )?got)\b/i
-  if (
-    !sentences.some((s) => reading.test(s)) ||
-    !sentences.every((s) => reading.test(s) || continuity.test(s))
-  )
-    return null
-  if (
-    /\b(?:type|press|paste|click|replace|insert|delete|execute|approve|should|must|recommend|suggest)\b|(?:,|\band|\bthen)\s+(?:please\s+)?(?:change|use|add|run|enter|keep|set|remove|write)\b/i.test(
-      text,
-    )
-  )
-    return null
-  return text
+  const sentences = text.split(/(?<=[.!])\s+/).map((s) => s.replace(/[.!]$/, ''))
+  const continuity =
+    /^I (?:still )?(?:have|remember) (?:the|this|that|our|your) (?:code change|example|request|issue|question)(?: we (?:were (?:preparing|discussing|reviewing|working on)|discussed|reviewed)| you (?:shared|mentioned))?$/i
+  if (sentences.length > 1 && continuity.test(sentences[0]!)) sentences.shift()
+  const intent =
+    /^(?:I(?:['’]ll| will|['’]m| am) |Let me )(?:(?:first|now|quickly) |going to )?(.+)$/i
+  const allReads = sentences.every((sentence) => {
+    const body = intent.exec(sentence)?.[1]
+    return !!body && body.split(/\s+and\s+/i).every(editorRead)
+  })
+  return allReads ? text : null
 }
 
 export function completedSpeech(text: string): string {
