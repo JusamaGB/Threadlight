@@ -28,7 +28,7 @@
   "dependencies": {
     "@huggingface/transformers": "^4.3.2",
     "@modelcontextprotocol/sdk": "1.32.2",
-    "koffi": "^3.3.4",
+    "koffi": "^3.3.6",
     "lowlight": "^3.3.0",
     "mdast-util-from-markdown": "^2.1.0",
     "react": "^19.3.1",
