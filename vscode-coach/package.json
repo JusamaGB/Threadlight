@@ -3,7 +3,7 @@
   "displayName": "Threadlight Live Coach",
   "description": "In-place file proposals, optional Python suggestions and voice-paced coaching for Threadlight Live.",
   "publisher": "threadlight",
-  "version": "0.6.3",
+  "version": "0.6.5",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -22,6 +22,7 @@
     "README.md",
     "LICENSE",
     "proposals.cjs",
+    "proposalReview.cjs",
     "pythonSuggestions.cjs"
   ],
   "extensionKind": [

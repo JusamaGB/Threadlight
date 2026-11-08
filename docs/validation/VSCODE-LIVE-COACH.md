@@ -1,5 +1,11 @@
 # VS Code Live coaching on Windows
 
+## Compact proposals in companion 0.6.5
+
+An isolated desktop VS Code host opened **Result** and **Why this edit?** on a disposable dirty buffer, scrolled eight pages away and returned. The same proposal token and both open controls survived. While offscreen the status was pending, the explanation was unavailable and Accept left the document version unchanged. Returning restored the original diff and allowed the visible proposal to be accepted and undone.
+
+In a separate overlap check, the real editor bridge queued the shown proposal’s instruction behind an active progress readout. Scrolling the line out of view canceled that queued instruction. Completing the progress playback and returning to the line produced no additional speech request. The voice transport was simulated for this editor check. The seven installed 0.6.5 runtime files matched the checkout.
+
 The extension-host check used a separate VS Code profile and a disposable Python file.
 It changed the open buffer without saving, then used the production coaching connection.
 

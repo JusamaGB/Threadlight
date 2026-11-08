@@ -210,7 +210,9 @@ line, ask “Could you fill that line for me?” **Trace** places ghost text at 
 verified insertion point without requiring a selection. Type along, use Tab
 to indent, or press Esc to dismiss it. Companion 0.6.2 stops explicitly retriggering the inline-suggestion sound as you type. VS Code’s own accessibility preferences still control suggestion cues. When ready, say “I’m done, let’s move
 on” for a fresh check of your code. Ask “There are issues in my file; show me the inline diffs.” Coach reads the active
-buffer and brings each proposed change into view. You can type your own fix, press
+buffer and brings each proposed change into view. Companion 0.6.5 opens a compact,
+line-numbered diff with the removed and added code together. **Result** previews
+the edited lines and **Why this edit?** reveals the coach’s explanation. Scroll away and back to continue reviewing the same proposal. You can type your own fix, press
 Tab to accept, Alt+] to see the next, Alt+Backspace to skip, or Esc to dismiss.
 Each accepted proposal or dependent group is one Undo. Ask for a spoken explanation
 while the change is visible. Selecting a range and asking for alternatives still

@@ -6,6 +6,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- VS Code Live Coach 0.6.5 shows file proposals as compact inline diffs. Removed and added lines appear together, with highlights that fade just past the code. **Result** previews the proposed lines and **Why this edit?** opens the explanation. Scrolling away and back preserves the proposal and both controls’ state.
+
 - GPT Live can speak a short progress acknowledgment while the Agent checks the editor. Repeated events share one readout. The next proposal or answer waits for playback, and Stop or a new turn cancels queued narration.
 
 - Agent Settings has a keyboard-accessible **Voice pace** slider. Its five choices apply to the next GPT Live call or spoken screen reply, and the setting survives restarts.

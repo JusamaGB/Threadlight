@@ -1,5 +1,6 @@
 const vscode = require('vscode')
 const { randomUUID } = require('node:crypto')
+const { reviewRows, reviewBodies, resultCommand, whyCommand } = require('./proposalReview.cjs')
 
 function readGroups(doc, proposals) {
   const text = doc.getText()
@@ -108,32 +109,38 @@ function createProposals(context, connected, emit) {
       q.doc.version === q.version
     )
   }
+  function inView(q) {
+    return q.editor.visibleRanges.some((range) => range.contains(q.target.start))
+  }
   function status() {
     if (queue && !queue.applying && !current(queue)) clear()
     if (!queue) return { status: 'idle' }
     const g = queue.groups[queue.index]
     return {
-      status: queue.visible ? 'shown' : 'pending',
+      status: queue.presentation === 'shown' ? 'shown' : 'pending',
       token: queue.token,
       step: g.number,
       total: queue.total,
-      explanation: queue.visible ? g.explanation : undefined,
+      explanation: queue.presentation === 'shown' ? g.explanation : undefined,
       line: queue.doc.positionAt(g.edits[0].start).line + 1,
     }
   }
-  function format(q, g) {
-    const md = new vscode.MarkdownString()
-    for (const e of g.edits) {
-      if (g.edits.length > 1) md.appendText('Line ' + (q.doc.positionAt(e.start).line + 1) + '\n')
-      if (g.edits.length > 1 && e.old) md.appendCodeblock(e.old, q.doc.languageId)
-      if (e.replacement) md.appendCodeblock(e.replacement, q.doc.languageId)
-      else md.appendText('Delete this text.\n')
-    }
-    return md
+  function renderReview(q) {
+    thread.comments = reviewBodies(vscode, q, q.groups[q.index].explanation).map((body) => ({
+      body,
+      mode: vscode.CommentMode.Preview,
+      author: { name: 'Proposed change' },
+    }))
+  }
+  function toggle(token, field) {
+    const q = queue
+    if (!thread || !q?.presentation || token !== q.token || !current(q)) return
+    q[field] = !q[field]
+    renderReview(q)
   }
   async function show(q) {
     hide()
-    q.visible = false
+    q.presentation = undefined
     emit({ proposalState: { status: 'pending' } })
     q.token = randomUUID()
     const token = q.token
@@ -144,12 +151,15 @@ function createProposals(context, connected, emit) {
         (e) => new vscode.Range(q.doc.positionAt(e.start), q.doc.positionAt(e.end)),
       )
       const target = ranges[0]
+      const commentsVisible = vscode.workspace.getConfiguration('comments').get('visible', true)
       const inline =
+        (q.localPrediction || !commentsVisible) &&
         g.edits.length === 1 &&
         !/[\r\n]/.test(g.edits[0].old + g.edits[0].replacement) &&
         g.edits[0].replacement.length <= 100 &&
         (g.edits[0].replacement.trim() || !g.edits[0].replacement)
       if (inline) {
+        q.editor.setDecorations(oldMark, ranges)
         q.editor.setDecorations(newMark, [
           {
             range: target,
@@ -158,33 +168,32 @@ function createProposals(context, connected, emit) {
           },
         ])
       } else {
-        if (!vscode.workspace.getConfiguration('comments').get('visible', true))
+        if (!commentsVisible)
           throw Error('Enable visible editor comments to display grouped or multiline changes.')
-        thread = controller.createCommentThread(q.doc.uri, target, [])
+        q.rows = reviewRows(q.doc, g.edits)
+        q.result = q.why = false
+        thread = controller.createCommentThread(
+          q.doc.uri,
+          new vscode.Range(target.start, target.start),
+          [],
+        )
         thread.canReply = false
         thread.label =
           'Threadlight · ' + g.number + '/' + q.total + ' · Tab accept · Alt+] next · Esc dismiss'
-        thread.comments = [
-          {
-            body: format(q, g),
-            mode: vscode.CommentMode.Preview,
-            author: { name: 'Proposed change' },
-          },
-        ]
+        renderReview(q)
         thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded
       }
       q.target = target
       q.editor.selection = new vscode.Selection(target.start, target.end)
-      q.editor.setDecorations(oldMark, ranges)
       q.editor.revealRange(target, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
       for (let i = 0; i < 25; i++) {
         await new Promise((resolve) => setTimeout(resolve, 40))
         if (!current(q) || token !== q.token)
           throw Error('Proposal interrupted. Read fresh source.')
-        if (q.editor.visibleRanges.some((r) => r.contains(target.start))) {
+        if (inView(q)) {
           await setKey(true)
           if (!current(q) || token !== q.token) throw Error('Proposal interrupted.')
-          q.visible = true
+          q.presentation = inView(q) ? 'shown' : 'offscreen'
           item.text = '$(arrow-right) Change ' + g.number + '/' + q.total
           item.tooltip = 'Next change (Alt+]). Tab accepts, Alt+Backspace skips and Esc dismisses.'
           item.show()
@@ -216,7 +225,7 @@ function createProposals(context, connected, emit) {
   }
   async function next(token, skip = false) {
     const q = queue
-    if (!q || q.token !== token || (!q.visible && !q.remaining))
+    if (!q || q.token !== token || (!q.presentation && !q.remaining))
       return { ...status(), applied: false }
     if (!current(q)) {
       clear()
@@ -237,13 +246,13 @@ function createProposals(context, connected, emit) {
   }
   async function accept() {
     const q = queue
-    if (!q?.visible || !current(q)) return clear()
+    if (!q?.presentation || !current(q)) return clear()
+    if (!inView(q)) return
     if (
       (thread &&
         (!vscode.workspace.getConfiguration('comments').get('visible', true) ||
           thread.collapsibleState === vscode.CommentThreadCollapsibleState.Collapsed)) ||
-      !q.editor.selection.isEqual(q.target) ||
-      !q.editor.visibleRanges.some((range) => range.contains(q.target.start))
+      !q.editor.selection.isEqual(q.target)
     )
       return clear()
     const g = q.groups[q.index],
@@ -254,7 +263,7 @@ function createProposals(context, connected, emit) {
       (s, e) => s.slice(0, e.start) + e.replacement + s.slice(e.end),
       prior,
     )
-    q.visible = false
+    q.presentation = undefined
     hide()
     emit({ proposalState: { status: 'pending' } })
     q.applying = true
@@ -320,6 +329,8 @@ function createProposals(context, connected, emit) {
     item,
     oldMark,
     newMark,
+    vscode.commands.registerCommand(resultCommand, (token) => toggle(token, 'result')),
+    vscode.commands.registerCommand(whyCommand, (token) => toggle(token, 'why')),
     vscode.commands.registerCommand('threadlight.coach.acceptProposal', run(accept)),
     vscode.commands.registerCommand('threadlight.coach.dismissProposals', clear),
     vscode.commands.registerCommand(
@@ -337,30 +348,21 @@ function createProposals(context, connected, emit) {
       if (
         (kind === vscode.TextEditorSelectionChangeKind.Keyboard ||
           kind === vscode.TextEditorSelectionChangeKind.Mouse) &&
-        queue?.visible &&
+        queue?.presentation &&
         queue.editor === textEditor &&
         !textEditor.selection.isEqual(queue.target)
       )
         clear()
     }),
     vscode.window.onDidChangeTextEditorVisibleRanges(({ textEditor }) => {
-      // Comment layout can briefly move the viewport as a different group is revealed.
-      const q = queue,
-        token = q?.token
-      if (
-        q?.visible &&
-        q.editor === textEditor &&
-        !textEditor.visibleRanges.some((r) => r.contains(q.target.start))
-      )
-        setTimeout(() => {
-          if (
-            queue === q &&
-            q.visible &&
-            token === q.token &&
-            !textEditor.visibleRanges.some((r) => r.contains(q.target.start))
-          )
-            clear()
-        }, 150)
+      const q = queue
+      if (!q?.presentation || q.editor !== textEditor) return
+      const presentation = inView(q) ? 'shown' : 'offscreen'
+      if (q.presentation === presentation) return
+      q.presentation = presentation
+      // Stop queued narration when scrolling away. Returning reveals the same
+      // thread with its controls intact and does not request narration again.
+      emit({ proposalState: presentation === 'shown' ? status() : { status: 'pending' } })
     }),
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
       if (queue?.doc === document && !queue.applying && document.version !== queue.version) clear()

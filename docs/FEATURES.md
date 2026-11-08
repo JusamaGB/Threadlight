@@ -395,7 +395,7 @@ completion to Live. Editing pauses the guide. Click **Refresh guide** or say
 reads the current buffer, locates insertions, replacements or deletions, and presents
 one proposal at a time. Tab accepts one undoable edit or group. Alt+] navigates,
 Alt+Backspace skips and Esc dismisses. Typing in the chosen location cancels stale
-proposals. Requested speech follows the visible location. Choose **Settings → VS Code → Automatic Python suggestions → On** in Threadlight, or ask the Agent to enable them. Companion 0.6.1 starts automatic ghost text and next-edit predictions when a trusted Python file opens. The default follows the VS Code checkbox.
+proposals. Companion 0.6.5 shows removed and added lines together, with **Result** and **Why this edit?** controls. Scrolling away keeps the proposal and its controls’ state. Acceptance and requested narration require the proposed location to be visible. Choose **Settings → VS Code → Automatic Python suggestions → On** in Threadlight, or ask the Agent to enable them. Companion 0.6.1 starts automatic ghost text and next-edit predictions when a trusted Python file opens. The default follows the VS Code checkbox.
 For alternatives to a particular selection, select one range and ask for versions. An expanded review in the original
 editor shows up to three versions. Tab accepts the displayed version into the
 unsaved buffer, Esc dismisses it, and the arrow keys cycle versions. Switching
