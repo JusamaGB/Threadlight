@@ -1,8 +1,9 @@
 // Delivers a message to a session in the background: runs the user's own Claude Code CLI
-// with `--resume <session> -p <message>`, which adds one turn to that session exactly as if
+// with `--resume <session> -p` and the message on stdin, which adds one turn to that session exactly as if
 // it had been typed in Claude. The reply comes back as JSON on stdout.
 
 import { execFile, spawn } from 'node:child_process'
+import { openMemoryProxy } from './memory/transport'
 import { access, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -12,7 +13,7 @@ import { isObject, oneLine, str } from './sessions/json'
 import { liveSessionIds, processIsRunning } from './sessions/liveSessions'
 import type { ClaudePaths } from './sessions/paths'
 
-/** Windows caps a command line at 32 767 characters; leave room for the rest of it. */
+/** Bound relay turns and avoid oversized provider requests. */
 export const MAX_MESSAGE_LENGTH = 16_000
 const REPLY_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -44,8 +45,8 @@ export interface RelayDeps {
 /** The parts of a session the relay needs. Taken from Threadlight's own scan, never from the UI. */
 export type RelayTarget = Pick<Session, 'id' | 'cwd' | 'permissionMode' | 'model'>
 
-export function relayArgs(target: RelayTarget, text: string): string[] {
-  const args = ['--resume', target.id, '-p', text, '--output-format', 'json']
+export function relayArgs(target: RelayTarget): string[] {
+  const args = ['--resume', target.id, '-p', '--output-format', 'json']
   if (target.permissionMode && PERMISSION_MODES.has(target.permissionMode)) {
     args.push('--permission-mode', target.permissionMode)
   }
@@ -73,60 +74,88 @@ export async function relayMessage(
     return { ok: false, reason: 'Claude has this thread open right now. Use Open to reply there.' }
   }
 
-  return new Promise((resolve) => {
-    // No shell: the message is one argument and is never interpreted.
-    const child = spawn(
-      deps.cli!.command,
-      [
-        ...deps.cli!.prefixArgs,
-        ...relayArgs(target, message),
-        ...(memory
-          ? [
-              '--mcp-config',
-              JSON.stringify({
-                mcpServers: {
-                  threadlight: {
-                    type: 'http',
-                    url: memory.url,
-                    headers: { Authorization: 'Bearer ${THREADLIGHT_MEMORY_TOKEN}' },
+  let proxy: ReturnType<typeof openMemoryProxy> | undefined
+  try {
+    if (memory) proxy = openMemoryProxy(memory.url, memory.token)
+  } catch {
+    return { ok: false, reason: 'Authenticated shared memory is unavailable.' }
+  }
+  try {
+    return await new Promise((resolve) => {
+      // No shell; message content travels through stdin, outside process command lines.
+      const child = spawn(
+        deps.cli!.command,
+        [
+          ...deps.cli!.prefixArgs,
+          ...relayArgs(target),
+          ...(memory
+            ? [
+                '--mcp-config',
+                JSON.stringify({
+                  mcpServers: {
+                    threadlight: {
+                      type: 'stdio',
+                      ...proxy!.mcp,
+                    },
                   },
-                },
-              }),
-              '--allowedTools',
-              'mcp__threadlight__*',
-            ]
-          : []),
-      ],
-      {
-        cwd: target.cwd || undefined,
-        env: memory ? { ...process.env, THREADLIGHT_MEMORY_TOKEN: memory.token } : process.env,
-        windowsHide: true,
-        shell: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    )
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    const done = (result: RelayResult) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      resolve(result)
-    }
-    const timer = setTimeout(() => {
-      child.kill()
-      done({ ok: false, reason: 'No reply within 30 minutes.' })
-    }, REPLY_TIMEOUT_MS)
+                }),
+                '--allowedTools',
+                'mcp__threadlight__*',
+              ]
+            : []),
+        ],
+        {
+          cwd: target.cwd || undefined,
+          env: process.env,
+          windowsHide: true,
+          shell: false,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      )
+      let stdout = ''
+      let stderr = ''
+      let settled = false
+      let stopped: RelayResult | undefined
+      const done = (result: RelayResult) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(result)
+      }
+      const timer = setTimeout(() => {
+        stopped = {
+          ok: false,
+          reason: 'No reply within 30 minutes. Check the native chat before retrying.',
+        }
+        child.kill()
+      }, REPLY_TIMEOUT_MS)
 
-    child.once('spawn', onSent)
-    child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk))
-    child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk))
-    child.once('error', (error) =>
-      done({ ok: false, reason: `Could not start Claude: ${error.message}` }),
-    )
-    child.once('close', () => done(interpretOutput(stdout, stderr)))
-  })
+      child.stdin.on('error', () => {})
+      child.once('spawn', () => {
+        child.stdin.end(message)
+        onSent()
+      })
+      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+        if (stopped) return
+        if (Buffer.byteLength(stdout) + Buffer.byteLength(chunk) > 8 * 1024 * 1024) {
+          stopped = {
+            ok: false,
+            reason: 'Claude output exceeded the safe limit. Check the native chat before retrying.',
+          }
+          child.kill()
+        } else stdout += chunk
+      })
+      child.stderr
+        .setEncoding('utf8')
+        .on('data', (chunk: string) => (stderr = (stderr + chunk).slice(-32 * 1024)))
+      child.once('error', (error) =>
+        done({ ok: false, reason: `Could not start Claude: ${error.message}` }),
+      )
+      child.once('close', () => done(stopped ?? interpretOutput(stdout, stderr)))
+    })
+  } finally {
+    proxy?.close()
+  }
 }
 
 /** Turns the CLI's `--output-format json` result into a reply or a readable reason. */

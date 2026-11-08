@@ -1,9 +1,20 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { acceleratorFrom, acceleratorLabel } from '../../shared/accelerator'
+import { Hotkeys } from './Hotkeys'
 import { AgentSettings } from './AgentSettings'
-import { SESSION_WINDOW_HOURS, type Settings, type SettingsPatch } from '../../shared/settings'
-import { PROVIDERS, providerName } from '../../shared/providers'
+import { KimiSettings } from './KimiSettings'
+import { KimiWorkspace } from '../kimi/KimiWorkspace'
+import { KIMI_PREVIEW_ENABLED } from '../../shared/releaseFeatures'
+import { PerplexitySettings } from './PerplexitySettings'
+import { AccountChatSettings } from './AccountChatSettings'
+import {
+  SESSION_WINDOW_HOURS,
+  type Settings,
+  type SettingsPatch,
+  type ShownProvider,
+} from '../../shared/settings'
+import { ProviderChoices } from './ProviderChoices'
 import type { SttStatus } from '../../shared/stt'
 import { en } from '../i18n/en'
 import { Tip } from '../panel/Tip'
@@ -12,6 +23,7 @@ import { windowLabel } from '../lib/format'
 import styles from './Settings.module.css'
 
 interface SettingsViewProps {
+  hotkeyProblem?: string | null
   currentAgentProvider?: 'claude' | 'codex'
   providerLocked?: boolean
   settings: Settings
@@ -22,17 +34,51 @@ interface SettingsViewProps {
 }
 
 /** Every setting in one compact list, inside the panel's own card. Changes save immediately. */
-export function SettingsView({
+export function SettingsView(props: SettingsViewProps) {
+  const [showKimi, setShowKimi] = useState(false)
+  const kimiSelected = KIMI_PREVIEW_ENABLED && props.settings.shownProviders.includes('kimi')
+  if (showKimi && !kimiSelected) setShowKimi(false)
+  const returnFocus = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!showKimi) returnFocus.current?.focus()
+  }, [showKimi])
+  return (
+    <>
+      {KIMI_PREVIEW_ENABLED && (
+        <KimiWorkspace
+          setup={props.settings.kimiSetup}
+          visible={showKimi}
+          onSettings={() => setShowKimi(false)}
+        />
+      )}
+      <div style={showKimi ? { display: 'none' } : undefined}>
+        <SettingsFields
+          {...props}
+          onOpenKimi={() => {
+            returnFocus.current = document.activeElement as HTMLElement
+            setShowKimi(true)
+          }}
+        />
+      </div>
+    </>
+  )
+}
+
+function SettingsFields({
   settings,
   stt,
   version,
   onPickWorkspace,
   providerLocked,
   currentAgentProvider,
-}: SettingsViewProps) {
+  hotkeyProblem,
+  onOpenKimi,
+}: SettingsViewProps & { onOpenKimi: () => void }) {
   const [errors, setErrors] = useState<Partial<Record<keyof Settings, string>>>({})
   const [savingProviders, setSavingProviders] = useState(false)
   const [savingVoice, setSavingVoice] = useState(false)
+  const [savingRegions, setSavingRegions] = useState(false)
+  const [restarting, setRestarting] = useState(false)
 
   const save = async (patch: SettingsPatch) => {
     const key = Object.keys(patch)[0] as keyof Settings
@@ -43,45 +89,146 @@ export function SettingsView({
 
   return (
     <div className={styles.view}>
-      <Group label={en.sources.title}>
+      <section className={styles.group}>
+        <ProviderChoices
+          label="Providers shown"
+          options={[
+            { value: 'claude', label: 'Claude', help: 'Claude Code threads.' },
+            {
+              value: 'codex',
+              label: 'OpenAI',
+              help: 'Codex work threads. Choose ChatGPT chats separately below.',
+            },
+            {
+              value: 'perplexity',
+              label: 'Perplexity',
+              help: 'Perplexity Computer preview and connection settings.',
+            },
+            ...(KIMI_PREVIEW_ENABLED
+              ? [
+                  {
+                    value: 'kimi' as const,
+                    label: 'Kimi',
+                    help: 'Kimi setup and workspace preview. Execution is not enabled yet.',
+                  },
+                ]
+              : []),
+          ]}
+          selected={settings.shownProviders}
+          disabled={providerLocked || savingProviders}
+          onChange={(shownProviders: ShownProvider[]) =>
+            void (async () => {
+              setSavingProviders(true)
+              try {
+                await save({ shownProviders })
+              } catch {
+                setErrors((current) => ({
+                  ...current,
+                  shownProviders: 'Could not save providers.',
+                }))
+              } finally {
+                setSavingProviders(false)
+              }
+            })()
+          }
+        />
+        {errors.shownProviders && (
+          <p className={styles.error} role="alert">
+            {errors.shownProviders}
+          </p>
+        )}
+        <div hidden={!settings.shownProviders.includes('perplexity')}>
+          <PerplexitySettings />
+        </div>
+        <AccountChatSettings sources={settings.chatSources} save={save} />
+      </section>
+      <Group label="VS Code">
         <Row
-          label={en.settings.threadsShown}
-          help={en.settings.help.threadsShown}
-          error={errors.enabledProviders}
+          label="Automatic Python suggestions"
+          help={{
+            info: 'Show suggestions as you type in trusted Python files with Live Coach 0.6.1 or later. Choose VS Code setting to follow your editor preference.',
+          }}
+          error={errors.pythonSuggestions}
         >
-          <span className={styles.segmented} role="group" aria-label={en.sources.title}>
-            {PROVIDERS.map((provider) => (
-              <button
-                key={provider}
-                role="switch"
-                aria-checked={settings.enabledProviders.includes(provider)}
-                disabled={providerLocked || savingProviders}
-                onClick={async () => {
-                  setSavingProviders(true)
-                  try {
-                    await save({
-                      enabledProviders: settings.enabledProviders.includes(provider)
-                        ? settings.enabledProviders.filter((p) => p !== provider)
-                        : [...settings.enabledProviders, provider],
-                    })
-                  } finally {
-                    setSavingProviders(false)
-                  }
-                }}
-              >
-                <span className={styles.providerCheck} aria-hidden="true">
-                  {settings.enabledProviders.includes(provider) ? '✓' : ''}
-                </span>
-                {providerName(provider)}
-              </button>
-            ))}
-          </span>
+          <HoverChoice
+            label="Automatic Python suggestions"
+            value={settings.pythonSuggestions}
+            options={[
+              { value: 'editor', label: 'VS Code setting' },
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+            onChange={(pythonSuggestions: Settings['pythonSuggestions']) =>
+              save({ pythonSuggestions })
+            }
+          />
         </Row>
-        {!settings.enabledProviders.length && <p className={styles.footer}>{en.sources.paused}</p>}
       </Group>
       <AgentSettings key={settings.agentProvider} settings={settings} save={save} />
+      {KIMI_PREVIEW_ENABLED && (
+        <div hidden={!settings.shownProviders.includes('kimi')}>
+          <KimiSettings
+            key={JSON.stringify(settings.kimiSetup)}
+            setup={settings.kimiSetup}
+            save={save}
+            onOpenWorkspace={onOpenKimi}
+          />
+        </div>
+      )}
 
       <Group label={en.settings.voice}>
+        <ProviderChoices
+          label="Screen regions"
+          showAll={false}
+          disabled={savingRegions}
+          selected={settings.screenRegionModes}
+          options={[
+            {
+              value: 'live',
+              label: 'In Live',
+              help: 'Release Ctrl after a right-drag to send the region to the current Live Agent.',
+            },
+            {
+              value: 'outside',
+              label: 'Outside Live',
+              help: 'Release Ctrl after a right-drag to start a new Agent conversation with the region.',
+            },
+          ]}
+          onChange={async (screenRegionModes) => {
+            setSavingRegions(true)
+            try {
+              await save({ screenRegionModes })
+            } catch {
+              setErrors((old) => ({ ...old, screenRegionModes: 'Could not save screen regions.' }))
+            } finally {
+              setSavingRegions(false)
+            }
+          }}
+        />
+        {errors.screenRegionModes && (
+          <p role="alert" className={styles.error}>
+            {errors.screenRegionModes}
+          </p>
+        )}
+        {settings.screenRegionModes.includes('outside') && (
+          <Row
+            label="Speak reply"
+            slim
+            help={{
+              info:
+                settings.agentProvider === 'codex'
+                  ? 'Read the answer in the GPT Live voice. Your microphone stays closed.'
+                  : 'Read the Claude answer with your Windows voice. Your microphone stays closed.',
+            }}
+            error={errors.speakScreenReply}
+          >
+            <Toggle
+              label="Speak outside-Live replies"
+              on={settings.speakScreenReply}
+              onChange={(speakScreenReply) => void save({ speakScreenReply })}
+            />
+          </Row>
+        )}
         <Row
           label={en.settings.voiceTarget}
           help={en.settings.help.voiceTarget}
@@ -126,29 +273,31 @@ export function SettingsView({
             />
           </Row>
         )}
-        <Row
-          label={en.settings.talkHotkey}
-          help={en.settings.help.talkHotkey}
-          error={errors.talkHotkey}
-        >
-          <span className={styles.pair}>
-            <HotkeyField
-              value={settings.talkHotkey}
-              onChange={(talkHotkey) => save({ talkHotkey })}
-            />
-            {settings.voiceMode === 'local-stt' && (
-              <HoverChoice
-                label={en.settings.talkMode}
-                value={settings.talkMode}
-                options={[
-                  { value: 'toggle', label: en.settings.toggle },
-                  { value: 'hold', label: en.settings.hold },
-                ]}
-                onChange={(talkMode) => save({ talkMode })}
+        <Hotkeys settings={settings} problem={hotkeyProblem}>
+          <Row
+            label={en.settings.talkHotkey}
+            help={en.settings.help.talkHotkey}
+            error={errors.talkHotkey}
+          >
+            <span className={styles.pair}>
+              <HotkeyField
+                value={settings.talkHotkey}
+                onChange={(talkHotkey) => save({ talkHotkey })}
               />
-            )}
-          </span>
-        </Row>
+              {settings.voiceMode === 'local-stt' && (
+                <HoverChoice
+                  label={en.settings.talkMode}
+                  value={settings.talkMode}
+                  options={[
+                    { value: 'toggle', label: en.settings.toggle },
+                    { value: 'hold', label: en.settings.hold },
+                  ]}
+                  onChange={(talkMode) => save({ talkMode })}
+                />
+              )}
+            </span>
+          </Row>
+        </Hotkeys>
         {settings.voiceMode === 'local-stt' && settings.voiceTarget === 'thread' && (
           <Row label={en.settings.countdown} help={en.settings.help.countdown}>
             <span className={styles.pair}>
@@ -220,7 +369,20 @@ export function SettingsView({
       </Group>
 
       <Group label="Shared Spaces">
-        <p className={styles.footer}>{en.settings.sharedSpacesNote}</p>
+        <Row
+          label="Add to .gitignore"
+          help={{
+            info: 'Offer an unchecked option when creating a shared space. Existing spaces and ignore rules stay as they are.',
+          }}
+          error={errors.sharedSpacesGitignore}
+          slim
+        >
+          <Toggle
+            on={settings.sharedSpacesGitignore}
+            label="Add to .gitignore"
+            onChange={(sharedSpacesGitignore) => save({ sharedSpacesGitignore })}
+          />
+        </Row>
       </Group>
 
       <Group label={en.settings.app}>
@@ -233,7 +395,12 @@ export function SettingsView({
             value={settings.hoverHelp}
             options={[
               { value: 'tour', label: 'Tour', title: 'Show all available help immediately.' },
-              { value: 'info', label: 'Info', title: 'Show normal hover information.' },
+              { value: 'info', label: 'Full', title: 'Show normal hover information.' },
+              {
+                value: 'teach',
+                label: 'Teach',
+                title: 'Explain concepts and the consequences of actions.',
+              },
               { value: 'off', label: 'Off', title: 'Hide hover information and help.' },
             ]}
             onChange={(hoverHelp) => save({ hoverHelp })}
@@ -255,8 +422,18 @@ export function SettingsView({
           </button>
         </Row>
         <Row label={en.settings.restart} help={en.settings.help.restart}>
-          <button className={styles.small} onClick={() => window.threadlight.restartApp()}>
-            {en.settings.restartButton}
+          <button
+            className={`${styles.small} ${restarting ? styles.on : ''}`}
+            aria-label={restarting ? en.settings.restarting : en.settings.restartButton}
+            disabled={restarting}
+            onClick={() => {
+              setRestarting(true)
+              window.threadlight.restartApp()
+            }}
+          >
+            <span role="status">
+              {restarting ? en.settings.restarting : en.settings.restartButton}
+            </span>
           </button>
         </Row>
         <Row
@@ -276,7 +453,7 @@ export function SettingsView({
       <p className={`${styles.footer} ${styles.attribution}`}>
         {en.settings.footer(version)}
         <br />
-        {en.settings.notMadeBy}
+        {en.settings.attribution}
       </p>
     </div>
   )

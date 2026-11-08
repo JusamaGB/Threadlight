@@ -132,6 +132,7 @@ export class CodexReadAdapter implements ThreadAdapter {
     entry: CatalogEntry,
     cursor?: HistoryCursor,
     statusOnly = false,
+    assistantText?: (text: string) => string,
   ): Promise<AdapterRead> {
     let items: ThreadVisibleItem[] = [],
       status = unknownStatus()
@@ -204,6 +205,7 @@ export class CodexReadAdapter implements ThreadAdapter {
             { ...JSON.parse(String(r.item_json)), ...(r.turn_id ? { turn_id: r.turn_id } : {}) },
             'codex_history',
             `history:${entry.nativeId}:${r.rollout_ordinal}`,
+            assistantText,
           )
         } catch {
           coverage.push('Malformed history item omitted.')
@@ -269,7 +271,7 @@ export class CodexReadAdapter implements ThreadAdapter {
         !sources.some((s) => s.source === 'codex_history' && s.health === 'ok') ||
         coverage.some((c) => c.startsWith('Rollout used')))
     ) {
-      items = normalizeRollout(rollout.records, entry.nativeId)
+      items = normalizeRollout(rollout.records, entry.nativeId, assistantText)
       next = rollout.cursor
       changedDuringRead = rollout.changedDuringRead
       if (!cursor) status = rolloutStatus(rollout.records.map((r) => r.value))

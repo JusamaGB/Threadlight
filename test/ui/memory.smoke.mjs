@@ -1,3 +1,4 @@
+import { memoryFixture } from '../live/memory-transport.fixture.mjs'
 import { openHeaderPage } from './header-navigation.mjs'
 import { setupLegacySpace } from './space-navigation.mjs'
 /* global window */
@@ -7,14 +8,16 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { randomUUID, randomBytes } from 'node:crypto'
 
-export async function setupMemory(page, MemoryStore, MemoryConnections) {
+export async function setupMemory(page, MemoryStore, MemoryServer) {
   const directory = mkdtempSync(join(tmpdir(), 'threadlight-ui-memory-')),
     store = new MemoryStore(join(directory, 'memory.sqlite'))
-  const connections = new MemoryConnections(store)
+  const server = new MemoryServer(store, memoryFixture(directory))
+  await server.start(0)
+  const connections = server.connections
   store.connectionStatus = () => connections.list()
   const snapshot = () => {
     const pending = connections.list()
-    return { ...store.snapshot(), endpoint: 'http://127.0.0.1:47618/mcp', connections: pending }
+    return { ...store.snapshot(), endpoint: server.endpoint, connections: pending }
   }
   store.onChange = () => {
     void page.evaluate((data) => window.proof?.emit('onMemory', data), snapshot()).catch(() => {})
@@ -26,9 +29,12 @@ export async function setupMemory(page, MemoryStore, MemoryConnections) {
       const value =
         input.action === 'create_grant' && input.connectionId
           ? connections.approve(input.connectionId, input)
-          : input.action === 'reject_connection'
-            ? connections.reject(input.id)
-            : store.execute(input)
+          : input.action === 'create_grant'
+            ? server.enroll(input)
+            : input.action === 'reject_connection'
+              ? connections.reject(input.id)
+              : store.execute(input)
+      if (input.action === 'revoke_grant') server.releaseEnrollment(input.id)
       return { ok: true, value, snapshot: snapshot() }
     } catch (error) {
       return { ok: false, code: error.code ?? 'error', reason: error.message }
@@ -40,7 +46,7 @@ export async function setupMemory(page, MemoryStore, MemoryConnections) {
     connections,
     execute,
     close: () => {
-      connections.close()
+      server.close()
       store.close()
       if (resolve(directory).startsWith(resolve(tmpdir()) + sep + 'threadlight-ui-memory-'))
         rmSync(directory, { recursive: true, force: true })
@@ -53,6 +59,7 @@ export async function checkMemory(page, proof, capture) {
   await setupLegacySpace(page)
   const view = page.getByRole('region', { name: 'Handoffs', exact: true })
   await view.getByRole('button', { name: /shared Workspace collaboration/ }).click()
+  await view.getByText('Folders & controls', { exact: true }).click()
   await view.getByRole('button', { name: 'New folder', exact: true }).click()
   await view.getByLabel('Title', { exact: true }).fill('Research')
   await view.getByLabel('Description', { exact: true }).fill('Verified sources and open questions')
@@ -82,6 +89,7 @@ export async function checkMemory(page, proof, capture) {
     secret: randomBytes(32).toString('hex'),
     provider: 'codex',
     label: 'Synthetic plugin review',
+    spaceId: space.id,
   }
   const pending = proof.connections.request(pairing)
   await view.getByRole('button', { name: 'Agent access', exact: true }).click()
@@ -99,6 +107,19 @@ export async function checkMemory(page, proof, capture) {
   await view.getByRole('button', { name: 'Revoke', exact: true }).click()
   await view.getByRole('button', { name: 'Confirm', exact: true }).click()
   assert.throws(() => proof.connections.authenticate(pairing.id, pairing.secret))
+  await view.getByRole('button', { name: 'Enroll agent capability', exact: true }).click()
+  await view.getByLabel('Title', { exact: true }).fill('Secure manual connection')
+  await view.getByRole('button', { name: 'Save', exact: true }).click()
+  await view.getByRole('button', { name: 'Copy Claude configuration', exact: true }).waitFor()
+  const manual = JSON.parse(await view.locator('pre').first().textContent()).mcpServers.threadlight
+  assert.equal(manual.type, 'stdio')
+  assert.equal(manual.headers, undefined)
+  assert.equal(manual.env.ELECTRON_RUN_AS_NODE, '1')
+  assert.ok(manual.args.at(-1).endsWith('.json'))
+  assert.ok((await view.locator('pre').nth(1).textContent()).includes('command = '))
+  assert.ok(!(await view.locator('pre').allTextContents()).join('').includes('Bearer'))
+  await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
+
   await page.getByRole('button', { name: 'Back in Shared Spaces' }).click()
   await view.getByRole('button', { name: /Research 0 items/ }).click()
   await view.getByRole('button', { name: 'New note', exact: true }).click()

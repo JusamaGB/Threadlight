@@ -1,9 +1,9 @@
 {
   "name": "threadlight",
   "productName": "Threadlight",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.1",
   "private": true,
-  "description": "An unofficial status dot and mini composer for the Claude desktop app's Claude Code sessions on Windows.",
+  "description": "A compact Windows overlay for AI chats, code changes and shared project context.",
   "author": "Julius Deane",
   "license": "MIT",
   "main": "./out/main/index.js",
@@ -14,7 +14,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.browser-tests.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -27,9 +27,14 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.2",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "koffi": "^3.3.4",
+    "lowlight": "^3.3.0",
+    "mdast-util-from-markdown": "^2.1.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -48,5 +53,8 @@
     "typescript-eslint": "^8.72.0",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
+  },
+  "overrides": {
+    "minimatch": "11.0.1"
   }
 }

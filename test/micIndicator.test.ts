@@ -27,7 +27,7 @@ describe('floating microphone indicator', () => {
     const area = { x: anchor.x < 0 ? -1920 : 0, y: 0, width: 1920, height: 1080 }
     const pill = micIndicatorBounds(anchor, area, true)
     expect(pill.width).toBe(92)
-    expect(pill.height).toBe(18)
+    expect(pill.height).toBe(24)
     expect(pill.x).toBeGreaterThanOrEqual(area.x)
     expect(pill.x + pill.width).toBeLessThanOrEqual(area.x + area.width)
     expect(pill.y + pill.height).toBeLessThanOrEqual(area.height)
@@ -65,10 +65,19 @@ describe('floating microphone indicator', () => {
     expect(dot.send).toHaveBeenLastCalledWith(IPC.openMicLevel, 1)
     emit(IPC.openMicLevel, panel, NaN)
     expect(handles.get(IPC.openMicIndicator)!()).toEqual({ live: true, level: 1 })
+    emit(IPC.micAction, panel, 'pause')
+    emit(IPC.micAction, dot, 'invalid')
+    expect(panel.send).not.toHaveBeenCalled()
+    for (const action of ['pause', 'resume', 'stopSpeaking']) {
+      emit(IPC.micAction, dot, action)
+      expect(panel.send).toHaveBeenLastCalledWith(IPC.micAction, action)
+    }
+    panel.send.mockClear()
     emit(IPC.stopOpenMic, dot)
     expect(panel.send).toHaveBeenCalledExactlyOnceWith(IPC.stopOpenMic)
     emit(IPC.openMicLive, panel, false)
     emit(IPC.stopOpenMic, dot)
+    emit(IPC.micAction, dot, 'pause')
     expect(panel.send).toHaveBeenCalledTimes(1)
     emit(IPC.openMicLive, panel, true)
     reload.get('did-start-loading')!()

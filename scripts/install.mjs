@@ -3,7 +3,7 @@
 // it, and people can too. Every step says what it does; running it again changes nothing that
 // is already right; uninstalling removes only what this script added (see install.json).
 //
-//   node scripts/install.mjs [--hotkey Control+Alt+Q] [--talk-mode toggle|hold]
+//   node scripts/install.mjs [--providers claude,codex,perplexity] [--hotkey Control+Alt+Q] [--talk-mode toggle|hold]
 //                            [--countdown 1-10] [--corner top-right|top-left|bottom-right|bottom-left]
 //                            [--autostart | --no-autostart] [--no-start]
 //   node scripts/install.mjs --check                 diagnose only; changes nothing
@@ -13,7 +13,9 @@
 // Plain Node (22.16+), no dependencies of its own, so it runs before `npm ci`.
 
 import { spawn, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
+  createReadStream,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -49,7 +51,10 @@ const CLAUDE_APP_DIR = join(APPDATA, 'Claude')
 const say = (text) => console.log(text)
 const ok = (text) => say(`  ✓ ${text}`)
 const warn = (text) => say(`  ! ${text}`)
-const bad = (text) => say(`  ✗ ${text}`)
+const bad = (text) => {
+  process.exitCode = 1
+  say(`  ✗ ${text}`)
+}
 const step = (text) => say(`\n${text}`)
 
 class Stop extends Error {}
@@ -62,7 +67,7 @@ function fail(text) {
 // ---------- arguments ----------
 
 function parseArgs(argv) {
-  const options = { keys: [] }
+  const options = { keys: [], providers: ['claude'] }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     const value = () => {
@@ -71,6 +76,12 @@ function parseArgs(argv) {
       return next
     }
     switch (arg) {
+      case '--providers':
+        options.providers = [...new Set(value().split(','))]
+        if (!options.providers.every((name) => ['claude', 'codex', 'perplexity'].includes(name)))
+          fail('Choose claude, codex or perplexity, separated by commas.')
+        options.explicitProviders = true
+        break
       case '--check':
         options.mode = 'check'
         break
@@ -153,6 +164,11 @@ function run(command, args, { cwd = REPO, shell = false } = {}) {
 
 /** The last line of output that parses as JSON (CLIs may print notes before it). */
 function lastJson(text) {
+  try {
+    return JSON.parse(text)
+  } catch {
+    // Some CLI commands put a compact JSON record after informational lines.
+  }
   for (const line of text.trim().split(/\r?\n/).reverse()) {
     try {
       return JSON.parse(line)
@@ -160,11 +176,7 @@ function lastJson(text) {
       // not JSON; keep looking
     }
   }
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
+  return null
 }
 
 function newestMtime(dir) {
@@ -205,12 +217,117 @@ function claude(cli, args) {
   return run(cli, args)
 }
 
+function findCodex() {
+  const bin = join(
+    process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'),
+    'OpenAI',
+    'Codex',
+    'bin',
+  )
+  if (existsSync(bin)) {
+    const installs = readdirSync(bin)
+      .map((name) => join(bin, name, 'codex.exe'))
+      .filter(existsSync)
+    installs.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+    if (installs.length) return installs[0]
+  }
+  return run('where.exe', ['codex.exe']).stdout.trim().split(/\r?\n/).find(existsSync)
+}
+
+const CODEX_PLUGIN = 'threadlight-codex@threadlight-local'
+function codexPlugin(cli, ...args) {
+  // Outside the checkout the listing reports registered marketplaces independently
+  // of the implicit project marketplace visible when Codex starts in this repo.
+  const result = run(cli, ['plugin', ...args], { cwd: homedir() })
+  if (result.status !== 0)
+    fail(result.stderr.trim() || result.error?.message || 'Codex plugin command failed.')
+  return result.stdout
+}
+function codexSource(cli) {
+  return JSON.parse(codexPlugin(cli, 'marketplace', 'list', '--json')).marketplaces.find(
+    (m) => m.name === 'threadlight-local',
+  )
+}
+function codexInstalled(cli) {
+  return JSON.parse(
+    codexPlugin(cli, 'list', '--marketplace', 'threadlight-local', '--json'),
+  ).installed.find((p) => p.pluginId === CODEX_PLUGIN)
+}
+function installCodex(cli, added) {
+  step('Codex plugin')
+  const source = codexSource(cli)
+  if (source && !matchesSource(source.root))
+    fail('threadlight-local belongs to another source. Review it in Codex plugin settings.')
+  if (!source) {
+    codexPlugin(cli, 'marketplace', 'add', REPO)
+    added.codexMarketplace = true
+  }
+  const expected = readJson(join(REPO, 'codex-plugin', 'plugin.json')).version
+  const installed = codexInstalled(cli)
+  if (!installed || installed.version !== expected) {
+    codexPlugin(cli, 'add', CODEX_PLUGIN)
+    if (!installed) added.codexPlugin = true
+  }
+  const plugin = codexInstalled(cli)
+  if (!plugin?.enabled) fail('Enable the Threadlight plugin in Codex and rerun the check.')
+  if (plugin.version !== expected)
+    fail('Refresh the Codex marketplace to the same version as this checkout.')
+  ok('Codex plugin installed. Review its hooks in /hooks and open a new chat.')
+}
+
 function electronPath() {
+  const pkg = join(REPO, 'node_modules', 'electron')
   try {
-    return createRequire(join(REPO, 'package.json'))('electron')
+    const dist = process.env.ELECTRON_OVERRIDE_DIST_PATH || join(pkg, 'dist')
+    const exe = join(dist, readFileSync(join(pkg, 'path.txt'), 'utf8').trim())
+    return existsSync(exe) && statSync(exe).isFile() ? exe : null
   } catch {
     return null
   }
+}
+
+// A fresh Windows profile can build the app but fail to load Electron's native
+// ZIP extractor. Windows tar can extract the same pinned archive.
+async function ensureElectron() {
+  if (electronPath()) return
+  if (process.env.ELECTRON_OVERRIDE_DIST_PATH)
+    fail(
+      'The configured Electron override is missing its executable. Check ELECTRON_OVERRIDE_DIST_PATH.',
+    )
+  const pkg = join(REPO, 'node_modules', 'electron')
+  const require = createRequire(join(pkg, 'package.json'))
+  const { version } = require('./package.json')
+  const checksums = require('./checksums.json')
+  const name = `electron-v${version}-win32-${process.arch}.zip`
+  if (!checksums[name]) fail(`No pinned Electron archive for ${process.arch}.`)
+  step('Installing the Windows desktop runtime')
+  const archive = await require('@electron/get').downloadArtifact({
+    version,
+    artifactName: 'electron',
+    platform: 'win32',
+    arch: process.arch,
+    checksums,
+    cacheRoot: process.env.electron_config_cache,
+  })
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(archive)) hash.update(chunk)
+  if (hash.digest('hex') !== checksums[name]) fail('Electron archive checksum mismatch.')
+  const dist = join(pkg, 'dist')
+  mkdirSync(dist, { recursive: true })
+  const result = run(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), [
+    '-xf',
+    archive,
+    '-C',
+    dist,
+  ])
+  if (result.status !== 0)
+    fail(result.error?.message || result.stderr || 'Could not extract Electron.')
+  if (
+    !existsSync(join(dist, 'electron.exe')) ||
+    readFileSync(join(dist, 'version'), 'utf8').trim().replace(/^v/, '') !== version
+  )
+    fail('The extracted Electron runtime is incomplete.')
+  writeFileSync(join(pkg, 'path.txt'), 'electron.exe')
 }
 
 const built = () => existsSync(join(REPO, 'out', 'main', 'index.js'))
@@ -305,6 +422,18 @@ function pluginState(cli) {
 const samePath = (a, b) =>
   typeof a === 'string' && resolve(a).toLowerCase() === resolve(b).toLowerCase()
 
+function matchesSource(path) {
+  if (samePath(path, REPO)) return true
+  if (!path || !existsSync(path)) return false
+  const origin = run('git', ['remote', 'get-url', 'origin'], { cwd: path })
+  return (
+    origin.status === 0 &&
+    /^(?:https:\/\/github\.com\/|git@github\.com:)JusamaGB\/Threadlight(?:\.git)?$/i.test(
+      origin.stdout.trim(),
+    )
+  )
+}
+
 /** What this script added, so uninstalling removes only that. Flags only ever turn on. */
 function record(changes) {
   const current = readJson(RECORD_FILE) ?? { version: 1, repo: REPO, added: {} }
@@ -316,10 +445,10 @@ function record(changes) {
 // ---------- checks shared by install and --check ----------
 
 /** Returns the Claude CLI path, or stops with a clear reason. */
-function preflight({ strict }) {
+function preflight({ strict, providers }) {
   step('Checking this PC')
   const problem = strict ? fail : bad
-  if (process.platform !== 'win32') return problem('Threadlight runs on Windows only.')
+  if (process.platform !== 'win32') fail('Threadlight runs on Windows only.')
   const build = Number(release().split('.')[2])
   if (build < MIN_WINDOWS_BUILD) problem('Needs Windows 10 version 1803 or later, or Windows 11.')
   else ok(`Windows (build ${build})`)
@@ -327,15 +456,29 @@ function preflight({ strict }) {
   if (major < 22 || (major === 22 && minor < 16))
     problem(`Needs Node 22.16 or later (this is ${process.versions.node}).`)
   else ok(`Node ${process.versions.node}`)
-  const curl = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'curl.exe')
-  if (!existsSync(curl)) problem('curl.exe is missing from Windows; the hooks need it.')
-  else ok('curl.exe (used by the hooks)')
-  if (!existsSync(CLAUDE_APP_DIR)) problem('The Claude desktop app does not seem to be installed.')
-  else ok('Claude desktop app')
-  const cli = findClaude()
-  if (!cli) problem('Claude Code (the `claude` command) was not found.')
-  else ok('Claude Code CLI')
-  return cli
+  const commands = {}
+  if (providers.includes('codex')) {
+    commands.codex = findCodex()
+    if (!commands.codex) problem('Install the native Codex CLI and open a new terminal.')
+    else ok('Codex CLI')
+  }
+  if (providers.includes('claude') || providers.includes('codex')) {
+    const curl = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'curl.exe')
+    if (!existsSync(curl)) problem('curl.exe is missing from Windows; the hooks need it.')
+    else ok('curl.exe (used by the hooks)')
+  }
+  if (providers.includes('claude')) {
+    if (!existsSync(CLAUDE_APP_DIR))
+      problem('The Claude desktop app does not seem to be installed.')
+    else ok('Claude desktop app')
+    const cli = findClaude()
+    if (!cli) problem('Claude Code (the `claude` command) was not found.')
+    else ok('Claude Code CLI')
+    commands.claude = cli
+  }
+  if (providers.includes('perplexity'))
+    say('  Open and sign in to the Perplexity Windows app to verify chats.')
+  return commands
 }
 
 /** Every hotkey free? A key the running Threadlight already holds is fine: it is its own. */
@@ -365,7 +508,7 @@ function checkKeys(keys) {
 // ---------- the three modes ----------
 
 async function install(options) {
-  const cli = preflight({ strict: true })
+  const cli = preflight({ strict: true, providers: options.providers })
   const added = {}
   try {
     await installSteps(options, cli, added)
@@ -377,13 +520,17 @@ async function install(options) {
 
 async function installSteps(options, cli, added) {
   step('Building the app')
-  if (!electronPath()) {
+  if (
+    !existsSync(join(REPO, 'node_modules', 'electron', 'package.json')) ||
+    !existsSync(join(REPO, 'node_modules', 'electron-vite', 'package.json'))
+  ) {
     say('  … npm ci (installs the app’s packages into node_modules)')
     const result = run('npm', ['ci'], { shell: true })
     if (result.status !== 0) fail(`npm ci failed:\n${result.stderr.trim()}`)
     added.packages = true
   }
   ok('Packages installed')
+  await ensureElectron()
   if (!buildIsCurrent()) {
     say('  … npm run build')
     const result = run('npm', ['run', 'build'], { shell: true })
@@ -399,14 +546,30 @@ async function installSteps(options, cli, added) {
   step('Settings')
   const existing = readJson(SETTINGS_FILE)
   const changes = {
+    ...(!existing &&
+      options.explicitProviders && {
+        shownProviders: options.providers,
+        enabledProviders: options.providers.filter((name) => name !== 'perplexity'),
+        agentProvider: options.providers.includes('codex') ? 'codex' : 'claude',
+        chatSources: options.providers.flatMap((name) =>
+          name === 'codex' ? ['chatgpt'] : name === 'perplexity' ? ['perplexity'] : [],
+        ),
+        ...(options.providers.length === 1 &&
+          options.providers[0] === 'perplexity' && {
+            conversationFilter: 'chat',
+            listMode: 'recent',
+          }),
+      }),
     ...(options.hotkey && { talkHotkey: options.hotkey }),
     ...(options.talkMode && { talkMode: options.talkMode }),
     ...(options.countdown && { voiceCountdownSeconds: options.countdown }),
     ...(options.autostart !== undefined && { launchAtSignIn: options.autostart }),
   }
   // A running copy would keep its old settings in memory and save over these.
-  if ((Object.keys(changes).length > 0 || options.corner) && stopThreadlight()) {
-    say('  … stopped the running Threadlight, to apply the changes')
+  if ((Object.keys(changes).length > 0 || options.corner) && threadlightProcesses().length) {
+    fail(
+      'Finish current work and quit Threadlight from the tray before applying setup preferences.',
+    )
   }
   if (Object.keys(changes).length > 0 || !existing) {
     writeJson(SETTINGS_FILE, { ...(existing ?? {}), version: SETTINGS_VERSION, ...changes })
@@ -420,9 +583,33 @@ async function installSteps(options, cli, added) {
     ok(`Dot in the ${options.corner} corner`)
   }
 
+  if (cli.claude) installClaude(cli.claude, added)
+  if (cli.codex) installCodex(cli.codex, added)
+
+  step('Start at sign-in')
+  const launch = readJson(SETTINGS_FILE)?.launchAtSignIn === true
+  // The app applies the setting each time it starts; with --no-start it is applied here.
+  if (options.noStart && options.autostart !== undefined) setup('login', launch ? 'on' : 'off')
+  ok(launch ? 'On' : 'Off')
+
+  if (options.noStart) {
+    step('Not started (--no-start). Start it with: npm start')
+  } else {
+    step('Starting Threadlight')
+    if (threadlightProcesses().length === 0) startThreadlight()
+    const status = await waitForApp(15)
+    if (status) ok(`Running (version ${status.version})`)
+    else warn('Started, but it has not answered yet. Look for the dot or the tray icon.')
+  }
+
+  step('Done. To undo all of this: node scripts/install.mjs --uninstall')
+  say('Open Settings to check your selected providers and voice preferences.')
+}
+
+function installClaude(cli, added) {
   step('Hooks (the Claude Code plugin)')
   let { plugin, marketplace } = pluginState(cli)
-  if (marketplace && !samePath(marketplace.path ?? marketplace.installLocation, REPO)) {
+  if (marketplace && !matchesSource(marketplace.path ?? marketplace.installLocation)) {
     fail(
       `A "${MARKETPLACE}" plugin source already points at ${marketplace.path ?? marketplace.source}. ` +
         `Remove it first: claude plugin marketplace remove ${MARKETPLACE}`,
@@ -439,40 +626,30 @@ async function installSteps(options, cli, added) {
     const result = claude(cli, ['plugin', 'install', PLUGIN, '--scope', 'user'])
     if (result.status !== 0) fail(`Could not install the plugin:\n${result.stderr.trim()}`)
     added.plugin = true
-  } else if (plugin.enabled === false) {
+  } else if (plugin.version !== readJson(join(REPO, '.claude-plugin', 'plugin.json')).version) {
+    const result = claude(cli, ['plugin', 'update', PLUGIN])
+    if (result.status !== 0) fail(result.stderr.trim() || 'Claude plugin update failed.')
+  }
+  if (plugin?.enabled === false) {
     say(`  … claude plugin enable ${PLUGIN}`)
     claude(cli, ['plugin', 'enable', PLUGIN])
   }
   ;({ plugin } = pluginState(cli))
-  if (!plugin) fail('The plugin did not install.')
+  if (
+    !plugin?.enabled ||
+    plugin.version !== readJson(join(REPO, '.claude-plugin', 'plugin.json')).version
+  )
+    fail('Verify the Claude plugin is enabled and its marketplace matches this checkout version.')
   ok('Hooks installed; sessions started from now on report to Threadlight')
-
-  step('Start at sign-in')
-  const launch = readJson(SETTINGS_FILE)?.launchAtSignIn === true
-  // The app applies the setting each time it starts; with --no-start it is applied here.
-  if (options.noStart) setup('login', launch ? 'on' : 'off')
-  ok(launch ? 'On' : 'Off')
-
-  if (options.noStart) {
-    step('Not started (--no-start). Start it with: npm start')
-  } else {
-    step('Starting Threadlight')
-    if (threadlightProcesses().length === 0) startThreadlight()
-    const status = await waitForApp(15)
-    if (status) ok(`Running (version ${status.version})`)
-    else warn('Started, but it has not answered yet. Look for the dot or the tray icon.')
-  }
-
-  step('Done. To undo all of this: node scripts/install.mjs --uninstall')
-  say('The speech model (76 MB) downloads the first time you use voice, after you agree to it.')
 }
 
-async function check() {
-  const cli = preflight({ strict: false })
+async function check(options) {
+  const cli = preflight({ strict: false, providers: options.providers })
 
   step('App')
-  if (!electronPath()) bad('Packages not installed (npm ci)')
-  else ok('Packages installed')
+  if (!electronPath())
+    bad('Desktop runtime missing. Run source setup again with the selected providers.')
+  else ok('Desktop runtime installed')
   if (!built()) bad('Not built (npm run build)')
   else if (!buildIsCurrent()) warn('Built, but older than the source (npm run build)')
   else ok('Built')
@@ -491,26 +668,45 @@ async function check() {
     ok(`Start at sign-in: ${login.openAtLogin ? 'wait quietly for Claude or Codex' : 'off'}`)
 
   step('Hooks')
-  if (cli) {
-    const { plugin, marketplace } = pluginState(cli)
+  if (cli.codex) {
+    const source = codexSource(cli.codex)
+    if (!source || !matchesSource(source.root))
+      bad('Register the Codex marketplace from this checkout.')
+    else {
+      const plugin = codexInstalled(cli.codex)
+      if (!plugin?.enabled) bad('Install or enable the Threadlight Codex plugin.')
+      else if (plugin.version !== readJson(join(REPO, 'codex-plugin', 'plugin.json')).version)
+        bad('Run setup again to update the installed Codex plugin.')
+      else ok('Codex plugin installed and enabled. Review hook trust in /hooks.')
+    }
+    const signedIn = run(cli.codex, ['login', 'status'])
+    if (signedIn.status === 0) ok('Signed in to Codex')
+    else warn('Check sign-in with codex login status.')
+  }
+  if (cli.claude) {
+    const { plugin, marketplace } = pluginState(cli.claude)
     if (!plugin) bad(`Plugin not installed (${PLUGIN})`)
     else if (plugin.enabled === false) bad('Plugin installed but turned off')
+    else if (plugin.version !== readJson(join(REPO, '.claude-plugin', 'plugin.json')).version)
+      bad('Run setup again to update the installed Claude plugin.')
     else ok('Plugin installed and on')
-    if (marketplace && !samePath(marketplace.path ?? marketplace.installLocation, REPO)) {
+    if (marketplace && !matchesSource(marketplace.path ?? marketplace.installLocation)) {
       warn(`The plugin source points at another folder: ${marketplace.path ?? marketplace.source}`)
     }
-    const auth = lastJson(claude(cli, ['auth', 'status', '--json']).stdout)
+    const auth = lastJson(claude(cli.claude, ['auth', 'status', '--json']).stdout)
     if (auth?.loggedIn === true) ok('Signed in to Claude Code')
     else bad('Not signed in to Claude Code: run `claude auth login` (sending needs it)')
   }
 
   step('Running')
-  const status = await hookStatus()
-  if (!status) warn('Threadlight is not running (npm start)')
+  const status = threadlightProcesses().length ? await hookStatus() : null
+  if (!status)
+    warn('This checkout has no confirmed running Threadlight app. Open it and check the tray.')
   else {
     ok(`Threadlight ${status.version} is running`)
     if (status.hookEvents > 0) ok(`${status.hookEvents} hook events received since it started`)
-    else warn('No hook events yet: send a prompt in any Claude session, then check again')
+    else if (cli.claude)
+      warn('No Claude hook events yet. Start a new Claude session after installation.')
   }
 }
 
@@ -521,22 +717,43 @@ async function uninstall(options) {
   ok(stopThreadlight() ? 'Stopped' : 'Was not running')
 
   step('Start at sign-in')
-  if (setup('login', 'off')) ok('Off')
-  else warn('Could not check (the app is not built); turn it off in Settings first if it was on')
+  if (readJson(SETTINGS_FILE)?.launchAtSignIn) {
+    if (setup('login', 'off')) ok('Off')
+    else warn('Could not check (the app is not built); turn it off in Settings first if it was on')
+  }
 
   step('Hooks')
-  const cli = findClaude()
-  if (!cli) warn('Claude Code was not found, so the plugin was left as it is')
-  else {
+  if (done.codexPlugin || done.codexMarketplace) {
+    const codex = findCodex()
+    if (!codex) fail('Restore the Codex CLI to remove the recorded Codex installation.')
+    const source = codexSource(codex)
+    if (
+      source &&
+      (done.codexMarketplace ? !samePath(source.root, REPO) : !matchesSource(source.root))
+    )
+      fail('The registered Codex marketplace now belongs to a different checkout.')
+    if (source && done.codexPlugin && codexInstalled(codex))
+      codexPlugin(codex, 'remove', CODEX_PLUGIN)
+    if (source && done.codexMarketplace)
+      codexPlugin(codex, 'marketplace', 'remove', 'threadlight-local')
+  }
+  const cli = (done.plugin || done.marketplace) && findClaude()
+  if (!cli && (done.plugin || done.marketplace))
+    fail('Restore the Claude Code CLI to remove the recorded installation.')
+  else if (cli) {
     const { plugin, marketplace } = pluginState(cli)
+    if (marketplace && !matchesSource(marketplace.path ?? marketplace.installLocation))
+      fail('The registered Claude marketplace now belongs to a different checkout.')
     if (plugin && done.plugin) {
-      claude(cli, ['plugin', 'uninstall', PLUGIN, '--scope', 'user'])
+      const result = claude(cli, ['plugin', 'uninstall', PLUGIN, '--scope', 'user'])
+      if (result.status !== 0) fail(result.stderr.trim() || 'Claude plugin removal failed.')
       ok('Plugin removed')
     } else if (plugin) {
       warn(`Plugin left in place (not added by this script): claude plugin uninstall ${PLUGIN}`)
     }
     if (marketplace && done.marketplace) {
-      claude(cli, ['plugin', 'marketplace', 'remove', MARKETPLACE])
+      const result = claude(cli, ['plugin', 'marketplace', 'remove', MARKETPLACE])
+      if (result.status !== 0) fail(result.stderr.trim() || 'Claude marketplace removal failed.')
       ok('Plugin source removed')
     } else if (marketplace) {
       warn(`Plugin source left in place: claude plugin marketplace remove ${MARKETPLACE}`)
@@ -567,7 +784,7 @@ function help() {
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   if (options.mode === 'help') return help()
-  if (options.mode === 'check') return check()
+  if (options.mode === 'check') return check(options)
   if (options.mode === 'uninstall') return uninstall(options)
   if (options.mode === 'check-keys') {
     if (options.keys.length === 0) fail('--check-keys needs at least one key, e.g. Control+Alt+Q')

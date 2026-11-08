@@ -56,29 +56,42 @@ export function ContextMenu({
   // Keep the whole menu inside the panel.
   useLayoutEffect(() => {
     const element = menu.current
-    if (!element) return
-    const card = document.querySelector('[data-card]')?.getBoundingClientRect()
-    if (!card) return
-    const width = element.offsetWidth
-    const height = element.scrollHeight + 2
-    const at = anchor?.getBoundingClientRect()
-    reserve(
-      at
-        ? opensDown
-          ? at.bottom - card.top + height + 6 - card.height
-          : height + 6
-        : height + 8 - card.height,
-    )
-    const top = opensDown ? card.top : card.top - extra
-    const bottom = opensDown ? card.bottom + extra : card.bottom
-    setPosition({
-      left: Math.max(card.left + 4, Math.min(x, card.right - width - 4)),
-      top: Math.max(
-        top + 4,
-        Math.min(at ? (opensDown ? at.bottom + 2 : at.top - height - 2) : y, bottom - height - 4),
-      ),
-      maxHeight: Math.max(0, bottom - top - 8),
-    })
+    const cardElement = document.querySelector('[data-card]')
+    if (!element || !cardElement) return
+    const measure = () => {
+      const card = cardElement.getBoundingClientRect()
+      const width = element.offsetWidth
+      const height = element.scrollHeight + 2
+      const at = anchor?.getBoundingClientRect()
+      reserve(
+        at
+          ? opensDown
+            ? at.bottom - card.top + height + 6 - card.height
+            : height + 6
+          : height + 8 - card.height,
+      )
+      const top = opensDown ? card.top : card.top - extra
+      const bottom = opensDown ? card.bottom + extra : card.bottom
+      setPosition({
+        left: Math.max(card.left + 4, Math.min(x, card.right - width - 4)),
+        top: Math.max(
+          top + 4,
+          Math.min(at ? (opensDown ? at.bottom + 2 : at.top - height - 2) : y, bottom - height - 4),
+        ),
+        maxHeight: Math.max(0, bottom - top - 8),
+      })
+    }
+    measure()
+    // Live rows and departing hover footers can resize the card without changing menu props.
+    const observer = new ResizeObserver(measure)
+    observer.observe(cardElement)
+    observer.observe(element)
+    if (anchor) observer.observe(anchor)
+    window.addEventListener('resize', measure)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+    }
   }, [x, y, anchor, opensDown, extra, reserve, choosing])
   const release = useRef(reserve)
   useEffect(() => {

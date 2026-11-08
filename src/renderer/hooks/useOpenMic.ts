@@ -4,33 +4,48 @@ import { Segmenter } from '../../shared/vad'
 import { SentenceAssembler } from '../../shared/voiceTurns'
 import { MicSessionRouter, type MicRoute, type MicSessionMode } from '../../shared/voiceCommands'
 import type { Candidate } from '../../shared/match'
-import { LiveVoiceConnection } from '../lib/liveVoice'
+import { LiveVoiceConnection, type LiveVoicePort } from '../lib/liveVoice'
 import type { LiveVoicePhase } from '../../shared/liveVoice'
 import { SILENT_AUDIO, type AudioEnergy } from '../../shared/motion'
 import { AudioEnergyMeter } from '../lib/audioEnergy'
+import { callReadyCue } from '../lib/callReadyCue'
 
 const FRAME = 512
 export type OpenMicState = 'off' | 'listening' | 'hearing' | 'blocked'
+export interface OpenMicControls {
+  end(): void
+  muteInput(muted: boolean): void
+  muteOutput(muted: boolean): void
+  stopSpeaking(): void
+}
 interface OpenMicOptions {
+  onControls?: (controls: OpenMicControls | null) => void
   enabled: boolean
-  paused: boolean
+  paused: () => boolean
   /** The explicit GPT Live choice; never inferred from the selected Agent provider. */
   nativeLive: boolean
+  liveSessionId?: string
   threads: Candidate[]
   onSentence: (route: MicRoute) => void
   onConversation?: () => void
   onStop?: () => void
+  conversationOnly?: boolean
+  livePort?: LiveVoicePort
 }
 
 /** One microphone owner, with mutually exclusive local transcription and native audio paths. */
 export function useOpenMic({
+  onControls,
   enabled,
   paused,
   nativeLive,
+  liveSessionId,
   threads,
   onSentence,
   onConversation,
   onStop,
+  conversationOnly = false,
+  livePort,
 }: OpenMicOptions) {
   const [state, setState] = useState<OpenMicState>('off')
   const [mode, setMode] = useState<MicSessionMode>('undecided')
@@ -53,7 +68,7 @@ export function useOpenMic({
       if (!stopped || next === 'off') setState(next)
     }
     void (async () => {
-      setMode(nativeLive ? 'agent' : 'undecided')
+      setMode(nativeLive || conversationOnly ? 'agent' : 'undecided')
       setLivePhase(nativeLive ? 'connecting' : 'off')
       setLiveError(null)
       if (nativeLive) latest.current.onConversation?.()
@@ -62,6 +77,8 @@ export function useOpenMic({
       let live: LiveVoiceConnection | null = null
       let outgoing: MediaStreamAudioDestinationNode | undefined
       const resources: { meter?: AudioEnergyMeter; processor?: ScriptProcessorNode } = {}
+      let manualMute = false
+      let outputMuted = false
       let generation = 0
       let released = false
       release = () => {
@@ -79,6 +96,20 @@ export function useOpenMic({
         void context.close()
         show('off')
       }
+      onControls?.({
+        end: release,
+        muteInput(muted) {
+          manualMute = muted
+          live?.setInputMuted(muted || latest.current.paused())
+        },
+        muteOutput(muted) {
+          outputMuted = muted
+          live?.setOutputMuted(muted)
+        },
+        stopSpeaking() {
+          live?.stopSpeaking()
+        },
+      })
       // Negotiate with a silent outgoing track while the OS opens the microphone.
       // No connection exists until this hotkey-owned effect is enabled.
       let connecting: Promise<void> | undefined
@@ -88,12 +119,14 @@ export function useOpenMic({
           outgoing.stream,
           context.sampleRate,
           (phase, error) => {
-            if (stopped) return
+            if (stopped || released) return
             setLivePhase(phase)
             if (error) setLiveError(error)
             if (phase === 'off' || error) latest.current.onStop?.()
           },
           context,
+          livePort,
+          liveSessionId,
         )
         connecting = live.start({ bufferAudio: true })
       }
@@ -115,6 +148,7 @@ export function useOpenMic({
         stream.getTracks().forEach((track) => track.stop())
         return
       }
+      live?.microphoneReady()
       const source = context.createMediaStreamSource(stream)
       const meter = (resources.meter = new AudioEnergyMeter(source, context))
       const processor = (resources.processor = context.createScriptProcessor(FRAME, 1, 1))
@@ -132,11 +166,12 @@ export function useOpenMic({
       processor.onaudioprocess = (event) => {
         const output = event.outputBuffer.getChannelData(0)
         output.fill(0)
-        live?.setPaused(latest.current.paused)
-        if (latest.current.paused) {
+        const inputMuted = manualMute || latest.current.paused()
+        live?.setInputMuted(inputMuted)
+        if (inputMuted) {
           level.current = 0
           energy.current = SILENT_AUDIO
-          outputEnergy.current = SILENT_AUDIO
+          outputEnergy.current = live?.outputEnergy ?? SILENT_AUDIO
           segmenter?.drop()
           sentences.reset()
           generation++
@@ -180,8 +215,10 @@ export function useOpenMic({
         }
         const sentence = sentences.take(segmenter.now)
         if (sentence !== null && !stopped) {
-          const route = routing.route(sentence, latest.current.threads)
-          setMode(routing.mode)
+          const route: MicRoute = conversationOnly
+            ? { kind: 'agent', text: sentence }
+            : routing.route(sentence, latest.current.threads)
+          setMode(conversationOnly ? 'agent' : routing.mode)
           if (route.kind === 'agent') latest.current.onConversation?.()
           latest.current.onSentence(route)
           show('listening')
@@ -195,8 +232,11 @@ export function useOpenMic({
       if (live) {
         show('listening')
         await connecting
-        if (stopped) return
-        if (live.active) show('listening')
+        if (stopped || released) return
+        if (live.active) {
+          show('listening')
+          if (!outputMuted) callReadyCue(context)
+        }
       } else show('listening')
     })().catch(() => {
       release()
@@ -207,9 +247,10 @@ export function useOpenMic({
     })
     return () => {
       stopped = true
+      onControls?.(null)
       release()
     }
-  }, [enabled, nativeLive])
+  }, [onControls, enabled, nativeLive, liveSessionId, conversationOnly, livePort])
 
   return {
     state: enabled ? state : 'off',

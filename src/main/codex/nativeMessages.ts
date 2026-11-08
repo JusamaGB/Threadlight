@@ -11,7 +11,7 @@ import { codexId, CODEX_UUID } from './identity'
 import { connectCodexDesktop, type DesktopConnection } from './desktopConnection'
 
 type Receipt = { clientId: string; textHash: string; turnId?: string }
-type Result = { ok: true } | { ok: false; reason: string }
+type Result = { ok: true } | { ok: false; reason: string; active?: true }
 
 /** Human composer messages use the existing desktop owner, never another CLI writer. */
 export class NativeCodexMessages {
@@ -83,7 +83,12 @@ export class NativeCodexMessages {
       }
     }
   }
-  async send(key: string, message: string, files: NativeAttachment[] = []): Promise<Result> {
+  async send(
+    key: string,
+    message: string,
+    files: NativeAttachment[] = [],
+    mode: 'send' | 'steer' = 'steer',
+  ): Promise<Result> {
     const id = codexId(key),
       text = message.trim()
     if (!id || (!text && !files.length) || text.length > MESSAGE_LIMIT)
@@ -120,17 +125,6 @@ export class NativeCodexMessages {
           }
         }
       }
-      connection = await this.connect()
-      const owner = await connection.request(
-        'thread-owner-discovery',
-        { hostId: 'local', conversationId: id },
-        1,
-      )
-      if (owner.resultType !== 'success' || typeof owner.handledByClientId !== 'string')
-        return {
-          ok: false,
-          reason: 'Open this chat in Codex to connect it, then send again. Your draft is retained.',
-        }
       const { turn, knownEmpty } = this.read((db) => {
         const turn = db
           .prepare(
@@ -150,6 +144,19 @@ export class NativeCodexMessages {
           reason: 'Codex chat history is unavailable. Your message was not sent.',
         }
       const active = ['inProgress', 'in_progress'].includes(String(turn?.status))
+      if (active && mode === 'send')
+        return { ok: false, active: true, reason: 'This chat is working. Queue the message.' }
+      connection = await this.connect()
+      const owner = await connection.request(
+        'thread-owner-discovery',
+        { hostId: 'local', conversationId: id },
+        1,
+      )
+      if (owner.resultType !== 'success' || typeof owner.handledByClientId !== 'string')
+        return {
+          ok: false,
+          reason: 'Open this chat in Codex to connect it, then send again. Your draft is retained.',
+        }
       const { input, restoreMessage, attachments } = nativeAttachmentMessage(text, files)
       mkdirSync(this.journal, { recursive: true })
       writeFileSync(file, JSON.stringify({ clientId, textHash } satisfies Receipt))

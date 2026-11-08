@@ -1,14 +1,16 @@
 import { checkComposerAttachments } from './composer-attachments.smoke.mjs'
 import { checkThreadImages } from './thread-images.smoke.mjs'
-/* global window, document */
+/* global window, document, getComputedStyle */
 import assert from 'node:assert/strict'
 import { setupVoiceInput } from './voice-input.fixture.mjs'
 import { checkSmartThreadFooter } from './smart-thread-footer.smoke.mjs'
 import { checkUserMessagePreview } from './user-message-preview.smoke.mjs'
 import { checkStackedDiff } from './stacked-diff.smoke.mjs'
+import { checkActivityGrouping, revealActivity } from './activity-grouping.smoke.mjs'
 import { checkMessageArtifacts } from './message-artifacts.smoke.mjs'
 import { checkSmartThreadScroll } from './smart-thread-scroll.smoke.mjs'
-import { openHeaderPage } from './header-navigation.mjs'
+import { checkSmartThreadComposer } from './smart-thread-composer.smoke.mjs'
+import { openHeaderPage, selectThreadView } from './header-navigation.mjs'
 
 export async function checkThreadTimeline(page, capture) {
   await page.evaluate(async () => {
@@ -176,6 +178,28 @@ export async function checkThreadTimeline(page, capture) {
   const composer = conversation.getByRole('group', { name: 'Codex message composer' })
   const input = composer.getByRole('textbox')
   await input.waitFor()
+  const proseStyle = await history
+    .locator('[data-role="assistant"] p')
+    .first()
+    .evaluate(async (el) => {
+      const css = getComputedStyle(el)
+      return [
+        css.fontFamily,
+        css.fontWeight,
+        css.fontSize,
+        css.lineHeight,
+        css.letterSpacing,
+        css.color,
+      ]
+    })
+  assert.deepEqual(proseStyle, [
+    '"Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+    '400',
+    '12px',
+    '17.4px',
+    'normal',
+    'rgb(250, 250, 250)',
+  ])
   const compactPill = await composer.locator('[class*="_pill_"]').boundingBox()
   assert.ok(compactPill.height < originalPill.height, 'the smart thread composer is thinner')
   assert.ok(
@@ -197,6 +221,7 @@ export async function checkThreadTimeline(page, capture) {
   assert.ok(Math.abs(centerY(plusBox) - centerY(micBox)) < 1, 'plus and microphone controls align')
   assert.ok(Math.abs(centerY(plusBox) - centerY(textBox)) < 1, 'plus aligns with the input line')
   await capture('smart-thread-compact-composer')
+  await checkSmartThreadComposer(page, conversation, history, composer)
   await checkUserMessagePreview(page, conversation, composer, capture)
   await checkSmartThreadFooter(page, conversation, history, composer, capture)
   await checkSmartThreadScroll(page, conversation, history, composer)
@@ -273,6 +298,7 @@ export async function checkThreadTimeline(page, capture) {
   await page.waitForTimeout(100)
   assert.ok(await history.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 25))
   await history.evaluate((el) => {
+    el.focus({ preventScroll: true })
     el.scrollTop = 100
     el.dispatchEvent(new Event('scroll'))
   })
@@ -343,6 +369,7 @@ export async function checkThreadTimeline(page, capture) {
         ?.getAttribute('data-connection') === 'live',
   )
   await history.evaluate((el) => {
+    el.focus({ preventScroll: true })
     el.scrollTop = 140
     el.dispatchEvent(new Event('scroll'))
   })
@@ -353,6 +380,7 @@ export async function checkThreadTimeline(page, capture) {
   await page.waitForTimeout(100)
   assert.equal(await history.evaluate((el) => el.scrollTop), topBefore)
   await history.evaluate((el) => {
+    el.focus({ preventScroll: true })
     el.scrollTop = 0
     el.dispatchEvent(new Event('scroll'))
   })
@@ -389,6 +417,52 @@ export async function checkThreadTimeline(page, capture) {
     .locator(':scope > summary')
     .filter({ hasText: 'Updating caret visibility' })
     .waitFor()
+  const rowStatus = row.locator('[class*="_rowBottom_"]')
+  await page.evaluate(() => {
+    const base = window.proof.timeline.items.find((i) => i.id === 'tool')
+    window.proof.timelineUpdate({
+      items: [
+        ...window.proof.timeline.items.map((i) => ({ ...i, complete: true })),
+        {
+          ...base,
+          id: 'heading-command',
+          activity: 'command',
+          text: 'Running helper.exe',
+          compactText: 'Updating thread-view click helper',
+          complete: false,
+        },
+      ],
+    })
+  })
+  await active
+    .locator(':scope > summary')
+    .filter({ hasText: 'Updating thread-view click helper' })
+    .waitFor()
+  assert.match(await rowStatus.innerText(), /Updating thread-view click helper/)
+  await page.evaluate(() => {
+    const base = window.proof.timeline.items.find((i) => i.id === 'active-heading')
+    window.proof.timelineUpdate({
+      items: [
+        ...window.proof.timeline.items.map((i) => ({ ...i, complete: true })),
+        { ...base, id: 'next-heading', text: 'Working…', complete: false },
+      ],
+    })
+  })
+  await active.locator(':scope > summary').filter({ hasText: 'Working…' }).waitFor()
+  assert.match(await rowStatus.innerText(), /Working…/)
+  await page.evaluate(() =>
+    window.proof.timelineUpdate({
+      items: window.proof.timeline.items.map((i) =>
+        i.id === 'next-heading' ? { ...i, text: 'Checking voice route scope' } : i,
+      ),
+    }),
+  )
+  await active
+    .locator(':scope > summary')
+    .filter({ hasText: 'Checking voice route scope' })
+    .waitFor()
+  assert.match(await rowStatus.innerText(), /Checking voice route scope/)
+  await capture('thread-activity-heading')
   await active.locator(':scope > summary').click()
   await page.evaluate(() => {
     const base = window.proof.timeline.items.find((i) => i.id === 'tool')
@@ -431,14 +505,18 @@ export async function checkThreadTimeline(page, capture) {
           ...base,
           id: 'long-command',
           complete: false,
-          text: 'Running powershell.exe -NoProfile -Command Get-Content src/renderer/panel/ThreadConversation.tsx',
-          detail: 'Current command output',
+          text: 'Running "C:/Users/example/.cache/runtime/pwsh.exe" -Command "$env:THREADLIGHT_PLAYWRIGHT=\'C:/runtime/playwright\'; node test/ui/providers.smoke.mjs"',
+          compactText: 'Running UI checks',
+          detail: 'node test/ui/providers.smoke.mjs\nCurrent command output',
         },
       ],
     })
   })
   const commandSummary = active.locator(':scope > summary')
-  await commandSummary.filter({ hasText: /^Running command/ }).waitFor()
+  await commandSummary.filter({ hasText: /^Running UI checks/ }).waitFor()
+  const liveRow = row.locator('[class*="_rowBottom_"]')
+  assert.match(await liveRow.innerText(), /Running UI checks/)
+  assert.doesNotMatch(await liveRow.innerText(), /C:\/Users|pwsh\.exe/)
   assert.ok((await commandSummary.boundingBox()).height < 25, 'active command stays on one line')
   const shimmer = commandSummary.locator('span').first()
   assert.notEqual(await shimmer.evaluate((el) => window.getComputedStyle(el).animationName), 'none')
@@ -446,7 +524,7 @@ export async function checkThreadTimeline(page, capture) {
   await commandSummary.click()
   await active
     .getByText(
-      'Running powershell.exe -NoProfile -Command Get-Content src/renderer/panel/ThreadConversation.tsx',
+      'Running "C:/Users/example/.cache/runtime/pwsh.exe" -Command "$env:THREADLIGHT_PLAYWRIGHT=\'C:/runtime/playwright\'; node test/ui/providers.smoke.mjs"',
       { exact: true },
     )
     .waitFor()
@@ -495,6 +573,7 @@ export async function checkThreadTimeline(page, capture) {
     })
   })
   const edits = conversation.locator('[data-message-id="edit-event"]')
+  await revealActivity(conversation, 'edit-event')
   await edits.getByText('Edited 2 files', { exact: true }).waitFor()
   assert.equal(
     await edits.getByText('src/renderer/panel/AgentView.tsx', { exact: true }).count(),
@@ -520,7 +599,7 @@ export async function checkThreadTimeline(page, capture) {
       }
     }
   })
-  await edits.getByRole('button', { name: 'View changes', exact: true }).click()
+  await edits.getByRole('button', { name: 'View', exact: true }).click()
   const cardChanges = page.getByRole('region', { name: 'Card changes', exact: true })
   await cardChanges.waitFor()
   await page.locator('header').getByText('Card changes · 2 files', { exact: true }).waitFor()
@@ -547,6 +626,7 @@ export async function checkThreadTimeline(page, capture) {
   )
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await conversation.waitFor()
+  await revealActivity(conversation, 'edit-event')
   await edits.locator('header').getByText('+2', { exact: true }).waitFor()
   assert.equal(await edits.locator('pre').count(), 0)
   assert.equal(await conversation.locator('[data-message-id="edit-event"]').count(), 1)
@@ -579,7 +659,7 @@ export async function checkThreadTimeline(page, capture) {
   assert.equal(await edits.locator('header').getByText('+2', { exact: true }).count(), 1)
   await conversation
     .locator('[data-message-id="edit-event-next"]')
-    .getByRole('button', { name: 'View changes', exact: true })
+    .getByRole('button', { name: 'View', exact: true })
     .click()
   await page.locator('header').getByText('Card changes · 1 file', { exact: true }).waitFor()
   assert.equal(
@@ -596,6 +676,7 @@ export async function checkThreadTimeline(page, capture) {
   )
   await capture('card-changes-later-edit')
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  await revealActivity(conversation, 'edit-event-next')
   await page.evaluate(() => {
     const event = window.proof.timeline.items.find((item) => item.id === 'edit-event-next')
     window.proof.timelineUpdate({
@@ -611,7 +692,7 @@ export async function checkThreadTimeline(page, capture) {
   })
   await conversation
     .locator('[data-message-id="missing-card-patch"]')
-    .getByRole('button', { name: 'View changes', exact: true })
+    .getByRole('button', { name: 'View', exact: true })
     .click()
   await cardChanges.getByRole('button', { name: /missing.txt/ }).click()
   await cardChanges.getByText('Diff unavailable for this edit.', { exact: true }).waitFor()
@@ -624,6 +705,7 @@ export async function checkThreadTimeline(page, capture) {
   await page.evaluate(() => {
     Object.assign(window.threadlight, window.proof.savedCardDiffReaders)
   })
+  await checkActivityGrouping(page, conversation, capture)
   await checkStackedDiff(page, conversation, capture)
 
   await input.waitFor()
@@ -684,6 +766,7 @@ export async function checkThreadTimeline(page, capture) {
   assert.equal(await input.inputValue(), 'A new draft while sending')
   await capture('thread-composer-live')
   await history.evaluate((el) => {
+    el.focus({ preventScroll: true })
     el.scrollTop = 100
     el.dispatchEvent(new Event('scroll'))
   })
@@ -737,7 +820,13 @@ export async function checkThreadTimeline(page, capture) {
   await composer.getByRole('button', { name: 'Stop and transcribe', exact: true }).waitFor()
   await openHeaderPage(page, 'Agent')
   const agentPresence = page.getByRole('region', { name: 'Voice activity', exact: true })
-  await agentPresence.getByRole('status').filter({ hasText: 'Ready' }).waitFor()
+  await agentPresence.waitFor()
+  await page.getByRole('button', { name: 'Start Agent voice', exact: true }).waitFor()
+  assert.equal(
+    await agentPresence.getByRole('status').count(),
+    0,
+    'idle Agent omits an empty voice caption',
+  )
   assert.doesNotMatch(await agentPresence.innerText(), /Dictated into this thread/)
   await capture('agent-idle-during-thread-dictation')
   await page.waitForFunction(() => window.proof.motion.mode === 'listening')
@@ -797,6 +886,7 @@ export async function checkThreadTimeline(page, capture) {
   )
   await capture('thread-composer-shared-style')
   await history.evaluate((el) => {
+    el.focus({ preventScroll: true })
     el.scrollTop = 100
     el.dispatchEvent(new Event('scroll'))
   })
@@ -824,7 +914,59 @@ export async function checkThreadTimeline(page, capture) {
   await checkThreadImages(page, conversation, capture)
   await checkMessageArtifacts(page, conversation, capture)
   await checkComposerAttachments(page, conversation, toggle, capture)
+  const code = 'if happy:\n    print("hello")'
+  const reply = '🙂 🙁\n' + code
+  await page.evaluate((text) => {
+    const items = window.proof.timeline.items
+    window.proof.timelineUpdate({
+      items: [
+        ...items,
+        {
+          ...items.find((item) => item.role === 'assistant'),
+          id: 'selection-proof',
+          role: 'assistant',
+          kind: 'message',
+          text,
+          complete: true,
+        },
+      ],
+    })
+  }, reply)
+  const paragraph = conversation.locator('[data-message-id="selection-proof"] > p')
+  for (const fragment of ['🙂', '🙁', code]) {
+    await paragraph.scrollIntoViewIfNeeded()
+    const box = await paragraph.evaluate((el, target) => {
+      const text = el.firstChild
+      const start = text.textContent.indexOf(target)
+      const range = document.createRange()
+      range.setStart(text, start)
+      range.setEnd(text, start + target.length)
+      const rects = range.getClientRects()
+      const first = rects[0]
+      const last = rects[rects.length - 1]
+      return {
+        left: first.left,
+        right: last.right,
+        startY: first.top + first.height / 2,
+        endY: last.top + last.height / 2,
+      }
+    }, fragment)
+    await page.mouse.move(box.left + 0.5, box.startY)
+    await page.mouse.down()
+    await page.mouse.move(box.right - 0.5, box.endY, { steps: 8 })
+    await page.mouse.up()
+    assert.equal(await page.evaluate(() => window.getSelection().toString()), fragment)
+    await page.keyboard.press('Control+c')
+    await input.focus()
+    await input.fill('')
+    await page.keyboard.press('Control+v')
+    assert.equal(await input.inputValue(), fragment)
+    await input.fill('')
+  }
   await toggle.click()
+  // Returning from the artifact viewer selects Active; keep the finished row
+  // visible in Recent while checking its unread marker and subscription cleanup.
+  await selectThreadView(page, 'recent')
   await page.evaluate(() => window.proof.patch({ state: 'idle', stage: 'Completed reply' }))
   await row.locator('svg[data-unread]').waitFor()
   const calls = await page.evaluate(() =>

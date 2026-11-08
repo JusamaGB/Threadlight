@@ -1,4 +1,4 @@
-import type { AgentStatus } from './agent'
+import type { AgentProvider, AgentStatus } from './agent'
 
 /** Visual telemetry only: no audio samples or transcript crosses the dot's IPC channel. */
 export interface AudioEnergy {
@@ -10,6 +10,10 @@ export interface AudioEnergy {
 
 export type MotionMode = 'idle' | 'listening' | 'thinking' | 'transcribing' | 'waiting' | 'error'
 export interface MotionSnapshot {
+  listeningPaused?: true
+  inputMuted?: true
+  provider?: AgentProvider
+  agentWorking?: true
   mode: MotionMode
   input: AudioEnergy
   output: AudioEnergy
@@ -66,5 +70,17 @@ export function readMotion(value: unknown): MotionSnapshot | null {
   }
   const input = energy(data.input)
   const output = energy(data.output)
-  return input && output ? { mode: data.mode as MotionMode, input, output } : null
+  return input && output
+    ? {
+        mode: data.mode as MotionMode,
+        input,
+        output,
+        ...(data.provider === 'codex' || data.provider === 'claude'
+          ? { provider: data.provider }
+          : {}),
+        ...(data.listeningPaused === true && { listeningPaused: true as const }),
+        ...(data.inputMuted === true && { inputMuted: true as const }),
+        ...(data.agentWorking === true && { agentWorking: true as const }),
+      }
+    : null
 }

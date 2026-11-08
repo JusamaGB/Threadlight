@@ -9,6 +9,8 @@ export interface TimelineFileChange {
 }
 
 export interface TimelineItem extends ThreadVisibleItem {
+  /** Short action label for compact rows; text/detail retain the original command. */
+  compactText?: string
   detail?: string
   fileChanges?: TimelineFileChange[]
   fileCount?: number

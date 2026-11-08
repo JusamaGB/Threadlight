@@ -15,6 +15,7 @@ const recordSchema = z.object({
   createdAt: z.number().optional(),
   at: z.number(),
   archiveState: z.enum(['pending', 'archived']).optional(),
+  standaloneRegion: z.literal(true).optional(),
   // The native history API currently omits realtime timeline items. Keep completed voice text.
   liveItems: z
     .array(
@@ -22,6 +23,21 @@ const recordSchema = z.object({
         id: z.string().optional(),
         kind: z.enum(['you', 'agent', 'step']),
         text: z.string().max(32_000),
+        liveComplete: z.boolean().optional(),
+        liveAfter: z.string().optional(),
+        backingTurnId: z.string().optional(),
+        voiceDelegationIds: z.array(z.string()).optional(),
+        narrationOf: z
+          .object({
+            sessionId: z.string(),
+            turnId: z.string(),
+            itemId: z.string(),
+            excerpt: z.string().max(512).optional(),
+            tailAfter: z.string().max(512).optional(),
+            requestId: z.string().optional(),
+            playbackTurnId: z.string().optional(),
+          })
+          .optional(),
       }),
     )
     .max(2000)

@@ -18,7 +18,7 @@ export async function archiveAgentConversation(
     // Reload metadata: archiving never removes or rewrites the transcript or pending input.
     await store.put({ ...store.get(id)!, archiveState: 'archived' })
   } finally {
-    client.close()
+    await client.close()
   }
 }
 

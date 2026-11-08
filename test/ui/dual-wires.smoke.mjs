@@ -200,13 +200,36 @@ export async function checkDualWires(page, capture) {
   )
   assert.equal((await routes())['c:/wire-codex'].zone, 'right')
   await capture('dual-wires-expanded')
+  const rightRow = page.locator('[data-session-id="codex:Codex outer first"]')
+  await rightRow.hover()
+  assert.equal(await page.locator('[data-wire-zone="left"][data-highlight]').count(), 1)
+  await leftRow.locator('button[aria-expanded]').click()
+  await settled()
+  await rightRow.hover()
+  await page.locator('[data-wire-zone="right"][data-highlight]').waitFor()
+  assert.equal(await page.locator('[data-wire-zone="left"][data-highlight]').count(), 0)
+  assert.equal(await page.locator('[data-wire-linked]').count(), 2)
+  await page.locator('[data-session-id="Claude shared first"]').hover()
+  await page.locator('[data-wire-zone="centre"][data-highlight]').waitFor()
+  assert.equal(await page.locator('[data-wire-linked]').count(), 4)
+  await page.locator('header').hover()
+  assert.equal(await page.locator('[data-wire-linked]').count(), 0)
+  // Keyboard navigation still traces the focused row after pointer input releases it.
+  await rightRow.locator('button[aria-expanded]').focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await page.locator('[data-wire-zone="right"][data-highlight]').waitFor()
   await page.keyboard.press('Escape')
   assert.equal(await page.locator('[data-wire-linked]').count(), 0)
 
   await page.evaluate(() =>
-    window.proof.emit('onPanelOpened', { maxHeight: 260, opensDown: true, fresh: false }),
+    window.proof.emit('onPanelOpened', { maxHeight: 180, opensDown: true, fresh: false }),
   )
   const list = page.locator('[data-workspace-thread-list]')
+  await rightRow.hover()
+  const pointer = await rightRow.boundingBox()
+  const point = { x: pointer.x + pointer.width / 2, y: pointer.y + pointer.height / 2 }
+  await page.mouse.move(point.x, point.y)
   const scrollPath = await leftPath.getAttribute('d')
   await list.evaluate((list) => {
     list.scrollTop = 25
@@ -216,6 +239,13 @@ export async function checkDualWires(page, capture) {
       document.querySelector('[data-wire-key="c:/wire-claude"] path').getAttribute('d') !== before,
     scrollPath,
   )
+  await page.waitForFunction(({ x, y }) => {
+    const key = document.elementFromPoint(x, y)?.closest('[data-workspace-folder]')
+      ?.dataset.workspaceFolder
+    return (
+      !!key && document.querySelector('[data-wire-key][data-highlight]')?.dataset.wireKey === key
+    )
+  }, point)
   const clip = await page.evaluate(() => {
     const list = document.querySelector('[data-workspace-thread-list]').getBoundingClientRect()
     const overlay = document.querySelector('[data-workspace-links]').getBoundingClientRect()
@@ -287,6 +317,13 @@ export async function checkDualWires(page, capture) {
     await page.locator('[data-workspace-links]').evaluate((el) => el.getBoundingClientRect().width),
     16,
   )
+  await leftRow.locator('button[aria-expanded]').click()
+  await settled()
+  await leftRow.locator('button[aria-expanded]').click()
+  await settled()
+  await rightRow.hover()
+  await page.locator('[data-wire-key="c:/wire-codex"][data-highlight]').waitFor()
+  assert.equal(await page.locator('[data-wire-linked]').count(), 2)
   await page.evaluate(() => window.threadlight.updateSettings({ panelLayout: 'dual' }))
   await settled()
   await checkGeometry()

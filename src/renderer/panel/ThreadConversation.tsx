@@ -1,4 +1,12 @@
-import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import type { RelayStatus, Session } from '../../shared/types'
 import type { TimelineItem } from '../../shared/threadTimeline'
 import type { ThreadArtifact } from '../../shared/artifacts'
@@ -12,8 +20,19 @@ import { ThreadComposer, ThreadComposerContext } from './ThreadComposer'
 import { CodexPlan } from './CodexPlan'
 import { ThreadMessageText } from './ThreadMessageText'
 import styles from './ThreadConversation.module.css'
+import { EarlierMessages } from './EarlierMessages'
+import { ContextMenu } from './ContextMenu'
 
 const itemSignature = (item: TimelineItem) => JSON.stringify([item.text, item.fileChanges])
+
+function composerFocused(history: HTMLElement) {
+  const active = document.activeElement
+  return (
+    active instanceof HTMLTextAreaElement &&
+    !!history.parentElement?.contains(active) &&
+    !history.contains(active)
+  )
+}
 
 function time(at: number | null) {
   return at === null
@@ -82,7 +101,7 @@ function Message({
           </summary>
         </details>
       ) : (
-        <p>
+        <>
           <ThreadMessageText
             text={item.text}
             artifacts={artifacts}
@@ -92,7 +111,7 @@ function Message({
           {streaming && item.role === 'assistant' && (
             <span className={styles.caret} aria-label="Message in progress" />
           )}
-        </p>
+        </>
       )}
     </article>
   )
@@ -104,7 +123,9 @@ export function ThreadConversation({
   now,
   timelineState,
   onOpenArtifact,
+  pendingCard,
 }: {
+  pendingCard?: ReactNode
   session: Session
   relay?: RelayStatus
   now: number
@@ -116,10 +137,15 @@ export function ThreadConversation({
   const reportComposer = composerHost?.report
   const focusRequest = composerHost?.focusRequest
   const { timeline, error, older } = timelineState
-  const [initialView] = useState(() => ({ ...timelineView(session.id) }))
+  const [initialView] = useState(() => ({
+    ...timelineView(session.id),
+    ...(pendingCard ? { following: true } : {}),
+  }))
   const scroll = useRef<HTMLDivElement>(null)
+  const pendingContent = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const following = useRef(initialView.following)
+  const liveSize = useRef({ viewport: 0, content: 0 })
   const inspectingMessage = useRef(false)
   const previous = useRef(
     new Map(initialView.timeline?.items.map((item) => [item.id, itemSignature(item)]) ?? []),
@@ -128,12 +154,55 @@ export function ThreadConversation({
   const initialized = useRef(false)
   const [reading, setReading] = useState(!initialView.following)
   const [count, setCount] = useState(0)
+  const [copyMenu, setCopyMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const provider = session.provider === 'codex' ? 'Codex' : 'Claude'
   const items = timeline?.items ?? []
   const rows = conversationRows(items)
   const connection = timeline?.connection ?? 'connecting'
   // The live conversation shows delivery and replies; only failures need an extra line.
   const sendFailure = relay?.state === 'failed' ? relayLine(relay, now) : null
+
+  const selectedText = (history: HTMLElement) => {
+    const selection = window.getSelection()
+    if (
+      !selection ||
+      selection.isCollapsed ||
+      !history.contains(selection.anchorNode) ||
+      !history.contains(selection.focusNode)
+    )
+      return ''
+    return selection.toString()
+  }
+  const closeCopyMenu = () => {
+    setCopyMenu(null)
+    scroll.current?.focus({ preventScroll: true })
+  }
+
+  const pinLive = useCallback((element: HTMLDivElement) => {
+    element.scrollTop = element.scrollHeight
+    liveSize.current = { viewport: element.clientHeight, content: element.scrollHeight }
+  }, [])
+
+  const hasPendingCard = !!pendingCard
+  useLayoutEffect(() => {
+    const element = scroll.current,
+      card = pendingContent.current
+    if (!element || !card) return
+    const fit = () => {
+      element.style.setProperty(
+        '--pending-card-height',
+        `${Math.ceil(card.getBoundingClientRect().height)}px`,
+      )
+      if (following.current) pinLive(element)
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(card)
+    return () => {
+      observer.disconnect()
+      element.style.removeProperty('--pending-card-height')
+    }
+  }, [hasPendingCard, pinLive])
 
   const remember = useCallback(() => {
     const element = scroll.current
@@ -154,25 +223,25 @@ export function ThreadConversation({
     unseen.current.clear()
     setReading(false)
     setCount(0)
-    if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
+    if (scroll.current) pinLive(scroll.current)
     remember()
   }
 
   // Showing the composer reduces history's viewport; keep live pinned after layout.
   useLayoutEffect(() => {
     const element = scroll.current
-    if (element && following.current) element.scrollTop = element.scrollHeight
-  }, [reading])
+    if (element && following.current) pinLive(element)
+  }, [reading, pinLive])
   useLayoutEffect(() => {
     const element = scroll.current
     if (!element) return
     const observer = new ResizeObserver(() => {
-      if (following.current) element.scrollTop = element.scrollHeight
+      if (following.current) pinLive(element)
     })
     observer.observe(element)
     if (content.current) observer.observe(content.current)
     return () => observer.disconnect()
-  }, [])
+  }, [pinLive])
 
   useEffect(() => {
     reportComposer?.(session.id, reading)
@@ -186,11 +255,11 @@ export function ThreadConversation({
       unseen.current.clear()
       setReading(false)
       setCount(0)
-      if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
+      if (scroll.current) pinLive(scroll.current)
       remember()
     })
     return () => cancelAnimationFrame(frame)
-  }, [focusRequest, session.id, remember])
+  }, [focusRequest, session.id, remember, pinLive])
 
   useLayoutEffect(() => {
     const element = scroll.current
@@ -211,7 +280,7 @@ export function ThreadConversation({
       setCount(unseen.current.size)
     }
     previous.current = current
-    if (following.current) element.scrollTop = element.scrollHeight
+    if (following.current) pinLive(element)
     else {
       const anchor = [...element.querySelectorAll<HTMLElement>('[data-message-id]')].find(
         (node) => node.dataset.messageId === view.anchor,
@@ -223,19 +292,19 @@ export function ThreadConversation({
     }
     initialized.current = true
     remember()
-  }, [timeline, remember, session.id, artifacts]) // Keep the reading anchor as messages and artifact labels reflow.
+  }, [timeline, remember, session.id, artifacts, pinLive]) // Keep the reading anchor as messages and artifact labels reflow.
 
   useLayoutEffect(() => {
     const element = scroll.current
     const toggle = () => {
-      if (following.current && element) element.scrollTop = element.scrollHeight
+      if (following.current && element) pinLive(element)
     }
     element?.addEventListener('toggle', toggle, true)
     return () => {
       remember()
       element?.removeEventListener('toggle', toggle, true)
     }
-  }, [remember])
+  }, [remember, pinLive])
 
   return (
     <section
@@ -268,18 +337,67 @@ export function ThreadConversation({
           {error || timeline?.notice}
         </p>
       )}
-      <div className={styles.body}>
+      <div className={styles.body} data-fit-card={hasPendingCard || undefined}>
         <div
           ref={scroll}
           className={styles.scroll}
           role="region"
           aria-label="Conversation history"
           tabIndex={0}
+          onContextMenu={(event) => {
+            const text = selectedText(event.currentTarget)
+            if (!text) return
+            event.preventDefault()
+            event.stopPropagation()
+            setCopyMenu({ x: event.clientX, y: event.clientY, text })
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+            const text = selectedText(event.currentTarget)
+            if (!text) return
+            event.preventDefault()
+            event.stopPropagation()
+            const rect = window.getSelection()!.getRangeAt(0).getBoundingClientRect()
+            setCopyMenu({ x: rect.left, y: rect.bottom, text })
+          }}
+          onWheel={(event) => {
+            const element = event.currentTarget
+            if (
+              composerFocused(element) &&
+              ((event.deltaY < 0 && element.scrollTop > 0) ||
+                (event.deltaY > 0 &&
+                  element.scrollTop + element.clientHeight < element.scrollHeight))
+            )
+              element.focus({ preventScroll: true })
+          }}
           onScroll={() => {
             const element = scroll.current!
+            const resized =
+              element.clientHeight !== liveSize.current.viewport ||
+              element.scrollHeight !== liveSize.current.content
+            if (!following.current && resized) {
+              // Hiding the composer expands history and may clamp it to the
+              // bottom. That must not immediately reopen the composer.
+              liveSize.current = { viewport: element.clientHeight, content: element.scrollHeight }
+              remember()
+              return
+            }
+            // A growing composer shrinks history before ResizeObserver runs.
+            // That layout scroll (or caret reveal while typing) must not hide
+            // the composer. Wheel input explicitly moves focus back to history.
+            if (
+              following.current &&
+              !inspectingMessage.current &&
+              (composerFocused(element) || resized)
+            ) {
+              pinLive(element)
+              remember()
+              return
+            }
             following.current =
               !inspectingMessage.current &&
-              element.scrollHeight - element.scrollTop - element.clientHeight < 24
+              element.scrollHeight - element.scrollTop - element.clientHeight <
+                (hasPendingCard ? 2 : 24)
             setReading(!following.current)
             if (following.current) {
               unseen.current.clear()
@@ -290,19 +408,15 @@ export function ThreadConversation({
         >
           <div ref={content}>
             {timeline?.hasMore && (
-              <button
-                type="button"
-                className={styles.older}
-                disabled={timeline.loadingOlder}
-                onClick={() => {
+              <EarlierMessages
+                loading={timeline.loadingOlder}
+                onLoad={() => {
                   remember()
                   void older()
                 }}
-              >
-                {timeline.loadingOlder ? 'Loading earlier messages…' : '↑ Load earlier messages'}
-              </button>
+              />
             )}
-            {!items.length && (
+            {!items.length && !pendingCard && (
               <p className={styles.empty}>
                 {connection === 'connecting'
                   ? 'Loading conversation…'
@@ -348,6 +462,11 @@ export function ThreadConversation({
                 />
               ),
             )}
+            {pendingCard && (
+              <div className={styles.attentionEnd} data-pending-card="">
+                <div ref={pendingContent}>{pendingCard}</div>
+              </div>
+            )}
           </div>
         </div>
         {sendFailure && (
@@ -365,6 +484,15 @@ export function ThreadConversation({
           </div>
         )}
       </div>
+      {copyMenu && (
+        <ContextMenu
+          label="Text actions"
+          x={copyMenu.x}
+          y={copyMenu.y}
+          onClose={closeCopyMenu}
+          items={[{ label: 'Copy', onSelect: () => window.threadlight.copyText(copyMenu.text) }]}
+        />
+      )}
     </section>
   )
 }

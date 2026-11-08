@@ -6,6 +6,8 @@ import { artifactDocument, type ThreadArtifact } from '../../shared/artifacts'
 import styles from './ArtifactView.module.css'
 import panelStyles from './Panel.module.css'
 import { InteractiveArtifact } from './InteractiveArtifact'
+import { ReplyCode } from './ReplyCode'
+import { artifactCodeFile, fileLanguage } from '../../shared/codeReference'
 import { Tip } from './Tip'
 import { artifactCatalog, useArtifactCatalog } from '../hooks/useArtifactCatalog'
 
@@ -38,6 +40,7 @@ function staticHtml(source: string) {
 
 export function ArtifactView({
   threadId,
+  threadTitle,
   initialArtifactId,
   onClose,
   navigationHost,
@@ -48,6 +51,7 @@ export function ArtifactView({
   onControlState,
 }: {
   threadId: string
+  threadTitle?: string
   initialArtifactId?: string
   onClose: () => void
   navigationHost: HTMLDivElement | null
@@ -338,7 +342,12 @@ export function ArtifactView({
           </div>,
           infoHost,
         )}
-      <div className={styles.stage} aria-label="Artifact content">
+      <div
+        className={styles.stage}
+        aria-label="Artifact content"
+        data-code-thread={threadId}
+        data-code-title={threadTitle}
+      >
         {!selected && !busy && (
           <p>
             {items.length
@@ -349,7 +358,15 @@ export function ArtifactView({
         {selected?.item.kind === 'image' && (
           <img src={selected.content} alt={selected.item.title} />
         )}
-        {selected?.item.kind === 'text' && <pre>{selected.content}</pre>}
+        {selected?.item.kind === 'text' && (
+          <ReplyCode
+            code={selected.content}
+            language={fileLanguage(selected.item.title)}
+            file={artifactCodeFile(selected.item)}
+            sourceId={'artifact:' + threadId + '/' + selected.item.id}
+          />
+        )}
+
         {selected?.item.kind === 'html' && (
           <InteractiveArtifact
             threadId={threadId}

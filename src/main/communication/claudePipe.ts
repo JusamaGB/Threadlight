@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
+import { verifyWindowsLogon } from './windowsLogon'
 import { defaultPaths } from '../sessions/paths'
 
 export interface ClaudeRuntimeIdentity {
@@ -43,6 +44,7 @@ function windows() {
     const handle = processOpen(0x1000, 0, pid)
     if (!handle) throw new Error('Native runtime process is unavailable.')
     try {
+      verifyWindowsLogon(handle)
       const creation = Buffer.alloc(8),
         name = Buffer.alloc(65536),
         size = [32768]
@@ -66,7 +68,9 @@ function windows() {
   ): T {
     if (!/^\\\\\.\\pipe\\(?:LOCAL\\)?[A-Za-z0-9_.-]{1,200}$/.test(path))
       throw new Error('Expected a local Windows named pipe.')
-    const handle = open(path, 0x40000000, 0, null, 3, 0, null)
+    // SECURITY_SQOS_PRESENT with SECURITY_ANONYMOUS: the receiver never needs
+    // to impersonate Threadlight's Windows token to authenticate the inbox token.
+    const handle = open(path, 0x40000000, 0, null, 3, 0x00100000, null)
     if (!handle || koffi.address(handle) === 0xffffffffffffffffn)
       throw new Error('Native runtime inbox is unavailable.')
     try {

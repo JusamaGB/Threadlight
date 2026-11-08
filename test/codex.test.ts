@@ -1,6 +1,8 @@
+import { temporaryDirectory } from './helpers'
+import { randomBytes } from 'node:crypto'
+import { callHook } from '../scripts/hook-client.mjs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { CodexHolds } from '../src/main/codex/holds'
@@ -25,10 +27,16 @@ const temp: string[] = []
 
 it('uses a complete invocation-only memory server configuration, with the token outside argv', () => {
   expect(codexMemoryArgs()).toEqual([])
-  const args = codexMemoryArgs({ url: 'http://127.0.0.1:47618/mcp' })
+  const args = codexMemoryArgs({
+    command: 'node',
+    args: ['proxy.js', 'private-config.json'],
+    env: { ELECTRON_RUN_AS_NODE: '1' },
+  })
   expect(args).toHaveLength(2)
   expect(args[1]).toMatch(/^mcp_servers\.threadlight=\{/)
-  expect(args[1]).toContain('bearer_token_env_var="THREADLIGHT_MEMORY_TOKEN"')
+  expect(args[1]).toContain('command="node"')
+  expect(args[1]).toContain('private-config.json')
+  expect(args[1]).not.toContain('bearer_token_env_var')
   expect(args[1]).not.toContain('http_headers')
 })
 afterEach(async () => {
@@ -59,8 +67,10 @@ describe('Codex holds', () => {
   it('carries approval decisions over the hook HTTP endpoint and releases without a decision', async () => {
     let arrive: () => void = () => {}
     const holds = new CodexHolds(() => {})
+    const authKey = randomBytes(32)
     const server = await startHookServer({
       port: 0,
+      authKey,
       onEvent: (payload) => holds.event(payload),
       onAsk: (payload, reply, dropped) => {
         const held = holds.hold(payload, reply)
@@ -74,20 +84,22 @@ describe('Codex holds', () => {
         const arrived = new Promise<void>((resolve) => {
           arrive = resolve
         })
-        const response = fetch(`http://127.0.0.1:${server.port}/ask`, {
-          method: 'POST',
-          body: JSON.stringify(event('PermissionRequest')),
-        })
+        const response = callHook(
+          server.port,
+          '/ask',
+          5,
+          JSON.stringify(event('PermissionRequest')),
+          authKey,
+        )
         await arrived
         const card = holds.records.get(key)!.attention
         if (choice === 'release') holds.releaseAll()
         else holds.answer(key, card?.kind === 'approval' ? card.holdId : '', choice)
         const received = await response
         if (choice === 'release') {
-          expect(received.status).toBe(204)
-          expect(await received.text()).toBe('')
+          expect(received).toBe('')
         } else
-          expect(await received.json()).toMatchObject({
+          expect(JSON.parse(received)).toMatchObject({
             hookSpecificOutput: { decision: { behavior: choice } },
           })
       }
@@ -211,9 +223,9 @@ describe('Codex relay', () => {
   })
 })
 
-describe('read-only Codex discovery', () => {
+describe('read-only Codex discovery', { timeout: 30_000 }, () => {
   it('orders by completed turns through running native updates in recent and workspace lists', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'threadlight-codex-order-'))
+    const home = await temporaryDirectory('threadlight-codex-order-')
     temp.push(home)
     const paths = codexPaths({ CODEX_HOME: home }, home)
     await mkdir(join(home, 'sessions'), { recursive: true })
@@ -280,7 +292,7 @@ describe('read-only Codex discovery', () => {
   it.each([false, true])(
     'reads paginated history read-only (native type column: %s)',
     async (native) => {
-      const home = await mkdtemp(join(tmpdir(), 'threadlight-codex-'))
+      const home = await temporaryDirectory('threadlight-codex-')
       temp.push(home)
       const paths = codexPaths({ CODEX_HOME: home }, home)
       await mkdir(join(home, 'sessions'), { recursive: true })

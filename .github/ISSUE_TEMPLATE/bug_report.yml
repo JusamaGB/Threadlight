@@ -17,14 +17,14 @@ body:
     id: threadlight
     attributes:
       label: Threadlight version
-      description: Tray menu → About, or the release you installed.
+      description: The package.json version and Git commit, if built from source.
     validations:
       required: true
   - type: input
-    id: claude
+    id: provider
     attributes:
-      label: Claude desktop app version
-      description: Claude → Help → About. Many bugs come from Claude app updates.
+      label: Affected provider and app or CLI version
+      description: For example Codex, ChatGPT, Claude Code or Perplexity. Include versions if known.
     validations:
       required: true
   - type: input

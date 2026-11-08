@@ -1,4 +1,6 @@
 import { projectFileChanges } from './threadFileChanges'
+import { commandActivity } from '../../shared/commandActivity'
+import { codexReplyMarkdown, publicActivityHeading } from './presentation'
 import type { TimelineItem } from '../../shared/threadTimeline'
 import { isObject, str } from '../sessions/json'
 import { normalize, timestamp } from '../threadRead/normalize'
@@ -86,23 +88,13 @@ export function streamTurns(state: ObjectValue): ObjectValue[] {
   return [...canonical, ...legacy.filter((turn) => !ids.has(turn.turnId))]
 }
 
-/** Extract only the short display heading from Codex's public summary, never its body/content. */
-function publicActivityHeading(raw: ObjectValue): string | undefined {
-  if (!Array.isArray(raw.summary)) return undefined
-  for (const part of raw.summary.toReversed()) {
-    if (typeof part !== 'string') continue
-    const heading = part.match(/^\s*\*\*([^\r\n]{1,160}?)\*\*/)?.[1]?.trim()
-    if (heading) return heading
-  }
-  return undefined
-}
-
 /** Only user-visible records cross into the renderer. Never forward the raw native store. */
 export function projectStream(state: ObjectValue): TimelineItem[] {
   const result: TimelineItem[] = []
   for (const turn of streamTurns(state)) {
     const items = Array.isArray(turn.items) ? turn.items.filter(isObject) : []
     const completed = isObject(turn.completedItemIds) ? turn.completedItemIds : {}
+    let currentHeading: string | undefined
     for (const raw of items) {
       if (typeof raw.id !== 'string') continue
       const complete =
@@ -130,8 +122,11 @@ export function projectStream(state: ObjectValue): TimelineItem[] {
       })
       let visible: TimelineItem[]
       if (raw.type === 'reasoning') {
-        const heading = publicActivityHeading(raw)
-        visible = heading ? [activity(heading, 'status')] : []
+        currentHeading = publicActivityHeading(raw)
+        // A new activity can arrive before its public heading. Do not leave the
+        // previous command presented as current while that heading streams in.
+        const label = currentHeading || (!complete && raw === items.at(-1) ? 'Working…' : undefined)
+        visible = label ? [activity(label, 'status')] : []
       } else if (raw.type === 'contextCompaction') {
         visible = [
           activity(
@@ -170,6 +165,8 @@ export function projectStream(state: ObjectValue): TimelineItem[] {
               .join('\n\n'),
           ),
         ]
+        visible[0]!.compactText =
+          currentHeading || (loaded ? label : commandActivity(command, complete))
       } else if (raw.type === 'fileChange') {
         const changes = projectFileChanges(raw.changes)
         const failed = raw.status === 'failed' || raw.status === 'declined'
@@ -186,6 +183,7 @@ export function projectStream(state: ObjectValue): TimelineItem[] {
         visible = [
           {
             ...activity(label, 'files'),
+            compactText: currentHeading,
             failed,
             fileChanges: changes.files,
             fileCount: changes.count,
@@ -198,7 +196,7 @@ export function projectStream(state: ObjectValue): TimelineItem[] {
         } catch {
           args = null
         }
-        const label = isObject(args) ? str(args.title) : null
+        const label = isObject(args) ? str(args.title)?.trim() || str(args.description) : null
         const tool = [str(raw.server), str(raw.tool)].filter(Boolean).join(' · ') || 'Tool'
         visible = [
           activity(
@@ -207,6 +205,7 @@ export function projectStream(state: ObjectValue): TimelineItem[] {
             `${tool}\n${str(raw.status) ?? (complete ? 'Completed' : 'In progress')}`,
           ),
         ]
+        if (!label?.trim()) visible[0]!.compactText = currentHeading
       } else if (raw.type === 'imageView') {
         visible = [
           activity(
@@ -215,9 +214,20 @@ export function projectStream(state: ObjectValue): TimelineItem[] {
             str(raw.path)?.slice(0, 2000),
           ),
         ]
+        visible[0]!.compactText = currentHeading
       } else {
-        visible = normalize('codex', { ...raw, turn_id: turn.turnId }, 'codex_stream', raw.id)
+        visible = normalize(
+          'codex',
+          { ...raw, turn_id: turn.turnId },
+          'codex_stream',
+          raw.id,
+          codexReplyMarkdown,
+        )
+        for (const item of visible)
+          if (item.role === 'activity' && item.kind === 'tool') item.compactText = currentHeading
       }
+      if (raw.type === 'contextCompaction' || visible.some((item) => item.role !== 'activity'))
+        currentHeading = undefined
       for (const item of visible) {
         item.at ??= timestamp(turn.turnStartedAtMs)
         item.complete = item.role === 'user' || complete

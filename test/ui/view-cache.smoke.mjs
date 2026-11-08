@@ -63,8 +63,8 @@ export async function checkViewCache(page, capture) {
       await page
         .getByRole('button', { name: 'Open artifact: Cached storyboard.html', exact: true })
         .count(),
-      2,
-      `${name}: chips render without waiting for discovery`,
+      0,
+      `${name}: thread rows have no artifact bars`,
     )
   }
   assert.equal(
@@ -74,6 +74,14 @@ export async function checkViewCache(page, capture) {
   )
   const reads = await page.evaluate(() => window.proof.catalogReads)
   assert.equal(reads.length, new Set(reads).size, 'remounts share each pending discovery request')
+  await page
+    .getByRole('button', { name: /Synthetic Claude/ })
+    .first()
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Artifacts', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Open artifact 1: Cached storyboard.html', exact: true })
+    .waitFor()
   await page.evaluate(() =>
     window.proof.emit('onArtifactsChanged', {
       threadId: 'synthetic-claude',
@@ -89,9 +97,10 @@ export async function checkViewCache(page, capture) {
     }),
   )
   await page
-    .getByRole('button', { name: 'Open artifact: New live artifact.html', exact: true })
+    .getByRole('button', { name: 'Open artifact 1: New live artifact.html', exact: true })
     .waitFor()
   await capture('cached-views-live-artifacts')
+  await page.getByRole('button', { name: 'Back to threads' }).click()
   // Preloading extra rows must not change All view's count or Show more behavior.
   await page.evaluate(async () => {
     window.proof.emit('onSnapshot', await window.mockWorkspaceRows(14))

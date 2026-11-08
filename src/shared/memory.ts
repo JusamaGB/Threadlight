@@ -4,6 +4,25 @@ import { capabilitySchema, type CapabilityReport } from './projectParticipants'
 const id = z.string().uuid()
 const title = z.string().trim().min(1).max(80)
 const text = z.string().max(100_000)
+export const memoryPurpose = z.enum(['note', 'work_context', 'result'])
+export const saverSchema = z.object({
+  provider: z.enum(['human', 'claude', 'codex', 'workflow', 'unknown']),
+  chatId: z.string().optional(),
+  connectionId: z.string().optional(),
+  grantId: z.string().optional(),
+  at: z.number(),
+})
+export type MemorySaver = z.infer<typeof saverSchema>
+export function savedBy(saver?: MemorySaver): string {
+  if (saver?.provider === 'workflow') return 'Saved by workflow'
+  return saver?.provider === 'codex'
+    ? 'Saved by Codex'
+    : saver?.provider === 'claude'
+      ? 'Saved by Claude'
+      : saver?.provider === 'human'
+        ? 'Saved by you'
+        : 'Saver not recorded'
+}
 export const memoryInput = z
   .object({
     action: z.enum([
@@ -66,6 +85,7 @@ export const memoryInput = z
     revision: z.number().int().positive().optional(),
     cursor: z.number().int().nonnegative().optional(),
     query: z.string().max(300).optional(),
+    purpose: memoryPurpose.optional(),
     kind: z.enum(['note', 'document', 'image', 'decision', 'scratchpad', 'reference']).optional(),
     archived: z.boolean().optional(),
     assignee: z.string().min(1).max(512).optional(),
@@ -113,6 +133,8 @@ export interface MemoryFolder extends MemoryBase {
   redirectId?: string
 }
 export interface MemoryItem extends MemoryBase {
+  purpose?: z.infer<typeof memoryPurpose>
+  saver?: MemorySaver
   title: string
   folderId: string
   kind: 'note' | 'document' | 'image' | 'decision' | 'scratchpad' | 'reference'
@@ -121,6 +143,9 @@ export interface MemoryItem extends MemoryBase {
   archived: boolean
 }
 export interface MemoryRevision extends MemoryBase {
+  purpose?: z.infer<typeof memoryPurpose>
+  title?: string
+  saver?: MemorySaver
   itemId: string
   revision: number
   body: string
@@ -244,4 +269,9 @@ export interface MemoryDeliveryContext {
   attemptId: string
   url: string
   token: string
+}
+export interface MemoryManualConnection {
+  label: string
+  claude: string
+  codex: string
 }

@@ -3,12 +3,19 @@
 import { writeFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
+let message = ''
+for await (const chunk of process.stdin) message += chunk
 if (process.env.FAKE_CLAUDE_ARGS_FILE) {
-  writeFileSync(process.env.FAKE_CLAUDE_ARGS_FILE, JSON.stringify({ args, cwd: process.cwd() }))
+  writeFileSync(
+    process.env.FAKE_CLAUDE_ARGS_FILE,
+    JSON.stringify({ args, message, cwd: process.cwd() }),
+  )
 }
-const message = args[args.indexOf('-p') + 1]
 
 switch (process.env.FAKE_CLAUDE_MODE) {
+  case 'oversized':
+    console.log('x'.repeat(9 * 1024 * 1024))
+    break
   case 'logged-out':
     console.log(
       JSON.stringify({

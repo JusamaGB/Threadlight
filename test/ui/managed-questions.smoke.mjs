@@ -1,6 +1,7 @@
 /* global window */
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import { checkAnswerComposer } from './question-composer.smoke.mjs'
 
 export async function checkManagedQuestions(page, proof, memory, capture, target) {
   const space = memory.execute({
@@ -40,6 +41,7 @@ export async function checkManagedQuestions(page, proof, memory, capture, target
     .click()
   const card = row.getByRole('region', { name: 'Threadlight question' })
   await card.waitFor()
+  await checkAnswerComposer(page, card, 'Your answer', capture)
   assert.equal(await card.getByRole('button', { name: 'Send answer' }).isDisabled(), true)
   assert.equal(await card.getByText('Copy & open').count(), 0)
   await card.getByLabel('Your answer').fill('Explore first, then build a small prototype.')

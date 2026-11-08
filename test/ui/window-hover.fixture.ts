@@ -3,12 +3,13 @@ import { app, ipcMain, screen } from 'electron'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PinnedCodeStore } from '../../src/main/pinnedCode'
 import { WindowManager } from '../../src/main/windows'
 import { ModifierStepper } from '../../src/main/modifierStepper'
 import { IPC } from '../../src/shared/ipc'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { IDLE_AGENT } from '../../src/shared/agent'
-import { IDLE_MOTION } from '../../src/shared/motion'
+import { registerMicIndicator } from '../../src/main/micIndicator'
 
 const directory = mkdtempSync(join(tmpdir(), 'threadlight-hover-'))
 app.setPath('userData', directory)
@@ -18,8 +19,17 @@ async function start() {
   // dispatched by Playwright while native hit testing uses matching screen points.
   let cursor = { x: 50, y: 50 }
   screen.getCursorScreenPoint = () => ({ ...cursor })
-  const windows = new WindowManager()
   const heldKeys = new Set<number>()
+  const windows = new WindowManager((key) => heldKeys.has(key))
+  if (process.env['THREADLIGHT_STARTUP_PROOF']) {
+    // Reproduce slow service initialization without allowing renderer requests through.
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    if (windows.panel.webContents.getURL() || windows.dot.webContents.getURL())
+      throw Error('Renderer mounted before handlers were registered')
+  }
+  const pins = new PinnedCodeStore(join(directory, 'pins.json'), (state) =>
+    windows.pinsChanged(state),
+  )
   const modifiers = new ModifierStepper(
     (stage) => windows.setModifierStage(stage),
     (key) => heldKeys.has(key),
@@ -54,21 +64,48 @@ async function start() {
     currentWorkspace: null,
     currentThreadId: null,
   }
-  let settings = { ...DEFAULT_SETTINGS, openOn: 'hover' }
+  let settings = {
+    ...DEFAULT_SETTINGS,
+    openOn: 'hover',
+    ...(process.env['THREADLIGHT_STARTUP_PROOF']
+      ? {
+          enabledProviders: ['codex'],
+          workspaceWires: process.env['THREADLIGHT_STARTUP_WIRES'] === '1',
+        }
+      : {}),
+  }
   const replies: Record<string, () => unknown> = {
     [IPC.getSettings]: () => settings,
     [IPC.getSnapshot]: () => snapshot,
     [IPC.getSessions]: () => snapshot.sessions,
     [IPC.getRelays]: () => [],
     [IPC.getStt]: () => ({ state: 'ready' }),
-    [IPC.agentGet]: () => IDLE_AGENT,
-    [IPC.getMotion]: () => IDLE_MOTION,
+    [IPC.agentGet]: () =>
+      process.env.THREADLIGHT_UI_FOCUS === 'agent-height'
+        ? {
+            ...IDLE_AGENT,
+            status: 'ready',
+            items: [{ kind: 'you', text: 'Read this sample conversation.' }],
+          }
+        : IDLE_AGENT,
+    [IPC.agentHistory]: () => [],
     [IPC.getAttentionMotion]: () => windows.attentionMotion,
-    [IPC.openMicIndicator]: () => ({ live: false, level: 0 }),
     [IPC.getVersion]: () => 'hover-test',
+    [IPC.artifacts]: () => ({ ok: true, items: [] }),
+    [IPC.memoryRequest]: () => ({ ok: false, reason: 'No memory service in this window fixture.' }),
+    [IPC.spacesRequest]: () => ({ ok: false, reason: 'No Spaces service in this window fixture.' }),
   }
-  for (const channel of Object.values(IPC))
+  ipcMain.handle('control:hello', () => null)
+  ipcMain.handle('control:claim', () => false)
+  registerMicIndicator(windows)
+  for (const channel of Object.values(IPC).filter(
+    (channel) =>
+      ![IPC.getMotion, IPC.openMicIndicator, IPC.spokenReply, IPC.micMenu, IPC.copyText].some(
+        (handled) => handled === channel,
+      ),
+  ))
     ipcMain.handle(channel, (_event, ...args) => {
+      if (channel === IPC.pinnedCode) return pins.request(args[0])
       if (channel === IPC.workspacePanel) return windows.setWorkspacePanel(args[0])
       if (channel === IPC.panelLayout) return windows.setPanelLayout(args[0], args[1])
       if (channel === IPC.workspaceWireGutter) return windows.setWorkspaceWireGutter(args[0])
@@ -79,6 +116,19 @@ async function start() {
       }
       return replies[channel]?.() ?? null
     })
+  ipcMain.on(IPC.pinnedCodeSize, (event, visible, height) => {
+    if (windows.codeWindow(event.sender)) windows.setPinnedCode(visible, height)
+  })
+  ipcMain.on(IPC.codePan, (event, id, active) => {
+    const win = windows.codeWindow(event.sender)
+    if (win) windows.codePan(id, active, win)
+  })
+  ipcMain.handle(IPC.copyText, (_event, value) => {
+    record(IPC.copyText, value)
+    return true
+  })
+  ipcMain.on(IPC.dotDrag, (_event, dx, dy) => windows.dragDot(dx, dy))
+  ipcMain.on(IPC.dotDragEnd, () => windows.endDrag())
   const actions: Record<string, (value: unknown) => void> = {
     [IPC.dotHover]: () => windows.openFromDot(true),
     [IPC.dotClick]: () => windows.openFromDot(),
@@ -101,9 +151,14 @@ async function start() {
   Object.assign(globalThis, {
     hoverProof: {
       windows,
+      pins,
       events,
       directory,
       move,
+      holdLeft(held: boolean) {
+        if (held) heldKeys.add(1)
+        else heldKeys.delete(1)
+      },
       modifiers(control: boolean, alt: boolean) {
         heldKeys.clear()
         if (control) heldKeys.add(0x11)
@@ -146,6 +201,7 @@ async function start() {
       },
     },
   })
+  await windows.loadRenderers()
   await Promise.all(
     [windows.dot, windows.panel].map(
       (win) =>
@@ -155,7 +211,10 @@ async function start() {
         }),
     ),
   )
-  windows.setClaudeRunning(true)
+  if (!process.env['THREADLIGHT_STARTUP_PROOF']) windows.setClaudeRunning(true)
   app.on('window-all-closed', () => {})
 }
-void start()
+void start().catch((error) => {
+  console.error(error)
+  app.exit(1)
+})

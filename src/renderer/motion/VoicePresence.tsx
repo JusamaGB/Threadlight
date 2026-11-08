@@ -17,9 +17,11 @@ export function VoicePresence({
       aria-label="Voice activity"
       data-compact={compact || undefined}
     >
-      <div className={styles.status}>
-        <span role="status">{label}</span>
-      </div>
+      {label && (
+        <div className={styles.status}>
+          <span role="status">{label}</span>
+        </div>
+      )}
       {caption && (
         <p className={styles.caption} data-provisional={provisional || undefined}>
           {caption}

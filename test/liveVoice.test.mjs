@@ -40,23 +40,22 @@ const api = {
   agentLiveOpen: vi.fn(async () => ({ ok: true })),
   agentLiveStop: vi.fn(),
   getAgent: vi.fn(async () => ({ status: 'ready', live: 'active' })),
+  livePlaybackBoundary: vi.fn(),
   onAgentLive: vi.fn(() => () => {}),
 }
 const state = vi.fn()
 let connection
+let playback
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
   api.getAgent.mockResolvedValue({ status: 'ready', live: 'active' })
   Peer.earlyStart = false
   vi.stubGlobal('RTCPeerConnection', Peer)
-  vi.stubGlobal(
-    'Audio',
-    class {
-      play = async () => {}
-      pause() {}
-    },
-  )
+  playback = { play: vi.fn(async () => {}), pause: vi.fn() }
+  vi.stubGlobal('Audio', function Audio() {
+    return playback
+  })
   vi.stubGlobal('window', { threadlight: api })
   connection = new LiveVoiceConnection({ getAudioTracks: () => [{}] }, 16000, state)
 })
@@ -76,6 +75,89 @@ async function ready() {
   await starting
   return peer
 }
+it.each(['native', 'acknowledged opening'])(
+  'allows remote reply playback during %s and silences it on pause or stop',
+  async (entry) => {
+    const peer = await ready()
+    const remote = {}
+    peer.ontrack({ streams: [remote] })
+    expect(playback.srcObject).toBe(remote)
+    expect(playback.play).toHaveBeenCalledTimes(1)
+    expect(playback.muted).toBe(true)
+    if (entry === 'native') connection.listen()
+    else await connection.open('Can you hear me?')
+    expect(playback.muted).toBe(false)
+    connection.setPaused(true)
+    expect(playback.muted).toBe(true)
+    connection.setPaused(false)
+    expect(playback.muted).toBe(false)
+    connection.stop()
+    expect(playback.pause).toHaveBeenCalledTimes(1)
+    expect(playback.srcObject).toBeNull()
+  },
+)
+it('silences just the interrupted narration and plays the next distinct response', async () => {
+  const peer = await ready()
+  connection.listen()
+  const notify = api.onAgentLive.mock.calls[0][0]
+  const start = (id) =>
+    peer.channel.onmessage({
+      data: JSON.stringify({ type: 'turn.created', turn: { role: 'assistant', id } }),
+    })
+  start('one')
+  notify({ sessionId: connection.id, type: 'interrupt-narration', turnId: 'other' })
+  expect(playback.muted).toBe(false)
+  notify({ sessionId: connection.id, type: 'interrupt-narration', turnId: 'one' })
+  expect(playback.muted).toBe(true)
+  start('two')
+  expect(playback.muted).toBe(false)
+  expect(api.livePlaybackBoundary).toHaveBeenCalledWith(connection.id, 'assistant', 'two')
+})
+it('sends silence during composer dictation while keeping remote audio and the connection active', async () => {
+  const peer = await ready()
+  connection.listen()
+  const input = new Float32Array([0.2, 0.5])
+  const output = new Float32Array(input)
+  connection.setInputMuted(true)
+  connection.process(input, output)
+  expect([...output]).toEqual([0, 0])
+  expect(connection.bufferedSeconds).toBe(0)
+  expect(playback.muted).toBe(false)
+  expect(peer.connectionState).toBe('connected')
+  connection.setInputMuted(false)
+  connection.process(input, output)
+  expect(output).toEqual(input)
+})
+it('stops only the playing reply, keeps input and speaker toggles independent and ignores repeated turn events', async () => {
+  const peer = await ready()
+  connection.listen()
+  const turn = (id) =>
+    peer.channel.onmessage({
+      data: JSON.stringify({ type: 'turn.created', turn: { id, role: 'assistant' } }),
+    })
+  turn('first')
+  connection.stopSpeaking()
+  expect(playback.muted).toBe(true)
+  connection.setInputMuted(true)
+  connection.setOutputMuted(true)
+  turn('second')
+  expect(playback.muted).toBe(true)
+  connection.setOutputMuted(false)
+  expect(playback.muted).toBe(false)
+  const frame = new Float32Array([0.25]),
+    out = new Float32Array(1)
+  connection.process(frame, out)
+  expect(out[0]).toBe(0)
+  connection.setInputMuted(false)
+  connection.stopSpeaking()
+  turn('second')
+  expect(playback.muted).toBe(true)
+  connection.process(frame, out)
+  expect(out[0]).toBe(0.25)
+  turn('third')
+  expect(playback.muted).toBe(false)
+  expect(peer.connectionState).toBe('connected')
+})
 it('native listening sends audio from the first turn without a text opening', async () => {
   connection.listen()
   expect(connection.active).toBe(false)
@@ -88,6 +170,37 @@ it('native listening sends audio from the first turn without a text opening', as
   expect(state).toHaveBeenLastCalledWith('live')
   connection.listen()
   expect(api.agentLiveOpen).not.toHaveBeenCalled()
+})
+it('routes Brainstorm audio and cancellation through its own port without Agent announcements', async () => {
+  connection.stop()
+  vi.clearAllMocks()
+  const port = {
+    start: vi.fn(async () => ({ ok: true, sdp: 'v=0' })),
+    open: vi.fn(),
+    stop: vi.fn(),
+    subscribe: vi.fn(() => () => {}),
+    state: vi.fn(),
+  }
+  api.agentAnnouncement = vi.fn()
+  connection = new LiveVoiceConnection(
+    { getAudioTracks: () => [{}] },
+    16000,
+    state,
+    undefined,
+    port,
+  )
+  await ready()
+  connection.listen()
+  const output = new Float32Array(2)
+  connection.process(new Float32Array([0.3, 0.5]), output)
+  expect([...output]).toEqual([...new Float32Array([0.3, 0.5])])
+  connection.stop()
+  expect(port.start).toHaveBeenCalledWith(connection.id, 'v=0')
+  expect(port.stop).toHaveBeenCalledWith(connection.id)
+  expect(api.agentLiveStart).not.toHaveBeenCalled()
+  expect(api.agentLiveStop).not.toHaveBeenCalled()
+  expect(api.agentAnnouncement).not.toHaveBeenCalled()
+  delete api.agentAnnouncement
 })
 it('holds startup speech until service readiness, then delivers old and new audio once in order', async () => {
   const starting = connection.start({ bufferAudio: true })
@@ -108,6 +221,66 @@ it('holds startup speech until service readiness, then delivers old and new audi
   connection.process(new Float32Array([0, 0]), output)
   expect([...output]).toEqual([7, 8])
   expect(api.agentLiveOpen).not.toHaveBeenCalled()
+})
+it.each(['constant', 'two codes', 'three codes', 'stationary noise'])(
+  'drains %s without skipping the quiet first utterance or shortening its samples',
+  async (shape) => {
+    const starting = connection.start({ bufferAudio: true })
+    await vi.advanceTimersByTimeAsync(0)
+    const size = 256,
+      frames = 282,
+      output = new Float32Array(size),
+      expected = []
+    for (let n = 0; n < frames; n++) {
+      const speech = Float32Array.from(
+        { length: size },
+        (_, i) => 0.00025 * Math.sin((n * size + i) * 0.12),
+      )
+      expected.push(...speech)
+      connection.process(speech, output)
+    }
+    expect(connection.bufferedSeconds).toBeCloseTo(4.512)
+    Peer.current.event('session.started')
+    await starting
+    let seed = 19
+    const floor = Float32Array.from({ length: size }, (_, i) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+      const code =
+        shape === 'constant'
+          ? 3
+          : shape === 'two codes'
+            ? 3 + (i % 2)
+            : shape === 'three codes'
+              ? 3 + (i % 3)
+              : 3 + (seed % 9)
+      return code / 32768
+    })
+    const played = []
+    let drainedAt
+    for (let n = 0; n < 3750; n++) {
+      connection.process(floor, output)
+      if (n < frames) played.push(...output)
+      if (drainedAt === undefined && !connection.bufferedSeconds)
+        drainedAt = ((n + 1) * size) / 16000
+    }
+    expect(played.length).toBe(expected.length)
+    expect(played.every((v, i) => v === expected[i])).toBe(true)
+    expect(drainedAt).toBeGreaterThanOrEqual(5)
+    expect(drainedAt).toBeLessThan(5.04)
+    expect(connection.bufferedSeconds).toBe(0)
+  },
+)
+it('retains the pause boundary and delayed first input when the native session is ready before microphone permission', async () => {
+  const starting = connection.start({ bufferAudio: true })
+  await vi.advanceTimersByTimeAsync(0)
+  Peer.current.event('session.started')
+  await starting
+  connection.microphoneReady()
+  const samples = Float32Array.of(0.00008, -0.00009, 0.00008, -0.00009),
+    output = new Float32Array(4)
+  connection.process(samples, output)
+  expect([...output]).toEqual([...samples])
+  expect(connection.bufferedSeconds).toBe(0)
 })
 it('discards startup audio on cancellation and ignores a late connection', async () => {
   const starting = connection.start({ bufferAudio: true })

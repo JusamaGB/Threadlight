@@ -141,12 +141,18 @@ export async function checkVoiceRouting(page) {
   assert.equal((await agentSends()).length, before)
 
   // Composer dictation stays dictation even while command mode is latched.
-  await page.getByRole('button', { name: 'Talk', exact: true }).click()
+  await page
+    .getByRole('group', { name: 'Codex message composer' })
+    .getByRole('button', { name: 'Talk', exact: true })
+    .click()
   await page.evaluate(() => {
     delete window.proof.finishTranscript
   })
   await page.waitForTimeout(300)
-  await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).click()
+  await page
+    .getByRole('group', { name: 'Codex message composer' })
+    .getByRole('button', { name: 'Stop and transcribe', exact: true })
+    .click()
   await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
   await page.evaluate(() => window.proof.finishTranscript('Composer words'))
   await page.waitForFunction(() =>
@@ -225,7 +231,7 @@ export async function checkVoiceRouting(page) {
       (c) => c[0] === 'agentSend' && c[1] === 'Please review the plan locally.',
     ),
   )
-  await page.getByText('Local STT · Listening; text goes to the Agent', { exact: true }).waitFor()
+  await page.locator('[data-mic-mode="agent"]').waitFor()
   assert.equal(await page.evaluate(() => window.proof.livePeers.length), peersBefore)
   await close()
 
@@ -242,11 +248,14 @@ export async function checkVoiceRouting(page) {
     window.proof.holdLive = true
     delete window.proof.connectLive
   })
+  await openHeaderPage(page, 'Agent')
+  const draft = page.getByRole('textbox', { name: 'Message to Agent' })
+  if (!(await draft.isVisible())) await page.getByRole('button', { name: 'Reply to Agent' }).click()
+  await draft.fill('Keep this draft through the call')
+  await page.evaluate(() => window.proof.agent({ conversationId: 'codex:voice-proof' }))
   const sendsBeforeLive = (await agentSends()).length
   await open()
-  await page
-    .getByText('Connecting GPT Live · Speak now; your audio is buffered', { exact: true })
-    .waitFor()
+  await page.getByText('Connecting…', { exact: true }).waitFor()
   await page.waitForFunction(() => typeof window.proof.connectLive === 'function')
   // Speak while setup is blocked, then stop before releasing the connection.
   await page.evaluate(() => {
@@ -265,9 +274,7 @@ export async function checkVoiceRouting(page) {
     window.proof.holdLive = false
     window.proof.connectLive()
   })
-  await page
-    .getByText('Live · Speak naturally; press the hotkey to finish', { exact: true })
-    .waitFor()
+  await page.getByText('Connecting…', { exact: true }).waitFor({ state: 'detached' })
   await page.waitForFunction(() => {
     const analyser = window.proof.livePeers.at(-1).analyser
     const samples = new Float32Array(analyser.fftSize)
@@ -281,7 +288,323 @@ export async function checkVoiceRouting(page) {
     await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'liveOpen').length),
     0,
   )
-  // Changing mode releases the active transport, without ending the Agent conversation.
+  const beforeCaptions = await page.evaluate(() => window.threadlight.getAgent())
+  await page.evaluate(async () => {
+    await window.threadlight.updateSettings({ spokenReplyCompanion: true })
+    const source = {
+      kind: 'agent',
+      id: 'caption-source',
+      backingTurnId: 'turn',
+      text: 'Unspoken explanation\n\n```python\nprint(42)\n```',
+    }
+    const link = { sessionId: 'test-call', turnId: 'turn', itemId: source.id }
+    window.proof.agent({
+      live: 'active',
+      items: [
+        source,
+        {
+          kind: 'agent',
+          id: 'live:lead',
+          text: 'Start here.',
+          narrationOf: { ...link, excerpt: 'Start here.' },
+        },
+        {
+          kind: 'agent',
+          id: 'live:tail',
+          text: 'Run this.',
+          narrationOf: { ...link, tailAfter: 'Start here.' },
+        },
+      ],
+    })
+  })
+  await page.waitForFunction(() => window.proof.spokenReply?.text === 'Start here. Run this.')
+  const spoken = await page.evaluate(() => window.proof.spokenReply)
+  assert.equal(spoken.blocks[0].value, 'print(42)')
+  assert.ok(!JSON.stringify(spoken).includes('Unspoken explanation'))
+  // Real receipt regression: the caption existed before its fenced backing item was available.
+  await page.evaluate(() => {
+    const user = {
+      kind: 'you',
+      id: 'live:receipt-request',
+      text: 'Show me the Python',
+      voiceDelegationIds: [],
+    }
+    const request = {
+      kind: 'you',
+      id: 'receipt-envelope',
+      backingTurnId: 'receipt-turn',
+      text: 'Show me the Python',
+    }
+    const caption = {
+      kind: 'agent',
+      id: 'live:receipt-caption',
+      liveAfter: 'receipt-answer',
+      liveComplete: true,
+      text: 'Here it is: order contains names like "apple". The loop puts each name into entry, then inv[entry] looks up its price.',
+    }
+    window.proof.receiptItems = [user, request, caption]
+    window.proof.agent({ coachGuideToken: 'receipt-guide', items: window.proof.receiptItems })
+  })
+  await page.waitForFunction(() => window.proof.spokenReply?.id === 'live:receipt-caption')
+  assert.equal(await page.evaluate(() => window.proof.spokenReply.blocks.length), 0)
+  await page.evaluate(() => {
+    const [user, request, caption] = window.proof.receiptItems
+    const py = 'for entry in order:\n    print(entry, inv[entry])'
+    const fence = String.fromCharCode(96).repeat(3)
+    const answer = {
+      kind: 'agent',
+      id: 'receipt-answer',
+      backingTurnId: 'receipt-turn',
+      timingSession: 'test-call',
+      text:
+        'Here it is:\n\n' +
+        fence +
+        'python\n' +
+        py +
+        '\n' +
+        fence +
+        '\n\norder contains names like "apple". The loop puts each name into entry, then inv[entry] looks up its price.',
+    }
+    window.proof.receiptItems = [user, request, answer, caption]
+    window.proof.agent({ items: window.proof.receiptItems })
+  })
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)),
+      ),
+  )
+  assert.equal(await page.evaluate(() => window.proof.spokenReply.blocks.length), 0)
+  await page.evaluate(() => {
+    const [user, ...rest] = window.proof.receiptItems
+    window.proof.receiptItems = [{ ...user, voiceDelegationIds: ['receipt-envelope'] }, ...rest]
+    window.proof.agent({ items: window.proof.receiptItems })
+  })
+  await page.waitForFunction(() =>
+    window.proof.spokenReply.blocks[0]?.value.includes('print(entry, inv[entry])'),
+  )
+  await page.evaluate(() => {
+    const answer = {
+      kind: 'agent',
+      id: 'receipt-followup',
+      timingSession: 'test-call',
+      backingTurnId: 'followup-turn',
+      text:
+        'The print expression ' +
+        String.fromCharCode(96) +
+        'print(entry, inv[entry])' +
+        String.fromCharCode(96) +
+        ' is correct.',
+    }
+    const caption = {
+      kind: 'agent',
+      id: 'live:followup',
+      text: 'The print expression is correct.',
+      liveComplete: true,
+      narrationOf: { sessionId: 'test-call', turnId: 'followup-turn', itemId: answer.id },
+    }
+    window.proof.followupItems = [...window.proof.receiptItems, answer, caption]
+    window.proof.agent({ items: [...window.proof.receiptItems, caption] })
+  })
+  await page.waitForFunction(
+    () =>
+      window.proof.spokenReply?.id.includes('receipt-followup') &&
+      window.proof.spokenReply.blocks.length === 0,
+  )
+  await page.evaluate(() => {
+    window.proof.agent({ items: window.proof.followupItems })
+  })
+  await page.waitForFunction(
+    () =>
+      window.proof.spokenReply?.text === 'The print expression is correct.' &&
+      window.proof.spokenReply.blocks.length === 1,
+  )
+  await page.evaluate(() => window.proof.agent({ coachGuideToken: 'invalidated-receipt-guide' }))
+  await page.waitForFunction(
+    () =>
+      window.proof.spokenReply?.text === 'The print expression is correct.' &&
+      window.proof.spokenReply.blocks.length === 0,
+  )
+  await page.evaluate(async (state) => {
+    await window.threadlight.updateSettings({ spokenReplyCompanion: false })
+    window.proof.agent({ live: state.live, items: state.items })
+  }, beforeCaptions)
+  await page.waitForFunction(() => window.proof.spokenReply === null)
+  const controls = page.getByRole('group', { name: 'Live call controls' })
+  const leaveCount = () =>
+    page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'leavePanel').length)
+  const reopenWave = () =>
+    page.evaluate(() =>
+      window.proof.emit('onPanelOpened', {
+        maxHeight: 800,
+        opensDown: true,
+        fresh: false,
+        fromMic: true,
+      }),
+    )
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  await page.getByRole('button', { name: 'Return to call' }).waitFor()
+  assert.equal(await controls.count(), 0)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  const pinnedPanel = page.locator('[data-card][data-pinned]')
+  if (await pinnedPanel.count()) {
+    const pinnedLeaves = await leaveCount()
+    await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
+    assert.equal(await leaveCount(), pinnedLeaves, 'explicit pin still holds the call panel')
+    await page.locator('header[aria-label="Panel header"]').dispatchEvent('click', { detail: 2 })
+    await pinnedPanel.waitFor({ state: 'detached' })
+  }
+  const leaves = await leaveCount()
+  await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
+  assert.equal(await leaveCount(), leaves + 1, 'leaving another page can collapse an active call')
+  await reopenWave()
+  await controls.waitFor()
+  assert.equal(await draft.inputValue(), 'Keep this draft through the call')
+  assert.equal(
+    await page.evaluate(() => window.proof.livePeers.at(-1).connectionState),
+    'connected',
+  )
+  await draft.focus()
+  const held = await leaveCount()
+  await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
+  assert.equal(await leaveCount(), held, 'focused composer holds the live panel')
+  const bounds = await controls.boundingBox()
+  const buttons = await controls
+    .locator('button')
+    .evaluateAll((nodes) => nodes.map((el) => el.getBoundingClientRect().toJSON()))
+  assert.equal(buttons.length, 5)
+  assert.equal(await controls.locator('button').last().getAttribute('aria-label'), 'Reply to Agent')
+  assert.ok(
+    buttons.every((b) => b.width >= 23 && b.height >= 23 && Math.abs(b.y - buttons[0].y) <= 1),
+  )
+  const callReply = controls.getByRole('button', { name: 'Reply to Agent' })
+  await callReply.press('Enter')
+  await draft.waitFor({ state: 'hidden' })
+  await callReply.press('Enter')
+  assert.equal(await draft.inputValue(), 'Keep this draft through the call')
+  assert.ok(
+    Math.abs((buttons[0].left + buttons.at(-1).right) / 2 - (bounds.x + bounds.width / 2)) <= 1,
+  )
+  assert.ok(bounds.height <= 24)
+  await controls.getByRole('button', { name: 'Mute microphone' }).click()
+  await page.waitForFunction(() => window.proof.motion?.inputMuted)
+  await controls.getByRole('button', { name: 'Mute speaker' }).click()
+  await page.evaluate(() => window.proof.emit('onLiveMuteShortcut'))
+  await controls.getByRole('button', { name: 'Mute microphone' }).waitFor()
+  await controls.getByRole('button', { name: 'Unmute speaker' }).click()
+  await controls.getByRole('button', { name: 'Stop speaking' }).click()
+  assert.equal(
+    await page.evaluate(() => window.proof.livePeers.at(-1).connectionState),
+    'connected',
+  )
+  await page.evaluate(() => window.proof.agent({ status: 'working', requests: [] }))
+  await page.waitForFunction(() => window.proof.motion?.agentWorking)
+  await page.evaluate(() => window.proof.agent({ status: 'waiting', requests: [] }))
+  await page.waitForFunction(() => !window.proof.motion?.agentWorking)
+  await page.evaluate(() => window.proof.agent({ status: 'ready' }))
+  // Enter a Smart Thread from the Agent while the same native Live peer stays connected.
+  await page.evaluate(async () => {
+    window.threadlight.threadTimeline = async ({ threadId }) => ({
+      ok: true,
+      timeline: {
+        threadId,
+        revision: 1,
+        connection: 'live',
+        hasMore: false,
+        items: [],
+        loadingOlder: false,
+      },
+    })
+    await window.threadlight.updateSettings({ pinnedActiveThreads: true })
+    window.proof.emit('onStt', { state: 'ready' })
+    window.proof.setAudioLevel(0.18)
+    window.proof.liveGain = window.proof.voiceSourceGain
+  })
+  await openHeaderPage(page, 'Agent')
+  await page
+    .getByRole('region', { name: 'Pinned Active threads' })
+    .getByRole('button', { name: /Synthetic Codex/ })
+    .click()
+  const composer = page
+    .getByRole('region', { name: 'Pinned Active threads' })
+    .getByRole('group', { name: 'Codex message composer' })
+    .last()
+  await composer.getByRole('button', { name: 'Talk', exact: true }).click()
+  const mutedWave = page
+    .getByRole('region', { name: 'Voice waveform' })
+    .getByRole('img', { name: 'Live microphone muted' })
+  await mutedWave.waitFor()
+  assert.equal(await mutedWave.getAttribute('data-waveform-only'), 'true')
+  await page.waitForFunction(() => window.proof.motion?.inputMuted === true)
+  await composer.getByRole('img', { name: 'Listening...', exact: true }).waitFor()
+  await page.waitForFunction(() => {
+    const peer = window.proof.livePeers.at(-1),
+      a = peer.analyser,
+      samples = new Float32Array(a.fftSize)
+    a.getFloatTimeDomainData(samples)
+    return peer.connectionState === 'connected' && samples.every((v) => Math.abs(v) < 0.001)
+  })
+  await composer.getByRole('button', { name: 'Stop and transcribe' }).click()
+  await page.waitForFunction(() => typeof window.proof.finishTranscript === 'function')
+  await page.evaluate(() => window.proof.finishTranscript('Only the composer should hear this'))
+  await mutedWave.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => !window.proof.motion?.inputMuted)
+  await page.waitForFunction(() => {
+    const peer = window.proof.livePeers.at(-1),
+      a = peer.analyser,
+      samples = new Float32Array(a.fftSize)
+    a.getFloatTimeDomainData(samples)
+    return peer.connectionState === 'connected' && samples.some((v) => Math.abs(v) > 0.01)
+  })
+  assert.ok(
+    (await composer.getByRole('textbox').inputValue()).includes(
+      'Only the composer should hear this',
+    ),
+  )
+  await page.evaluate(async () => {
+    window.proof.liveGain.gain.value = 0
+    await window.threadlight.updateSettings({ pinnedActiveThreads: false })
+  })
+  await page.evaluate(() =>
+    window.proof.agent({
+      status: 'waiting',
+      requests: [
+        {
+          id: 'decision',
+          kind: 'approval',
+          title: 'Review fixture',
+          detail: 'Still pending',
+          canAllow: true,
+        },
+      ],
+    }),
+  )
+  if (await page.getByRole('button', { name: 'Return to call' }).isVisible())
+    await page.getByRole('button', { name: 'Return to call' }).click()
+  const pendingLeaves = await leaveCount()
+  await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
+  assert.equal(
+    await leaveCount(),
+    pendingLeaves,
+    'pending Agent decisions keep the panel available',
+  )
+  await controls.getByRole('button', { name: 'End call', exact: true }).click()
+  const choices = page.getByRole('group', { name: 'Agent conversation controls' })
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
+  assert.equal(await choices.count(), 0, 'the list has no post-call controls')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  assert.equal(await choices.count(), 0, 'Settings has no post-call controls')
+  await openHeaderPage(page, 'Shared Spaces')
+  assert.equal(await choices.count(), 0, 'Spaces has no post-call controls')
+  await openHeaderPage(page, 'Agent')
+  await choices.waitFor()
+  assert.ok(
+    await choices.getByRole('button', { name: 'Close conversation', exact: true }).isDisabled(),
+  )
+  assert.ok(await choices.getByRole('button', { name: 'Start fresh' }).isDisabled())
+  assert.equal(await draft.inputValue(), 'Keep this draft through the call')
+  assert.equal(await page.getByRole('button', { name: 'Keep chat' }).count(), 0)
+  await page.evaluate(() => window.proof.agent({ status: 'ready', requests: [] }))
   await page.evaluate(() => window.threadlight.updateSettings({ voiceMode: 'local-stt' }))
   await page.waitForFunction(() => document.documentElement.dataset.openMic === 'off')
   assert.equal(await page.evaluate(() => window.proof.livePeers.at(-1).connectionState), 'closed')
@@ -294,9 +617,7 @@ export async function checkVoiceRouting(page) {
     window.proof.emit('onTalkToggle')
   })
   await page.waitForFunction(() => typeof window.proof.connectLive === 'function')
-  await page
-    .getByText('Connecting GPT Live · Speak now; your audio is buffered', { exact: true })
-    .waitFor()
+  await page.getByText('Connecting…', { exact: true }).waitFor()
   await page.evaluate(async () => {
     await window.threadlight.updateSettings({ voiceMode: 'local-stt' })
     window.proof.holdLive = false
@@ -328,8 +649,10 @@ export async function checkVoiceRouting(page) {
       typeof window.proof.connectLive === 'function' &&
       typeof window.proof.allowBufferedMic === 'function',
   )
-  await page.getByText('Opening microphone and connecting GPT Live…', { exact: true }).waitFor()
+  await page.getByText('Connecting…', { exact: true }).waitFor()
   const stoppedBeforeLateMic = await page.evaluate(() => window.proof.stoppedTracks)
+  await page.getByRole('button', { name: 'Cancel call setup', exact: true }).click()
+  await page.waitForFunction(() => document.documentElement.dataset.openMic === 'off')
   await page.evaluate(async () => {
     await window.threadlight.updateSettings({ voiceMode: 'local-stt' })
     window.proof.holdLive = false
@@ -346,6 +669,42 @@ export async function checkVoiceRouting(page) {
     }),
   )
 
+  await page.evaluate(() => {
+    window.threadlight.finishCallChat = async (id, choice) => {
+      window.proof.calls.push(['post-call', id, choice])
+      window.proof.agent({ ended: true, status: 'idle', live: null })
+      return { ok: true }
+    }
+  })
+  if (!(await choices.isVisible())) await openHeaderPage(page, 'Agent')
+  await choices.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await choices
+    .getByRole('button', { name: 'Close conversation', exact: true })
+    .waitFor({ state: 'detached' })
+  assert.deepEqual(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'post-call').at(-1)),
+    ['post-call', 'codex:voice-proof', 'archive'],
+  )
+  const beforePreparation = await page.evaluate(() => {
+    const previous = window.threadlight.getAgent
+    window.threadlight.getAgent = () =>
+      new Promise((resolve) => {
+        window.proof.releaseProviderLookup = async () => {
+          window.threadlight.getAgent = previous
+          resolve(await previous())
+        }
+      })
+    window.proof.emit('onTalkToggle', { liveSessionId: 'synthetic-cancelled-lookup' })
+    return window.proof.livePeers.length
+  })
+  await page.waitForFunction(() => typeof window.proof.releaseProviderLookup === 'function')
+  await page.getByRole('button', { name: 'Cancel call setup', exact: true }).click()
+  await page.evaluate(() => window.proof.releaseProviderLookup())
+  await choices
+    .getByRole('button', { name: 'Close conversation', exact: true })
+    .waitFor({ state: 'detached' })
+  assert.equal(await page.evaluate(() => window.proof.livePeers.length), beforePreparation)
+  assert.equal(await page.getByRole('button', { name: 'Keep chat' }).count(), 0)
   // A native failure stays a native failure and releases the microphone.
   await page.evaluate(async () => {
     await window.threadlight.updateSettings({ voiceMode: 'gpt-live' })
@@ -382,6 +741,9 @@ export async function checkVoiceRouting(page) {
       talkMode: 'toggle',
     })
     window.proof.emit('onStt', { state: 'ready' })
+    await new Promise((resolve) =>
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)),
+    )
   })
   // Closing while transcription is pending cannot leak a command or agent request.
   await open()
@@ -402,6 +764,48 @@ export async function checkVoiceRouting(page) {
     // Keep the synthetic peer for target/activation coverage below.
   })
   await checkVoiceTarget(page)
+  const liveSessionId = 'aaaa1111-bbbb-4ccc-8ddd-eeee11112222'
+  await page.evaluate(async (id) => {
+    await window.threadlight.updateSettings({
+      agentProvider: 'codex',
+      voiceMode: 'local-stt',
+      talkMode: 'hold',
+      voiceTarget: 'thread',
+    })
+    window.proof.agent({ provider: 'codex', status: 'ready', ended: false, live: null })
+    window.proof.emit('onTalkToggle', { liveSessionId: id })
+  }, liveSessionId)
+  await page.waitForFunction(
+    (id) => window.proof.calls.some((c) => c[0] === 'liveStart' && c[1] === id),
+    liveSessionId,
+  )
+  await page.evaluate(() =>
+    window.proof.emit('onTalkToggle', { liveSessionId: 'bbbb2222-cccc-4ddd-8eee-ffff11112222' }),
+  )
+  await page.waitForFunction(
+    (id) => window.proof.calls.some((c) => c[0] === 'liveStop' && c[1] === id),
+    liveSessionId,
+  )
+  assert.equal(
+    await page.evaluate(async () => (await window.threadlight.getSettings()).voiceMode),
+    'local-stt',
+  )
+  const stoppedFromPill = 'cccc3333-dddd-4eee-8fff-aaaa11112222'
+  await page.evaluate(
+    (id) => window.proof.emit('onTalkToggle', { liveSessionId: id }),
+    stoppedFromPill,
+  )
+  await page.waitForFunction(
+    (id) => window.proof.calls.some((c) => c[0] === 'liveStart' && c[1] === id),
+    stoppedFromPill,
+  )
+  await page.waitForFunction(() => document.documentElement.dataset.openMic === 'listening')
+  await page.evaluate(() => window.proof.emit('onStopOpenMic'))
+  await page.waitForFunction(
+    (id) => window.proof.calls.some((c) => c[0] === 'liveStop' && c[1] === id),
+    stoppedFromPill,
+  )
+  await page.waitForFunction(() => document.documentElement.dataset.openMic === 'off')
   await page.evaluate(() => {
     window.RTCPeerConnection = window.proof.nativePeer
     AudioContext.prototype.createScriptProcessor = window.proof.createProcessor

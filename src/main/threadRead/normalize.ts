@@ -37,6 +37,7 @@ export function normalize(
   raw: unknown,
   source: string,
   fallbackId: string,
+  assistantText = codexDisplayText,
 ): ThreadVisibleItem[] {
   if (!isObject(raw)) return []
   const item = isObject(raw.payload) ? raw.payload : raw
@@ -84,7 +85,7 @@ export function normalize(
       return text ? [{ ...base, text, role: 'user', kind: 'message', phase: 'request' }] : []
     }
     if (item.type === 'agentMessage' || (item.type === 'message' && item.role === 'assistant')) {
-      const text = codexDisplayText(str(item.text) || textOf(item.content))
+      const text = assistantText(str(item.text) || textOf(item.content))
       const phase =
         item.phase === 'commentary' || item.channel === 'commentary'
           ? 'progress'
@@ -271,6 +272,7 @@ export function associateTurns(items: ThreadVisibleItem[]): ThreadVisibleItem[] 
 export function normalizeRollout(
   records: { value: unknown; offset: number }[],
   nativeId: string,
+  assistantText = codexDisplayText,
 ): ThreadVisibleItem[] {
   let turnId: string | null = null
   return records.flatMap(({ value, offset }) => {
@@ -278,9 +280,13 @@ export function normalizeRollout(
     const payload = isObject(value.payload) ? value.payload : value
     if (value.type === 'turn_context' || payload.type === 'task_started')
       turnId = str(payload.turn_id) ?? str(payload.id) ?? turnId
-    return normalize('codex', value, 'codex_rollout', `rollout:${nativeId}:${offset}`).map(
-      (item) => ({ ...item, turnId: item.turnId ?? turnId }),
-    )
+    return normalize(
+      'codex',
+      value,
+      'codex_rollout',
+      `rollout:${nativeId}:${offset}`,
+      assistantText,
+    ).map((item) => ({ ...item, turnId: item.turnId ?? turnId }))
   })
 }
 

@@ -17,8 +17,8 @@ const folder = 'C:/synthetic/shared'
 
 describe('workspace folder comparisons', () => {
   it.each([
-    ['codex:Z:', 'claude:Z:\\General', true],
-    ['claude:Z:/', 'codex:\\\\?\\z:\\General\\nested', true],
+    ['codex:Z:', 'claude:Z:\\FixtureProjects', true],
+    ['claude:Z:/', 'codex:\\\\?\\z:\\FixtureProjects\\nested', true],
     ['Z:', 'codex:Z:/', true],
     ['Z:', 'codex:C:/General', false],
     ['Z:', 'codex:Z:relative', false],
@@ -27,9 +27,9 @@ describe('workspace folder comparisons', () => {
     ['//server/team', '//other/team/project', false],
     ['/', '/home/project', true],
     ['/', '//server/share/project', false],
-    ['Z:/General', 'codex:Z:/General', true],
-    ['Z:/General', 'codex:Z:/General/nested', false],
-    ['Z:/General', 'codex:Z:/General-other', false],
+    ['Z:/FixtureProjects', 'codex:Z:/FixtureProjects', true],
+    ['Z:/FixtureProjects', 'codex:Z:/FixtureProjects/nested', false],
+    ['Z:/FixtureProjects', 'codex:Z:/General-other', false],
   ])('selects the correct scope %s -> %s: %s', (scope, path, expected) => {
     expect(workspaceInScope(path, scope)).toBe(expected)
   })
@@ -37,7 +37,7 @@ describe('workspace folder comparisons', () => {
   it('recognizes drive/share roots without requiring a thread directly at the root', () => {
     expect(isWorkspaceRoot('codex:\\\\?\\Z:\\')).toBe(true)
     expect(isWorkspaceRoot('claude:\\\\server\\share')).toBe(true)
-    expect(isWorkspaceRoot('Z:/General')).toBe(false)
+    expect(isWorkspaceRoot('Z:/FixtureProjects')).toBe(false)
   })
   it.each([
     ['claude:C:\\synthetic\\shared', 'codex:\\\\?\\C:\\synthetic\\shared'],

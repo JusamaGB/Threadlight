@@ -1,16 +1,16 @@
 import { ConversationEventService } from '../communication/conversationEvents'
+import { codexPaths } from '../sessions/paths'
 import { z } from 'zod'
-import { basename, join } from 'node:path'
-import { readFile, stat } from 'node:fs/promises'
+import { join } from 'node:path'
 import { backup } from 'node:sqlite'
 import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { IPC } from '../../shared/ipc'
-import { MEMORY_ATTACHMENT_LIMIT, memoryInput, type MemoryReply } from '../../shared/memory'
+import { memoryInput, type MemoryReply } from '../../shared/memory'
 import { MemoryStore, MemoryError } from './store'
 import { MemoryServer } from './server'
 import { MemoryDispatcher, type MemoryDelivery } from './dispatcher'
 
-import { attachmentMime } from './attachments'
+import { importSelectedAttachment } from './importAttachment'
 import { exportDestination } from './backup'
 import { CommunicationService } from '../communication/service'
 import { randomUUID } from 'node:crypto'
@@ -49,6 +49,16 @@ export async function startMemory(
     store = new MemoryStore(join(directory, 'shared-memory', 'memory.sqlite'))
     const memory = store
     communication = new CommunicationService(memory.communications, {
+      processReviewed: (actor, itemId, revision) => {
+        memory.authorizeCommunication(actor, actor.spaceId)
+        const meta = memory.communicationInput(actor, itemId, revision)
+        return (
+          !meta.archived && memory.read({}, itemId, revision).item.acceptedRevision === revision
+        )
+      },
+      processContext: (actor, items) => memory.workflowContext(actor, items),
+      processSave: (run, node, body, operationId) =>
+        memory.workflowOutput(run, node.folderId, node.title, body, operationId),
       reserve: (spaceId, record) => memory.reserveCommunication(spaceId, record),
       nativeRequests: delivery.nativeRequests,
       respondNative: delivery.respondNative,
@@ -83,6 +93,15 @@ export async function startMemory(
         root: memory.executionContext(spaceId)?.root,
       }),
       deliver: (message, destination, accepted) => {
+        if (destination.transport === 'account-chat') {
+          if (!delivery.accountChatDelivery)
+            return Promise.reject(
+              Object.assign(new Error('Account-chat delivery unavailable.'), {
+                deliveryRejected: true,
+              }),
+            )
+          return delivery.accountChatDelivery(message, destination, accepted)
+        }
         if (destination.transport === 'claude-runtime-inbox') {
           if (!server) return Promise.reject(new Error('Runtime registry unavailable.'))
           return server.runtime.deliver(message, destination, accepted)
@@ -197,6 +216,7 @@ export async function startMemory(
           a.owner,
           communication.snapshot(actor),
           (id) => delivery.find(id)?.title ?? id,
+          input.action === 'conversation_feed' ? codexPaths().history : undefined,
         )
         if (input.action === 'conversation_feed') value = feed
         else if (input.action === 'conversation_catchup') {
@@ -305,30 +325,22 @@ export async function startMemory(
         if (!server?.endpoint) throw new Error('Plugin connections are offline.')
         return server.connections.approve(parsed.connectionId, parsed)
       }
-      return memory.execute(parsed)
+      if (parsed.action === 'create_grant') {
+        if (!server?.endpoint) throw new Error('Shared memory is offline.')
+        return server.enroll(parsed)
+      }
+      const result = memory.execute(parsed)
+      if (parsed.action === 'revoke_grant') server?.releaseEnrollment(parsed.id ?? '')
+      return result
     }),
   )
   ipcMain.handle(IPC.memoryImport, (event, folderId: unknown) =>
     safely(async () => {
       const memory = ours(event)
       if (typeof folderId !== 'string') throw new Error('Choose a destination folder.')
-      const choice = await dialog.showOpenDialog(panel, {
-        title: 'Add to shared context',
-        properties: ['openFile'],
-        filters: [
-          {
-            name: 'Documents and images',
-            extensions: ['txt', 'md', 'png', 'jpg', 'jpeg', 'webp', 'pdf'],
-          },
-        ],
-      })
-      if (choice.canceled || !choice.filePaths[0]) return { cancelled: true }
-      const file = choice.filePaths[0]
-      const info = await stat(file)
-      if (!info.isFile() || info.size > MEMORY_ATTACHMENT_LIMIT)
-        throw new Error('Choose a file no larger than 10 MiB.')
-      const data = await readFile(file)
-      return memory.importAttachment(folderId, basename(file), attachmentMime(data, file), data)
+      return importSelectedAttachment(memory, folderId, (options) =>
+        dialog.showOpenDialog(panel, options),
+      )
     }),
   )
   ipcMain.handle(IPC.memoryExport, (event) =>

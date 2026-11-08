@@ -66,7 +66,7 @@
   background: white;
   display: block;
 }
-.stage pre {
+.stage > pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   padding: 8px;

@@ -4,5 +4,10 @@ node_modules
 package-lock.json
 .claude
 screenshots-local
+threadlight-native-site
+threadlight-public-web/public
+threadlight-public-web/.vercel
+shared-spaces
+release-local
 notes-local
 tidy-root.mjs

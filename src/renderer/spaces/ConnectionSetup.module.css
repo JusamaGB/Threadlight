@@ -1,5 +1,5 @@
 .guide {
-  padding: 12px;
+  padding: 4px 12px 2px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -17,37 +17,24 @@
   flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
 }
 .breadcrumb {
   color: var(--muted);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
-.steps {
-  display: flex;
-  gap: 8px;
-  list-style: none;
-  padding: 12px 0;
-  margin: 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 10px;
-  color: var(--muted);
-}
-.steps li {
-  flex: 1;
-}
-.steps [aria-current] {
-  color: var(--accent);
-}
 .guide h3 {
-  margin: 14px 0 8px;
+  margin: 0 0 8px;
   font-size: 14px;
+  text-align: center;
 }
 .guide h4 {
   margin-bottom: 6px;
 }
 .guide p {
   line-height: 1.5;
+  text-align: center;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -70,12 +57,13 @@
 }
 .guide .check {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 7px;
   line-height: 1.5;
 }
 .check input {
-  margin-top: 3px;
+  margin: 0;
 }
 .guide button {
   border: 1px solid var(--border);
@@ -88,6 +76,9 @@
 }
 .guide button:disabled {
   opacity: 0.45;
+}
+.footer button {
+  margin: 8px 0 0;
 }
 .guide .primary {
   color: var(--accent);

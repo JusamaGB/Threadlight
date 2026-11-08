@@ -66,7 +66,11 @@ if (screenshots) mkdirSync(screenshots, { recursive: true })
 let browser, testPage
 const errors = []
 try {
-  browser = await chromium.launch({ headless: true, args: ['--mute-audio'] })
+  browser = await chromium.launch({
+    headless: true,
+    executablePath: process.env.THREADLIGHT_CHROMIUM || undefined,
+    args: ['--mute-audio'],
+  })
   const page = await browser.newPage({
     viewport: { width: 440, height: 850 },
     deviceScaleFactor: 2,
@@ -194,7 +198,7 @@ try {
           const tone = context.createOscillator()
           tone.frequency.value = 190
           const gain = context.createGain()
-          gain.gain.value = 0.07
+          gain.gain.value = window.motionProof.quietInput ? 0 : 0.07
           const destination = context.createMediaStreamDestination()
           tone.connect(gain)
           gain.connect(destination)
@@ -202,6 +206,9 @@ try {
           await context.resume()
           window.motionProof.setLevel = (value) => {
             gain.gain.value = value
+          }
+          window.motionProof.setFrequency = (value) => {
+            tone.frequency.value = value
           }
           for (const track of destination.stream.getTracks()) {
             const stop = track.stop.bind(track)
@@ -231,6 +238,7 @@ try {
   await page.waitForTimeout(500)
   const idlePixels = await readMotionFrame(
     page.getByRole('region', { name: 'Voice waveform', exact: true }),
+    true,
   )
   assert.ok(idlePixels.span > 0.99, 'quiet header waveform reaches both panel edges')
   const activity = page.getByRole('region', { name: 'Voice activity' })
@@ -239,10 +247,7 @@ try {
     (await activity.boundingBox()).height < 38,
     'idle activity reserves only the motion band',
   )
-  await activity
-    .getByRole('status')
-    .filter({ hasText: /^Ready$/ })
-    .waitFor()
+  assert.equal(await activity.getByRole('status').count(), 0)
   assert.equal(
     await page
       .locator('header')
@@ -256,13 +261,13 @@ try {
   const drift = await readMotionFrame(
     page.getByRole('region', { name: 'Voice waveform', exact: true }),
   )
-  assert.notEqual(drift.hash, idlePixels.hash, 'quiet header colours continue evolving')
+  assert.equal(drift.hash, idlePixels.hash, 'the silent header rests')
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.locator('[class*="usageTrack"]').waitFor()
   assert.equal(await page.getByRole('region', { name: 'Voice waveform', exact: true }).count(), 0)
   await page.evaluate(() => window.motionProof.emit('onTalkHold', 'down'))
   const stage = page.getByRole('region', { name: 'Voice activity' })
-  await stage.waitFor()
+  await stage.waitFor({ state: 'attached' })
   const ribbon = page.getByRole('region', { name: 'Voice waveform', exact: true })
   await ribbon.waitFor()
   assert.equal(await stage.locator('canvas').count(), 0)
@@ -283,7 +288,7 @@ try {
   assert.equal(await page.locator('[class*="usageTrack"]').count(), 1)
   await page.waitForFunction(() => window.motionProof.telemetry.input.level > 0.2)
   assert.equal(await ribbon.locator('[data-renderer]').getAttribute('data-renderer'), 'webgl')
-  await stage.getByRole('status').filter({ hasText: 'You speaking' }).waitFor()
+  assert.equal(await stage.getByRole('status').count(), 0)
   assert.equal(await page.locator('header').getByText('no active Mic', { exact: true }).count(), 0)
   const first = await ribbon.locator('canvas').screenshot()
   await page.waitForTimeout(150)
@@ -292,6 +297,36 @@ try {
   assert.ok(speechPixels.bottom - speechPixels.top > 6, 'speech opens visibly around the divider')
   assert.ok(speechPixels.top >= 0, 'upper crests remain inside their header band')
   await capture('thread-view-speaking', page.locator('[data-card]'))
+  assert.ok(
+    speechPixels.orange > 0 && speechPixels.blue > 0,
+    'microphone speech retains its palette',
+  )
+  await page.evaluate(() => {
+    window.motionProof.setLevel(0.006)
+    window.motionProof.setFrequency(1000)
+  })
+  await page.waitForFunction(() => {
+    const input = window.motionProof.telemetry.input
+    return input.level > 0.02 && input.level < 0.06 && input.mid > input.level * 0.8
+  })
+  await page.waitForTimeout(350)
+  let quietSpeech
+  // A waveform passes through smaller poses between crests; sample its motion
+  // rather than requiring a randomly captured frame to be a peak.
+  for (let attempt = 0; attempt < 6; attempt++) {
+    quietSpeech = await readMotionFrame(ribbon)
+    if (quietSpeech.bottom - quietSpeech.top > 5) break
+    await page.waitForTimeout(80)
+  }
+  assert.ok(
+    quietSpeech.bottom - quietSpeech.top > 5,
+    'ordinary quiet speech remains visibly amplified',
+  )
+  await capture('quiet-speech-eq', page.locator('[data-card]'))
+  await page.evaluate(() => {
+    window.motionProof.setLevel(0.07)
+    window.motionProof.setFrequency(190)
+  })
   await openHeaderPage(page, 'Agent')
   assert.equal(await page.locator('[data-card] canvas').count(), 1)
   assert.equal(await stage.locator('canvas').count(), 0)
@@ -300,12 +335,8 @@ try {
   assert.equal(await page.locator('header canvas').count(), 1)
   await page.evaluate(() => window.motionProof.setLevel(0))
   await page.waitForFunction(() => window.motionProof.telemetry.input.level === 0)
-  await stage
-    .getByRole('status')
-    .filter({ hasText: /^Listening$/ })
-    .waitFor()
-  await capture('listening', stage)
-  const before = await stage.boundingBox()
+  assert.equal(await stage.getByRole('status').count(), 0)
+  await capture('listening', ribbon)
   await page.evaluate(() => window.motionProof.emit('onTalkHold', 'up'))
   await stage.getByRole('status').filter({ hasText: 'Finishing transcription' }).waitFor()
   await page.locator('header').getByText('no active Mic', { exact: true }).waitFor()
@@ -313,35 +344,36 @@ try {
   await page.evaluate(() =>
     window.motionProof.transcribe('Show me how the voice ribbon becomes a Catherine wheel.'),
   )
-  await stage.getByRole('status').filter({ hasText: 'Thinking' }).waitFor()
+  await page.waitForFunction(() => window.motionProof.telemetry.mode === 'thinking')
   await page.waitForTimeout(1000)
-  assert.ok((await stage.boundingBox()).height > before.height, 'speech grows the caption area')
+  await page
+    .locator('[data-agent-conversation] [data-kind="you"]')
+    .filter({ hasText: 'Show me how the voice ribbon becomes a Catherine wheel.' })
+    .waitFor()
   assert.equal(
-    await stage.locator('p').innerText(),
-    'Show me how the voice ribbon becomes a Catherine wheel.',
+    await stage.locator('p').count(),
+    0,
+    'the transcript carries the submitted speech without a duplicate caption',
   )
-  assert.ok((await stage.locator('p').boundingBox()).height <= 52, 'long captions stay bounded')
   assert.equal(await page.evaluate(() => window.motionProof.stopped), 1)
   await capture('thinking', page.locator('[data-card]'))
-  const wheelPixels = await readMotionFrame(ribbon)
-  assert.ok(
-    wheelPixels.top < 9 && wheelPixels.bottom > 9,
-    `thinking wheel is centred on the divider: ${JSON.stringify(wheelPixels)}`,
-  )
-  assert.ok(wheelPixels.left < 3 && wheelPixels.right < 18, 'wheel hugs the left wall')
-  assert.ok(wheelPixels.span < 0.08, 'thinking settles into the connected compact wheel')
-  const spin = await ribbon.locator('canvas').screenshot()
+  const resting = await readMotionFrame(ribbon, true)
+  assert.ok(resting.span > 0.98, 'the silent header stays wide during work')
+  const work = page.getByRole('img', { name: 'Agent working', exact: true })
+  await work.waitFor()
+  const spin = await work.locator('canvas').screenshot()
   await page.waitForTimeout(160)
-  assert.notDeepEqual(await ribbon.locator('canvas').screenshot(), spin)
+  assert.notDeepEqual(await work.locator('canvas').screenshot(), spin)
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.waitForTimeout(1600)
   const still = await ribbon.locator('canvas').screenshot()
   await page.waitForTimeout(200)
   assert.deepEqual(await ribbon.locator('canvas').screenshot(), still)
   await page.evaluate(() => window.motionProof.agent({ status: 'waiting' }))
-  await stage.getByRole('status').filter({ hasText: 'Waiting for you' }).waitFor()
+  await page.waitForFunction(() => window.motionProof.telemetry.mode === 'waiting')
+  await work.waitFor({ state: 'detached' })
   await page.evaluate(() => window.motionProof.agent({ status: 'ready' }))
-  await stage.getByRole('status').filter({ hasText: 'Ready' }).waitFor()
+  assert.equal(await stage.getByRole('status').count(), 0)
   await page.emulateMedia({ reducedMotion: 'no-preference' })
 
   // Force a real GPU context loss, then verify the replacement canvas still animates.
@@ -438,6 +470,88 @@ try {
     0,
   )
 
+  // Exercise actual GPT Live hook -> WebRTC analyser -> motion source -> header pixels.
+  await page.evaluate(async () => {
+    window.motionProof.quietInput = true
+    const context = new AudioContext()
+    await context.resume()
+    const oscillator = context.createOscillator()
+    oscillator.frequency.value = 1000
+    const gain = context.createGain()
+    gain.gain.value = 0.016
+    const destination = context.createMediaStreamDestination()
+    oscillator.connect(gain)
+    gain.connect(destination)
+    oscillator.start()
+    const remote = new RTCPeerConnection()
+    remote.addTrack(destination.stream.getAudioTracks()[0], destination.stream)
+    remote.ondatachannel = ({ channel }) => {
+      channel.onopen = () => channel.send(JSON.stringify({ type: 'session.started' }))
+    }
+    window.threadlight.agentLiveStart = async (_id, sdp) => {
+      await remote.setRemoteDescription({ type: 'offer', sdp })
+      await remote.setLocalDescription(await remote.createAnswer())
+      await new Promise((resolve) => {
+        if (remote.iceGatheringState === 'complete') return resolve()
+        remote.onicegatheringstatechange = () => {
+          if (remote.iceGatheringState === 'complete') resolve()
+        }
+      })
+      return { ok: true, sdp: remote.localDescription.sdp }
+    }
+    window.motionProof.nativeLive = { context, oscillator, gain, remote }
+    window.motionProof.settings({
+      voiceMode: 'gpt-live',
+      talkMode: 'toggle',
+      agentProvider: 'codex',
+    })
+    window.motionProof.agent({ provider: 'codex', status: 'ready' })
+  })
+  await ribbon.locator('[data-provider="codex"]').waitFor()
+  await page.evaluate(() => window.motionProof.emit('onTalkToggle'))
+  await page.waitForFunction(() => window.motionProof.telemetry.output.level > 0.035)
+  await ribbon.locator('[data-provider="codex"]').waitFor()
+  await page.waitForTimeout(700)
+  const agentSpeech = await readMotionFrame(ribbon)
+  assert.ok(agentSpeech.blue > agentSpeech.orange * 3, 'GPT Live playback fades into Codex blue')
+  assert.ok(
+    agentSpeech.bottom - agentSpeech.top > 5,
+    'actual playback drives amplified header motion',
+  )
+  await capture('gpt-live-provider-speech', page.locator('[data-card]'))
+  for (const [band, frequency] of [
+    ['low', 180],
+    ['mid', 1000],
+    ['high', 4500],
+  ]) {
+    await page.evaluate((frequency) => {
+      window.motionProof.nativeLive.oscillator.frequency.value = frequency
+    }, frequency)
+    await page.waitForFunction((band) => {
+      const output = window.motionProof.telemetry.output
+      return output.level > 0.02 && output[band] > output.level * 0.75
+    }, band)
+  }
+  await page.evaluate(() => {
+    window.motionProof.nativeLive.gain.gain.value = 0
+  })
+  await page.waitForFunction(() => window.motionProof.telemetry.output.level === 0)
+  await page.waitForTimeout(1000)
+  const afterSpeech = await readMotionFrame(ribbon)
+  assert.ok(
+    afterSpeech.orange === 0 && afterSpeech.blue < agentSpeech.blue,
+    'silence restores the resting ribbon after playback',
+  )
+  await capture('gpt-live-provider-silence', page.locator('[data-card]'))
+  await page.evaluate(() => window.motionProof.emit('onStopOpenMic'))
+  await page.waitForFunction(() => document.documentElement.dataset.openMic === 'off')
+  await page.evaluate(() => {
+    const { context, oscillator, remote } = window.motionProof.nativeLive
+    remote.close()
+    oscillator.stop()
+    void context.close()
+  })
+
   await page.goto(url + '/?view=dot')
   await page.getByRole('status').waitFor()
   await page.waitForTimeout(500)
@@ -473,10 +587,10 @@ try {
   const pill = page.getByRole('group', { name: 'Microphone is open', exact: true })
   await pill.getByRole('img', { name: 'Agent speaking', exact: true }).waitFor()
   assert.equal((await pill.boundingBox()).width, 92)
-  assert.equal((await pill.boundingBox()).height, 18)
+  assert.equal((await pill.boundingBox()).height, 24)
   await page.waitForTimeout(350)
   await capture('agent-speaking-pill', pill)
-  await pill.getByRole('button', { name: 'Close microphone', exact: true }).click()
+  await pill.getByRole('button', { name: 'End voice call', exact: true }).click()
   assert.ok(
     await page.evaluate(() => window.motionProof.calls.some(([name]) => name === 'stopOpenMic')),
   )
@@ -628,7 +742,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    'PASS: real microphone analysis, speech/silence, content-sized captions, thinking morph, reduced motion, context loss, native WebRTC playback/mute/stop, compact pill and unavailable-WebGL fallback.',
+    'PASS: real microphone analysis, speech/silence, content-sized captions, separate thinking mark and resting audio ribbon, reduced motion, context loss, native WebRTC playback/mute/stop, compact pill and unavailable-WebGL fallback.',
   )
 } catch (error) {
   console.error('Browser errors:', errors)

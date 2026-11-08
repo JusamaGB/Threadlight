@@ -28,7 +28,7 @@ Artifacts wait for the exact selected artifact's load outcome. Card navigation c
 copy of the selected native edit event; it does not substitute a current worktree or aggregate diff.
 
 Writes use the existing Agent request cards. Settings support `listMode`, `maxSessions`,
-`listWindowHours`, `panelLayout` and `hoverHelp`, with an expected revision checked at persistence.
+`listWindowHours`, `panelLayout`, `hoverHelp` and `pythonSuggestions`, with an expected revision checked at persistence.
 Space creation and Codex chat creation reuse their existing domain services. Persisted operation
 IDs, conversation ownership and payload fingerprints prevent retries from duplicating actions.
 Denied and uncertain receipts do not claim success. Corrupt receipt storage fails closed.
@@ -45,7 +45,7 @@ or a new chat message. The requesting Agent's own turn does not block its reques
 | Focused service, schema/security, adapters, settings, reader, cards, native stream, navigation, spaces, new-chat and voice regression suite | PASS: 168 tests in 12 files                                                                                                                                                                                     |
 | Both real adapter classes using fake provider transports against the actual loopback MCP server                                             | PASS: tools execute and return service evidence; approval/revocation paths covered                                                                                                                              |
 | Authenticated installed Codex runtime                                                                                                       | PASS: actually invoked capabilities, app state and navigation against synthetic application state                                                                                                               |
-| Authenticated installed Claude runtime                                                                                                      | BLOCKED: organization disabled Claude subscription access for Claude Code; no live Claude PASS claimed                                                                                                          |
+| Authenticated installed Claude runtime                                                                                                      | BLOCKED: current live Claude validation pending; no live Claude PASS claimed                                                                                                                                    |
 | Native Electron panel/preload/IPC fixture                                                                                                   | PASS: list/workspace/chat, Spaces/library/create, exact artifact and missing artifact, all diff scopes, distinct same-file card patches, Back, draft/cursor preservation, guest sender rejection and revocation |
 | Isolated native Electron relaunch fixture                                                                                                   | PASS: real graceful relaunch, cleanup marker, response flush, lost follow-up response and exactly one completed durable receipt in the new instance                                                             |
 | Renderer TypeScript check                                                                                                                   | PASS                                                                                                                                                                                                            |
@@ -89,9 +89,8 @@ the project's dependency resolution. Native tests use isolated profiles, not the
   manufacture a UI session for them. This is a bounded UI limitation relative to the wider reader.
 - Artifact listings report availability as unknown until opened (or unavailable for unsupported
   kinds). Successful navigation requires the exact artifact to finish loading.
-- Live Claude execution and worker isolation were not exercised because the installed account
-  returned: “Your organization has disabled Claude subscription access for Claude Code”. Local
-  adapter and policy tests pass; credentials and account settings were not changed.
+- Live Claude execution and worker isolation remain unverified. Local adapter and
+  policy tests pass; this does not substitute for live-provider acceptance.
 - Voice coverage is the existing synthetic pipeline regression, not live microphone acceptance.
   Control uses the existing backing Agent path and adds no second voice submission path.
 - Full-repository `npm run typecheck` is blocked by concurrent `artifactMessage.test.ts` and

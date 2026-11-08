@@ -1,6 +1,6 @@
 # Threadlight — build spec (v1)
 
-> Author: Julius Deane. Repo is local-only until a GitHub account is chosen (§14).
+> Historical design document. Current setup and release scope are in the repository README; publication notes below describe early planning, not current instructions.
 > This file is the plan for the rebuild. It moves to `docs/ARCHITECTURE.md` once the code exists.
 
 ## 1. What it is

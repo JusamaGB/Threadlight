@@ -8,6 +8,7 @@ import { useSessions } from './hooks/useSessions'
 import { useSettings } from './hooks/useSettings'
 import { installFinerScroll } from './lib/finerScroll'
 import { Panel } from './panel/Panel'
+import { ReferenceWindow } from './panel/ReplyCode'
 import { AttentionView, useAttentionMotion } from './motion/AttentionView'
 import './theme.css'
 
@@ -80,6 +81,14 @@ if (!root) throw new Error('Missing #root element')
 
 createRoot(root).render(
   <StrictMode>
-    {view === 'panel' ? <Panel /> : view === 'attention' ? <AttentionView /> : <DotView />}
+    {view === 'panel' ? (
+      <Panel />
+    ) : view === 'reference' ? (
+      <ReferenceWindow />
+    ) : view === 'attention' ? (
+      <AttentionView />
+    ) : (
+      <DotView />
+    )}
   </StrictMode>,
 )

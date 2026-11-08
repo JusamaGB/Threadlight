@@ -27,11 +27,16 @@ await build({
 })
 const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
+const stalled = process.env.THREADLIGHT_RESTART_STALL === '1'
 const app = await _electron.launch({
   executablePath: require('electron'),
-  args: [join(root, 'out/main/app-control-restart.fixture.js')],
+  args: [
+    join(root, 'out/main/app-control-restart.fixture.js'),
+    ...(stalled ? ['--stall-exit'] : []),
+  ],
   env,
 })
+const originalProcess = app.process()
 try {
   const proof = await app.evaluate(() => ({
     directory: globalThis.restartProof.directory,
@@ -63,8 +68,9 @@ try {
   assert.equal(records[0][1].result.outcome, 'ok')
   assert.equal(records[0][1].result.instanceId, ready.instanceId)
   console.log(
-    'PASS: isolated Electron graceful relaunch, flushed durable receipt, lost response and new-instance readiness recovery.',
+    `PASS: isolated Electron ${stalled ? 'blocked-teardown watchdog recovery' : 'graceful relaunch'}, flushed durable receipt, lost response and new-instance readiness recovery.`,
   )
 } finally {
+  if (originalProcess.exitCode === null) originalProcess.kill('SIGKILL')
   await app.close().catch(() => {})
 }

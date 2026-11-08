@@ -101,7 +101,17 @@ void app.whenReady().then(async () => {
     return { ok: true }
   }
   spaces.agent.read = async (id) => ({ items: histories.get(String(id)) ?? [], cursor: null })
-  registerSpaces(panel, spaces, '')
+  spaces.agent.resume = async (id) => {
+    ;(spaces.agent as unknown as { publish: (state: unknown) => void }).publish({
+      ...spaces.agent.current,
+      conversationId: String(id),
+      ended: false,
+      status: 'ready',
+      items: histories.get(String(id)) ?? [],
+    })
+    return { ok: true }
+  }
+  registerSpaces(panel, spaces, '', () => settings)
   ipcMain.handle(IPC.memoryRequest, () => ({ ok: true, snapshot: memory.snapshot() }))
   const snapshot = {
     sessions: [],
@@ -118,13 +128,18 @@ void app.whenReady().then(async () => {
     [IPC.getRelays]: [],
     [IPC.getStt]: { state: 'ready' },
     [IPC.agentGet]: IDLE_AGENT,
+    [IPC.agentModels]: { models: [], error: null },
     [IPC.getMotion]: IDLE_MOTION,
     [IPC.getVersion]: 'brainstorm-test',
     [IPC.communicationRequest]: { ok: false, reason: 'Read-only fixture' },
     [IPC.getComposerDraft]: { text: '', revision: 0, attachments: [] },
   }
   for (const channel of Object.values(IPC))
-    if (![IPC.spacesRequest, IPC.spacesRespond, IPC.memoryRequest].includes(channel as never))
+    if (
+      ![IPC.spacesRequest, IPC.spacesRespond, IPC.spacesLiveStart, IPC.memoryRequest].includes(
+        channel as never,
+      )
+    )
       ipcMain.handle(channel, (_event, value) =>
         channel === IPC.panelLayout
           ? { cardWidth: value === 'dual' ? 475 : 300 }

@@ -1,6 +1,6 @@
 export const DOT_SIZE = 32
 export const MIC_PILL_WIDTH = 92
-export const MIC_PILL_HEIGHT = 18
+export const MIC_PILL_HEIGHT = 24
 
 type Point = { x: number; y: number }
 type Bounds = Point & { width: number; height: number }
@@ -9,6 +9,10 @@ type Bounds = Point & { width: number; height: number }
 export function micIndicatorBounds(anchor: Point, area: Bounds, live: boolean): Bounds {
   const width = live ? MIC_PILL_WIDTH : DOT_SIZE
   const height = live ? MIC_PILL_HEIGHT : DOT_SIZE
+  return boundsAtDot(anchor, area, width, height)
+}
+
+export function boundsAtDot(anchor: Point, area: Bounds, width: number, height: number): Bounds {
   const right = anchor.x + DOT_SIZE / 2 > area.x + area.width / 2
   const bottom = anchor.y + DOT_SIZE / 2 > area.y + area.height / 2
   return {

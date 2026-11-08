@@ -5,17 +5,20 @@ import {
   SPACE_CONTEXT_VERSION,
   type SpaceSource,
 } from '../../shared/spaceContext'
+import { reviewSource } from './sourceReview'
 import { projectParticipants } from '../../shared/projectParticipants'
 import type { Session } from '../../shared/types'
 import type { AgentHistoryPage } from '../../shared/agent'
 import type { MemoryStore } from '../memory/store'
 import type { SpacesStore } from './store'
 import type { ThreadReadConnection, ThreadReadServer } from '../threadRead/server'
+import { brainstormAction, type BrainstormHost } from './brainstormActions'
+import { savedBy } from '../../shared/memory'
 
 export interface ContextScope {
   active: boolean
   spaceIds: string[]
-  discussionId: string
+  discussionId: string | null
   reader?: ThreadReadConnection
 }
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -30,15 +33,24 @@ export class SpaceContextService {
     private sessions: () => Session[],
     private threads?: ThreadReadServer,
     private history?: (id: string, cursor?: string) => Promise<AgentHistoryPage>,
+    private host?: BrainstormHost,
   ) {}
   open(discussionId: string, comparisons: string[] = []): ContextScope {
     const discussion = this.store.get(discussionId)
     if (!discussion.sharedSpaceId)
       throw Error('Assign this discussion to an exact shared space first.')
+    return this.openProject(discussion.sharedSpaceId, discussionId, comparisons)
+  }
+  /** A new voice conversation can read its project before its first message is saved. */
+  openProject(
+    spaceId: string,
+    discussionId: string | null = null,
+    comparisons: string[] = [],
+  ): ContextScope {
     const scope: ContextScope = {
       active: true,
       discussionId,
-      spaceIds: [...new Set([discussion.sharedSpaceId, ...comparisons])],
+      spaceIds: [...new Set([spaceId, ...comparisons])],
     }
     this.check(scope)
     scope.reader = this.threads?.connect(
@@ -63,7 +75,10 @@ export class SpaceContextService {
       scope.spaceIds.some((id) => !data.spaces.some((s) => s.id === id))
     )
       throw Error('Space context is unavailable or access ended.')
-    if (this.store.get(scope.discussionId).sharedSpaceId !== scope.spaceIds[0])
+    if (
+      scope.discussionId &&
+      this.store.get(scope.discussionId).sharedSpaceId !== scope.spaceIds[0]
+    )
       throw Error('Discussion scope changed. Reopen it.')
     return data
   }
@@ -97,7 +112,7 @@ export class SpaceContextService {
         issues.push('Source catalogue exceeds 5000 records; coverage is incomplete.')
     }
     for (const n of [...this.store.all(), ...this.store.discussions()])
-      if (n.sharedSpaceId && ids.has(n.sharedSpaceId))
+      if (!n.memoryItem && n.sharedSpaceId && ids.has(n.sharedSpaceId))
         add({
           sourceRef: `${n.recordKind === 'discussion' ? 'discussion' : 'note'}:${n.id}`,
           spaceId: n.sharedSpaceId,
@@ -105,6 +120,7 @@ export class SpaceContextService {
           title: n.title,
           revision: String(n.revision),
           at: n.at,
+          author: savedBy(n.saver),
           body: `${n.text}\n\nPlan:\n${n.plan}\n\nAssignments:\n${JSON.stringify(n.assignments)}\nLinked notes: ${(n.noteIds ?? []).join(', ')}`,
         })
     for (const item of data.items.filter((i) => ids.has(i.spaceId) && !i.archived).slice(0, 5000)) {
@@ -115,7 +131,11 @@ export class SpaceContextService {
           spaceId: item.spaceId,
           kind: data.tasks.some((t) => t.spaceId === item.spaceId && t.outputIds.includes(item.id))
             ? 'result'
-            : 'handoff',
+            : item.purpose === 'note'
+              ? 'note'
+              : item.purpose === 'result'
+                ? 'result'
+                : 'handoff',
           title: item.title,
           revision: String(item.revision),
           at: r.revision.createdAt,
@@ -162,13 +182,122 @@ export class SpaceContextService {
             body: JSON.stringify(r),
           })
     }
+    const processes = memory.communicationService?.processes
+    for (const d of processes?.definitions() ?? [])
+      if (ids.has(d.spaceId))
+        add({
+          sourceRef: `process:${d.id}`,
+          spaceId: d.spaceId,
+          kind: 'workflow',
+          title: d.name,
+          revision: String(d.revision),
+          at: null,
+          body: JSON.stringify(d),
+        })
+    for (const run of processes?.runs() ?? [])
+      if (ids.has(run.spaceId))
+        add({
+          sourceRef: `workflow-run:${run.id}`,
+          spaceId: run.spaceId,
+          kind: 'workflow',
+          title: run.objective,
+          revision: hash(run),
+          at: run.updatedAt,
+          body: JSON.stringify(run),
+        })
     return { sources, issues }
   }
   async call(scope: ContextScope, tool: string, args: unknown): Promise<unknown> {
     this.check(scope)
     const schema = spaceContextSchemas[tool as keyof typeof spaceContextSchemas]
-    if (!schema) throw Error('This Brainstorm role can only read space context.')
+    if (!schema) throw Error('This tool is not available to hosted Brainstorm.')
     const input = schema.parse(args)
+    const discussion = scope.discussionId ? this.store.get(scope.discussionId) : undefined
+    if (tool === 'threadlight_read_code_page') {
+      if (!discussion || discussion.recordKind !== 'discussion')
+        throw Error('Choose a Space discussion to explain this file.')
+      const page = spaceContextSchemas.threadlight_read_code_page.parse(input)
+      const pin = discussion.sourcePin
+      if (
+        pin &&
+        ((page.itemId && pin.itemId !== page.itemId) ||
+          (page.revision && pin.revision !== page.revision))
+      )
+        throw Error('This discussion is pinned to a different snapshot.')
+      const itemId = pin?.itemId ?? page.itemId,
+        revision = pin?.revision ?? page.revision
+      if (!itemId || !revision) throw Error('Choose a shared source file and revision.')
+      const file = reviewSource(this.memory()!, scope.spaceIds[0]!, itemId, revision, pin?.hash)
+      if (!pin) {
+        const matches = this.memory()!
+          .snapshot()
+          .items.filter(
+            (candidate) =>
+              candidate.spaceId === scope.spaceIds[0] &&
+              candidate.kind === 'document' &&
+              !candidate.archived &&
+              candidate.title === file.pin.filename.slice(0, 80),
+          )
+        if (matches.length > 1)
+          throw Error(
+            'Several snapshots have this name. Ask the person to open the intended attachment and choose Explain this file.',
+          )
+      }
+      const through = discussion.sourceReadThrough ?? 0
+      if (page.firstLine > through + 1 || page.firstLine > Math.max(1, file.lines.length))
+        throw Error('Read the next contiguous page before continuing.')
+      const lines: string[] = []
+      let units = 0
+      for (const line of file.lines.slice(page.firstLine - 1, page.firstLine + 79)) {
+        if (lines.length && units + line.length > 4000) break
+        lines.push(line)
+        units += line.length + 1
+      }
+      const lastLine = page.firstLine - 1 + lines.length
+      this.store.recordSourceRead(discussion.id, file.pin, lastLine)
+      this.host?.changed()
+      return {
+        snapshot: file.pin,
+        firstLine: page.firstLine,
+        lastLine,
+        lines,
+        nextLine: lastLine < file.lines.length ? lastLine + 1 : null,
+        coverage: Math.max(through, lastLine),
+        testsRun: false,
+      }
+    }
+    if (discussion?.sourcePin) {
+      if (tool === 'threadlight_get_space_context')
+        return {
+          snapshot: discussion.sourcePin,
+          sourceReadThrough: discussion.sourceReadThrough ?? 0,
+          reader: 'threadlight_read_code_page',
+        }
+      throw Error('This file discussion uses the pinned read-only code reader.')
+    }
+    if (
+      [
+        'threadlight_save_note',
+        'threadlight_revise_note',
+        'threadlight_get_workflow',
+        'threadlight_read_process',
+        'threadlight_validate_process',
+        'threadlight_save_process',
+        'threadlight_invoke_process',
+        'threadlight_control_process',
+      ].includes(tool)
+    ) {
+      const result = await brainstormAction(
+        this.store,
+        this.memory()!,
+        scope,
+        tool,
+        input,
+        this.host,
+      )
+      this.check(scope)
+      return result
+    }
     const observedAt = Date.now()
     if (
       tool === 'threadlight_find_threads' ||
@@ -227,18 +356,37 @@ export class SpaceContextService {
       let source = sources.find((s) => s.sourceRef === p.sourceRef)
       if (!source) return { outcome: 'not_found', observedAt }
       if (p.revision && p.revision !== source.revision) {
-        if (source.kind !== 'note')
+        if (source.kind !== 'note' && !source.sourceRef.startsWith('item:'))
           return {
             outcome: 'conflict',
             reason: 'Source revision changed; refresh before using it.',
             observedAt,
           }
-        const n = this.store.revision(source.sourceRef.slice(5), Number(p.revision))
-        source = {
-          ...source,
-          revision: String(n.revision),
-          at: n.at,
-          body: `${n.text}\n\n${n.plan}`,
+        if (source.sourceRef.startsWith('item:')) {
+          const r = this.memory()!.read({}, source.sourceRef.slice(5), Number(p.revision))
+          source = {
+            ...source,
+            title: r.revision.title ?? source.title,
+            kind:
+              r.revision.purpose === 'note'
+                ? 'note'
+                : r.revision.purpose === 'result'
+                  ? 'result'
+                  : 'handoff',
+            revision: String(r.revision.revision),
+            at: r.revision.createdAt,
+            author: r.revision.author,
+            body: r.revision.body,
+          }
+        } else {
+          const n = this.store.revision(source.sourceRef.slice(5), Number(p.revision))
+          source = {
+            ...source,
+            revision: String(n.revision),
+            at: n.at,
+            author: savedBy(n.saver),
+            body: `${n.text}\n\n${n.plan}`,
+          }
         }
       }
       const body = source.body.slice(p.offset, p.offset + p.limit * 1000)

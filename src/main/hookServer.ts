@@ -1,6 +1,6 @@
-// Receives Claude Code hook events on 127.0.0.1. Each hook runs `curl --data-binary @- …`,
-// piping the event JSON Claude Code gave it. This endpoint can only update session state;
-// it has no way to send messages, so the worst a stray request can do is mislabel a dot.
+// Receives Claude Code hook events on 127.0.0.1. Each hook runs the packaged Node helper,
+// sending authenticated, encrypted event JSON. This server handles state and sensitive
+// question/permission responses; all POST routes require the current user-scoped key.
 // `GET /status` answers with a few counts, for the installer's check.
 // `POST /ask`, `/stop`, `/permission` and `/offer` are the routes that answer with a body: the
 // question-card, Stop, PermissionRequest and session-offer hooks wait on them, and get either
@@ -10,14 +10,15 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { HookAuthentication, publishHookKey, sealHook } from './hookAuth'
 
 export const DEFAULT_HOOK_PORT = 47615
-/** Tool-call payloads can carry whole files; anything larger is not worth reading. */
-const MAX_BODY_BYTES = 16 * 1024 * 1024
 const PATH = /^\/hook\/([A-Za-z]{1,40})$/
 
 export interface HookServerOptions {
   port: number
+  /** Explicit ephemeral key for isolated tests; production publishes a protected user key. */
+  authKey?: Buffer
   onEvent: (payload: unknown) => void
   /** Answer to `GET /status`; nothing private, only that it runs and how many events arrived. */
   status?: () => object
@@ -48,19 +49,57 @@ export interface HookServer {
   close(): Promise<void>
 }
 
-export function startHookServer(options: HookServerOptions): Promise<HookServer> {
-  const { port } = options
-  const server = createServer((request, response) => handle(request, response, options, server))
-  return new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(port, '127.0.0.1', () => {
-      server.off('error', reject)
-      resolve({
-        port: (server.address() as AddressInfo).port,
-        close: () => new Promise((done) => server.close(() => done())),
-      })
+const authenticated = new WeakMap<ServerResponse, { key: Buffer; nonce: string }>()
+export async function startHookServer(options: HookServerOptions): Promise<HookServer> {
+  let auth: HookAuthentication | undefined
+  const server = createServer((request, response) => {
+    if (!fromLocalTool(request, server)) return finish(response, 403)
+    if (request.method === 'GET' && request.url === '/status')
+      return handle(request, response, options, server, '')
+    if (!auth || request.method !== 'POST') return finish(response, 403)
+    const chunks: Buffer[] = []
+    let size = 0
+    request.setTimeout(10000, () => request.destroy())
+    request.on('error', () => {
+      if (!response.writableEnded) finish(response, 400)
+    })
+    request.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > 23 * 1024 * 1024) {
+        finish(response, 413)
+        request.destroy()
+      } else chunks.push(chunk)
+    })
+    request.on('end', () => {
+      request.setTimeout(0)
+      if (response.writableEnded || size > 23 * 1024 * 1024) return
+      let input: { nonce: string; body: string }
+      try {
+        input = auth!.accept(request.url ?? '', Buffer.concat(chunks).toString('utf8'))
+      } catch {
+        return finish(response, 403)
+      }
+      authenticated.set(response, { key: auth!.key, nonce: input.nonce })
+      handle(request, response, options, server, input.body)
     })
   })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(options.port, '127.0.0.1', () => {
+      server.off('error', reject)
+      resolve()
+    })
+  })
+  try {
+    auth = new HookAuthentication(options.authKey ?? (await publishHookKey(options.port)))
+    return {
+      port: (server.address() as AddressInfo).port,
+      close: () => new Promise<void>((done) => server.close(() => done())),
+    }
+  } catch (error) {
+    server.close()
+    throw error
+  }
 }
 
 function handle(
@@ -68,15 +107,17 @@ function handle(
   response: ServerResponse,
   { onEvent, status, onAsk, onStop, onPermission, onOffer, context }: HookServerOptions,
   server: Server,
+  body: string,
 ): void {
   if (request.method === 'POST' && request.url === '/context' && context) {
     if (!fromLocalTool(request, server)) return finish(response, 403)
     // Read and drop the event, then answer in the SessionStart hook's documented shape.
-    return readJson(request, () => {
+    return readJson(body, () => {
       const text = context()
       if (!text) return finish(response, 204)
-      response.writeHead(200, { 'content-type': 'application/json' })
-      response.end(
+      finish(
+        response,
+        200,
         JSON.stringify({
           hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text },
         }),
@@ -92,39 +133,28 @@ function handle(
   const holder = Object.hasOwn(holders, request.url ?? '') ? holders[request.url!] : undefined
   if (request.method === 'POST' && holder) {
     if (!fromLocalTool(request, server)) return finish(response, 403)
-    return readJson(request, (payload) => ask(payload, response, holder))
+    return readJson(body, (payload) => ask(payload, response, holder))
   }
   if (request.method === 'GET' && request.url === '/status' && status) {
     if (!fromLocalTool(request, server)) return finish(response, 403)
-    response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(JSON.stringify(status()))
+    finish(response, 200, JSON.stringify(status()))
     return
   }
   const match = PATH.exec(request.url ?? '')
   if (request.method !== 'POST' || !match) return finish(response, 404)
   if (!fromLocalTool(request, server)) return finish(response, 403)
 
-  const chunks: Buffer[] = []
-  let size = 0
-  request.on('data', (chunk: Buffer) => {
-    size += chunk.length
-    if (size <= MAX_BODY_BYTES) chunks.push(chunk)
-  })
-  request.on('end', () => {
-    // Always answer 204 with no body: hook output can end up in Claude's context.
-    finish(response, 204)
-    if (size > MAX_BODY_BYTES) return
-    let payload: unknown
-    try {
-      payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-    } catch {
-      return
-    }
-    if (typeof payload === 'object' && payload !== null && !('hook_event_name' in payload)) {
-      ;(payload as Record<string, unknown>)['hook_event_name'] = match[1]
-    }
-    onEvent(payload)
-  })
+  finish(response, 204)
+  let payload: unknown
+  try {
+    payload = JSON.parse(body)
+  } catch {
+    return
+  }
+  if (typeof payload === 'object' && payload !== null && !('hook_event_name' in payload)) {
+    ;(payload as Record<string, unknown>)['hook_event_name'] = match[1]
+  }
+  onEvent(payload)
 }
 
 /**
@@ -145,8 +175,7 @@ function ask(payload: unknown, response: ServerResponse, onAsk: HoldHandler): vo
     if (done) return
     done = true
     if (body === null) return finish(response, 204)
-    response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(body)
+    finish(response, 200, body)
   }
   const listeners: (() => void)[] = []
   response.on('close', () => {
@@ -160,24 +189,27 @@ function ask(payload: unknown, response: ServerResponse, onAsk: HoldHandler): vo
 }
 
 /** Reads a small JSON body; anything unreadable arrives as undefined. */
-function readJson(request: IncomingMessage, done: (payload: unknown) => void): void {
-  const chunks: Buffer[] = []
-  let size = 0
-  request.on('data', (chunk: Buffer) => {
-    size += chunk.length
-    if (size <= MAX_BODY_BYTES) chunks.push(chunk)
-  })
-  request.on('end', () => {
-    if (size > MAX_BODY_BYTES) return done(undefined)
-    try {
-      done(JSON.parse(Buffer.concat(chunks).toString('utf8')))
-    } catch {
-      done(undefined)
-    }
-  })
+function readJson(body: string, done: (payload: unknown) => void): void {
+  let value: unknown
+  try {
+    value = JSON.parse(body)
+  } catch {
+    return done(undefined)
+  }
+  done(value)
 }
 
-function finish(response: ServerResponse, status: number): void {
-  response.writeHead(status)
-  response.end()
+function finish(response: ServerResponse, status: number, body = ''): void {
+  if (response.writableEnded) return
+  const auth = authenticated.get(response)
+  response.setHeader('Cache-Control', 'no-store')
+  response.setHeader('Content-Type', 'application/json')
+  if (auth) {
+    authenticated.delete(response)
+    response.writeHead(200)
+    response.end(sealHook(auth.key, 'response:' + auth.nonce, { status, body }))
+  } else {
+    response.writeHead(status)
+    response.end(body)
+  }
 }

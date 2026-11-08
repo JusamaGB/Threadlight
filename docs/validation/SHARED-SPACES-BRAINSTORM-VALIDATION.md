@@ -1,6 +1,8 @@
 # Shared Spaces Brainstorm V1 validation
 
-Date: 2026-10-28. Primary checkout: `C:/Example/threadlight`.
+> Public copy: local proof paths and native identifiers are generalised; raw evidence remains private.
+
+Date: 2026-10-28. Primary checkout: `C:/dev/threadlight`.
 
 ## Delivered
 
@@ -73,11 +75,7 @@ disables inherited entries and verifies the exact allowed context inventory befo
 The corrected live run passed. Automated adapter tests additionally verify denied native
 command approval and connection revocation.
 
-**Claude remains blocked by account policy.** The installed runtime returned:
-
-> Your organization has disabled Claude subscription access for Claude Code
-
-No credentials or account settings were changed. The production Claude adapter was exercised
+**Live Claude validation remains pending.** The production Claude adapter was exercised
 with a controlled process transport and real loopback context MCP: strict MCP configuration,
 empty built-in tool list, injected shared role, successful read, denied shell/worker/external
 requests, and token revocation all passed. This does not substitute for live Claude acceptance.

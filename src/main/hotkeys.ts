@@ -4,11 +4,67 @@
 
 import { globalShortcut } from 'electron'
 
-import { acceleratorLabel, mainVirtualKey } from '../shared/accelerator'
+import type { RegisterMuteKey } from './windowsMuteKeys'
+import {
+  acceleratorLabel,
+  mainVirtualKey,
+  LIVE_MUTE_KEYS,
+  sameAccelerator,
+  type LiveMuteKey,
+} from '../shared/accelerator'
 import type { Settings } from '../shared/settings'
 import { isKeyDown } from './keyState'
 
 const RELEASE_CHECK_MS = 25
+/** Both shortcuts belong to the same call. A conflict with one leaves the other available. */
+export class LiveMuteShortcut {
+  private owned = new Map<LiveMuteKey, () => void>()
+  constructor(
+    private toggle: () => void,
+    private register: RegisterMuteKey,
+  ) {}
+
+  yieldToTalk(talk: string) {
+    for (const [key, release] of this.owned) {
+      if (!sameAccelerator(talk, key)) continue
+      release()
+      this.owned.delete(key)
+    }
+  }
+
+  update(active: boolean, suspended: boolean, talk: string): string | null {
+    if (!active || suspended) {
+      this.dispose()
+      return null
+    }
+    this.yieldToTalk(talk)
+    const problems: string[] = []
+    for (const key of LIVE_MUTE_KEYS) {
+      if (sameAccelerator(talk, key)) {
+        problems.push(acceleratorLabel(key) + ' is assigned to Talk.')
+        continue
+      }
+      if (this.owned.has(key)) continue
+      try {
+        const release = this.register(key, this.toggle)
+        if (release) {
+          this.owned.set(key, release)
+          continue
+        }
+      } catch {
+        // A native registration failure must not interrupt the open call.
+      }
+      problems.push(acceleratorLabel(key) + ' is unavailable for mic mute.')
+    }
+    return problems.length ? problems.join(' ') + ' The microphone button is available.' : null
+  }
+
+  dispose() {
+    for (const release of this.owned.values()) release()
+    this.owned.clear()
+  }
+}
+export { BRAINSTORM_HOTKEY } from '../shared/accelerator'
 
 export type TalkMode = Settings['talkMode']
 
@@ -86,7 +142,7 @@ export class TalkHotkey {
 
   dispose(): void {
     this.stopWatching(false)
-    globalShortcut.unregisterAll()
+    if (this.current && !this.paused) globalShortcut.unregister(this.current)
   }
 
   private pressed(): void {

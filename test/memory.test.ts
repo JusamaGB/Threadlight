@@ -1,3 +1,5 @@
+import { memoryDocuments } from '../src/main/spaces/documents'
+import { memoryTestTransport } from './memoryTransportHelper'
 import { randomUUID } from 'node:crypto'
 import { backup, DatabaseSync } from 'node:sqlite'
 import { mkdir, symlink } from 'node:fs/promises'
@@ -63,6 +65,35 @@ afterEach(async () => {
 })
 
 describe('shared memory authority', () => {
+  it('leaves historical untyped records unchanged on reload and explicitly refiles without losing revisions', () => {
+    const item = note('Legacy AI note')
+    const db = store.databaseForBackup()
+    for (const row of db
+      .prepare("SELECT id,data FROM records WHERE kind IN ('item','revision')")
+      .all()) {
+      const data = JSON.parse(String(row.data))
+      delete data.saver
+      delete data.purpose
+      if (data.itemId) delete data.title
+      db.prepare('UPDATE records SET data=? WHERE id=?').run(JSON.stringify(data), String(row.id))
+    }
+    const original = store.read({}, item.id, 1).revision
+    store.close()
+    store = new MemoryStore(join(box.root, 'memory.sqlite'))
+    expect(store.read({}, item.id, 1).revision).toEqual(original)
+    expect(memoryDocuments(store, [space.id]).find((d) => d.id === item.id)?.area).toBe('handoffs')
+    execute({
+      action: 'revise_item',
+      id: item.id,
+      expectedRevision: 1,
+      purpose: 'note',
+      body: original.body,
+    })
+    expect(store.snapshot().items).toHaveLength(1)
+    expect(memoryDocuments(store, [space.id]).find((d) => d.id === item.id)?.area).toBe('notes')
+    expect(store.read({}, item.id, 1).revision).toEqual(original)
+  })
+
   it('revokes derived task credentials and allows reorganisation after the parent grant is revoked', () => {
     const destination = createFolder('Destination'),
       parent = grant({ folderId: folder.id }),
@@ -318,12 +349,13 @@ describe('shared memory authority', () => {
 
 describe('authenticated MCP', () => {
   it('shares exact versions, rejects browser origins and applies revocation immediately', async () => {
-    const server = new MemoryServer(store),
+    const auth = memoryTestTransport(box.root),
+      server = new MemoryServer(store, auth),
       url = await server.start(0),
       credentials = grant(),
       item = note()
     const rpc = (method: string, params: unknown = {}, headers: Record<string, string> = {}) =>
-      fetch(url, {
+      auth.fetch(url, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -353,6 +385,58 @@ describe('authenticated MCP', () => {
 })
 
 describe('durable coordination', () => {
+  it('keeps explicit-purpose saves inert under automatic subscriptions and preserves result acceptance', () => {
+    execute({
+      action: 'subscribe',
+      folderId: folder.id,
+      assignee: 'reviewer',
+      title: 'Review',
+      body: 'Review changes',
+    })
+    execute({
+      action: 'update_space',
+      id: space.id,
+      mode: 'automatic',
+      paused: false,
+      durationMinutes: 30,
+    })
+    const items = (['note', 'work_context', 'result'] as const).map((purpose) =>
+      execute<MemoryItem>({
+        action: 'create_item',
+        folderId: folder.id,
+        title: purpose,
+        body: 'Saved material',
+        purpose,
+      }),
+    )
+    for (const item of items)
+      execute({ action: 'revise_item', id: item.id, expectedRevision: 1, body: 'Edited material' })
+    expect(store.tasks()).toEqual([])
+    expect(store.snapshot().messages).toEqual([])
+    const task = assignment('codex:test', [{ itemId: items[0]!.id, revision: 1 }])
+    store.updateDelivery(task.id, { state: 'completed' })
+    expect(() =>
+      execute({ action: 'submit_result', id: task.id, outputIds: [items[0]!.id] }),
+    ).toThrow('result purpose')
+    execute({ action: 'submit_result', id: task.id, outputIds: [items[2]!.id] })
+    expect(store.tasks()[0]?.state).toBe('submitted')
+    expect(store.read({}, items[2]!.id).item.acceptedRevision).toBeNull()
+    expect(() =>
+      execute({
+        action: 'revise_item',
+        id: items[2]!.id,
+        expectedRevision: 2,
+        purpose: 'note',
+        body: 'Refile',
+      }),
+    ).toThrow('retain')
+    execute({ action: 'resolve_task', id: task.id })
+    expect(store.read({}, items[2]!.id).item.acceptedRevision).toBeNull()
+    execute({ action: 'accept_item', id: items[2]!.id, revision: 2 })
+    expect(store.read({}, items[2]!.id).item.acceptedRevision).toBe(2)
+    expect(store.tasks()[0]?.inputs).toEqual([{ itemId: items[0]!.id, revision: 1 }])
+  })
+
   it('keeps delivery occupied after early submission and persists receipts before the next composer send', () => {
     const task = assignment(),
       output = note('Early result')

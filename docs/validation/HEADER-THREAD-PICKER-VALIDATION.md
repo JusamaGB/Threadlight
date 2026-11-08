@@ -1,5 +1,7 @@
 # Header thread picker
 
+> Public copy: local proof paths and native identifiers are generalised; raw evidence remains private.
+
 Validated 28 October 2026 in the primary checkout.
 
 The whole header now opens a context menu. New thread expands into one
@@ -28,7 +30,7 @@ An uncertain thread/start response is not automatically replayed. A known
 identity is retained even when the desktop handoff fails.
 
 Live production-service evidence: native chat
-1a73f0d7-d2d1-51e2-b714-759590e2decd was created with zero turns, discovered
+REDACTED-NATIVE-ID was created with zero turns, discovered
 by the production tracker, adopted by the desktop, and reopened on retry
 with the same identity and only one bootstrap. The Codex desktop's chat
 listing also confirmed it. No direct database writes were used.
