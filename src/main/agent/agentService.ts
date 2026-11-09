@@ -64,7 +64,7 @@ interface Options {
   spaceContext?: () => import('../threadRead/server').ThreadReadConnection
   appControl?: import('../appControl/server').AppControlServer
   announcements?: {
-    next: (owner: string, since: number) => Announcement | undefined
+    next: (owner: string, since: number, questionsOnly?: boolean) => Announcement | undefined
     commit: (a: Announcement) => boolean
     settle: (
       owner: string,
@@ -92,6 +92,7 @@ interface Options {
 
 /** The sole owner of the active Agent, independent of the monitored applications. */
 export class AgentService {
+  private chatOperations = new Map<string, { owner: string; working: boolean; message: string }>()
   private controlDecisions = new Map<
     string,
     { view: import('../../shared/agent').AgentRequest; decide: (allow: boolean) => void }
@@ -113,7 +114,7 @@ export class AgentService {
     if (command.action === 'next') {
       if (this.announcement) return { ok: true }
       this.announcementSend = undefined
-      this.announcement = port.next(owner, this.voiceStartedAt)
+      this.announcement = port.next(owner, this.voiceStartedAt, command.questionsOnly)
       return { ok: true, announcement: this.announcement }
     }
     const a = this.announcement
@@ -125,14 +126,16 @@ export class AgentService {
       return { ok: true }
     }
     if (this.announcementSend) return this.announcementSend
-    if (!port.commit(a)) {
-      port.settle(owner, a.id, 'suppressed')
-      this.announcement = undefined
-      return { ok: false, reason: 'The cards changed before speech.' }
-    }
     try {
       const sending = this.run
-        .announce(a.text)
+        .announce(
+          a.text,
+          () => {
+            if (this.voiceSession !== id || this.announcement !== a || !port.commit(a))
+              throw Error('The cards changed before speech.')
+          },
+          a.question,
+        )
         .then(() => ({ ok: true as const }))
         .catch(() => {
           port.settle(owner, a.id, 'uncertain')
@@ -190,6 +193,11 @@ export class AgentService {
   interruptProposal(id: string) {
     if (this.activeLiveSession === id && this.run instanceof CodexAgentRun)
       this.run.interruptProposal()
+  }
+  async speakWalkthrough(id: string, text: string, signal: AbortSignal) {
+    if (this.activeLiveSession !== id || !(this.run instanceof CodexAgentRun))
+      throw Error('Live has closed.')
+    await this.run.speakWalkthrough(text, signal)
   }
   async speakCoachStep(id: string, text: string, first: boolean, proposal = false) {
     if (this.activeLiveSession !== id || !(this.run instanceof CodexAgentRun))
@@ -662,6 +670,20 @@ export class AgentService {
               reader ? (this.options.threadReads?.resolve(reader, ref) ?? null) : null,
             cards: async (ref) =>
               reader ? ((await this.options.threadReads?.cards(reader, ref)) ?? null) : null,
+            chatActivity: (id, working, message) => {
+              if (this.run !== run || !run.current.conversationId || run.current.ended) return
+              for (const [key, op] of this.chatOperations)
+                if (!op.working) this.chatOperations.delete(key)
+              this.chatOperations.set(id, { owner: run.current.conversationId, working, message })
+              this.publish(run.current)
+              if (
+                !working &&
+                run instanceof CodexAgentRun &&
+                run.current.live &&
+                run.current.status === 'ready'
+              )
+                void run.announce(message).catch(() => {})
+            },
             approve: (id, title, detail, decide) => {
               if (this.run !== run) {
                 decide(false)
@@ -809,8 +831,20 @@ export class AgentService {
   }
 
   private publish(state: AgentState): void {
+    for (const [key, op] of this.chatOperations)
+      if (
+        state.ended ||
+        state.conversationId !== op.owner ||
+        (!op.working &&
+          (state.status === 'starting' ||
+            (state.status === 'working' && this.state.status !== 'working')))
+      )
+        this.chatOperations.delete(key)
+    const operations = [...this.chatOperations.values()]
+    const activity = operations.find((op) => op.working) ?? operations.at(-1)
     this.state = {
       ...state,
+      chatActivity: activity && { working: activity.working, message: activity.message },
       requests: [
         ...state.requests.filter((r) => !r.id.startsWith('control:')),
         ...[...this.controlDecisions.values()].map((d) => d.view),

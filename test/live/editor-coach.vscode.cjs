@@ -61,6 +61,109 @@ async function run() {
     descriptor,
   )
   try {
+    if (process.env.THREADLIGHT_GHOST_ONLY === '1') {
+      const page = await workbenchPage(root)
+      if (process.env.THREADLIGHT_LIVE_SMOKE !== '1')
+        return await require('./ghostLesson.vscode.cjs').check({
+          session,
+          descriptor,
+          EditorCoach,
+          until,
+          page,
+        })
+      const text = '# context\n'.repeat(63) + 'print("lantern")\nprice = 3'
+      const source = path.join(root, 'problem.py')
+      fs.writeFileSync(source, text)
+      const doc = await vscode.workspace.openTextDocument(source)
+      await vscode.window.showTextDocument(doc)
+      await Promise.all([
+        signedLive(root, descriptor),
+        (async () => {
+          const deadline = Date.now() + 145000
+          while (!fs.existsSync(path.join(root, 'ghost-ready')) && Date.now() < deadline)
+            await wait(100)
+          assert.ok(fs.existsSync(path.join(root, 'ghost-ready')), 'Agent prepared practice notes')
+          assert.equal(vscode.window.activeTextEditor.document, doc)
+          assert.equal(vscode.window.activeTextEditor.selection.active.line, 63)
+          fs.writeFileSync(path.join(root, 'ghost-typed'), String(Date.now()))
+          await page.keyboard.type('p')
+        })(),
+      ])
+      assert.equal(doc.getText(), text)
+      console.log('PASS signed-in ghost walkthrough, actual keyboard and Live playback.')
+      return
+    }
+    if (process.env.THREADLIGHT_WALKTHROUGH_ONLY === '1') {
+      await require('./walkthrough.vscode.cjs').check({
+        coach,
+        session,
+        descriptor,
+        EditorCoach,
+        until,
+        page: await workbenchPage(root),
+      })
+      if (process.env.THREADLIGHT_LIVE_SMOKE === '1') {
+        const lines = [
+          'prices = {"apple": 2}',
+          'item = "apple"',
+          'quantity = 3',
+          'unit_price = prices[item]',
+          'subtotal = quantity * unit_price',
+          'discount = 1',
+          'total = subtotal - discount',
+          'print(item)',
+          'print(quantity)',
+          'print(total)',
+        ]
+        const source = await vscode.workspace.openTextDocument({
+          language: 'python',
+          content:
+            '"""\n' +
+            'Practice instructions\n'.repeat(72) +
+            '"""\n# Implementation\n' +
+            lines.join('\n'),
+        })
+        editor = await vscode.window.showTextDocument(source)
+        editor.selection = new vscode.Selection(0, 0, 0, 0)
+        const before = source.getText()
+        const page = await workbenchPage(root)
+        const waitMarker = async (name) => {
+          const limit = Date.now() + 120000
+          while (!fs.existsSync(path.join(root, name)) && Date.now() < limit) await wait(80)
+          assert.ok(fs.existsSync(path.join(root, name)), name)
+        }
+        await Promise.all([
+          signedLive(root, descriptor),
+          (async () => {
+            await waitMarker('file-walk-ready')
+            const point = async (n) => {
+              const box = await page
+                .locator('.monaco-editor .line-numbers')
+                .filter({ hasText: new RegExp('^' + n + '$') })
+                .first()
+                .boundingBox()
+              assert.ok(box)
+              return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+            }
+            const first = await point(77),
+              last = await point(79)
+            await page.mouse.move(first.x, first.y)
+            await page.mouse.down()
+            await page.mouse.move(last.x, last.y, { steps: 3 })
+            await page.mouse.up()
+            await waitMarker('section-requested')
+            await page
+              .locator('.codelens-decoration')
+              .getByText('Start', { exact: true })
+              .first()
+              .click()
+          })(),
+        ])
+        assert.equal(source.getText(), before)
+        console.log('PASS signed-in automatic file walkthrough.')
+      }
+      return
+    }
     if (process.env.THREADLIGHT_TRACE_ONLY === '1') {
       const page = await workbenchPage(root)
       await require('./trace.vscode.cjs').checkTrace({ root, coach, session, page, until })
@@ -69,8 +172,10 @@ async function run() {
     if (process.env.THREADLIGHT_PROPOSALS_ONLY === '1') {
       const page = await workbenchPage(root)
       const checks = require('./proposals.vscode.cjs')
-      await checks.checkProposals({ root, coach, session, page, until })
-      await checks.checkProposalSpeech({ coach, session, descriptor, EditorCoach, until })
+      if (process.env.THREADLIGHT_LIVE_PROPOSAL_WALK !== '1') {
+        await checks.checkProposals({ root, coach, session, page, until })
+        await checks.checkProposalSpeech({ coach, session, descriptor, EditorCoach, until })
+      }
       if (process.env.THREADLIGHT_TRACE_AGENT === '1')
         await require('./trace.vscode.cjs').checkTrace({ root, coach, session, page, until })
       if (
@@ -342,7 +447,10 @@ async function checkInline({ root, coach, session, document, editor, file }) {
   await assert.rejects(propose(stale), /fresh context/)
   const unchanged = document.getText()
   await vscode.commands.executeCommand('threadlight.coach.accept')
+  assert.notEqual(document.getText(), unchanged)
+  await vscode.commands.executeCommand('undo')
   assert.equal(document.getText(), unchanged)
+  await select()
   await propose(await context())
   await editor.edit((edit) => edit.insert(document.lineAt(1).range.end, '!'))
   const dirty = document.getText()
@@ -352,8 +460,12 @@ async function checkInline({ root, coach, session, document, editor, file }) {
   await propose(await context())
   const other = await vscode.workspace.openTextDocument({ content: 'different' })
   await vscode.window.showTextDocument(other)
+  await vscode.commands.executeCommand('threadlight.coach.accept')
+  assert.equal(other.getText(), 'different')
   editor = await vscode.window.showTextDocument(document)
   await vscode.commands.executeCommand('threadlight.coach.accept')
+  assert.notEqual(document.getText(), dirty)
+  await vscode.commands.executeCommand('undo')
   assert.equal(document.getText(), dirty)
   editor.selections = [new vscode.Selection(0, 0, 0, 2), new vscode.Selection(1, 0, 1, 2)]
   const multiple = await context()

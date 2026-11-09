@@ -101,6 +101,7 @@ interface FloatingDotProps {
   openOn: 'hover' | 'click'
   openMic: boolean
   micLevel: number
+  needsInput?: boolean
   motion?: MotionSnapshot
 }
 
@@ -115,10 +116,11 @@ export function FloatingDot({
   providers,
   openMic,
   micLevel,
+  needsInput = false,
   motion = IDLE_MOTION,
 }: FloatingDotProps) {
   const open = () => window.threadlight.dotClick()
-  if (openMic) return <LiveMicPill micLevel={micLevel} motion={motion} />
+  if (openMic) return <LiveMicPill micLevel={micLevel} motion={motion} needsInput={needsInput} />
   const hoverOpen = () => window.threadlight.dotHover()
   const hover = openOn === 'hover' ? { onPointerEnter: hoverOpen, onMouseMove: hoverOpen } : {}
   return (
@@ -134,7 +136,15 @@ export function FloatingDot({
   )
 }
 
-function LiveMicPill({ micLevel, motion }: { micLevel: number; motion: MotionSnapshot }) {
+function LiveMicPill({
+  micLevel,
+  motion,
+  needsInput,
+}: {
+  micLevel: number
+  motion: MotionSnapshot
+  needsInput: boolean
+}) {
   const open = () => window.threadlight.dotClick()
   const wave = useRef<HTMLButtonElement>(null)
   const drag = useDotDrag(true)
@@ -200,6 +210,7 @@ function LiveMicPill({ micLevel, motion }: { micLevel: number; motion: MotionSna
         data-unfolded={expanded || undefined}
         data-menu={!!menu || undefined}
         data-agent-working={motion.agentWorking || undefined}
+        data-needs-input={needsInput || undefined}
         data-provider={motion.provider}
         data-speaking={motion.output.level > 0.012 || undefined}
         style={
@@ -224,6 +235,7 @@ function LiveMicPill({ micLevel, motion }: { micLevel: number; motion: MotionSna
         }}
         aria-label={en.openMic.pill}
       >
+        <span className={styles.pillHeat} aria-hidden />
         <button
           className={styles.micWave}
           ref={wave}
@@ -274,6 +286,7 @@ function LiveMicPill({ micLevel, motion }: { micLevel: number; motion: MotionSna
             motion.inputMuted ? 'Microphone muted' : 'Microphone open',
             motion.output.level > 0.012 && 'Agent speaking',
             motion.agentWorking && 'Agent working',
+            needsInput && 'Input needed',
           ]
             .filter(Boolean)
             .join('. ')}

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NO_ATTENTION, type AttentionMotion } from '../../shared/attentionMotion'
 import { DOT_SIZE } from '../../shared/micIndicator'
 import { createAttentionPainter } from './attentionPainter'
+import { createPillFire } from './pillFire'
 
 export function useAttentionMotion(): AttentionMotion {
   const [state, setState] = useState(NO_ATTENTION)
@@ -29,6 +30,59 @@ export function useAttentionMotion(): AttentionMotion {
 /** A non-interactive, transparent native window. The original dot retains hover/click handling. */
 export function AttentionView() {
   const state = useAttentionMotion()
+  return state.pill ? <PillFire state={state} /> : <AttentionDrips state={state} />
+}
+
+function PillFire({ state }: { state: AttentionMotion }) {
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const current = useRef(state)
+  const repaint = useRef<() => void>(undefined)
+  useLayoutEffect(() => {
+    current.current = state
+    repaint.current?.()
+  }, [state])
+  useLayoutEffect(() => {
+    if (!canvas.current) return
+    const paint = createPillFire(canvas.current)
+    if (!paint) return
+    const preference = matchMedia('(prefers-reduced-motion: reduce)')
+    let frame = 0,
+      last = performance.now()
+    const draw = (now: number) => {
+      if (document.hidden) return
+      const elapsed = now - last
+      if (elapsed >= 30 || preference.matches) {
+        paint(current.current, Math.min(0.08, elapsed / 1000), preference.matches)
+        last = now
+      }
+      if (!preference.matches) frame = requestAnimationFrame(draw)
+    }
+    const wake = () => {
+      cancelAnimationFrame(frame)
+      draw(performance.now())
+    }
+    repaint.current = wake
+    wake()
+    preference.addEventListener('change', wake)
+    document.addEventListener('visibilitychange', wake)
+    return () => {
+      cancelAnimationFrame(frame)
+      repaint.current = undefined
+      preference.removeEventListener('change', wake)
+      document.removeEventListener('visibilitychange', wake)
+    }
+  }, [])
+  return (
+    <canvas
+      ref={canvas}
+      aria-hidden
+      data-pill-fire
+      style={{ display: 'block', width: state.width, height: state.height, pointerEvents: 'none' }}
+    />
+  )
+}
+
+function AttentionDrips({ state }: { state: AttentionMotion }) {
   const wheel = useRef<HTMLCanvasElement>(null),
     liquid = useRef<HTMLCanvasElement>(null)
   // The painter reads the latest state each frame, so a changing list of waiting threads never

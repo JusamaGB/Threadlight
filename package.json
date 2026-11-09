@@ -1,7 +1,7 @@
 {
   "name": "threadlight",
   "productName": "Threadlight",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "private": true,
   "description": "A compact Windows overlay for AI chats, code changes and shared project context.",
   "author": "Julius Deane",

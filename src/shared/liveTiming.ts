@@ -6,6 +6,7 @@ export const livePhases = [
   'queue-drained',
   'queue-still-pending',
   'input',
+  'first-input-caption',
   'user-transcript',
   'delegation',
   'backing-delta',

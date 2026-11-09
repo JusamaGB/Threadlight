@@ -1,0 +1,55 @@
+{
+  "name": "margin-notes",
+  "displayName": "Margin Notes",
+  "publisher": "local-tools",
+  "version": "0.2.6",
+  "description": "Line-pinned Windows annotation cards for the standard VS Code editor.",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "marginNotes.add",
+        "category": "Margin Notes",
+        "title": "Add Annotation"
+      },
+      {
+        "command": "marginNotes.open",
+        "category": "Margin Notes",
+        "title": "Find Annotation"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "threadlight.editorActions",
+        "label": "Threadlight"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "submenu": "threadlight.editorActions",
+          "when": "editorTextFocus && resourceScheme != untitled",
+          "group": "navigation@90"
+        }
+      ],
+      "threadlight.editorActions": [
+        {
+          "command": "marginNotes.add",
+          "group": "navigation"
+        }
+      ]
+    }
+  }
+}

@@ -16,13 +16,27 @@ require.extensions['.ts'] = (module, filename) =>
     }).outputText,
     filename,
   )
+const { browserTools, BROWSER_INSTRUCTIONS } = require('../src/shared/browser.ts')
 const { memoryTools, memoryInstructions } = require('../src/main/memory/protocol.ts')
 const { communicationTools, communicationInstructions } = require('../src/shared/communication.ts')
 const setupSkill = readFileSync(resolve(root, 'skills/setup/SKILL.md'), 'utf8').replaceAll(
   '\r\n',
   '\n',
 )
+const browserGuide = readFileSync(resolve(root, 'docs/FEATURES.md'), 'utf8')
+  .replaceAll('\r\n', '\n')
+  .split('## Shared browser\n')[1]
+  ?.split('\n## ')[0]
+if (!browserGuide) throw new Error('Missing shared browser guide in docs/FEATURES.md')
+const packagedBrowserGuide =
+  '# Shared browser\n\n<!-- Generated from docs/FEATURES.md by scripts/package-memory-plugins.mjs. -->\n' +
+  browserGuide.replace(
+    '[browser validation](validation/SHARED-BROWSER.md)',
+    '`docs/validation/SHARED-BROWSER.md` in the source checkout',
+  )
 const generated = new Map([
+  ['skills/shared-memory/references/browser.md', packagedBrowserGuide],
+  ['codex-plugin/skills/shared-memory/references/browser.md', packagedBrowserGuide],
   ['codex-plugin/skills/setup/SKILL.md', setupSkill],
   [
     'perplexity-skill/threadlight-setup/SKILL.md',
@@ -54,8 +68,8 @@ const generated = new Map([
     await format(
       JSON.stringify({
         version: 1,
-        instructions: `${memoryInstructions}\n${communicationInstructions}`,
-        tools: [...memoryTools, ...communicationTools],
+        instructions: `${memoryInstructions}\n${communicationInstructions}\n${BROWSER_INSTRUCTIONS}`,
+        tools: [...memoryTools, ...communicationTools, ...browserTools],
       }),
       { ...formatting, parser: 'json' },
     ),
@@ -65,8 +79,8 @@ const generated = new Map([
     await format(
       JSON.stringify({
         version: 1,
-        instructions: `${memoryInstructions}\n${communicationInstructions}`,
-        tools: [...memoryTools, ...communicationTools],
+        instructions: `${memoryInstructions}\n${communicationInstructions}\n${BROWSER_INSTRUCTIONS}`,
+        tools: [...memoryTools, ...communicationTools, ...browserTools],
       }),
       { ...formatting, parser: 'json' },
     ),

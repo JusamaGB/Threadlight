@@ -85,6 +85,24 @@
   transition: none;
 }
 
+.panelStage:has([data-video-grips]) .cardFrame {
+  padding: 0 4px 4px 12px;
+}
+.cardFrame:has([data-video-grips]:not([data-video-sized])) .card {
+  max-height: calc(var(--panel-room) - 4px) !important;
+}
+.panelStage:has([data-video-sized]),
+.panelStage:has([data-video-sized]) .cardFrame {
+  width: 100vw;
+}
+.cardFrame:has([data-video-sized]) .card {
+  width: 100%;
+  height: calc(100vh - 4px);
+  max-height: none !important;
+  margin-top: 0 !important;
+  transition: none;
+}
+
 .card[data-pinned] {
   border-color: transparent;
   background:
@@ -158,6 +176,32 @@
   top: 3px;
   display: flex;
   gap: 3px;
+}
+.browserAgent,
+.browserSpeaker {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  color: var(--purple);
+}
+.browserSpeaker {
+  position: absolute;
+  right: 25px;
+  top: 3px;
+  color: var(--muted);
+}
+.browserSpeaker[aria-pressed='true'] {
+  color: var(--purple);
+}
+.browserAgent svg {
+  fill: currentColor;
+}
+.browserSpeaker svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* Artifact details yield the bottom space to the current hover explanation. */
@@ -1864,12 +1908,6 @@ span.planStep {
   white-space: nowrap;
   text-align: right;
 }
-.returnToCall {
-  align-self: center;
-  font-size: 11px;
-  color: var(--accent);
-  padding: 2px 6px;
-}
 .callButtons {
   grid-column: 2;
   display: flex;
@@ -2615,6 +2653,15 @@ span.planStep {
   gap: 6px;
   align-items: baseline;
   margin: 4px 0;
+}
+.agentRequest .agentQuestion {
+  padding-inline: 8px;
+}
+.agentRequest .agentQuestion .qOther {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 4px 0 2px;
 }
 
 .panelStage[data-canvas-expanded] {

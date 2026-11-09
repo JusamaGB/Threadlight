@@ -402,7 +402,7 @@ export class CodexAgentRun {
       (message) => {
         if (connection !== this.liveGeneration) return
         this.settlePendingRegions()
-        this.update({ live: null, ...(message ? { error: message } : {}) })
+        this.update({ live: null, pendingSpeechTurn: null, ...(message ? { error: message } : {}) })
         this.options.onLive?.({ sessionId, type: message ? 'error' : 'closed', message })
       },
       !!this.appControl && !this.spaceContext,
@@ -438,9 +438,9 @@ export class CodexAgentRun {
       this.expiry = setTimeout(() => void this.close(), minutes * 60_000)
   }
 
-  async announce(text: string): Promise<void> {
+  async announce(text: string, beforeSpeech?: () => void, question?: boolean): Promise<void> {
     if (!this.live || !this.record) throw new Error('Live is closed.')
-    await this.live.announce(text)
+    await this.live.announce(text, beforeSpeech, question)
   }
 
   playbackBoundary(
@@ -464,6 +464,10 @@ export class CodexAgentRun {
   interruptProposal() {
     this.live?.interruptProposal()
   }
+  async speakWalkthrough(text: string, signal: AbortSignal) {
+    if (!this.live) throw Error('Live has closed.')
+    await this.live.speakWalkthrough(text, signal)
+  }
   async coachStep(text: string, first: boolean, proposal = false) {
     if (!this.live) throw new Error('Live has closed.')
     await this.live.coachStep(text, first, proposal)
@@ -473,6 +477,41 @@ export class CodexAgentRun {
       client = this.client,
       record = this.record
     if (!live || !client || !record) throw new Error('Live has closed.')
+    if (event.walkthrough) {
+      if (event.status !== 'disconnected' && event.needsNotes && !event.isCurrentSource?.()) return
+      live.setGuideActive(
+        ['locating', 'shown', 'paused'].includes(event.status),
+        event.ghost === true && event.status === 'shown' && event.needsNotes === false,
+      )
+      if (!event.needsNotes || event.status !== 'shown') return
+      const input = [
+        {
+          type: 'text',
+          text:
+            'Continue the running file walkthrough. Read walkthrough_page using token ' +
+            event.token +
+            '. Follow the page instructions. For a selected section, read every page via nextLine and supply exactly one walkthrough_notes explanation of how the section works as a whole. Otherwise supply one explanation per listed line. ' +
+            (event.ghost
+              ? 'The learner triggers each explanation by typing. '
+              : 'The editor handles playback and navigation. ') +
+            'If the token is stale, stop silently. Do not send a separate spoken summary.',
+        },
+      ]
+      if (this.turn)
+        await client.request('turn/steer', {
+          threadId: record.providerId,
+          expectedTurnId: this.turn,
+          input,
+        })
+      else
+        await client.request('turn/start', {
+          threadId: record.providerId,
+          input,
+          model: record.model,
+          effort: record.reasoning,
+        })
+      return
+    }
     live.setGuideActive(['shown', 'paused', 'refresh_requested'].includes(event.status))
     const guideScope = [event.guideId, event.token, event.status].join('/')
     if (this.state.coachGuideToken !== guideScope) this.update({ coachGuideToken: guideScope })
@@ -828,7 +867,11 @@ export class CodexAgentRun {
       if (!id || (this.live && !this.live.beginTurn(id))) return
       this.turn = id
       if (this.live)
-        this.update({ status: this.requests.size ? 'waiting' : 'working', progress: null })
+        this.update({
+          status: this.requests.size ? 'waiting' : 'working',
+          progress: null,
+          pendingSpeechTurn: null,
+        })
     }
     if (str(params.turnId) && this.turn && params.turnId !== this.turn) return
     if (rpcId !== undefined) {
@@ -902,12 +945,11 @@ export class CodexAgentRun {
           text,
           backingTurnId: str(params.turnId) ?? this.turn ?? undefined,
         })
-        if (
-          !this.requests.size &&
-          started?.type === 'agentMessage' &&
-          started.phase === 'final_answer'
-        )
-          this.live?.streamFinal(str(params.turnId) ?? this.turn, id, text)
+        if (!this.requests.size && started?.type === 'agentMessage') {
+          const turn = str(params.turnId) ?? this.turn
+          if (started.phase === 'commentary') this.live?.streamCommentary(turn, id, text)
+          else if (started.phase === 'final_answer') this.live?.streamFinal(turn, id, text)
+        }
       }
     } else if (method === 'turn/plan/updated') {
       const plan = Array.isArray(params.plan) ? params.plan.filter(isObject) : []
@@ -921,14 +963,28 @@ export class CodexAgentRun {
     } else if (method === 'turn/completed' && isObject(params.turn)) {
       if (this.turn && params.turn.id !== this.turn) return
       const live = this.live
+      const id = str(params.turn.id)
+      const track =
+        !!live &&
+        !!id &&
+        params.turn.status === 'completed' &&
+        id === this.turn &&
+        this.state.pendingSpeechTurn !== id
+      if (track) this.update({ pendingSpeechTurn: id })
       const saved = this.completed(params.turn)
-      void live?.finishTurn(params.turn).catch(async () => {
-        await saved
-        if (live === this.live && this.state.live)
-          this.update({
-            error: 'The reply is in the thread, but Live could not confirm the speech handoff.',
-          })
-      })
+      void live
+        ?.finishTurn(params.turn)
+        .catch(async () => {
+          await saved
+          if (live === this.live && this.state.live)
+            this.update({
+              error: 'The reply is in the thread, but Live could not confirm the speech handoff.',
+            })
+        })
+        .finally(() => {
+          if (track && live === this.live && this.state.pendingSpeechTurn === id)
+            this.update({ pendingSpeechTurn: null })
+        })
     } else if (method === 'error' && params.willRetry !== true) {
       this.fail(
         new Error(

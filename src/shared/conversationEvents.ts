@@ -107,13 +107,14 @@ export interface ConversationFeed {
   cursor: number
 }
 export interface Announcement {
+  question?: boolean
   id: string
   owner: string
   cards: { id: string; revision: number }[]
   text: string
 }
 export type AnnouncementCommand =
-  | { action: 'next' }
+  | { action: 'next'; questionsOnly?: boolean }
   | { action: 'speak'; id: string }
   | { action: 'settle'; id: string; outcome: 'announced' | 'uncertain' | 'suppressed' | 'deferred' }
 export type AnnouncementReply =

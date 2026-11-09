@@ -1,5 +1,55 @@
 # VS Code Live coaching on Windows
 
+## Gutter-only gestures and Python starting line (companion 0.6.17)
+
+An isolated VS Code walkthrough kept the prepared highlight and token through clicks, double-clicks, triple-clicks and a drag in the code. The same test explained a gutter click and a forward or reverse whole-line drag. The browser-driven fixture supplies the rendered cursor type and controlled button state because its synthetic pointer does not move the physical Windows pointer. The production bridge samples the Windows cursor and button state.
+
+A disposable Python buffer with a module docstring, comments and blank lines prepared its first function at line 60. An explicit request for line one still prepared line one. The signed-in file walkthrough fixture uses a similar introductory block and requests the whole file without naming a start line.
+
+## Prepared file walkthrough (companion 0.6.16)
+
+The isolated VS Code test uses the rendered **Auto** and **Start/Next** controls. It checks that preparation is silent, a click on the highlighted gutter number works before Start, and manual playback waits for Next. During a reverse drag from line 80 up to line 77, the test holds the mouse-button probe down while the editor sends intermediate selection changes. Release produces one explanation for lines 77–80. Next continues at line 81. A separate automatic pass visits all 92 lines. The test uses controlled playback acknowledgements and checks cancellation on source edits.
+
+In a signed-in Live run, the editor prepared line 76 without speaking it. Selecting lines 77–79 requested one spoken explanation of how the three statements fit together. Clicking Start let Auto continue at line 80 through line 85, including a second page of notes. The receiver recorded audio and the source was unchanged. Use `scripts/test-editor-coach.ps1 -Walkthrough` for the isolated editor test and add `-Live` for the signed-in check.
+
+## Ghost practice location (companion 0.6.15)
+
+An isolated VS Code test started at line 64 of a saved Python file while the caret was elsewhere. Both location settings placed the caret on the first practice character. The editor applied a 55% opacity decoration to the remaining text and left the preceding context at normal opacity. A matching character triggered the corresponding line explanation; a mismatch kept the caret in place. Enter moved to line 65, and Escape removed the decoration. The original document version and disk contents stayed unchanged in both modes.
+
+A signed-in Live session selected Coach and requested line 64 onwards in a disposable `problem.py`. The same document remained active. The first typed character triggered the explanation and the receiver measured non-silent audio. Run the existing ghost walkthrough checks below with `THREADLIGHT_GHOST_ONLY=1`.
+
+## Spoken ghost walkthroughs (companion 0.6.14)
+
+An isolated window running 0.6.11 reported a connected editor, Trace and inline proposals. It returned the active filename and the exact upgrade commands for unavailable narrated practice. In a separate signed-in session, the Agent selected the Coach skill, checked the 0.6.14 companion and editor context, opened a practice copy, and submitted the line explanations. The first typed character triggered confirmed audio and the source stayed intact.
+
+An isolated desktop VS Code host exercised in-place block tracing, whole-file practice, an exact partial selection, generated text, and a pending replacement. It checked visible ghost text, typing before notes arrived, backward editing, a gutter jump beyond the first eight notes, mute, replay, the persistent Off setting and cancellation of old speech. Accepting a whole suggestion, including a one-character suggestion, stayed quiet. A manually typed one-character row spoke. A bulk insertion, Undo and Redo stayed quiet. The source buffer retained its original contents throughout copy-based practice. With native inline suggestions disabled in the isolated profile, the test inspected the visible practice text, typed its first character, heard one explanation in the controlled playback fixture and verified that the remaining letters were displayed.
+
+In a separate signed-in GPT Live run the Agent opened a whole-file practice tab from a natural-language request, prepared the line notes, and delivered one spoken explanation of `print("lantern")` after the keyboard entered the first letter. The receiver observed non-silent audio. One run took 15 ms from the test sending the key to Threadlight requesting speech. That interval excludes provider playback latency. Tests used a disposable profile, synthetic microphone input and browser audio. A one-character paste can look like typing to VS Code.
+
+Set `THREADLIGHT_GHOST_ONLY=1` and `THREADLIGHT_PLAYWRIGHT` to an installed Playwright module, then run `scripts/test-editor-coach.ps1 -Keyboard`. Add `-Live` with `THREADLIGHT_CODEX_CLI` and Chromium configured for the signed-in check.
+
+## Opt-in coaching skill and learner profile
+
+A signed-in GPT Live test selected Threadlight Coach and spoke the name of a synthetic learner’s course from the profile. A generated voice follow-up changed the learner’s level to week five. The test accepted the named profile decision through the normal Agent response path and checked the saved file and the unchanged teaching preference. It used a disposable profile and browser audio. Set `THREADLIGHT_LIVE_COACH_PROFILE=1` and supply a week-five update WAV with the normal `test/agentLive.live.mjs` configuration to repeat it. No editor connection is required for this check.
+
+The application-control test covers a new chat starting outside coaching, selection and leaving, persistence across service restarts, field-level changes, stale revisions and malformed files.
+
+## Source file walkthrough (companion 0.6.13)
+
+An isolated desktop VS Code window with a 92-line Python buffer started at line 75 while the caret stayed on line 1. Real gutter clicks moved the highlighted explanation to lines 76, 80, 81 and 83 during held narration. The editor ignored a stale explanation and continued to the end from the last click. A separate pass visited all 92 lines in order. Editing the source ended the walkthrough. This test uses controlled playback acknowledgements.
+
+A signed-in Live session then walked a disposable Python file from line 76 through line 85 with the caret still on line 1. The ten spoken explanations finished in sequence. Live requested the next page at line 84, and the receiver recorded non-silent audio. The editor buffer and caret were unchanged.
+
+Run `scripts/test-editor-coach.ps1 -Walkthrough` with the Playwright setup below for the editor check. Add `-Live` with the signed-in Codex executable and Chromium configured for the voice check.
+
+## Pending proposal walkthrough (companion 0.6.12)
+
+The isolated VS Code test in `test/live/proposals.vscode.cjs` opens a tracker proposal, selects the exact rounding expression in the read-only review, revisits it for a follow-up and moves forward and back. It checks the source text and document version before dismissal. A replacement case checks both original and proposed rows, explicit acceptance and Undo. Editing the source invalidates the old walkthrough.
+
+The signed-in text check in `test/live/trace-agent.proof.cjs` verified the agent used the displayed proposal for “next line,” explained the five-minute offset for inputs 6 and 7, and retained the same proposal and row during the follow-up. Set `THREADLIGHT_TRACE_ONLY=1` and `THREADLIGHT_PROPOSAL_WALK_ONLY=1` with the existing `-Keyboard -TraceAgent` setup to reproduce it.
+
+The spoken check used an isolated VS Code window and a generated voice follow-up asking about the first line of a pending Python diff. The real Live agent selected that changed row and returned non-silent audio on the same connection. The proposal remained open and the fixture version and saved contents were unchanged. With the existing `-Keyboard -Proposals -Live` setup, set `THREADLIGHT_LIVE_PROPOSAL=1`, `THREADLIGHT_LIVE_PROPOSAL_WALK=1` and supply the follow-up WAV via `THREADLIGHT_LIVE_TEST_WAV`.
+
 ## Compact proposals in companion 0.6.5
 
 An isolated desktop VS Code host opened **Result** and **Why this edit?** on a disposable dirty buffer, scrolled eight pages away and returned. The same proposal token and both open controls survived. While offscreen the status was pending, the explanation was unavailable and Accept left the document version unchanged. Returning restored the original diff and allowed the visible proposal to be accepted and undone.

@@ -46,6 +46,26 @@ it('creates a persistent empty native chat, releases its writer, then opens the 
   ])
   expect(deps.handoff).toHaveBeenCalledWith(id)
 })
+it('resolves a spoken model name against the local catalog and keeps its confirmed ID on recovery', async () => {
+  const { service, restart, client } = fixture()
+  const reply = vi.mocked(client.request) as unknown as ReturnType<typeof vi.fn>
+  reply
+    .mockResolvedValueOnce({ data: [{ model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol' }] })
+    .mockResolvedValueOnce({ thread: { id }, model: 'gpt-6.1-sol' })
+  const selected = { ...input, model: 'Sol 6.1' }
+  expect(await service.create(selected)).toEqual({
+    ok: true,
+    sessionId: 'codex:' + id,
+    model: 'gpt-6.1-sol',
+  })
+  expect(client.request).toHaveBeenCalledWith(
+    'thread/start',
+    expect.objectContaining({ model: 'gpt-6.1-sol' }),
+  )
+  expect((await restart().create(selected)).ok).toBe(true)
+  expect((await restart().create({ ...input, model: 'different' })).ok).toBe(false)
+  expect(reply.mock.calls.filter((call) => call[0] === 'thread/start')).toHaveLength(1)
+})
 it('uses the selected workspace without adding a first message or overriding provider settings', async () => {
   const { service, client } = fixture()
   expect((await service.create({ ...input, cwd: root })).ok).toBe(true)

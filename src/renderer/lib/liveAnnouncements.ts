@@ -14,6 +14,7 @@ const words = (text: string) =>
 /** Native turn boundaries establish pauses. Audio energy only vetoes a pause or proves playback. */
 export class LiveAnnouncements {
   private user = new Set<string>()
+  private delegatedUser?: string
   private assistant = new Set<string>()
   private boundarySeen = false
   private lastActivity = 0
@@ -33,6 +34,7 @@ export class LiveAnnouncements {
   }
   private closed = false
   private ready = false
+  private questionsOnly = true
   constructor(
     private call: (command: AnnouncementCommand) => Promise<AnnouncementReply>,
     private now = Date.now,
@@ -49,19 +51,35 @@ export class LiveAnnouncements {
       type?: string
       turn?: { id?: string; role?: string; transcript?: string }
       turn_id?: string
+      item?: { target?: string; user_bidi_turn_id?: string }
+    }
+    if (
+      e.type === 'delegation.created' &&
+      e.item?.target === 'client' &&
+      e.item.user_bidi_turn_id &&
+      this.user.has(e.item.user_bidi_turn_id)
+    ) {
+      // The service can keep this voice turn open until the backing question is answered.
+      this.delegatedUser = e.item.user_bidi_turn_id
+      this.lastActivity = this.now()
+      this.dirty = true
     }
     const turn = e.turn
     if (e.type === 'input_transcript.added') {
       this.lastInput = this.now()
       if (this.pending) void this.finish('uncertain')
     }
-    if (!turn?.id || !['user', 'assistant'].includes(turn.role ?? '')) return
+    if (!turn?.id) return
     if (e.type !== 'turn.created' && e.type !== 'turn.done') return
+    const role =
+      turn.role ??
+      (this.user.has(turn.id) ? 'user' : this.assistant.has(turn.id) ? 'assistant' : undefined)
+    if (role !== 'user' && role !== 'assistant') return
     this.lastActivity = this.now()
-    const set = turn.role === 'user' ? this.user : this.assistant
+    const set = role === 'user' ? this.user : this.assistant
     if (e.type === 'turn.created') {
       set.add(turn.id)
-      if (turn.role === 'user') {
+      if (role === 'user') {
         if (this.pending) void this.finish('uncertain')
       } else if (this.pending) {
         if (this.pending.turn && this.pending.turn !== turn.id) void this.finish('uncertain')
@@ -69,31 +87,44 @@ export class LiveAnnouncements {
       }
     } else {
       set.delete(turn.id)
+      if (this.delegatedUser === turn.id) this.delegatedUser = undefined
       this.boundarySeen = true
-      if (turn.role === 'assistant' && this.pending?.turn === turn.id) {
+      if (role === 'assistant' && this.pending?.turn === turn.id) {
         if (words(turn.transcript ?? '') === words(this.pending.announcement.text))
           this.pending.done = true
         else void this.finish('uncertain')
       }
     }
   }
-  async tick(ready: boolean, outputLevel: number) {
+  private get userSpeaking() {
+    return (
+      this.user.size > 0 &&
+      !(this.user.size === 1 && this.delegatedUser && this.user.has(this.delegatedUser))
+    )
+  }
+  async tick(ready: boolean, outputLevel: number, micMuted = false) {
     if (this.closed) return
     this.ready = ready
     const now = this.now()
+    const questionsOnly = !this.boundarySeen || micMuted || this.user.size > 0
+    if (questionsOnly !== this.questionsOnly) this.dirty = true
+    this.questionsOnly = questionsOnly
     if (outputLevel > 0.015) {
       this.lastOutput = now
       if (this.pending && ready) this.pending.audio = true
     }
     if (this.pending) {
-      if (!ready || now - this.pending.at > 45000) {
+      if (
+        !ready ||
+        now - this.pending.at > Math.max(45000, this.pending.announcement.text.length * 130)
+      ) {
         await this.finish('uncertain')
         return
       }
       if (
         this.pending.done &&
         this.pending.audio &&
-        !this.user.size &&
+        !this.userSpeaking &&
         !this.assistant.size &&
         now - Math.max(this.lastOutput, this.lastActivity, this.lastInput) >= 800
       )
@@ -104,8 +135,7 @@ export class LiveAnnouncements {
       this.busy ||
       !this.dirty ||
       !ready ||
-      !this.boundarySeen ||
-      this.user.size ||
+      this.userSpeaking ||
       this.assistant.size ||
       now - Math.max(this.lastActivity, this.lastInput, this.lastOutput) < 800
     )
@@ -113,13 +143,16 @@ export class LiveAnnouncements {
     this.busy = true
     this.dirty = false
     try {
-      const result = await this.call({ action: 'next' })
+      const result = await this.call(
+        questionsOnly ? { action: 'next', questionsOnly: true } : { action: 'next' },
+      )
       if (!result.ok || !result.announcement) return
       const a = result.announcement
       if (
         this.closed ||
         !this.ready ||
-        this.user.size ||
+        (this.questionsOnly && !a.question) ||
+        this.userSpeaking ||
         this.assistant.size ||
         this.now() - Math.max(this.lastActivity, this.lastInput, this.lastOutput) < 800
       ) {
@@ -139,6 +172,7 @@ export class LiveAnnouncements {
   private async finish(outcome: 'announced' | 'uncertain') {
     const pending = this.pending
     this.pending = undefined
+    this.dirty = true
     if (pending)
       await this.call({ action: 'settle', id: pending.announcement.id, outcome }).catch(() => {})
   }

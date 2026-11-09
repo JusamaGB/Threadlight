@@ -9,6 +9,32 @@ import type { CommunicationSnapshot } from '../../shared/communication'
 import { CommunicationStore } from './store'
 import { readerCards } from './cardHistory'
 
+const spokenChoices = new Intl.ListFormat('en', { type: 'disjunction' })
+function spokenQuestion(text: string, choices: string[] = []) {
+  const options = choices.filter(Boolean)
+  if (!options.length) return text
+  const alternatives = spokenChoices.format(options)
+  return text.toLocaleLowerCase('en').includes(alternatives.toLocaleLowerCase('en'))
+    ? text
+    : text + ' ' + alternatives + '?'
+}
+
+function questionPrompt(card: ConversationCard) {
+  if (card.state !== 'pending') return
+  if (card.question) return spokenQuestion(card.question.body, card.question.choices)
+  if (card.request?.kind !== 'question') return
+  return (
+    card.request.questions
+      ?.map((q) =>
+        spokenQuestion(
+          q.question,
+          q.options?.map((o) => o.label),
+        ),
+      )
+      .join(' ') || card.request.title
+  )
+}
+
 /** Projection of the existing durable communication journal. It never starts work. */
 export class ConversationEventService {
   constructor(
@@ -275,14 +301,22 @@ export class ConversationEventService {
       throw new Error('This card changed. Read its current state before answering.')
     return card
   }
-  reserve(owner: string, since: number): Announcement | undefined {
+  reserve(owner: string, since: number, questionsOnly = false): Announcement | undefined {
     const record = this.find(owner)
     if (!record || record.cards.some((c) => c.speech === 'submitted' || c.speech === 'reserved'))
       return
-    const cards = record.cards
-      .filter((c) => c.speech === 'pending' && c.updatedAt >= since)
-      .sort((a, b) => Number(b.state === 'pending') - Number(a.state === 'pending'))
-      .slice(0, 3)
+    const pending = record.cards.filter((c) => c.speech === 'pending' && c.updatedAt >= since)
+    const question = pending.find(
+      (c) => c.state === 'pending' && (c.question || c.request?.kind === 'question'),
+    )
+    const prompt = question && questionPrompt(question)
+    const cards = question
+      ? [question]
+      : questionsOnly
+        ? []
+        : pending
+            .sort((a, b) => Number(b.state === 'pending') - Number(a.state === 'pending'))
+            .slice(0, 3)
     if (!cards.length) return
     const id = randomUUID()
     for (const c of cards) {
@@ -295,12 +329,15 @@ export class ConversationEventService {
       id,
       owner,
       cards: cards.map((c) => ({ id: c.id, revision: c.revision })),
-      text: cards
-        .map(
-          (c) =>
-            `${c.title.slice(0, 100)} ${c.state === 'pending' ? 'needs your input' : c.kind === 'result' ? 'has returned a result' : c.state === 'unknown' ? 'has an uncertain delivery' : 'has a delivery update'}.`,
-        )
-        .join(' '),
+      question: !!prompt,
+      text:
+        prompt ||
+        cards
+          .map(
+            (c) =>
+              `${c.title.slice(0, 100)} ${c.state === 'pending' ? 'needs your input' : c.kind === 'result' ? 'has returned a result' : c.state === 'unknown' ? 'has an uncertain delivery' : 'has a delivery update'}.`,
+          )
+          .join(' '),
     }
   }
   catchUp(owner: string) {

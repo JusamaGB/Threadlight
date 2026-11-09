@@ -7,11 +7,14 @@ import type { CodexTransport } from '../agent/codexClient'
 import { CODEX_UUID, codexKey } from './identity'
 import { connectCodexDesktop } from './desktopConnection'
 import { isObject } from '../sessions/json'
+import { discoverModels } from '../agent/agentModels'
 
 interface Receipt {
   cwd: string
   phase: 'prepared' | 'creating' | 'created'
   id?: string
+  requestedModel?: string
+  model?: string
 }
 interface Dependencies {
   bootstrap(cwd: string): Promise<CodexTransport & { initialize(): Promise<void> }>
@@ -45,33 +48,37 @@ export async function handoffNewCodexThread(
 
 /** Durable operations keep an interrupted handoff from creating another chat. */
 export class NewCodexThreads {
-  private active: { operationId: string; promise: Promise<NewThreadResult> } | null = null
+  private active: { input: NewThreadRequest; promise: Promise<NewThreadResult> } | null = null
   constructor(
     private receipts: string,
     private workspaces: string,
     private deps: Dependencies,
   ) {}
 
-  create(input: NewThreadRequest): Promise<NewThreadResult> {
+  create(input: NewThreadRequest, beforeCreate?: () => void): Promise<NewThreadResult> {
     if (
       !input ||
       input.provider !== 'codex' ||
       !CODEX_UUID.test(input.operationId) ||
+      (input.model !== undefined &&
+        (typeof input.model !== 'string' || !input.model.trim() || input.model.length > 100)) ||
       (input.cwd !== null && (typeof input.cwd !== 'string' || !isAbsolute(input.cwd)))
     )
       return Promise.resolve({ ok: false, reason: 'That new-thread request is unavailable.' })
     if (this.active)
-      return this.active.operationId === input.operationId
+      return this.active.input.operationId === input.operationId &&
+        this.active.input.model === input.model &&
+        this.active.input.cwd === input.cwd
         ? this.active.promise
         : Promise.resolve({ ok: false, reason: 'Another chat is still opening.' })
-    const promise = this.run(input).finally(() => {
+    const promise = this.run(input, beforeCreate).finally(() => {
       this.active = null
     })
-    this.active = { operationId: input.operationId, promise }
+    this.active = { input, promise }
     return promise
   }
 
-  private async run(input: NewThreadRequest): Promise<NewThreadResult> {
+  private async run(input: NewThreadRequest, beforeCreate?: () => void): Promise<NewThreadResult> {
     const file = join(this.receipts, `${input.operationId}.json`)
     let receipt: Receipt | undefined
     const save = () => {
@@ -85,6 +92,8 @@ export class NewCodexThreads {
         if (
           !isObject(value) ||
           typeof value.cwd !== 'string' ||
+          (value.requestedModel !== undefined && typeof value.requestedModel !== 'string') ||
+          (value.model !== undefined && typeof value.model !== 'string') ||
           !['prepared', 'creating', 'created'].includes(String(value.phase)) ||
           (value.id !== undefined &&
             (typeof value.id !== 'string' || !CODEX_UUID.test(value.id))) ||
@@ -92,10 +101,19 @@ export class NewCodexThreads {
         )
           throw Error('Invalid creation receipt')
         receipt = value as unknown as Receipt
+        if (receipt.requestedModel !== input.model)
+          return {
+            ok: false,
+            reason: 'This creation receipt belongs to a different model selection.',
+          }
         if (input.cwd !== null && input.cwd !== receipt.cwd)
           return { ok: false, reason: 'The pending chat belongs to a different workspace.' }
       } else {
-        receipt = { cwd: input.cwd ?? join(this.workspaces, input.operationId), phase: 'prepared' }
+        receipt = {
+          cwd: input.cwd ?? join(this.workspaces, input.operationId),
+          phase: 'prepared',
+          requestedModel: input.model,
+        }
         if (input.cwd === null) mkdirSync(receipt.cwd, { recursive: true })
         save()
       }
@@ -110,16 +128,43 @@ export class NewCodexThreads {
         const client = await this.deps.bootstrap(receipt.cwd)
         try {
           await client.initialize()
+          let model: string | undefined
+          if (input.model) {
+            const models = await discoverModels(client)
+            const words = (s: string) =>
+              s
+                .toLowerCase()
+                .split(/[^a-z0-9.]+/)
+                .filter((w) => w && w !== 'gpt')
+                .sort()
+                .join(' ')
+            const candidates = models.filter((m) =>
+              [m.id, m.name].some((s) => words(s) === words(input.model!)),
+            )
+            model =
+              models.find((m) => m.id === input.model)?.id ??
+              (candidates.length === 1 ? candidates[0]?.id : undefined)
+            if (!model)
+              return {
+                ok: false,
+                reason:
+                  'Requested Codex model is unavailable or ambiguous. Use an exact installed model ID.',
+              }
+          }
+          beforeCreate?.()
           receipt.phase = 'creating'
           save()
-          // Inherit the user's configured model and permissions; no invented first message.
+          // Leave native defaults in place unless the caller selected a model.
           const result = await client.request('thread/start', {
             cwd: receipt.cwd,
             ephemeral: false,
+            ...(model && { model }),
           })
           const id = isObject(result.thread) ? result.thread.id : undefined
           if (typeof id !== 'string' || !CODEX_UUID.test(id)) throw Error('Missing chat identity')
           receipt.id = id
+          if (typeof result.model === 'string' && (!model || result.model === model))
+            receipt.model = result.model
           receipt.phase = 'created'
           save()
           // Blank threads are persisted lazily. Naming materializes the native history
@@ -128,10 +173,24 @@ export class NewCodexThreads {
           const saved = await client.request('thread/read', { threadId: id })
           if (!isObject(saved.thread) || saved.thread.id !== id)
             throw Error('Chat persistence was not confirmed')
+          if (model && receipt.model !== model)
+            return {
+              ok: false,
+              sessionId: codexKey(id),
+              reason: 'Codex created the chat but did not confirm the requested model.',
+            }
         } finally {
           // Release the bootstrap writer before asking the desktop to own the chat.
-          client.close()
+          await client.close()
         }
+      } else {
+        if (input.model && !receipt.model)
+          return {
+            ok: false,
+            sessionId: codexKey(receipt.id),
+            reason: 'The requested model was not confirmed.',
+          }
+        beforeCreate?.()
       }
       const id = receipt.id!
       if (!(await this.deps.handoff(id)))
@@ -141,7 +200,7 @@ export class NewCodexThreads {
           reason:
             'Your chat was created, but Codex is not ready. Choose New again to reopen the same chat.',
         }
-      return { ok: true, sessionId: codexKey(id) }
+      return { ok: true, sessionId: codexKey(id), ...(receipt.model && { model: receipt.model }) }
     } catch {
       return {
         ok: false,

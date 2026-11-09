@@ -297,7 +297,7 @@ async function call(name, args) {
       params: { name, arguments: arguments_ },
     },
     record.secret,
-    name === 'threadlight_read_question' ? 35000 : 5000,
+    name === 'threadlight_read_question' || name === 'threadlight_browser' ? 35000 : 5000,
   )
   if (result.error) throw new Error(result.error.message)
   return result.result

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 
-const decisionSelector = '[data-card-state="pending"], [data-agent-request], [data-agent-approval]'
+const decisionSelector =
+  '[data-card-state="pending"]:not([data-question-card]), [data-agent-request]:not([data-question-form], [data-question-card] *), [data-agent-approval]'
 type Anchor = { position: Range | Element; top: number }
 
 /** Prefer a character on the visible line: a code block can be taller than the entire reader. */

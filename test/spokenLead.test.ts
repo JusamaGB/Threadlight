@@ -93,6 +93,14 @@ describe('delegated spoken lead', () => {
     const { live, request } = setup()
     vi.useFakeTimers()
     try {
+      const note =
+        'I’ll reconnect to the active buffer and continue with the unknown-item message change.'
+      live.completedCommentary('turn', {
+        id: 'opening',
+        type: 'agentMessage',
+        phase: 'commentary',
+        text: note,
+      })
       live.editorActivity('turn', 'review', false, {})
       await vi.advanceTimersByTimeAsync(6500)
       expect(request).toHaveBeenCalledTimes(1)
@@ -100,7 +108,7 @@ describe('delegated spoken lead', () => {
       live.playbackBoundary('assistant', 'progress')
       live.playbackBoundary('done', 'different')
       expect(request).toHaveBeenCalledTimes(1)
-      live.playbackBoundary('done', 'progress', 'I’m still checking the editor for you.')
+      live.playbackBoundary('done', 'progress', note)
       await Promise.resolve()
       expect(request).toHaveBeenCalledTimes(2)
       await live.finishTurn({ id: 'turn', status: 'completed', items: [final] })
@@ -122,6 +130,12 @@ describe('delegated spoken lead', () => {
     const { live, request } = setup()
     vi.useFakeTimers()
     try {
+      live.completedCommentary('turn', {
+        id: 'opening',
+        type: 'agentMessage',
+        phase: 'commentary',
+        text: 'I’ll review the receipt calculation.',
+      })
       live.editorActivity('turn', 'context', true, {
         result: { content: [{ text: '{"outcome":"ok"}' }] },
       })

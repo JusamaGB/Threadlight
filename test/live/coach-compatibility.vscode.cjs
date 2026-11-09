@@ -52,6 +52,26 @@ async function run(root, EditorCoach) {
   }
   try {
     const caps = await coach.run('compatibility', { action: 'capabilities' })
+    assert.equal(caps.connected, true)
+    if (version === '0.6.11') {
+      assert.ok(caps.actions.includes('trace') && caps.actions.includes('propose'))
+      assert.ok(!caps.actions.includes('ghost_practice'))
+      assert.match(
+        caps.ghostPracticeActivation,
+        /0\.6\.11.*0\.6\.14.*Developer: Reload Window.*Threadlight: Start Live Coaching/,
+      )
+      const source = await coach.run('compatibility', { action: 'context' })
+      assert.equal(source.file, 'receipt.py')
+      await assert.rejects(
+        coach.run('compatibility', {
+          action: 'ghost_practice',
+          snapshot: source.snapshot,
+          scope: 'file',
+          spoken: true,
+        }),
+        (error) => error.message === caps.ghostPracticeActivation,
+      )
+    }
     if (Number(version.split('.')[1]) < 6) {
       assert.ok(!caps.actions.includes('propose'))
       await assert.rejects(

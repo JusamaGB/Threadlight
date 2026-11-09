@@ -97,6 +97,11 @@ export async function checkMicPill(page, capture) {
       if (level) {
         const pixels = await readMotionFrame(pill.getByRole('img'))
         assert.ok(provider === 'claude' ? pixels.orange > pixels.blue : pixels.blue > pixels.orange)
+        assert.ok(
+          pixels.redLeft > 0 && pixels.redRight > 0,
+          'Both muted tips stay red during playback.',
+        )
+        if (provider === 'codex' && level === 0.25) await capture('muted-speaking-waveform')
         assert.equal(await pill.getAttribute('data-agent-working'), 'true')
         assert.match(
           await mutedWave.getAttribute('aria-description'),

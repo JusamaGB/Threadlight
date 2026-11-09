@@ -1,3 +1,4 @@
+import { SharedBrowserService } from './browser/service'
 import { AppControlService, controlSettingsRevision } from './appControl/service'
 import { ChangeWorkflowService } from './changeWorkflow'
 import { findGitRepository } from './sessions/gitRepository'
@@ -6,7 +7,12 @@ import { closeOwnedProcesses } from './agent/ownedProcess'
 import { controlWorkspaces } from './appControl/workspaces'
 import { observerActive } from './appControl/restartGuard'
 import { AppControlServer } from './appControl/server'
-import { openSpaceProvider, startSpaceChat } from './appControl/startSpaceChat'
+import {
+  openSpaceProvider,
+  spaceChatContext,
+  startSpaceChat,
+  type SpaceChatInput,
+} from './appControl/startSpaceChat'
 import { registerAppControl } from './appControl/integration'
 import { OwnedRequests } from './communication/ownedRequests'
 import { withManagedQuestions } from '../shared/managedQuestions'
@@ -1187,6 +1193,13 @@ async function start(): Promise<void> {
           ? codexRelays.send(id, text, context, receiptId)
           : relays.send(id, text, context, receiptId),
   })
+  new SharedBrowserService(
+    windows.panel,
+    join(app.getPath('userData'), 'browsers.json'),
+    (id) => !!changeSession(id),
+    () => stopMemory.server()?.connections.list() ?? [],
+    windows.videoSizing,
+  )
   memoryRuntime.current = stopMemory.server()?.runtime
   try {
     stopMemory.communication()?.importLegacy(messageStore.list())
@@ -1275,8 +1288,27 @@ async function start(): Promise<void> {
   app.once('will-quit', () => threadReads.close())
   let controlCaptureBusy = false
   let spaces: SpacesService | null = null
+  function spaceChatAccess() {
+    const memory = stopMemory.store(),
+      communication = stopMemory.communication()
+    if (!memory || !communication) return
+    return {
+      project: (id: string) => ({
+        ...memory.space(id),
+        root: memory.executionContext(id)?.root ?? '',
+      }),
+      workflow: (id: string) => communication.workflow(id),
+      enabled: (provider: SpaceChatInput['provider']) =>
+        provider === 'perplexity' ? accountChats.enabled('perplexity') : enabled(provider),
+      reserve: (id: string) => memory.reserveCommunication(id, () => {}),
+      save: (workflow: Parameters<typeof communication.configure>[0], revision: number) => {
+        communication.configure(workflow, revision, { id: 'human', kind: 'human' })
+      },
+    }
+  }
   const control: AppControlService = new AppControlService(
     {
+      coachSkillFile: join(app.getAppPath(), 'skills', 'threadlight-coach', 'SKILL.md'),
       pins,
       availability: (name) =>
         name === 'threadlight_editor_coach'
@@ -1329,30 +1361,45 @@ async function start(): Promise<void> {
         const result = await spaces?.request({ action: 'create_space', title, root, id })
         return result?.ok ? { ok: true, spaceId: result.spaceId } : { ok: false }
       },
+      spaceChatIssue: (spaceId, provider) => {
+        const access = spaceChatAccess()
+        return access
+          ? spaceChatContext({ spaceId, provider }, access).reason
+          : 'Shared Space communication unavailable.'
+      },
       startSpaceChat: async (input, actionId) => {
-        const memory = stopMemory.store(),
-          communication = stopMemory.communication()
-        if (!memory || !communication)
+        const access = spaceChatAccess()
+        if (!access)
           return { outcome: 'unavailable', reason: 'Shared Space communication unavailable.' }
         return startSpaceChat(input, actionId, {
-          project: (id) => ({ ...memory.space(id), root: memory.executionContext(id)?.root ?? '' }),
-          workflow: (id) => communication.workflow(id),
-          reserve: (id) => memory.reserveCommunication(id, () => {}),
-          enabled: (provider) =>
-            provider === 'claude' ? enabled('claude') : accountChats.enabled('perplexity'),
-          start: (request, root, id, beforeSend) =>
-            openSpaceProvider(request, root, id, beforeSend, {
-              claude: async () => (cli ??= await findClaudeCli(paths)),
-              paths,
-              chats: accountChats,
-            }),
-          save: (workflow, revision) => {
-            communication.configure(workflow, revision, { id: 'human', kind: 'human' })
-          },
+          ...access,
+          start: (request, root, id, beforeSend, checkCurrent) =>
+            openSpaceProvider(
+              request,
+              root,
+              id,
+              beforeSend,
+              {
+                claude: async () => (cli ??= await findClaudeCli(paths)),
+                paths,
+                chats: accountChats,
+                codex: async (cwd, operationId, model, beforeCreate) => {
+                  const result = await newChats.create(
+                    { provider: 'codex', cwd, operationId, model },
+                    beforeCreate,
+                  )
+                  if (result.sessionId) await codexSessions.refresh().catch(() => {})
+                  return result
+                },
+                sendCodex: (target, text, model) =>
+                  nativeCodexMessages.send(target, text, [], 'send', model),
+              },
+              checkCurrent,
+            ),
         })
       },
-      createChat: async (cwd, operationId) => {
-        const result = await newChats.create({ provider: 'codex', cwd, operationId })
+      createChat: async (cwd, operationId, model) => {
+        const result = await newChats.create({ provider: 'codex', cwd, operationId, model })
         if (result.ok || result.sessionId) await codexSessions.refresh()
         return result
       },
@@ -1384,23 +1431,26 @@ async function start(): Promise<void> {
     undefined,
     (id, event) => agent.coachEvent(id, event),
     (id) => agent.interruptProposal(id),
+    (id, text, signal) => agent.speakWalkthrough(id, text, signal),
   )
   app.once('will-quit', () => editorCoach.close())
-  const agent: AgentService = new AgentService({
-    editorCoach: (id, command) => editorCoach.run(id, command),
-    foregroundWindow: (id, inspect) => liveScreen.observe(id, inspect),
-    appControl,
-    announcements: {
-      next: (owner, since) => {
+  const announcements: NonNullable<ConstructorParameters<typeof AgentService>[0]['announcements']> =
+    {
+      next: (owner, since, questionsOnly) => {
         stopMemory.conversationFeed(owner)
-        return stopMemory.conversations()?.reserve(owner, since)
+        return stopMemory.conversations()?.reserve(owner, since, questionsOnly)
       },
       commit: (a) => {
         stopMemory.conversationFeed(a.owner)
         return stopMemory.conversations()?.commit(a) ?? false
       },
       settle: (owner, id, state) => stopMemory.conversations()?.settle(owner, id, state),
-    },
+    }
+  const agent: AgentService = new AgentService({
+    editorCoach: (id, command) => editorCoach.run(id, command),
+    foregroundWindow: (id, inspect) => liveScreen.observe(id, inspect),
+    appControl,
+    announcements,
     communication: (actor) => {
       const server = stopMemory.server()
       if (!server) throw new Error('Communication unavailable.')
@@ -1531,6 +1581,10 @@ async function start(): Promise<void> {
       () => sessions.snapshot.lookupSessions ?? sessions.snapshot.sessions,
       {
         threadReads,
+        announcements: {
+          ...announcements,
+          next: (owner, since) => announcements.next(owner, since, true),
+        },
         communication: (actor) => {
           const server = stopMemory.server()
           if (!server) throw new Error('Communication unavailable.')
@@ -1609,7 +1663,8 @@ async function start(): Promise<void> {
         !['announced', 'uncertain', 'suppressed', 'deferred'].includes(c.outcome ?? ''))
     )
       return { ok: false, reason: 'Invalid announcement command.' }
-    return agent.announcementCommand(
+    const voiceOwner = spaces && id === spaces.agent.activeLiveSession ? spaces.agent : agent
+    return voiceOwner.announcementCommand(
       id,
       command as import('./../shared/conversationEvents').AnnouncementCommand,
     )

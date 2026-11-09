@@ -19,6 +19,8 @@ function Keys({ entries }: { entries: [string, string][] }) {
 
 const editorKeys: Record<string, string> = {
   tab: 'Tab',
+  backspace: 'Backspace',
+  enter: 'Enter',
   escape: 'Esc',
   left: '←',
   right: '→',
@@ -111,14 +113,21 @@ export function Hotkeys({
               keybinding overrides apply.
             </p>
             <Keys
-              entries={contributes.keybindings.map((binding) => [
-                editorKeys[binding.key] ?? binding.key,
-                (binding.command === 'tab'
-                  ? 'Indent while tracing'
-                  : (contributes.commands.find((command) => command.command === binding.command)
-                      ?.title ?? binding.command)
-                ).replace('Threadlight: ', ''),
-              ])}
+              entries={contributes.keybindings
+                .filter(
+                  (binding, index, bindings) =>
+                    bindings.findIndex(
+                      (other) => other.command === binding.command && other.key === binding.key,
+                    ) === index,
+                )
+                .map((binding) => [
+                  editorKeys[binding.key] ?? binding.key,
+                  (binding.command === 'tab'
+                    ? 'Indent while tracing'
+                    : (contributes.commands.find((command) => command.command === binding.command)
+                        ?.title ?? binding.command)
+                  ).replace('Threadlight: ', ''),
+                ])}
             />
           </>
         )}

@@ -37,38 +37,14 @@ export function spokenLead(text: string): string | null {
   return null
 }
 
-/** A bounded vocabulary of read targets keeps an instruction embedded in an
- * otherwise plausible status from being spoken before the editor receipt. */
-function editorRead(clause: string): boolean {
-  const action =
-    /^(?:check(?:ing)?|read(?:ing)?|review(?:ing)?|inspect(?:ing)?|confirm(?:ing)?|verify(?:ing)?|look(?:ing)? (?:at|into)) (.+)$/i.exec(
-      clause,
-    )
-  if (!action) return false
-  const target = action[1]!
-  const state =
-    /^(?:if|whether) (.+?) (?:is|are) (?:available|open|ready|connected|visible|accessible|loaded)(?: again| now)?$/i.exec(
-      target,
-    )
-  return /^(?:(?:the|this|that|my|your|our|its|current|active|open|saved|unsaved|selected|highlighted|visible|source|editor|VS Code) )*(?:VS Code|coach|editor|connection|status|context|file|code|buffer|document|selection|function|line|window|screen|proposal|guide|workspace|example)(?: again| now| first)?$/i.test(
-    state?.[1] ?? target,
+// Tool status stays visual. The speech source is the assistant's own prose.
+export function commentarySpeech(text: string): string {
+  const prose = spokenProse(text)
+  return /^(?:just a (?:sec(?:ond)?|moment)|I[’']m still checking the editor for you)[.!…]?$/i.test(
+    prose,
   )
-}
-
-export function progressAcknowledgment(raw: string): string | null {
-  const text = raw.trim()
-  if (!text || text.length > 400 || /[\r\n`{}<>[\]()_#*=|\\?;:"“”—]/.test(text)) return null
-  const sentences = text.split(/(?<=[.!])\s+/).map((s) => s.replace(/[.!]$/, ''))
-  const continuity =
-    /^I (?:still )?(?:have|remember) (?:the|this|that|our|your) (?:code change|example|request|issue|question)(?: we (?:were (?:preparing|discussing|reviewing|working on)|discussed|reviewed)| you (?:shared|mentioned))?$/i
-  if (sentences.length > 1 && continuity.test(sentences[0]!)) sentences.shift()
-  const intent =
-    /^(?:I(?:['’]ll| will|['’]m| am) |Let me )(?:(?:first|now|quickly) |going to )?(.+)$/i
-  const allReads = sentences.every((sentence) => {
-    const body = intent.exec(sentence)?.[1]
-    return !!body && body.split(/\s+and\s+/i).every(editorRead)
-  })
-  return allReads ? text : null
+    ? ''
+    : prose
 }
 
 export function completedSpeech(text: string): string {

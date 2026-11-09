@@ -50,8 +50,13 @@ checks: try {
       for (const first of ['dot', 'panel']) {
         const pair = new windows.constructor()
         pair.setClaudeRunning(true)
+        pair.setOpenMicLive(true)
+        const sender = pair.dot.webContents
         pair.openPanel({ focus: false })
         pair[first].destroy()
+        // Renderer resize messages already in flight can arrive during native teardown.
+        pair.setSpokenReplySize(sender, 296, 180)
+        if (pair.getSpokenReply(sender) !== null) throw new Error('Reply survived teardown')
         pair.closeOnPointerLeave()
         pair.closePanel()
         await new Promise((done) => setTimeout(done, 50))
@@ -59,7 +64,7 @@ checks: try {
       }
     })
     console.log(
-      'PASS: late pointer-leave, pointer polling and panel close after either real Electron window is destroyed.',
+      'PASS: late reply reads, resizes, pointer-leave, polling and panel close after either real Electron window is destroyed.',
     )
     break checks
   }
@@ -70,6 +75,213 @@ checks: try {
   await panel.locator('[data-card]').waitFor({ state: 'attached' })
   for (const page of pages) page.on('pageerror', (error) => failures.push(error.message))
   const pause = (ms) => new Promise((done) => setTimeout(done, ms))
+  if (process.env.THREADLIGHT_UI_FOCUS === 'live-pill-fire') {
+    await panel.evaluate(() => window.threadlight.setOpenMicLive(true))
+    const pill = dot.getByRole('group', { name: 'Microphone is open' })
+    await pill.waitFor()
+    assert.equal(
+      await pill.evaluate((el) => getComputedStyle(el).backgroundColor),
+      'rgb(63, 64, 66)',
+    )
+    const opened = app.waitForEvent('window')
+    await app.evaluate(() => {
+      globalThis.hoverProof.move(-200, -200)
+      globalThis.hoverProof.windows.setAgentAttention('codex')
+    })
+    await dot.waitForFunction(() => document.querySelector('[aria-description*="Input needed"]'))
+    const firePage = await opened
+    const surface = firePage.locator('[data-pill-fire]')
+    await surface.waitFor()
+    const pixelCounts = () =>
+      surface.evaluate((canvas) => {
+        const { width, height } = canvas
+        const data = canvas.getContext('2d').getImageData(0, 0, width, height).data
+        const counts = { left: 0, right: 0, base: 0 }
+        for (let y = 0; y < height; y++)
+          for (let x = 0; x < width; x++) {
+            const offset = 4 * (y * width + x)
+            if (
+              data[offset] < 180 ||
+              data[offset + 3] < 120 ||
+              data[offset] < data[offset + 2] + 80
+            )
+              continue
+            if (y < height * 0.65 && x < width * 0.2) counts.left++
+            if (y < height * 0.65 && x > width * 0.8) counts.right++
+            if (y > height * 0.65 && x > width * 0.3 && x < width * 0.7) counts.base++
+          }
+        return counts
+      })
+    await firePage.emulateMedia({ reducedMotion: 'reduce' })
+    await pause(150)
+    const pixels = await pixelCounts()
+    assert.ok(
+      Object.values(pixels).every((n) => n > 0),
+      JSON.stringify(pixels),
+    )
+    const frame = () => surface.evaluate((canvas) => canvas.toDataURL())
+    const still = await frame()
+    await pause(150)
+    assert.equal(await frame(), still)
+    await dot.emulateMedia({ reducedMotion: 'reduce' })
+    const verifyRim = async (name) => {
+      const glass = await pill.boundingBox()
+      const sample = await app.evaluate(async ({ BrowserWindow }, glass) => {
+        const { windows } = globalThis.hoverProof
+        const dot = windows.dot
+        const fire = BrowserWindow.getAllWindows().find((win) =>
+          win.webContents.getURL().includes('view=attention'),
+        )
+        const frame = dot.getBounds(),
+          body = {
+            x: frame.x + glass.x,
+            y: frame.y + glass.y,
+            width: glass.width,
+            height: glass.height,
+          },
+          overlay = fire.getBounds(),
+          motion = windows.attentionMotion
+        const image = await dot.capturePage(glass)
+        const { width, height } = image.getSize()
+        const pixels = image.toBitmap()
+        const rimRows = Array.from({ length: 4 }, (_, i) => {
+          const offset = 4 * ((height - 1 - i) * width + Math.floor(width / 2))
+          return [pixels[offset + 2], pixels[offset + 1], pixels[offset], pixels[offset + 3]]
+        })
+        const pixel = (x, y) => {
+          const offset = 4 * (Math.floor(y) * width + Math.floor(x))
+          return [pixels[offset + 2], pixels[offset + 1], pixels[offset]]
+        }
+        const tall = body.height === 256
+        const corners = tall ? [6, width - 7].map((x) => pixel(x, height - 35)) : []
+        let grey = 0,
+          total = 0
+        if (tall) {
+          // Text can cover individual samples, so inspect a band across the reading area.
+          for (let y = Math.floor(height * 0.45); y < height * 0.55; y++)
+            for (let x = Math.floor(width * 0.25); x < width * 0.75; x++) {
+              const [r, g, b] = pixel(x, y)
+              if (r === 63 && g === 64 && b === 66) grey++
+              total++
+            }
+        }
+        return {
+          body,
+          overlay,
+          x: motion.x,
+          y: motion.y,
+          rimRows,
+          corners,
+          greyCentre: total ? grey / total : null,
+        }
+      }, glass)
+      const { body, overlay, x, y, rimRows } = sample
+      assert.equal(overlay.x + x, body.x + body.width / 2)
+      assert.equal(overlay.y + y + 12, body.y + body.height)
+      assert.ok(
+        rimRows.every(([r, g, b, a]) => r > g + 30 && g > b && a > 245),
+        JSON.stringify(sample),
+      )
+      assert.ok(Object.values(await pixelCounts()).every((n) => n > 0))
+      if (sample.greyCentre !== null) {
+        assert.ok(sample.greyCentre > 0.55, JSON.stringify(sample))
+        assert.ok(
+          sample.corners.every(([r, g, b]) => r > g + 20 && g > b),
+          JSON.stringify(sample),
+        )
+      }
+      const directory = process.env.THREADLIGHT_SCREENSHOTS
+      if (directory) {
+        mkdirSync(directory, { recursive: true })
+        const shot = (page, part) =>
+          page.screenshot({ path: join(directory, `${name}-${part}.png`), omitBackground: true })
+        await shot(dot, 'body')
+        await shot(firePage, 'fire')
+        writeFileSync(join(directory, `${name}.json`), JSON.stringify(sample))
+      }
+      return body
+    }
+    await verifyRim('compact')
+    await dot.emulateMedia({ reducedMotion: 'no-preference' })
+    const publish = (text) =>
+      panel.evaluate(
+        (value) => window.threadlight.publishSpokenReply(value),
+        text ? { id: 'fire-resize', text, blocks: [] } : null,
+      )
+    const question = 'Which build should I use for the next test?'
+    await publish(question)
+    const reply = pill.getByRole('region', { name: 'Latest spoken Agent reply' })
+    await reply.waitFor()
+    await pause(900)
+    const intermediate = await verifyRim('wrapped')
+    assert.ok(intermediate.height > 24 && intermediate.height < 256)
+    await publish(
+      [
+        question +
+          ' The current build gives us a baseline. The updated build includes the change we want to try.',
+        'I can run the same steps against either build and save the screenshots for comparison.',
+        'If you choose the updated build, I’ll start with the compact view, open a short reply, then expand a longer one to its full height.',
+        'I’ll also scroll through the reply, dismiss it with the close button, and check that the waveform returns to its original size.',
+        'Which one would you like me to start with?',
+      ].join('\n\n'),
+    )
+    await dot.waitForFunction(() => document.querySelector('[data-unfolded]')?.clientHeight === 256)
+    const maximum = await verifyRim('maximum')
+    assert.deepEqual([maximum.width, maximum.height], [296, 256])
+    await reply.focus()
+    await reply.press('End')
+    await dot.waitForFunction(
+      () => document.querySelector('[aria-label="Latest spoken Agent reply"]').scrollTop > 0,
+    )
+    await dot.waitForFunction(() => {
+      const close = document
+        .querySelector('[aria-label="Close spoken reply"]')
+        .getBoundingClientRect()
+      const reply = document
+        .querySelector('[aria-label="Latest spoken Agent reply"]')
+        .getBoundingClientRect()
+      return close.top >= 0 && close.bottom <= reply.top
+    })
+    await publish(null)
+    await dot.waitForFunction(
+      () =>
+        document.querySelector('[data-needs-input]')?.clientWidth === 92 &&
+        document.querySelector('[data-needs-input]')?.clientHeight === 24,
+    )
+    await verifyRim('collapsed')
+    await dot.emulateMedia({ reducedMotion: 'no-preference' })
+    await firePage.emulateMedia({ reducedMotion: 'no-preference' })
+    await pause(500)
+    assert.notEqual(await frame(), still)
+    await app.evaluate(() => globalThis.hoverProof.windows.setAgentAttention(null))
+    await surface.waitFor({ state: 'detached' })
+    await pause(650)
+    await app.evaluate(() => globalThis.hoverProof.windows.setAgentAttention('codex'))
+    const wash = pill.locator('> span[aria-hidden]')
+    await dot.waitForFunction(() => {
+      const heat = document
+        .querySelector('[data-needs-input] > span[aria-hidden]')
+        ?.getBoundingClientRect()
+      return heat && heat.height > 1 && heat.height < 20
+    })
+    const rising = await wash.boundingBox()
+    await pause(350)
+    const later = await wash.boundingBox()
+    const glass = await pill.boundingBox()
+    assert.ok(later.height > rising.height)
+    for (const frame of [rising, later])
+      assert.ok(Math.abs(frame.y + frame.height - glass.y - glass.height) < 0.1)
+    await app.evaluate(() => globalThis.hoverProof.windows.setAgentAttention(null))
+    await surface.waitFor({ state: 'detached' })
+    assert.equal(await pill.getByRole('button').getAttribute('aria-description'), 'Microphone open')
+    await pill.getByRole('button').press('Enter')
+    assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.isVisible()), true)
+    assert.deepEqual(failures, [])
+    console.log(
+      'PASS: live fire and orange bottom-border pixels on compact, wrapped, maximum and collapsed pills; scrolling, reduced motion, cooldown and keyboard opening.',
+    )
+    break checks
+  }
   if (process.env.THREADLIGHT_UI_FOCUS === 'spoken-pill-motion') {
     await panel.evaluate(() => window.threadlight.setOpenMicLive(true))
     await dot.getByRole('group', { name: 'Microphone is open' }).waitFor()
@@ -210,12 +422,39 @@ checks: try {
         JSON.stringify({ actual, card, origin, cx, cy }),
       )
     }
+    await panel.getByRole('separator', { name: 'Resize Agent reading area' }).press('End')
+    await pause(250)
+    const back = panel.getByRole('button', { name: 'Back to sessions', exact: true })
+    const backBox = await back.boundingBox()
+    const pointer = await app.evaluate((_electron, button) => {
+      const h = globalThis.hoverProof,
+        b = h.windows.panel.getBounds()
+      const x = Math.round(b.x + button.x + button.width / 2),
+        y = Math.round(b.y + button.y + button.height / 2)
+      h.move(x, y)
+      return { x, y }
+    }, backBox)
+    await back.click()
+    await panel.locator('header [data-thread-view]').waitFor()
+    await pause(900)
+    const destination = await app.evaluate(() => {
+      const panel = globalThis.hoverProof.windows.panel
+      return { visible: panel.isVisible(), bounds: panel.getBounds() }
+    })
+    assert.ok(pointer.y < destination.bounds.y, JSON.stringify({ pointer, destination }))
+    assert.ok(destination.visible, 'Back keeps the shorter sessions page open')
+    await app.evaluate(() => {
+      const h = globalThis.hoverProof,
+        b = h.windows.panel.getBounds()
+      h.move(b.x + 52, b.y + 14)
+    })
+    await pause(80)
     await app.evaluate(() => globalThis.hoverProof.move(-200, -200))
     await dot.waitForFunction(() => !document.hidden)
     assert.equal(await app.evaluate(() => globalThis.hoverProof.windows.panel.isVisible()), false)
     assert.deepEqual(failures, [])
     console.log(
-      'PASS: stationary floating waveform opened one real Agent panel across four 550ms observations; centered renderer card stayed interactive, and intentional departure collapsed it.',
+      'PASS: hovered Live waveform opened the centred Agent; clicking Back kept the smaller sessions page open, then re-entry and departure collapsed it.',
     )
     break checks
   }

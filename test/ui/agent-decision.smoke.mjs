@@ -76,7 +76,14 @@ export async function checkAgentDecision(page, capture) {
     await page.waitForFunction(() => {
       const card = document.querySelector('[data-card-id="provider-approval"]')
       const log = card.closest('[class*="_agentLog_"]')
-      return Math.abs(card.getBoundingClientRect().top - log.getBoundingClientRect().top) < 3
+      const bounds = card.getBoundingClientRect()
+      const reader = log.getBoundingClientRect()
+      return (
+        Math.abs(bounds.top - reader.top) < 3 ||
+        (log.scrollHeight - log.clientHeight - log.scrollTop < 3 &&
+          bounds.top >= reader.top &&
+          bounds.bottom <= reader.bottom + 1)
+      )
     })
     const details = request.getByLabel('Request details', { exact: true })
     assert.ok((await details.innerText()).includes('Space: Provider Chat Acceptance'))
@@ -114,6 +121,67 @@ export async function checkAgentDecision(page, capture) {
       },
     )
   }
+  await page.setViewportSize({ width: 252, height: 460 })
+  await page.evaluate(() => {
+    const source = 'codex:decision-fixture'
+    window.proof.agent({ sessionId: 'decision-fixture' })
+    window.proof.decisionCards = [
+      {
+        id: 'colour',
+        kind: 'native',
+        state: 'pending',
+        source,
+        title: source,
+        body: '',
+        at: Date.now(),
+        revision: 1,
+        generation: 'colour',
+        speech: 'announced',
+        request: {
+          id: 'colour',
+          generation: 'colour',
+          target: source,
+          title: 'Codex needs your input',
+          kind: 'question',
+          nativeKind: 'questions',
+          questions: [
+            {
+              id: 'colour',
+              question: 'Which colour do you want?',
+              other: true,
+              options: [{ label: 'Red' }, { label: 'Blue' }],
+            },
+          ],
+        },
+      },
+    ]
+    window.proof.emit('onCommunication')
+  })
+  const question = page.locator('[data-card-id="colour"]')
+  await question.getByRole('radio', { name: 'Red' }).waitFor()
+  assert.equal(await question.getByText('Codex', { exact: true }).count(), 1)
+  assert.equal(await question.getByText('Needs you', { exact: true }).count(), 1)
+  assert.equal(await question.getByText('codex:decision-fixture', { exact: true }).count(), 0)
+  assert.equal(await question.locator('details').count(), 0)
+  await page.waitForFunction(
+    () =>
+      !Array.from(document.querySelectorAll('button')).some((b) => b.textContent === 'Needs input'),
+  )
+  assert.equal(await question.evaluate((el) => window.getComputedStyle(el).borderLeftWidth), '0px')
+  const answer = question.getByPlaceholder('Your answer…')
+  const frame = await question.locator('[data-agent-request]').boundingBox()
+  const field = await answer.boundingBox()
+  const left = field.x - frame.x,
+    right = frame.x + frame.width - field.x - field.width
+  assert.ok(Math.abs(left - right) < 2 && left >= 8, JSON.stringify({ left, right }))
+  await question.getByRole('button', { name: 'Submit' }).scrollIntoViewIfNeeded()
+  await capture('agent-colour-question')
+  await question.getByRole('radio', { name: 'Blue' }).check()
+  await question.getByRole('button', { name: 'Submit' }).click()
+  assert.deepEqual(
+    await page.evaluate(() => window.proof.calls.filter((c) => c[0] === 'decision').at(-1)[1]),
+    { action: 'answer', answers: { colour: 'Blue' } },
+  )
   console.log(
     'PASS: named provider decision summaries, compact controls, keyboard-readable details and visible pending cards across later Agent replies; no provider sends.',
   )

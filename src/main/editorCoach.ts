@@ -6,12 +6,21 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { guideEvent, type CoachCommand, type GuideEvent } from '../shared/editorCoach'
+import { isKeyDown, walkthroughPointer } from './keyState'
 
 const descriptor = z.object({ id: z.string().uuid(), token: z.string().regex(/^[a-f0-9]{64}$/) })
 const disconnected =
   'In desktop VS Code, run “Threadlight: Start Live Coaching” in the window you want to share.'
 const reviewUpgrade =
   'This VS Code window is running a companion without whole-file review. Zero lines reviewed. Use Live Coach 0.3.0 or newer, then run Developer: Reload Window and Threadlight: Start Live Coaching in that window after your session ends.'
+function ghostUpgrade(version?: string) {
+  const loaded = version ? 'Live Coach ' + version : 'an older Live Coach'
+  return (
+    'The connected VS Code window is running ' +
+    loaded +
+    '. Narrated ghost practice requires Live Coach 0.6.14 or newer. With the update installed, run Developer: Reload Window, then Threadlight: Start Live Coaching in that window.'
+  )
+}
 type Session = {
   id: string
   address: string
@@ -21,7 +30,16 @@ type Session = {
   traceSupported?: boolean
   lifecycle?: boolean
   verifiedGuideEdits?: boolean
+  sourceGhostPractice?: boolean
+  gutterWalkthrough?: boolean
   delivery: Promise<void>
+  walkthrough?: GuideEvent
+  ghostSpeech?: { token: string; controller: AbortController }
+  walkthroughSpeech?: AbortController
+  mouseTimer?: ReturnType<typeof setTimeout>
+  bodyPress?: { x: number; y: number; at: number }
+  bodyHeld?: boolean
+  bodyTimer?: ReturnType<typeof setTimeout>
   visibleProposal?: string
   proposalToken?: string
   proposalSpeech?: Promise<void>
@@ -46,6 +64,13 @@ export class EditorCoach {
     private file = join(homedir(), '.threadlight', 'editor-coach.json'),
     private notify?: (id: string, event: GuideEvent) => Promise<void>,
     private interruptProposal?: (id: string) => void,
+    private speakWalkthrough?: (id: string, text: string, signal: AbortSignal) => Promise<void>,
+    private mouseButtonDown = (): boolean | null => {
+      const left = isKeyDown(1),
+        right = isKeyDown(2)
+      return left === null || right === null ? null : left || right
+    },
+    private pointer = walkthroughPointer,
   ) {}
   availability() {
     if (!this.current()) return { available: false, reason: 'Start the foreground GPT Live Agent.' }
@@ -56,9 +81,15 @@ export class EditorCoach {
   }
   close() {
     const old = this.session
+    clearTimeout(old?.mouseTimer)
+    clearTimeout(old?.bodyTimer)
     if (old?.plan?.event && this.current() === old.id)
       this.deliver(old, { ...old.plan.event, status: 'disconnected' })
     if (old?.proposalToken) this.interruptProposal?.(old.id)
+    old?.ghostSpeech?.controller.abort()
+    old?.walkthroughSpeech?.abort()
+    if (old?.walkthrough && this.current() === old.id)
+      this.deliver(old, { ...old.walkthrough, status: 'disconnected' })
     old?.socket.destroy()
     this.session = undefined
     for (const request of this.pending.values())
@@ -130,6 +161,95 @@ export class EditorCoach {
               })
             }
           }
+          if (msg.ghostVoice && this.current() === session.id) {
+            const { token, explanation } = z
+              .object({
+                token: z.uuid(),
+                explanation: z.string().trim().min(1).max(400).optional(),
+              })
+              .parse(msg.ghostVoice)
+            if (explanation || token === session.ghostSpeech?.token) {
+              session.ghostSpeech?.controller.abort()
+              session.ghostSpeech = undefined
+            }
+            if (explanation) {
+              const controller = new AbortController()
+              session.ghostSpeech = { token, controller }
+              const failed = () => {
+                if (
+                  this.session === session &&
+                  this.current() === session.id &&
+                  !controller.signal.aborted
+                )
+                  session.socket.write(JSON.stringify({ ghostSpeechFailed: token }) + '\n')
+              }
+              if (this.speakWalkthrough)
+                void this.speakWalkthrough(session.id, explanation, controller.signal).catch(failed)
+              else failed()
+            }
+          }
+          if (
+            msg.walkthroughPointer &&
+            this.current() === session.id &&
+            session.walkthrough?.plan === msg.walkthroughPointer.plan
+          ) {
+            this.classifyWalkthroughPointer(session, msg.walkthroughPointer)
+          }
+          if (msg.walkthroughEvent && this.current() === session.id) {
+            const event = guideEvent.parse({ ...msg.walkthroughEvent, needsNotes: msg.needsNotes })
+            const previous = session.walkthrough
+            if (
+              previous?.plan !== event.plan ||
+              ['completed', 'cancelled', 'ended'].includes(event.status)
+            ) {
+              clearTimeout(session.bodyTimer)
+              session.bodyHeld = false
+              session.bodyPress = undefined
+            }
+            if (previous?.token !== event.token || event.status !== 'shown') {
+              session.walkthroughSpeech?.abort()
+              session.walkthroughSpeech = undefined
+            }
+            session.walkthrough = event
+            clearTimeout(session.mouseTimer)
+            if (msg.walkthroughMouse === event.token) this.waitForMouseRelease(session, event)
+            if (
+              previous?.plan !== event.plan ||
+              event.needsNotes ||
+              ['completed', 'cancelled', 'ended'].includes(event.status)
+            )
+              this.deliver(session, event)
+            if (
+              event.status === 'shown' &&
+              !session.walkthroughSpeech &&
+              typeof msg.explanation === 'string'
+            ) {
+              const controller = new AbortController()
+              session.walkthroughSpeech = controller
+              const receipt = (failed: boolean) => {
+                if (
+                  !controller.signal.aborted &&
+                  this.session === session &&
+                  this.current() === session.id &&
+                  session.walkthrough === event
+                )
+                  session.socket.write(
+                    JSON.stringify({ walkthroughDone: event.token, failed }) + '\n',
+                  )
+              }
+              const speech = this.speakWalkthrough?.(
+                session.id,
+                msg.explanation.slice(0, 400),
+                controller.signal,
+              )
+              if (speech)
+                void speech.then(
+                  () => receipt(false),
+                  () => receipt(true),
+                )
+              else receipt(true)
+            }
+          }
           if (msg.guideEvent && session.plan && this.current() === session.id) {
             const event = guideEvent.parse(msg.guideEvent)
             if (event.plan === session.plan.id) {
@@ -161,7 +281,11 @@ export class EditorCoach {
     })
     socket.on('error', () => this.closeIfCurrent(session))
     socket.on('close', () => this.closeIfCurrent(session))
-    const hello = await this.request(session, { action: 'hello', token: address.token })
+    const hello = await this.request(session, {
+      action: 'hello',
+      token: address.token,
+      gutterWalkthrough: true,
+    })
     // Through 0.3.1 all versions replied true, including versions that could review.
     if (hello !== true) {
       const info = z
@@ -169,6 +293,8 @@ export class EditorCoach {
           version: z.string().optional(),
           actions: z.array(z.string()),
           verifiedGuideEdits: z.boolean().optional(),
+          sourceGhostPractice: z.boolean().optional(),
+          gutterWalkthrough: z.boolean().optional(),
         })
         .parse(hello)
       session.actions = info.actions
@@ -176,12 +302,57 @@ export class EditorCoach {
       session.reviewSupported = info.actions.includes('review')
       session.lifecycle = info.actions.includes('progress')
       session.verifiedGuideEdits = info.verifiedGuideEdits === true
+      session.sourceGhostPractice = info.sourceGhostPractice === true
+      session.gutterWalkthrough = info.gutterWalkthrough === true
       session.traceSupported = info.actions.includes('trace')
     }
     return session
   }
   private closeIfCurrent(session: Session) {
     if (this.session === session) this.close()
+  }
+  private waitForMouseRelease(session: Session, event: GuideEvent) {
+    const check = () => {
+      if (
+        this.session !== session ||
+        this.current() !== session.id ||
+        session.walkthrough !== event
+      )
+        return
+      const held = this.mouseButtonDown()
+      if (held) session.mouseTimer = setTimeout(check, 35)
+      else
+        session.socket.write(
+          JSON.stringify({ walkthroughRelease: event.token, unavailable: held === null }) + '\n',
+        )
+    }
+    // Allow the editor's final selection event to arrive before reading the gesture.
+    session.mouseTimer = setTimeout(check, 60)
+  }
+  private classifyWalkthroughPointer(session: Session, gesture: { body?: boolean; id?: string }) {
+    const point = this.pointer()
+    if (gesture.body) {
+      clearTimeout(session.bodyTimer)
+      session.bodyPress = point ? { x: point.x, y: point.y, at: Date.now() } : undefined
+      // A drag that starts in the code remains a text selection even if it
+      // later reaches column zero and has the shape of a whole-line selection.
+      const check = () => {
+        session.bodyHeld = this.mouseButtonDown() === true
+        if (session.bodyHeld && session === this.session) session.bodyTimer = setTimeout(check, 20)
+      }
+      check()
+      return
+    }
+    const recent = session.bodyPress
+    const repeatedBodyClick =
+      point &&
+      recent &&
+      recent.x === point.x &&
+      recent.y === point.y &&
+      Date.now() - recent.at < 1000
+    const gutter =
+      point?.arrow === true && !repeatedBodyClick && !(session.bodyHeld && this.mouseButtonDown())
+    session.socket.write(JSON.stringify({ walkthroughGutter: gesture.id, gutter }) + '\n')
   }
   private async request(session: Session, command: unknown): Promise<unknown> {
     const id = randomUUID()
@@ -201,6 +372,7 @@ export class EditorCoach {
   private deliver(session: Session, event: GuideEvent) {
     session.delivery = session.delivery
       .then(async () => {
+        if (event.walkthrough && event.needsNotes && session.walkthrough !== event) return
         if (event.origin === 'verified_edit') {
           if (this.session !== session || session.plan?.event?.token !== event.token) return
           const visible = (await this.request(session, { action: 'guide_status' })) as {
@@ -214,20 +386,29 @@ export class EditorCoach {
         )
           await this.notify?.(
             session.id,
-            event.origin === 'verified_edit'
+            event.walkthrough
               ? {
                   ...event,
-                  isCurrentSource: () =>
-                    this.session === session &&
-                    this.current() === session.id &&
-                    session.plan?.event === event,
+                  isCurrentSource: () => this.session === session && session.walkthrough === event,
                 }
-              : event,
+              : event.origin === 'verified_edit'
+                ? {
+                    ...event,
+                    isCurrentSource: () =>
+                      this.session === session &&
+                      this.current() === session.id &&
+                      session.plan?.event === event,
+                  }
+                : event,
           )
       })
       .catch(() => {
-        if (this.session === session)
-          session.socket.write(JSON.stringify({ guideDeliveryFailed: event.token }) + '\n')
+        if (this.session === session) {
+          const failure = event.walkthrough
+            ? { walkthroughDone: event.token, failed: true }
+            : { guideDeliveryFailed: event.token }
+          session.socket.write(JSON.stringify(failure) + '\n')
+        }
       })
   }
   private async narrate(session: Session, planId: unknown, index: unknown, voice = false) {
@@ -261,14 +442,60 @@ export class EditorCoach {
         throw new Error(
           'Voice progression and guide refresh require Live Coach 0.4.0 in this window. Reload after the session, then start coaching again.',
         )
-      if (command.action === 'capabilities' && !session.actions?.includes('capabilities'))
-        return { version: session.version ?? 'legacy', actions: session.actions ?? [] }
+      if (command.action === 'capabilities') {
+        const caps = session.actions?.includes('capabilities')
+          ? z
+              .object({ version: z.string(), actions: z.array(z.string()) })
+              .passthrough()
+              .parse(await this.request(session, command))
+          : { version: session.version ?? 'legacy', actions: session.actions ?? [] }
+        if (this.session !== session || this.current() !== id) throw Error('Live has closed.')
+        return {
+          ...caps,
+          connected: true,
+          ...(!caps.actions.includes('ghost_practice') && {
+            ghostPracticeActivation: ghostUpgrade(session.version),
+          }),
+        }
+      }
       if (
         ['propose', 'proposal_status', 'proposal_next'].includes(command.action) &&
         !session.actions?.includes(command.action)
       )
         throw new Error(
           'This window needs Live Coach 0.6.0 for selection-free proposals. Reload after this session, then start coaching again.',
+        )
+      if (command.action === 'proposal_line' && !session.actions?.includes(command.action))
+        throw new Error(
+          'This window needs Live Coach 0.6.12 for proposal line highlights. You can discuss the matching proposed edits now and reload the updated companion after this session.',
+        )
+      if (
+        (command.action.startsWith('walkthrough') ||
+          (command.action === 'context' && command.line !== undefined)) &&
+        !session.actions?.includes('walkthrough')
+      )
+        throw new Error(
+          'File walkthroughs from any line require Live Coach 0.6.13. Reload the updated VS Code window and start coaching again.',
+        )
+      if (
+        (command.action.startsWith('ghost_practice') ||
+          (command.action === 'trace' && command.spoken)) &&
+        !session.actions?.includes(command.action === 'trace' ? 'ghost_practice' : command.action)
+      )
+        throw new Error(ghostUpgrade(session.version))
+      if (
+        command.action === 'ghost_practice' &&
+        !session.sourceGhostPractice &&
+        (command.location !== 'copy' ||
+          command.endLine !== undefined ||
+          (command.line !== undefined && command.line > 1))
+      )
+        throw Error(
+          'Practising a source range or tracing in the current file requires Live Coach 0.6.15 or newer. Reload the updated VS Code window, then run Threadlight: Start Live Coaching.',
+        )
+      if (command.action === 'walkthrough' && !session.gutterWalkthrough)
+        throw Error(
+          'Gutter-only walkthroughs and automatic Python starting lines require Live Coach 0.6.17 or newer. Run Developer: Reload Window, then Threadlight: Start Live Coaching in the updated window.',
         )
       if (command.action === 'trace' && !session.traceSupported)
         throw new Error(

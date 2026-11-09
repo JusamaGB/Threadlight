@@ -20,6 +20,8 @@ export async function readMotionFrame(locator, includeNeutral = false) {
       const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
       let count = 0,
         orange = 0,
+        redLeft = 0,
+        redRight = 0,
         blue = 0,
         hash = 0,
         left = canvas.width,
@@ -34,6 +36,10 @@ export async function readMotionFrame(locator, includeNeutral = false) {
           const min = Math.min(pixels[i], pixels[i + 1], pixels[i + 2])
           if (max > 50 && (includeNeutral || max - min > 18)) {
             count++
+            if (pixels[i] > 1.4 * Math.max(pixels[i + 1], pixels[i + 2])) {
+              if (x < canvas.width * 0.07) redLeft++
+              if (x >= canvas.width * 0.93) redRight++
+            }
             if (pixels[i] > pixels[i + 2] * 1.25) orange++
             if (pixels[i + 2] > pixels[i] * 1.1 && pixels[i + 2] > pixels[i + 1] * 1.05) blue++
             left = Math.min(left, x)
@@ -46,6 +52,8 @@ export async function readMotionFrame(locator, includeNeutral = false) {
       return {
         count,
         orange,
+        redLeft,
+        redRight,
         blue,
         hash,
         span: (right - left) / canvas.width,

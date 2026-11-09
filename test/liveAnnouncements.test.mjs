@@ -8,7 +8,7 @@ function fixture() {
   const scheduler = new LiveAnnouncements(
     async (command) => {
       calls.push(command)
-      if (command.action === 'next' && available) {
+      if (command.action === 'next' && available && !command.questionsOnly) {
         available = false
         return {
           ok: true,
@@ -33,7 +33,7 @@ function fixture() {
 it('waits for real native boundaries and 800ms, coexists with user speech and never starts when muted', async () => {
   const f = fixture()
   await f.scheduler.tick(true, 0)
-  expect(f.calls).toEqual([])
+  expect(f.calls.splice(0)).toEqual([{ action: 'next', questionsOnly: true }])
   f.event('turn.created')
   f.advance()
   await f.scheduler.tick(true, 0)
@@ -53,6 +53,31 @@ it('waits for real native boundaries and 800ms, coexists with user speech and ne
   expect(f.calls.map((c) => c.action)).toEqual(['next', 'speak'])
   f.scheduler.close()
 })
+it('asks an actionable question during initial silence or mic mute without waiting for another turn', async () => {
+  const calls = []
+  let now = 10000
+  const text = 'Which colour do you want? Red or Blue?'
+  const scheduler = new LiveAnnouncements(
+    async (command) => {
+      calls.push(command)
+      return command.action === 'next'
+        ? { ok: true, announcement: { question: true, id: 'colour', text } }
+        : { ok: true }
+    },
+    () => now,
+  )
+  await scheduler.tick(true, 0, true)
+  expect(calls).toEqual([
+    { action: 'next', questionsOnly: true },
+    { action: 'speak', id: 'colour' },
+  ])
+  scheduler.event({ type: 'turn.created', turn: { id: 'voice', role: 'assistant' } })
+  await scheduler.tick(true, 0.1, true)
+  scheduler.event({ type: 'turn.done', turn: { id: 'voice', transcript: text } })
+  now += 900
+  await scheduler.tick(true, 0, true)
+  expect(calls.at(-1)).toEqual({ action: 'settle', id: 'colour', outcome: 'announced' })
+})
 it('requires matching native completion AND observed playback followed by silence', async () => {
   const f = fixture()
   f.event('turn.done')
@@ -67,6 +92,38 @@ it('requires matching native completion AND observed playback followed by silenc
   f.advance()
   await f.scheduler.tick(true, 0)
   expect(f.calls.at(-1)).toEqual({ action: 'settle', id: 'a', outcome: 'announced' })
+})
+it('speaks a question during the quiet part of its delegated voice turn', async () => {
+  const calls = []
+  let now = 5000
+  const s = new LiveAnnouncements(
+    async (command) => {
+      calls.push(command)
+      return command.action === 'next'
+        ? { ok: true, announcement: { id: 'a', question: true, text: 'Red or Blue?' } }
+        : { ok: true }
+    },
+    () => now,
+  )
+  s.event({ type: 'turn.created', turn: { role: 'user', id: 'spoken' } })
+  s.event({
+    type: 'delegation.created',
+    item: { target: 'client', user_bidi_turn_id: 'unrelated' },
+  })
+  now += 1000
+  await s.tick(true, 0)
+  expect(calls).toEqual([])
+  s.event({ type: 'delegation.created', item: { target: 'client', user_bidi_turn_id: 'spoken' } })
+  now += 900
+  s.input(new Float32Array([0.5]))
+  await s.tick(true, 0)
+  expect(calls).toEqual([])
+  now += 900
+  await s.tick(true, 0)
+  expect(calls).toEqual([
+    { action: 'next', questionsOnly: true },
+    { action: 'speak', id: 'a' },
+  ])
 })
 it('never reports an interrupted or unrelated spoken turn as announced', async () => {
   const f = fixture()

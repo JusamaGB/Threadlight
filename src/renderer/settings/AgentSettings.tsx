@@ -1,3 +1,4 @@
+import { BrowserAccessSettings } from './BrowserAccessSettings'
 import { useState, type ReactNode } from 'react'
 import type { Settings, SettingsPatch } from '../../shared/settings'
 import { VOICE_PACES, VOICE_PACE } from '../../shared/voicePace'
@@ -109,6 +110,7 @@ export function AgentSettings({
           <span />
         </button>
       </label>
+      <BrowserAccessSettings />
     </section>
   )
 }

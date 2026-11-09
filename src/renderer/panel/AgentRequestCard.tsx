@@ -28,13 +28,23 @@ export function AgentRequestCard({
   }
   const form = request.questions !== undefined
   return (
-    <div className={`${styles.qCard} ${styles.agentRequest}`} data-agent-request="">
-      <div className={styles.qHead}>
-        <p className={styles.qText}>
-          {request.title}
-          {count > 1 ? ` · ${count} pending` : ''}
-        </p>
-      </div>
+    <div
+      className={`${styles.qCard} ${styles.agentRequest}`}
+      data-agent-request=""
+      data-question-form={request.kind === 'questions' || undefined}
+    >
+      {!(
+        request.kind === 'questions' &&
+        request.title === 'Codex needs your input' &&
+        request.questions?.length
+      ) && (
+        <div className={styles.qHead}>
+          <p className={styles.qText}>
+            {request.title}
+            {count > 1 ? ` · ${count} pending` : ''}
+          </p>
+        </div>
+      )}
       {request.detail && (
         <pre className={styles.agentDetail} tabIndex={0} aria-label="Request details">
           {request.detail}

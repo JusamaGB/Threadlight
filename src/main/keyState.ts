@@ -4,6 +4,8 @@
 // Neither installs a keyboard hook or reads typed characters.
 
 interface User32 {
+  cursorInfo: (info: Buffer) => number
+  loadCursor: (instance: null, id: number) => unknown
   keyState: (virtualKey: number) => number
   foregroundWindow: () => unknown
   windowText: (window: unknown, text: Buffer, length: number) => number
@@ -24,6 +26,8 @@ function load(): User32 | null {
     const lib = koffi.load('user32.dll')
     const kernel = koffi.load('kernel32.dll')
     user32 = {
+      cursorInfo: lib.func('int __stdcall GetCursorInfo(void *info)'),
+      loadCursor: lib.func('void * __stdcall LoadCursorW(void *instance, uintptr_t id)'),
       keyState: lib.func('short __stdcall GetAsyncKeyState(int vKey)'),
       foregroundWindow: lib.func('void * __stdcall GetForegroundWindow()'),
       windowText: lib.func('int __stdcall GetWindowTextW(void *hWnd, void *text, int n)'),
@@ -86,6 +90,27 @@ export function foregroundApp(): ForegroundApp | null {
 export function isKeyDown(virtualKey: number): boolean | null {
   const lib = load()
   return lib ? (lib.keyState(virtualKey) & 0x8000) !== 0 : null
+}
+
+// VS Code uses the standard arrow over line numbers. Ordinary text selections
+// (including triple-click line selections) normally use the editing cursor.
+export function walkthroughPointer() {
+  const lib = load()
+  if (!lib) return null
+  const pointerBytes = process.arch === 'ia32' ? 4 : 8
+  const info = Buffer.alloc(16 + pointerBytes)
+  info.writeUInt32LE(info.length)
+  if (!lib.cursorInfo(info) || !(info.readUInt32LE(4) & 1)) return null
+  const handle = pointerBytes === 8 ? info.readBigUInt64LE(8) : BigInt(info.readUInt32LE(8))
+  const arrow = lib.loadCursor(null, 32512) // IDC_ARROW
+  if (!arrow) return null
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const address = (require('koffi') as typeof import('koffi')).address(arrow)
+  return {
+    arrow: handle === address,
+    x: info.readInt32LE(8 + pointerBytes),
+    y: info.readInt32LE(12 + pointerBytes),
+  }
 }
 
 /**

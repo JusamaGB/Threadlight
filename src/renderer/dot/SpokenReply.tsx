@@ -3,6 +3,15 @@ import type { SpokenReply } from '../../shared/spokenReply'
 import { ReplyCode } from '../panel/ReplyCode'
 import styles from './SpokenReply.module.css'
 
+function dismissalKeys(reply: SpokenReply) {
+  return [
+    reply.id,
+    ...(reply.captionIds ?? []),
+    ...(reply.exampleId ? [reply.exampleId] : []),
+    ...(reply.userItemId ? ['request:' + reply.userItemId] : []),
+  ]
+}
+
 export function usePillReply() {
   const [shown, setShown] = useState<SpokenReply | null>(null)
   const [available, setAvailable] = useState(false)
@@ -16,7 +25,7 @@ export function usePillReply() {
         setAvailable(false)
         return
       }
-      const keys = [reply.id, ...(reply.captionIds ?? [])]
+      const keys = dismissalKeys(reply)
       if (keys.some((key) => dismissed.current.has(key))) {
         for (const key of keys) dismissed.current.add(key)
         setAvailable(false)
@@ -48,7 +57,7 @@ export function usePillReply() {
   const dismiss = () => {
     if (!shown) return
     dismissedTurn.current = { userItemId: shown.userItemId }
-    for (const key of [shown.id, ...(shown.captionIds ?? [])]) dismissed.current.add(key)
+    for (const key of dismissalKeys(shown)) dismissed.current.add(key)
     setAvailable(false)
   }
   return { shown, available, dismiss }
@@ -67,6 +76,8 @@ export function SpokenReplyBody({
 }) {
   const content = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLElement>(null)
+  const close = useRef<HTMLButtonElement>(null)
+  const presentationId = reply.exampleId ?? reply.id
   useLayoutEffect(() => {
     measure(content.current!.offsetWidth, Math.min(content.current!.offsetHeight, 232))
   }, [reply, measure])
@@ -80,15 +91,31 @@ export function SpokenReplyBody({
   }, [measure])
   useLayoutEffect(() => {
     box.current?.scrollTo(0, 0)
-  }, [reply.id])
+  }, [presentationId])
   return (
     <div className={styles.body} inert={!expanded} aria-hidden={!expanded}>
-      <section className={styles.box} aria-label="Latest spoken Agent reply" ref={box} tabIndex={0}>
-        <div className={styles.content} ref={content}>
-          <p key={reply.id}>{reply.text}</p>
+      <section
+        className={styles.box}
+        aria-label="Latest spoken Agent reply"
+        ref={box}
+        tabIndex={0}
+        onScroll={({ currentTarget }) => {
+          // Follow the opening line, then keep dismissal available above the scrolling text.
+          close.current?.style.setProperty('--reply-scroll', `${currentTarget.scrollTop}px`)
+        }}
+      >
+        <div
+          className={styles.content}
+          data-example={reply.blocks.length > 0 || undefined}
+          ref={content}
+        >
+          <p key={presentationId}>
+            <span className={styles.firstLineSpace} aria-hidden />
+            {reply.text}
+          </p>
           {reply.blocks.map((block) => (
             <ReplyCode
-              key={reply.id + ':' + block.start}
+              key={presentationId + ':' + block.start}
               language={block.language}
               code={block.value + (block.value ? '\n' : '')}
               file={block.file}
@@ -97,6 +124,7 @@ export function SpokenReplyBody({
         </div>
       </section>
       <button
+        ref={close}
         type="button"
         className={styles.close}
         aria-label="Close spoken reply"

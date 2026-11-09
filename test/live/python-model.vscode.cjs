@@ -69,6 +69,34 @@ async function run() {
   console.log(
     'PASS Python file activates the companion, Threadlight On/Off overrides the VS Code checkbox, and local ghost text works with no Live connection.',
   )
+  for (const label of ['print', 'private_value']) {
+    const items = vscode.languages.registerCompletionItemProvider('python', {
+      provideCompletionItems: () => [new vscode.CompletionItem(label)],
+    })
+    try {
+      await exec('editor.action.inlineSuggest.hide')
+      await exec('editor.action.triggerSuggest')
+      const selected = page.locator('.suggest-widget.visible .monaco-list-row.focused')
+      await selected.filter({ hasText: label }).waitFor()
+      if (label === 'print') {
+        await ghosts.filter({ hasText: '(value)' }).first().waitFor({ timeout: 6000 })
+        assert.ok((await ghosts.allTextContents()).join('').includes('nt(value)'))
+        await exec('editor.action.inlineSuggest.commit')
+        assert.equal(probe.lineAt(1).text, 'print(value)')
+        await exec('undo')
+        assert.equal(probe.lineAt(1).text, 'pri')
+      } else {
+        await wait(600)
+        assert.ok(!(await ghosts.allTextContents()).join('').includes('nt(value)'))
+      }
+    } finally {
+      await exec('hideSuggestWidget')
+      items.dispose()
+    }
+  }
+  console.log(
+    'PASS local Python ghost extends the matching IntelliSense item, accepts once, and yields to a different item.',
+  )
   let editor = await vscode.window.showTextDocument(doc)
   const choose = exec('threadlight.coach.choosePythonModel')
   await page.locator('.quick-input-list').getByText('Coach fixture model', { exact: true }).click()

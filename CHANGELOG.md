@@ -6,14 +6,71 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- VS Code Live Coach 0.6.5 shows file proposals as compact inline diffs. Removed and added lines appear together, with highlights that fade just past the code. **Result** previews the proposed lines and **Why this edit?** opens the explanation. Scrolling away and back preserves the proposal and both controls’ state.
+## [0.1.0-alpha.2] — 2026-11-09
 
-- GPT Live can speak a short progress acknowledgment while the Agent checks the editor. Repeated events share one readout. The next proposal or answer waits for playback, and Stop or a new turn cancels queued narration.
+- The Windows source preview includes the shared browser, per-chat permissions and human takeover. See [browser validation](docs/validation/SHARED-BROWSER.md).
+- The release includes Live Coach 0.6.17 and Margin Notes 0.2.6 for Windows VS Code. Notes stay anchored to lines, support drag or click on the title, and clear the button highlight when focus returns to the editor.
+
+- Browser shows Agent navigation for a linked conversation or Live call. Streaming Agent captions appear over the page, with a header speaker control that mutes the Agent independently of video audio.
+
+- Playing video and audio pause when you leave Browser or hide Threadlight. Returning resumes only the players Threadlight paused.
+
+- Expanded browser videos can be scaled from either lower corner. Alt-dragging the bottom edge trims letterboxing while keeping the player controls in view. Reopening the same browser restores its size and crop while the video remains fullscreen.
+
+- Compact YouTube layout reduces search/filter spacing and collapses the floating player to a flat 28-pixel title strip with borderless play/pause and expand/collapse controls. Playback continues while results remain scrollable.
+- Agents can inspect video/audio position, playback state, available caption cues and chapters to discuss a paused moment, and can perform requested play, pause, seek, skip and speed changes. Live delegates video questions to fresh browser inspection. Plugin 0.4.3 includes these tools and the discussion workflow.
+- Browser addresses now accept Google searches, with blue-and-amber idle artwork, an in-field loading logo and dark recoverable error pages. Browser access moves to Agent settings, secondary actions to Browser options, and video fullscreen uses the player’s own control. Plugin 0.4.2 includes the updated guide.
+- Plugin 0.4.1 links the existing Threadlight skills directly to a bundled browser guide, generated from the feature documentation.
+- Added Browser to the alphabetically ordered header menu, with a direct Live agent navigation route that does not require a coding chat.
+- Added a retained browser in each chat’s artifact area, shared with the built-in Agent and selected enrolled Codex and Claude chats. Includes navigation, local HTML, screenshots, human takeover, action receipts, and video Full screen inside the bordered content area.
+
+- Live Coach 0.6.17 starts Python file walkthroughs at the first code statement unless you ask for a particular line. Only clicks and drags on the line numbers request explanations. Selecting text in the editor stays silent.
+
+- Live Coach 0.6.16 prepares a file walkthrough at its first line and waits for **Start**. Choose **Auto** or advance with **Next**. Click a line number for its explanation, or drag across line numbers for a single explanation of the section on release.
+
+- Fixed automatic Python suggestions disappearing when VS Code highlighted a matching IntelliSense completion.
+
+- Coach reports which features the connected VS Code window supports and gives the reload and reconnect commands when that window needs an update for narrated ghost practice.
+
+- Live Coach 0.6.15 traces an existing selection or line range in the current file by default. Code keeps its syntax colours, and matching keystrokes reveal the dimmed text without editing the file. Choose **Practice copy** in **Settings → VS Code → Ghost practice location** for a separate tab. Generated examples and pending diffs use a practice tab. Live can explain each line as you start typing.
+
+- Removed the **Return to call** bar from the panel. The Agent header icon and waveform still open the conversation.
+
+- Live reads a pending question card’s question and choices aloud. The Agent thread shows the provider, “Needs you”, the question and its answer controls in a compact card.
+
+- Select Threadlight Coach by asking in a foreground Agent conversation. Lessons use your saved level, teaching style and editor preferences. Update them in conversation or edit the local learner profile.
+
+- VS Code Live Coach 0.6.13 can start a spoken file walkthrough at any line, continue through the file automatically, and jump when you click another line number. Typing exercises still support manual pacing.
+
+- VS Code Live Coach 0.6.12 can walk through a pending proposal one changed line at a time. Ask follow-up questions or move between lines before deciding whether to accept the edit.
+
+- Live shows your words in the Agent thread as you speak. The saved transcript takes over the preview row. Microphone audio buffered at startup now catches up even during continuous speech or room noise.
+
+- Back keeps the destination page open when a smaller panel leaves the pointer outside. Hover dismissal resumes once the pointer re-enters and leaves.
+
+- In a spoken Live reply, the first line is centred beside the close button. Later lines wrap to the pill’s inner edges.
+- Closing Threadlight while the Live reply is resizing no longer raises a window-destroyed error from a late size update.
+
+- Shared Space chat approvals check availability before displaying a card. Submit now returns the creation receipt to the waiting Agent. Live continues automatically when a corrected caption arrives after its audio ends, including when an opening spans two spoken segments.
+
+- Answered approvals in the Agent conversation collapse to one clickable row showing the action and decision. Expanding it reveals the original request and source details.
+
+- During a Live call, the floating waveform pill catches fire when a question or approval needs input. As spoken replies expand, the orange glow follows the bottom rim and lower corners. The reading area keeps the lighter grey of the compact pill. The flames cool when the last request clears. Reduced motion holds the effect still.
+
+- GPT Live continues to the next Agent paragraph after a progress readout finishes, including when the voice adds words or rephrases it. Starting ghost practice now reads the setup confirmation aloud. Individual line explanations still wait for typing. Live also recognizes quoted captions and spoken filenames such as “problem-dot-py” for `problem.py`.
+
+- The Agent can start a Codex chat in a named Shared Space with a requested model. The decision card shows the model, role and opening message. After approval, the Agent shows progress and reports whether the chat joined the space. Workspace-only Codex creation also accepts a model.
+
+- During a Live call, muting the microphone gives both tips of the speaking waveform a red fade. The center continues to show the Agent’s speech in its usual color on the floating pill and in the panel.
+
+- VS Code Live Coach 0.6.11 uses the existing source line as the red original and shows the green replacement beneath it, with the native gutter and an unselected caret. Each diff row fades after its own text, and the gray current-line highlight fades after the longest visible source line. Complex additions can use a read-only file review. **Result** and **Why this edit?** stay in the status bar, and the proposal survives clicks, selections, scrolling and tab switches. On returning to the review, Tab accepts the original proposed edit wherever the cursor is.
+
+- GPT Live speaks the Agent’s own opening and follow-up paragraphs in order. A stable opening sentence can start while the response is streaming. Editor tools update the visual status silently, and Stop or new input clears queued speech.
 
 - Agent Settings has a keyboard-accessible **Voice pace** slider. Its five choices apply to the next GPT Live call or spoken screen reply, and the setting survives restarts.
 
 - Live Coach clears stale guide highlights quietly during typing. A known exact line edit can trigger a fresh check automatically. Natural done or next requests also check the current buffer.
-- The live pill can display code from the learner’s verified delegated turn as soon as the backing answer arrives, and retain the current example when its follow-up identifies it.
+- The live pill keeps a written code example on screen while speech streams. Asking to see it again restores the original code. Later captions preserve the reading position, dismissal lasts for that request, and the pill ends at the last code card’s bottom edge.
 
 - Answered Agent questions and approvals stay with the conversation that prompted them. Only pending decisions appear beneath the latest message, including when the request is on an earlier history page.
 

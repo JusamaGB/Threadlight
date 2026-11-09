@@ -25,9 +25,20 @@
 .content {
   padding: 0 6px 8px;
 }
+.content[data-example] {
+  padding-bottom: 0;
+}
+.content[data-example] > :last-child {
+  margin-bottom: 0;
+}
+.content[data-example] p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
 .content p {
   margin: 0;
-  padding-inline: 16px;
   text-align: center;
   min-height: 18px;
   white-space: pre-wrap;
@@ -35,6 +46,17 @@
   font-size: var(--conversation-prose-size);
   line-height: var(--conversation-prose-leading);
   animation: replyAppear 140ms ease-out;
+}
+/* Two short floats narrow only the first line, including in the two-line code caption. */
+.content p::before,
+.firstLineSpace {
+  content: '';
+  float: left;
+  width: 20px;
+  height: 1px;
+}
+.firstLineSpace {
+  float: right;
 }
 @keyframes replyAppear {
   from {
@@ -46,7 +68,13 @@
 }
 .close {
   position: absolute;
-  top: -7px;
+  top: max(
+    -23px,
+    calc(
+      (var(--conversation-prose-size) * var(--conversation-prose-leading) - 22px) / 2 -
+        var(--reply-scroll, 0px)
+    )
+  );
   right: 1px;
   display: grid;
   place-items: center;

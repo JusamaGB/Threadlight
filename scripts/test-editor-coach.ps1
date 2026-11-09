@@ -1,4 +1,4 @@
-param([switch]$Live, [switch]$Keyboard, [switch]$TraceAgent, [switch]$PythonModel, [switch]$Proposals, [string]$CompatibilityCompanion)
+param([switch]$Live, [switch]$Keyboard, [switch]$TraceAgent, [switch]$PythonModel, [switch]$Proposals, [switch]$Walkthrough, [string]$CompatibilityCompanion)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $codeCli = (Get-Command code.cmd).Source
@@ -10,6 +10,8 @@ $env:THREADLIGHT_PROPOSALS_ONLY = if ($Proposals) { '1' } else { '0' }
 $env:THREADLIGHT_TEST_NODE = (Get-Command node.exe).Source
 $env:THREADLIGHT_TRACE_AGENT = if ($TraceAgent) { '1' } else { '0' }
 $env:THREADLIGHT_LIVE_SMOKE = if ($Live) { '1' } else { '0' }
+$env:THREADLIGHT_WALKTHROUGH_ONLY = if ($Walkthrough) { '1' } else { '0' }
+if ($Walkthrough) { $Keyboard = $true }
 $companion = Join-Path $root 'vscode-coach'
 $env:THREADLIGHT_COACH_COMPATIBILITY = if ($CompatibilityCompanion) { '1' } else { '0' }
 if ($CompatibilityCompanion) {

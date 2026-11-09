@@ -281,6 +281,33 @@ it('suppresses a stale reservation and recovers submitted speech as uncertain wi
   expect(recovered.get(f.owner).cards[0]!.speech).toBe('uncertain')
   expect(recovered.reserve(f.owner, 0)).toBeUndefined()
 })
+it('reads the pending question and choices once, and drops an answered question before submission', () => {
+  const f = fixture()
+  const request = {
+    ...f.request,
+    target: f.owner,
+    kind: 'question' as const,
+    title: 'Codex needs your input',
+    questions: [
+      { question: 'Which colour do you want?', options: [{ label: 'Red' }, { label: 'Blue' }] },
+    ],
+  }
+  f.snapshot.nativeRequests = [request]
+  f.project()
+  const a = f.feed.reserve(f.owner, 0, true)!
+  expect(a.text).toBe('Which colour do you want? Red or Blue?')
+  expect(f.feed.reserve(f.owner, 0)).toBeUndefined()
+  f.snapshot.nativeRequests = []
+  f.project()
+  expect(f.feed.commit(a)).toBe(false)
+  f.snapshot.nativeRequests = [{ ...request, generation: 'new' }]
+  f.project()
+  const b = f.feed.reserve(f.owner, 0, true)!
+  expect(f.feed.commit(b)).toBe(true)
+  f.feed.settle(f.owner, b.id, 'announced')
+  f.project()
+  expect(f.feed.reserve(f.owner, 0)).toBeUndefined()
+})
 it('keeps a question-yield receipt distinct from a task result after the question is answered', () => {
   const f = fixture(),
     spaceId = randomUUID()

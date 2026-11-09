@@ -72,6 +72,20 @@
   padding: 8px;
   margin: 0;
 }
+[data-card]:has(~ [data-video-grips]) .root {
+  /* Move four pixels of the existing padding to the outside bottom grip. */
+  padding-top: 2px;
+}
+[data-card]:has(~ [data-video-sized]) .root {
+  flex: 1;
+  overflow: hidden;
+}
+[data-card]:has(~ [data-video-sized]) .stage {
+  flex: 1;
+  min-height: 0;
+  aspect-ratio: auto;
+  overflow: hidden;
+}
 .stage p {
   padding: 12px;
   color: var(--faint);

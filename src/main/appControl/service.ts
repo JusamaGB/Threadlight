@@ -1,7 +1,12 @@
+import { callBrowser } from '../browser/registry'
+import type { BrowserCommand } from '../../shared/browser'
 import { createHash, randomUUID } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, statSync } from 'node:fs'
 import { z } from 'zod'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+import { COACH_INSTRUCTIONS } from '../../shared/editorCoach'
+import { readCoachProfile, updateCoachProfile } from './coachProfile'
 import {
   controlTools,
   controlSettingsSchema,
@@ -26,8 +31,11 @@ export interface ControlCaller {
   resolve(ref: string): { id: string } | null
   cards(ref: string): Promise<TimelineItem[] | null>
   approve(id: string, title: string, detail: string, decide: (allow: boolean) => void): void
+  chatActivity?(id: string, working: boolean, message: string): void
 }
 export interface ControlDependencies {
+  coachSkillFile?: string
+  spaceChatIssue?(spaceId: string, provider: 'codex' | 'claude' | 'perplexity'): string | undefined
   pins?: import('../pinnedCode').PinnedCodeStore
   hasChat?: (id: string) => boolean
   chatInfo?: (id: string) => { id: string; title: string; provider: string } | null
@@ -51,16 +59,24 @@ export interface ControlDependencies {
   startSpaceChat?(
     input: {
       spaceId: string
-      provider: 'claude' | 'perplexity'
+      provider: 'claude' | 'perplexity' | 'codex'
+      model?: string
       role: string
       openingMessage: string
     },
     actionId: string,
-  ): Promise<{ outcome: ControlOutcome; reason?: string; target?: string; linked?: boolean }>
+  ): Promise<{
+    outcome: ControlOutcome
+    reason?: string
+    target?: string
+    linked?: boolean
+    model?: string
+  }>
   createChat(
     workspace: string | null,
     operationId: string,
-  ): Promise<{ ok: boolean; sessionId?: string }>
+    model?: string,
+  ): Promise<{ ok: boolean; sessionId?: string; model?: string; reason?: string }>
   busy(): { agent: boolean; otherWork: boolean }
   send(command: ControlCommand): void
   restart(): void
@@ -138,7 +154,12 @@ export class AppControlService {
   >()
   private restarting?: string
   private owners = new Map<ControlCaller, Set<string>>()
+  private chatUpdates = new EventEmitter()
   private storeIssue = false
+  private coaching = new WeakSet<ControlCaller>()
+  private get profileFile() {
+    return join(dirname(this.file), 'coach-profile.json')
+  }
   private routeIdentities = new Map<string, string>()
   constructor(
     private deps: ControlDependencies,
@@ -304,7 +325,41 @@ export class AppControlService {
     const op = this.operations.get(key)!
     op.result = this.result(outcome, reason, data, op.result.operationId)
     this.save()
+    this.chatUpdates.emit(key)
     return op.result
+  }
+  /** Keep the original tool call attached to the approval. A slow decision
+   * returns the current receipt before the stdio proxy's 35-second deadline. */
+  followChatReceipt(
+    caller: ControlCaller,
+    result: ControlResult,
+    waitMs = 25000,
+  ): Promise<ControlResult> {
+    const key = `${caller.owner()}:${result.operationId}`
+    const op = this.operations.get(key)
+    if (
+      result.outcome !== 'pending' ||
+      !op ||
+      ![
+        'threadlight_start_space_chat',
+        'threadlight_create_chat',
+        'threadlight_update_coach_profile',
+      ].includes(op.tool)
+    )
+      return Promise.resolve(result)
+    if (op.result.outcome !== 'pending' || !caller.active) return Promise.resolve(op.result)
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer)
+        this.chatUpdates.off(key, changed)
+        resolve(op.result)
+      }
+      const changed = () => {
+        if (op.result.outcome !== 'pending' || !caller.active) finish()
+      }
+      const timer = setTimeout(finish, waitMs)
+      this.chatUpdates.on(key, changed)
+    })
   }
   private revision() {
     return fingerprint(this.deps.settings())
@@ -320,8 +375,37 @@ export class AppControlService {
         `Invalid coaching request at ${issue?.path.join('.') || 'action'}: ${issue?.message || 'invalid input'}. Correct the request and retry. No editor connection was attempted.`,
       )
     }
-    if (!tool || !parsed?.success) return this.result('unavailable', 'Invalid tool arguments.')
+    if (!tool || !parsed?.success) {
+      if (name === 'threadlight_start_space_chat' || name === 'threadlight_create_chat') {
+        const field = parsed?.error?.issues[0]?.path.join('.') || 'input'
+        return this.result(
+          'unavailable',
+          field === 'operationId'
+            ? 'operationId must be a UUID. Generate one for this request and retry; nothing was created.'
+            : `Invalid chat creation field: ${field}. Nothing was created.`,
+        )
+      }
+      return this.result('unavailable', 'Invalid tool arguments.')
+    }
+    if (name === 'threadlight_browser') {
+      const value = await callBrowser(
+        {
+          id: `hosted:${caller.owner()}`,
+          label: 'Threadlight Agent',
+          hosted: true,
+          valid: () => caller.active,
+        },
+        parsed.data as BrowserCommand,
+      )
+      return this.result(value.ok ? 'ok' : 'unavailable', value.reason, value)
+    }
     const input = parsed.data as Record<string, unknown>
+    if (
+      input.model &&
+      input.provider !== 'codex' &&
+      (name === 'threadlight_start_space_chat' || name === 'threadlight_create_chat')
+    )
+      return this.result('unavailable', 'Model selection is available for Codex chats.')
     if (name === 'threadlight_editor_coach') {
       if (!caller.editorCoach)
         return this.result('unavailable', 'Use the foreground Threadlight Live Agent.')
@@ -373,6 +457,7 @@ export class AppControlService {
         return this.result('denied', 'Caller or chat access was revoked during the read.')
       return result
     }
+    if (!operationId) return this.result('unavailable', 'A write requires an operation UUID.')
     const previous = this.operations.get(key)
     const hash = fingerprint({ name, input })
     if (previous)
@@ -407,7 +492,20 @@ export class AppControlService {
     if (tool.effect === 'navigate') await this.navigate(caller, key, input)
     else {
       const spaceChat = name === 'threadlight_start_space_chat'
-      const provider = input.provider === 'claude' ? 'Claude Code' : 'Perplexity'
+      if (spaceChat) {
+        const issue = this.deps.spaceChatIssue?.(
+          String(input.spaceId),
+          input.provider as 'codex' | 'claude' | 'perplexity',
+        )
+        if (issue)
+          return this.settle(key, 'unavailable', issue, { spaceId: input.spaceId, linked: false })
+      }
+      const provider =
+        input.provider === 'codex'
+          ? 'Codex'
+          : input.provider === 'claude'
+            ? 'Claude Code'
+            : 'Perplexity'
       const space = spaceChat
         ? this.deps.spaces().find((space) => space.id === input.spaceId)?.title
         : undefined
@@ -421,6 +519,12 @@ export class AppControlService {
           pin ? 'conflict' : 'not_found',
           'Read the current pinned copy before replacing it.',
         )
+      const profileChange = name === 'threadlight_update_coach_profile'
+      const profileLabels: Record<string, string> = {
+        level: 'Learning level',
+        teachingStyle: 'Teaching style',
+        editorHelp: 'Editor help',
+      }
       caller.approve(
         `control:${operationId}`,
         spaceChat
@@ -429,12 +533,18 @@ export class AppControlService {
             ? input.mode === 'append'
               ? 'Append to pinned copy'
               : 'Replace pinned copy'
-            : name.replace('threadlight_', '').replaceAll('_', ' '),
+            : profileChange
+              ? 'Update coaching profile'
+              : name.replace('threadlight_', '').replaceAll('_', ' '),
         spaceChat
-          ? `Space: ${space ?? 'Selected Shared Space'}\nRole: ${input.role}\n\nOpening message:\n${input.openingMessage}`
+          ? `Space: ${space ?? 'Selected Shared Space'}\nRole: ${input.role}${input.model ? '\nModel: ' + input.model : ''}\n\nOpening message:\n${input.openingMessage}`
           : pin
             ? `${pinInfo(pin)}\nLatest revision ${pin.revision}\n\n${input.mode === 'append' ? 'Append' : 'Replacement'}:\n${input.code}`
-            : JSON.stringify(input, null, 2),
+            : profileChange
+              ? Object.entries(input.patch as Record<string, string>)
+                  .map(([field, text]) => profileLabels[field] + ': ' + text)
+                  .join('\n')
+              : JSON.stringify(input, null, 2),
         (allow) => {
           if (this.operations.get(key)?.result.reason !== 'Awaiting human decision.') return
           if (!allow || !caller.active) {
@@ -442,6 +552,13 @@ export class AppControlService {
             return
           }
           this.settle(key, 'pending', 'Approved action is executing.')
+          const chat = spaceChat || name === 'threadlight_create_chat'
+          if (chat)
+            caller.chatActivity?.(
+              operationId,
+              true,
+              `Starting the ${provider} chat${space ? ' in ' + space : ''}…`,
+            )
           // Serialize approval callbacks, including expected-revision validation and persistence.
           this.queue = this.queue.then(async () => {
             if (!caller.active) {
@@ -457,6 +574,16 @@ export class AppControlService {
                 'Action could not be confirmed; inspect its receipt before retrying.',
               )
             }
+            if (chat && caller.active) {
+              const result = this.operations.get(key)!.result
+              const model = (result.data as { model?: string } | undefined)?.model
+              const detail =
+                result.outcome === 'ok'
+                  ? `The ${provider} chat ${spaceChat ? 'was linked to ' + (space ?? 'the Shared Space') : 'was created'}${model ? ' using ' + model : ''}.`
+                  : (result.reason ??
+                    'Chat creation could not be confirmed. Check the operation receipt.')
+              caller.chatActivity?.(operationId, false, detail)
+            }
           })
         },
       )
@@ -471,6 +598,31 @@ export class AppControlService {
     const customAvailability = this.deps.availability?.(name)
     if (customAvailability && !customAvailability.available)
       return this.result('unavailable', customAvailability.reason)
+    if (name === 'threadlight_coach_skill') {
+      if (input.action === 'leave') {
+        this.coaching.delete(caller)
+        return this.result('ok', undefined, { selected: false })
+      }
+      try {
+        const personal = readCoachProfile(this.profileFile)
+        if (input.action === 'select') {
+          const file =
+            this.deps.coachSkillFile ??
+            join(__dirname, '../../../skills/threadlight-coach/SKILL.md')
+          const skill = readFileSync(file, 'utf8')
+          this.coaching.add(caller)
+          return this.result('ok', undefined, {
+            selected: true,
+            skill,
+            ...personal,
+            editorInstructions: COACH_INSTRUCTIONS,
+          })
+        }
+        return this.result('ok', undefined, { selected: this.coaching.has(caller), ...personal })
+      } catch (error) {
+        return this.result('unavailable', (error as Error).message)
+      }
+    }
     if (name === 'threadlight_list_pins' || name === 'threadlight_read_pin') {
       const store = this.deps.pins
       if (!store?.available)
@@ -692,6 +844,7 @@ export class AppControlService {
       }
       if (
         route.page === 'artifact' &&
+        route.artifactId !== '@browser' &&
         !(await this.deps.artifacts(resolved.id)).some((a) => a.id === route.artifactId)
       ) {
         this.settle(key, 'not_found', 'Artifact not found in this chat.')
@@ -778,6 +931,15 @@ export class AppControlService {
       this.settle(key, value.outcome, value.reason, value.data)
       return
     }
+    if (name === 'threadlight_update_coach_profile') {
+      try {
+        if (!updateCoachProfile(this.profileFile, String(input.expectedRevision), input.patch))
+          return this.settle(key, 'conflict', 'Learner profile changed. Read the profile again.')
+        return this.settle(key, 'ok', undefined, readCoachProfile(this.profileFile))
+      } catch (error) {
+        return this.settle(key, 'unavailable', (error as Error).message)
+      }
+    }
     if (name === 'threadlight_update_settings') {
       if (input.expectedRevision !== this.revision()) {
         this.settle(key, 'conflict', 'Settings changed; read the current revision.')
@@ -812,7 +974,8 @@ export class AppControlService {
       const result = await this.deps.startSpaceChat?.(
         {
           spaceId: String(input.spaceId),
-          provider: input.provider as 'claude' | 'perplexity',
+          provider: input.provider as 'claude' | 'perplexity' | 'codex',
+          model: input.model as string | undefined,
           role: String(input.role),
           openingMessage: String(input.openingMessage),
         },
@@ -822,6 +985,7 @@ export class AppControlService {
         spaceId: input.spaceId,
         target: result?.target,
         linked: result?.linked ?? false,
+        model: result?.model,
       })
       return
     }
@@ -833,12 +997,13 @@ export class AppControlService {
       const result = await this.deps.createChat(
         workspace?.path ?? null,
         this.operations.get(key)!.actionId,
+        ...(typeof input.model === 'string' ? ([input.model] as const) : []),
       )
       this.settle(
         key,
         result.ok ? 'ok' : result.sessionId ? 'uncertain' : 'unavailable',
-        undefined,
-        { threadId: result.sessionId },
+        result.reason,
+        { threadId: result.sessionId, model: result.model },
       )
       return
     }

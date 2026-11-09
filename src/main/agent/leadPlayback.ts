@@ -3,9 +3,9 @@
 export class LeadPlayback {
   private current?: string
   private done = new Set<string>()
-  private foreign = new Set<string>()
-  private competingSegments = new Set<string>()
-  private foreignBeforeStart = false
+  private segmentTurns = new Map<string, string | undefined>()
+  private partials = new Set<string>()
+  private conflicts = new Map<string, string | undefined>()
   private matched = false
   private owner?: string
   private stopped = false
@@ -16,15 +16,23 @@ export class LeadPlayback {
     return this.matched && !this.owner && !this.timedOut
   }
   get uncertain() {
-    return !this.current && this.done.size > 0 && !this.finished && !this.stopped
+    return (
+      !this.current &&
+      this.done.size > 0 &&
+      !this.finished &&
+      !this.stopped &&
+      (this.timedOut || !this.partials.size)
+    )
+  }
+  observe(segment: string, native?: string) {
+    this.segmentTurns.set(segment, native ?? this.current)
+    this.partials.add(segment)
   }
   start(id: string) {
     this.current = id
-    if (this.foreignBeforeStart) {
-      this.foreign.add(id)
-      this.foreignBeforeStart = false
-    }
-    if (this.matched && !this.owner && !this.foreign.has(id)) this.owner = id
+    for (const [segment, turn] of this.segmentTurns) if (!turn) this.segmentTurns.set(segment, id)
+    for (const [segment, turn] of this.conflicts) if (!turn) this.conflicts.set(segment, id)
+    if (this.matched && !this.owner && !this.foreign(id)) this.owner = id
   }
   end(id: string) {
     if (id !== this.current) return
@@ -34,29 +42,31 @@ export class LeadPlayback {
     this.notify?.()
   }
   caption(segment: string, matching: boolean, complete: boolean, native?: string) {
+    if (complete) this.partials.delete(segment)
+    else this.partials.add(segment)
+    const turn = native ?? this.segmentTurns.get(segment) ?? this.current
+    if (turn) this.segmentTurns.set(segment, turn)
     if (matching && complete) {
+      // A streamed prefix can be revised. Only that segment can clear its own
+      // conflict; a separate direct reply still owns its playback.
+      this.conflicts.delete(segment)
       this.matched = true
-      this.owner =
-        native ??
-        this.owner ??
-        (this.current && !this.foreign.has(this.current) ? this.current : undefined)
-    } else if (!matching && (!this.competingSegments.has(segment) || native)) {
-      // A partial can already contradict the opening. Its later completion must
-      // not transfer the same conflict onto a new, unrelated playback turn.
-      this.competingSegments.add(segment)
-      const competing = native ?? this.current
-      if (competing) {
-        this.foreign.add(competing)
-        if (this.owner === competing) this.owner = undefined
-      } else if (!this.done.size) this.foreignBeforeStart = true
-      else this.foreign.add([...this.done].at(-1)!)
+      if (turn && !this.foreign(turn)) this.owner = turn
+    } else if (!matching && (!this.conflicts.has(segment) || native)) {
+      const competing = turn ?? [...this.done].at(-1)
+      this.conflicts.set(segment, competing)
+      if (this.owner === competing) this.owner = undefined
     }
     this.notify?.()
+  }
+  private foreign(turn: string) {
+    for (const conflict of this.conflicts.values()) if (conflict === turn) return true
+    return false
   }
   get ownedSpeaker() {
     return this.matched &&
       this.current &&
-      !this.foreign.has(this.current) &&
+      !this.foreign(this.current) &&
       this.current === this.owner
       ? this.current
       : undefined
@@ -67,7 +77,7 @@ export class LeadPlayback {
       !this.current &&
       !!this.owner &&
       this.done.has(this.owner) &&
-      !this.foreign.has(this.owner)
+      !this.foreign(this.owner)
     )
   }
   retire() {

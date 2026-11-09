@@ -64,25 +64,33 @@ export async function checkSpokenReply(page, url) {
       const range = document.createRange()
       const parent = el.closest('[data-unfolded]').getBoundingClientRect()
       const lines = new Map()
-      const node = el.firstChild
+      const node = el.lastChild
       for (let i = 0; i < node.length; i++) {
         if (!node.textContent[i].trim()) continue
         range.setStart(node, i)
         range.setEnd(node, i + 1)
         const r = range.getBoundingClientRect()
         const first = lines.get(r.top)?.left ?? r.left
-        lines.set(r.top, { left: first, right: r.right })
+        lines.set(r.top, { left: first, right: r.right, centerY: r.top + r.height / 2 })
       }
       const center = parent.left + parent.width / 2
+      const rows = [...lines.values()]
       return {
         offset: Math.max(
           ...[...lines.values()].map((line) => Math.abs((line.left + line.right) / 2 - center)),
         ),
         lines: lines.size,
+        widths: rows.map((row) => row.right - row.left),
+        firstCenterY: rows[0].centerY,
       }
     })
     assert.ok(Math.abs(ink.offset) <= 1, JSON.stringify(ink))
-    return { target, lines: ink.lines }
+    const button = await close.boundingBox()
+    assert.ok(
+      Math.abs(ink.firstCenterY - (button.y + button.height / 2)) < 1.5,
+      'first line aligns with the close icon',
+    )
+    return { target, lines: ink.lines, widths: ink.widths }
   }
   assert.equal((await captionWidth('Yeah.')).target, 92)
   if (process.env.THREADLIGHT_SCREENSHOTS) {
@@ -99,6 +107,12 @@ export async function checkSpokenReply(page, url) {
     'Makes sense. Let’s add the prices for the three items, and then print the receipt total on the next line.',
   )
   assert.ok(wrapped.target === 296 && wrapped.lines >= 2)
+  const full = await captionWidth('m'.repeat(130))
+  assert.ok(full.widths[0] <= full.target - 52, JSON.stringify(full))
+  assert.ok(
+    full.widths[1] >= full.target - 24 && full.widths[1] <= full.target - 12,
+    JSON.stringify(full),
+  )
   await publish(null)
   await settle(92, 24)
   const reply = {
@@ -121,12 +135,20 @@ export async function checkSpokenReply(page, url) {
   )
   const updated = {
     ...reply,
+    userItemId: 'live:example-request',
+    exampleId: 'example-request/source',
     text: reply.text,
     blocks: [{ language: 'python', value: code, start: 120 }],
   }
   await publish(updated)
   await box.getByText(updated.text).waitFor()
   await box.locator('.hljs-keyword').first().waitFor()
+  const bottomGap = await box.evaluate(
+    (el) =>
+      el.getBoundingClientRect().bottom -
+      el.querySelector('pre').closest('details').parentElement.getBoundingClientRect().bottom,
+  )
+  assert.ok(Math.abs(bottomGap) <= 1, 'pill ends at the final code card')
   assert.ok(
     ['start', 'left'].includes(
       await box.locator('pre').evaluate((el) => getComputedStyle(el).textAlign),
@@ -223,13 +245,31 @@ export async function checkSpokenReply(page, url) {
     text: 'A later caption',
   })
   assert.equal(await box.count(), 0, 'promoting a dismissed native caption keeps it dismissed')
+  await publish({
+    ...updated,
+    id: 'unlinked-dictation',
+    captionIds: ['later-segment'],
+    blocks: [],
+    text: 'total = 0.0 for name, info in items dot items()',
+  })
+  assert.equal(
+    await box.count(),
+    0,
+    'completed dictation in a dismissed request cannot reopen the card',
+  )
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await resetSizes()
   await publish({
     ...updated,
     id: 'another-answer',
+    userItemId: 'live:replay',
+    exampleId: 'replay/source',
     captionIds: ['new'],
     text: Array(90).fill('An extended answer.').join(' '),
+    blocks: [
+      updated.blocks[0],
+      { language: 'python', value: Array(16).fill('print(entry)').join('\n'), start: 160 },
+    ],
   })
   await settle(296, 256)
   assert.ok(
@@ -241,6 +281,34 @@ export async function checkSpokenReply(page, url) {
   await box.press('End')
   await page.waitForFunction(
     () => document.querySelector('[aria-label="Latest spoken Agent reply"]').scrollTop > 0,
+  )
+  const scroll = await box.evaluate((el) => el.scrollTop)
+  await box
+    .locator('pre')
+    .first()
+    .evaluate((el) => {
+      window.proof.originalCodeNode = el
+    })
+  await page.evaluate(() => {
+    const reply = window.proof.spokenReply
+    window.threadlight.publishSpokenReply({
+      ...reply,
+      id: 'new-speech-segment',
+      captionIds: ['new', 'later'],
+      text: 'The same example is on screen.',
+    })
+  })
+  await box.getByText('The same example is on screen.').waitFor()
+  assert.ok(
+    await box
+      .locator('pre')
+      .first()
+      .evaluate((el) => el === window.proof.originalCodeNode),
+    'speech preserves the code node',
+  )
+  assert.ok(
+    (await box.evaluate((el) => el.scrollTop)) > 0 && scroll > 0,
+    'speech preserves reading position',
   )
   await wave.press('Shift+F10')
   await page.getByRole('menu', { name: 'Voice call actions' }).waitFor()

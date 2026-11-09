@@ -144,6 +144,38 @@ function SettingsFields({
       </section>
       <Group label="VS Code">
         <Row
+          label="Ghost practice location"
+          error={errors.ghostPracticeLocation}
+          help={{
+            info: 'Trace existing code in its current tab or an untitled copy. Matching keystrokes reveal the original syntax colours.',
+          }}
+        >
+          <HoverChoice
+            label="Ghost practice location"
+            value={settings.ghostPracticeLocation}
+            options={[
+              { value: 'current', label: 'Current file' },
+              { value: 'copy', label: 'Practice copy' },
+            ]}
+            onChange={(ghostPracticeLocation: Settings['ghostPracticeLocation']) =>
+              save({ ghostPracticeLocation })
+            }
+          />
+        </Row>
+        <Row
+          label="Spoken ghost walkthroughs"
+          help={{
+            info: 'Allow Live to explain each line when you start typing in a requested ghost walkthrough.',
+          }}
+          error={errors.spokenGhostWalkthroughs}
+        >
+          <Toggle
+            label="Spoken ghost walkthroughs"
+            on={settings.spokenGhostWalkthroughs}
+            onChange={(spokenGhostWalkthroughs) => void save({ spokenGhostWalkthroughs })}
+          />
+        </Row>
+        <Row
           label="Automatic Python suggestions"
           help={{
             info: 'Show suggestions as you type in trusted Python files with Live Coach 0.6.1 or later. Choose VS Code setting to follow your editor preference.',
