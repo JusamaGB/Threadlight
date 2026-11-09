@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   held: true,
   primary: { x: 0, y: 0, width: 1920, height: 1040 },
   secondary: { x: -1280, y: 0, width: 1280, height: 720 },
-  nativeWindows: [] as { visible: boolean }[],
+  nativeWindows: [] as { visible: boolean; setIgnoreMouseEvents: (ignore: boolean) => void }[],
 }))
 vi.mock('../src/main/windowState', () => ({
   loadDotPosition: () => state.saved,
@@ -57,6 +57,12 @@ vi.mock('electron', () => {
       }
       getBounds() {
         return this.bounds
+      }
+      getContentBounds() {
+        return this.bounds
+      }
+      setContentBounds(bounds: typeof this.bounds) {
+        this.setBounds(bounds)
       }
       setBounds(bounds: typeof this.bounds) {
         this.bounds = bounds
@@ -492,6 +498,35 @@ describe('panel movement and available height', () => {
     expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
   })
 
+  it('keeps the outside video corner interactive and protects manual sizing from card measurements', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.resizePanel(290)
+    const original = windows.panel.getBounds()
+    const sizing = windows.videoSizing
+    sizing.active = true
+    state.cursor = { x: original.x + 8, y: original.y + 30 }
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    state.cursor.y = original.y + original.height - 2
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    const guest = { x: 13, y: 32, width: 236, height: 236 }
+    const card = { x: 12, y: 0, width: 238, height: 286 }
+    sizing.gesture({ phase: 'begin', edge: 'left', card }, guest, 16 / 9)
+    sizing.gesture({ phase: 'move', dx: -5000, dy: 5000 }, guest, 16 / 9)
+    const enlarged = windows.panel.getBounds()
+    expect(enlarged.x + enlarged.width).toBe(original.x + original.width)
+    expect(enlarged.x).toBeGreaterThanOrEqual(state.primary.x)
+    expect(enlarged.height).toBeGreaterThan(original.height)
+    expect(enlarged.y + enlarged.height).toBeLessThanOrEqual(state.primary.height)
+    sizing.gesture({ phase: 'end' }, guest, 16 / 9)
+    windows.resizePanel(290)
+    expect(windows.panel.getBounds()).toEqual(enlarged)
+    sizing.reset()
+    expect(windows.panel.getBounds()).toEqual(original)
+  })
+
   it('hides the dot for Control despite keep-on-top and restores it on release', () => {
     const windows = new WindowManager()
     windows.setClaudeRunning(true)
@@ -799,6 +834,41 @@ describe('panel movement and available height', () => {
     expect(windows.attentionMotion.providers).toEqual(['claude'])
   })
 
+  it('keeps the live pill lit through pending inputs and cools only after the last clears', () => {
+    const windows = new WindowManager()
+    windows.setOpenMicLive(true)
+    const session = {
+      id: 'claude-live',
+      state: 'working',
+      attention: null,
+      lastActiveAt: 1,
+    } as Session
+    windows.setAttention([session])
+    expect(windows.attentionMotion.pill).toBeUndefined()
+    windows.setAgentAttention('codex')
+    expect(windows.attentionMotion).toMatchObject({
+      active: false,
+      pill: { width: 92, waiting: true },
+    })
+    expect(state.nativeWindows.at(-1)?.setIgnoreMouseEvents).toHaveBeenCalledWith(true)
+    windows.setAttention([{ ...session, state: 'waiting' }])
+    windows.setAgentAttention(null)
+    expect(windows.attentionMotion.pill?.waiting).toBe(true)
+    windows.setAttention([])
+    expect(windows.attentionMotion.pill?.waiting).toBe(false)
+    windows.setAgentAttention('codex')
+    vi.advanceTimersByTime(700)
+    expect(windows.attentionMotion.pill?.waiting).toBe(true)
+    windows.openPanel()
+    expect(windows.attentionMotion.pill).toBeUndefined()
+    windows.closePanel()
+    expect(windows.attentionMotion.pill?.waiting).toBe(true)
+    windows.setAgentAttention(null)
+    vi.advanceTimersByTime(700)
+    expect(windows.attentionMotion.pill).toBeUndefined()
+    expect(state.nativeWindows.at(-1)?.visible).toBe(false)
+  })
+
   it('drips once per waiting thread in the order the panel lists them, as threads are answered', () => {
     const windows = new WindowManager()
     windows.setClaudeRunning(true)
@@ -880,6 +950,50 @@ describe('panel movement and available height', () => {
     expect(windows.panel.isVisible()).toBe(false)
     windows.dot.show()
     windows.openFromDot(true)
+    expect(windows.panel.isVisible()).toBe(false)
+  })
+
+  it('waits for pointer re-entry after a shorter Live page moves away from Back', () => {
+    state.saved = { x: 850, y: 460 }
+    const windows = new WindowManager()
+    windows.setOpenMicLive(true)
+    windows.openFromDot()
+    windows.resizePanel(400)
+    const agent = windows.panel.getBounds()
+    state.cursor = { x: agent.x + 48, y: agent.y + 14 }
+    windows.resizePanel(100)
+    const list = windows.panel.getBounds()
+    expect(state.cursor.y).toBeLessThan(list.y)
+    vi.mocked(windows.panel.webContents.send).mockClear()
+    vi.advanceTimersByTime(3000)
+    expect(windows.panel.webContents.send).not.toHaveBeenCalledWith(IPC.panelPointerOutside)
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(true)
+    state.cursor = { x: list.x + 40, y: list.y + 10 }
+    vi.advanceTimersByTime(16)
+    state.cursor.y = list.y - 2
+    vi.advanceTimersByTime(16)
+    expect(windows.panel.webContents.send).toHaveBeenCalledWith(IPC.panelPointerOutside)
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(false)
+  })
+
+  it('holds a narrowing panel only when the resize moved it off the pointer', () => {
+    const windows = new WindowManager()
+    windows.openPanel()
+    windows.setPanelLayout('dual')
+    const wide = windows.panel.getBounds()
+    state.cursor = { x: wide.x + 40, y: wide.y + 15 }
+    windows.setPanelLayout('single')
+    windows.closeOnPointerLeave()
+    expect(windows.panel.isVisible()).toBe(true)
+    // An explicit close still works, and the next opening gets ordinary hover behaviour.
+    windows.closePanel()
+    expect(windows.panel.isVisible()).toBe(false)
+    windows.openPanel()
+    state.cursor = { x: 400, y: 400 }
+    windows.resizePanel(50)
+    windows.closeOnPointerLeave()
     expect(windows.panel.isVisible()).toBe(false)
   })
 

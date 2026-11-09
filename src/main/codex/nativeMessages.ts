@@ -88,6 +88,7 @@ export class NativeCodexMessages {
     message: string,
     files: NativeAttachment[] = [],
     mode: 'send' | 'steer' = 'steer',
+    model?: string,
   ): Promise<Result> {
     const id = codexId(key),
       text = message.trim()
@@ -175,7 +176,12 @@ export class NativeCodexMessages {
           : {
               conversationId: id,
               turnStart: {
-                request: { threadId: id, input, clientUserMessageId: clientId },
+                request: {
+                  threadId: id,
+                  input,
+                  clientUserMessageId: clientId,
+                  ...(model && { model }),
+                },
                 context: {
                   inheritThreadSettings: true,
                   restoreMessage,

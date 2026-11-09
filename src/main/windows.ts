@@ -2,6 +2,7 @@
 
 import { join } from 'node:path'
 import { squareOverlay } from '../shared/canvas'
+import { VideoPanelSizing } from './browser/videoSizing'
 
 import { BrowserWindow, screen, shell, type Rectangle } from 'electron'
 
@@ -138,6 +139,7 @@ export class WindowManager {
   }
   readonly dot: BrowserWindow
   readonly panel: BrowserWindow
+  readonly videoSizing: VideoPanelSizing
   private dragStart: Point | null = null
   private liveDragBounds: Rectangle | null = null
   private liveDragEndedAt = -Infinity
@@ -151,10 +153,12 @@ export class WindowManager {
   /** The visible waveform that handed this panel its pointer, captured before the dot shrinks. */
   private micPanelAnchor: Rectangle | null = null
   private pointerWatch: ReturnType<typeof setInterval> | null = null
+  private awaitingPanelReentry = false
   private attentionWindow: BrowserWindow | null = null
   private attentionSessions: Session[] = []
   private agentAttention: AttentionMotion['provider'] | null = null
   private attentionState: AttentionMotion = NO_ATTENTION
+  private fireCooldown: ReturnType<typeof setTimeout> | undefined
   private talking = false
   private gutterIgnored = false
   private micMenuShown = false
@@ -167,7 +171,8 @@ export class WindowManager {
   }
 
   getSpokenReply(sender: Electron.WebContents) {
-    return sender === this.dot.webContents &&
+    return !this.overlayClosed &&
+      sender === this.dot.webContents &&
       this.openMicLive &&
       !this.panel.isVisible() &&
       this.modifierStage === 'normal' &&
@@ -178,6 +183,7 @@ export class WindowManager {
 
   setSpokenReplySize(sender: Electron.WebContents, width: number, height: number) {
     if (
+      this.overlayClosed ||
       sender !== this.dot.webContents ||
       !this.openMicLive ||
       this.micMenuShown ||
@@ -389,6 +395,7 @@ export class WindowManager {
       this.syncReference()
       this.syncSpokenReply()
     }
+    this.videoSizing = new VideoPanelSizing(this.panel)
     this.panel.on('hide', syncCompanions)
     this.panel.on('show', () => {
       if (this.openMicLive) {
@@ -404,7 +411,8 @@ export class WindowManager {
       else this.closeOnPointerLeave()
     })
     const updateDisplay = () => {
-      if ((!this.hasReferences && !this.spokenReply) || this.overlayClosed) return
+      if ((!this.hasReferences && !this.spokenReply && !this.openMicLive) || this.overlayClosed)
+        return
       const area = this.workArea()
       this.dotPosition = {
         x: clamp(this.dotPosition.x, area.x, area.x + area.width - DOT_SIZE),
@@ -415,6 +423,7 @@ export class WindowManager {
     screen.on('display-metrics-changed', updateDisplay)
     screen.on('display-removed', updateDisplay)
     this.panel.on('closed', () => {
+      clearTimeout(this.fireCooldown)
       this.stopPointerWatch()
       screen.off('display-metrics-changed', updateDisplay)
       screen.off('display-removed', updateDisplay)
@@ -595,7 +604,7 @@ export class WindowManager {
     // Present the replacement before hiding the already-painted indicator.
     this.dot.hide()
     this.attentionWindow?.hide()
-    this.broadcastAttention({ ...this.attentionState, active: false })
+    this.broadcastAttention({ ...this.attentionState, active: false, pill: undefined })
     this.startPointerWatch()
   }
 
@@ -609,6 +618,7 @@ export class WindowManager {
     if (this.modifierStage === 'peek') return
     this.micOpenGraceUntil = 0
     this.micPanelAnchor = null
+    this.awaitingPanelReentry = false
     this.stayOpen = false
     this.stopPointerWatch()
     if (!this.panel.isVisible()) return
@@ -622,10 +632,11 @@ export class WindowManager {
     if (this.overlayClosed || this.modifierStage === 'peek') return
     if (
       this.panning?.window === this.panel ||
+      this.videoSizing.dragging ||
       Date.now() < this.micOpenGraceUntil ||
       this.stayOpen ||
       this.dragStart ||
-      this.pointerInsidePanel()
+      this.keepOpenForPointer(screen.getCursorScreenPoint(), this.panel.getBounds())
     )
       return
     this.closePanel()
@@ -633,25 +644,15 @@ export class WindowManager {
 
   private insideHandoffWave(point: Point): boolean {
     const wave = this.micPanelAnchor
-    return (
-      !!wave &&
-      point.x >= wave.x &&
-      point.x < wave.x + wave.width &&
-      point.y >= wave.y &&
-      point.y < wave.y + wave.height
-    )
+    return !!wave && containsPoint(wave, point)
   }
 
-  private pointerInsidePanel(): boolean {
-    const point = screen.getCursorScreenPoint()
-    const bounds = this.panel.getBounds()
-    if (this.insideHandoffWave(point)) return true
-    return (
-      point.x >= bounds.x &&
-      point.x < bounds.x + bounds.width &&
-      point.y >= bounds.y &&
-      point.y < bounds.y + bounds.height
-    )
+  private keepOpenForPointer(point: Point, bounds: Rectangle): boolean {
+    if (containsPoint(bounds, point)) {
+      this.awaitingPanelReentry = false
+      return true
+    }
+    return this.awaitingPanelReentry || this.insideHandoffWave(point)
   }
 
   private get overlayClosed(): boolean {
@@ -667,18 +668,21 @@ export class WindowManager {
         this.stopPointerWatch()
         return
       }
-      if (this.panning?.window === this.panel) return
+      if (this.panning?.window === this.panel || this.videoSizing.dragging) return
       const point = screen.getCursorScreenPoint()
       const bounds = this.panel.getBounds()
       if (this.modifierStage === 'peek') return
-      const leftGutter = point.x >= bounds.x && point.x < bounds.x + WORKSPACE_GUTTER
+      const leftWidth = this.videoSizing.active ? 12 : WORKSPACE_GUTTER
+      const rightWidth = this.videoSizing.active ? 4 : this.rightWireGutter
+      const leftGutter = point.x >= bounds.x && point.x < bounds.x + leftWidth
       const rightGutter =
         !this.canvasRestore &&
-        this.panelLayout === 'dual' &&
-        point.x >= bounds.x + bounds.width - this.rightWireGutter &&
+        (this.panelLayout === 'dual' || this.videoSizing.active) &&
+        point.x >= bounds.x + bounds.width - rightWidth &&
         point.x < bounds.x + bounds.width
       const gutter =
         (leftGutter || rightGutter) &&
+        !(this.videoSizing.active && point.y >= bounds.y + bounds.height - 12) &&
         !this.insideHandoffWave(point) &&
         point.y >= bounds.y &&
         point.y < bounds.y + bounds.height &&
@@ -695,12 +699,8 @@ export class WindowManager {
         this.gutterIgnored = gutter
         this.panel.setIgnoreMouseEvents(gutter, { forward: true })
       }
-      if (
-        Date.now() >= this.micOpenGraceUntil &&
-        !this.stayOpen &&
-        !this.dragStart &&
-        !this.pointerInsidePanel()
-      )
+      const keepOpen = this.keepOpenForPointer(point, bounds)
+      if (Date.now() >= this.micOpenGraceUntil && !this.stayOpen && !this.dragStart && !keepOpen)
         this.panel.webContents.send(IPC.panelPointerOutside)
     }, 16)
     this.pointerWatch.unref()
@@ -850,6 +850,45 @@ export class WindowManager {
     const providers = this.attentionSessions.map(attentionProvider)
     if (this.agentAttention) providers.unshift(this.agentAttention)
     providers.splice(MAX_ATTENTION_DRIPS)
+    const live =
+      this.openMicLive && !panelVisible && !this.micMenuShown && this.modifierStage === 'normal'
+    if (!live || providers.length) {
+      clearTimeout(this.fireCooldown)
+      this.fireCooldown = undefined
+    } else if (this.attentionState.pill?.waiting && !this.fireCooldown) {
+      this.fireCooldown = setTimeout(() => {
+        this.fireCooldown = undefined
+        this.syncAttention()
+      }, 650)
+    }
+    if (live && (providers.length || this.fireCooldown)) {
+      const frame = this.dot.getBounds()
+      const area = this.workArea()
+      // Windows can give a 24px waveform a taller transparent window. Anchor to the
+      // renderer-reported glass size within that window, including each resize frame.
+      const pill = this.livePillBounds(area)
+      const bottom = frame.y + pill.height
+      const left = Math.max(area.x, frame.x - 8)
+      const top = Math.max(area.y, bottom - MIC_PILL_HEIGHT - 16)
+      const bounds = {
+        x: left,
+        y: top,
+        width: Math.min(area.x + area.width, frame.x + pill.width + 8) - left,
+        height: Math.min(area.y + area.height, bottom + 5) - top,
+      }
+      this.showAttention(bounds, {
+        ...NO_ATTENTION,
+        active: false,
+        providers,
+        provider: providers[0] ?? this.attentionState.provider,
+        pill: { width: pill.width, waiting: providers.length > 0 },
+        width: bounds.width,
+        height: bounds.height,
+        x: frame.x + pill.width / 2 - left,
+        y: bottom - MIC_PILL_HEIGHT / 2 - top,
+      })
+      return
+    }
     if (
       providers.length === 0 ||
       this.modifierStage !== 'normal' ||
@@ -859,7 +898,7 @@ export class WindowManager {
       this.talking
     ) {
       this.attentionWindow?.hide()
-      this.broadcastAttention({ ...this.attentionState, active: false })
+      this.broadcastAttention({ ...this.attentionState, active: false, pill: undefined, providers })
       return
     }
     const area = this.workArea()
@@ -872,13 +911,7 @@ export class WindowManager {
     const y = this.dotPosition.y
     const height = Math.max(DOT_SIZE + 2, area.y + area.height - y + 2)
     const bounds = { x, y, width, height }
-    if (!this.attentionWindow) {
-      this.attentionWindow = createWindow('attention', { width, height }, false)
-      this.attentionWindow.setIgnoreMouseEvents(true)
-    }
-    if (JSON.stringify(this.attentionWindow.getBounds()) !== JSON.stringify(bounds))
-      this.attentionWindow.setBounds(bounds)
-    this.broadcastAttention({
+    this.showAttention(bounds, {
       active: true,
       provider: providers[0]!,
       providers,
@@ -888,7 +921,18 @@ export class WindowManager {
       y: DOT_SIZE / 2,
       floor: height - 2,
     })
+  }
+
+  private showAttention(bounds: Rectangle, state: AttentionMotion) {
+    if (!this.attentionWindow) {
+      this.attentionWindow = createWindow('attention', bounds, false)
+      this.attentionWindow.setIgnoreMouseEvents(true)
+    }
+    if (JSON.stringify(this.attentionWindow.getBounds()) !== JSON.stringify(bounds))
+      this.attentionWindow.setBounds(bounds)
+    this.broadcastAttention(state)
     if (!this.attentionWindow.isVisible()) this.attentionWindow.showInactive()
+    else if (state.pill) this.attentionWindow.moveTop()
   }
 
   private dotBounds(): Rectangle {
@@ -897,6 +941,7 @@ export class WindowManager {
 
   setMicMenu(open: boolean) {
     this.micMenuShown = open && this.openMicLive && this.dot.isVisible()
+    this.syncAttention()
     if (this.micMenuShown) this.replySize = { width: 92, height: 24 }
     this.syncSpokenReply()
     if (!open || !this.openMicLive || !this.dot.isVisible()) {
@@ -915,15 +960,14 @@ export class WindowManager {
     }
   }
 
+  private livePillBounds(area: Rectangle) {
+    return spokenReplyBounds(this.dotPosition, area, this.replySize.width, this.replySize.height)
+  }
+
   private placeDot(): void {
     if (this.micMenuShown) return
     const bounds = this.openMicLive
-      ? spokenReplyBounds(
-          this.dotPosition,
-          this.workArea(),
-          this.replySize.width,
-          this.replySize.height,
-        )
+      ? this.livePillBounds(this.workArea())
       : micIndicatorBounds(this.dotPosition, this.workArea(), false)
     const previous = this.dot.getBounds()
     if (
@@ -931,8 +975,10 @@ export class WindowManager {
       bounds.y !== previous.y ||
       bounds.width !== previous.width ||
       bounds.height !== previous.height
-    )
+    ) {
       this.dot.setBounds(bounds)
+    }
+    if (this.openMicLive) this.syncAttention()
     if (this.referenceReady) this.syncReference()
   }
 
@@ -1001,6 +1047,14 @@ export class WindowManager {
       this.micPanelAnchor.x += this.dotPosition.x - x
       this.micPanelAnchor.y += this.dotPosition.y - y
     }
+    if (this.videoSizing.sized) {
+      const bounds = this.panel.getBounds()
+      this.setPanelBounds({
+        ...bounds,
+        x: clamp(bounds.x + this.dotPosition.x - x, area.x, area.x + area.width - bounds.width),
+        y: clamp(bounds.y + this.dotPosition.y - y, area.y, area.y + area.height - bounds.height),
+      })
+    }
     this.placeDot()
     // Dragging the panel's header moves the hidden dot, and the panel stays anchored to it.
     this.updatePanelLayout()
@@ -1033,10 +1087,11 @@ export class WindowManager {
    * half its bottom-right corner does, growing up.
    */
   private placePanel(height: number): void {
+    if (this.videoSizing.sized && this.modifierStage !== 'peek') return
     if (this.canvasRestore && this.modifierStage !== 'peek') {
       const bounds = squareOverlay(this.workArea(), this.dotPosition)
       const before = this.panel.getBounds()
-      this.panel.setBounds(bounds)
+      this.setPanelBounds(bounds)
       if (before.width !== bounds.width || before.height !== bounds.height)
         this.panel.webContents.send(IPC.panelOpened, {
           maxHeight: bounds.height,
@@ -1055,7 +1110,7 @@ export class WindowManager {
       // Center the painted card, not the native window with its transparent wire gutters.
       const x = Math.round(wave.x + wave.width / 2 - this.cardWidth() / 2) - WORKSPACE_GUTTER
       const y = Math.round(wave.y + wave.height / 2 - height / 2)
-      this.panel.setBounds({
+      this.setPanelBounds({
         x: clamp(x, area.x, area.x + area.width - width),
         y: clamp(y, area.y, area.y + area.height - height),
         width,
@@ -1072,7 +1127,21 @@ export class WindowManager {
           area.y + area.height - height,
         )
     if (this.workspacePanel) this.workspaceTop = y
-    this.panel.setBounds({ x, y, width, height })
+    this.setPanelBounds({ x, y, width, height })
+  }
+
+  private setPanelBounds(bounds: Rectangle): void {
+    const previous = this.panel.getBounds()
+    const shrinks = bounds.width < previous.width || bounds.height < previous.height
+    const point =
+      shrinks && this.panel.isVisible() && !this.dragStart && this.modifierStage === 'normal'
+        ? screen.getCursorScreenPoint()
+        : null
+    this.panel.setBounds(bounds)
+    // Compare the same screen point against both native rectangles. A resize that
+    // moves the panel off the pointer is not a pointer exit.
+    if (point && containsPoint(previous, point) && !containsPoint(this.panel.getBounds(), point))
+      this.awaitingPanelReentry = true
   }
 
   private workArea(): Rectangle {
@@ -1096,4 +1165,13 @@ export class WindowManager {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
+}
+
+function containsPoint(bounds: Rectangle, point: Point): boolean {
+  return (
+    point.x >= bounds.x &&
+    point.x < bounds.x + bounds.width &&
+    point.y >= bounds.y &&
+    point.y < bounds.y + bounds.height
+  )
 }

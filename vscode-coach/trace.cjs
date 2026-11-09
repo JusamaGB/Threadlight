@@ -1,12 +1,13 @@
 const vscode = require('vscode')
 
-function createTrace(context, connected) {
+function createTrace(context, connected, lesson) {
   let active
   const commands = vscode.commands
   function clear() {
     if (!active) return
     const old = active
     active = undefined
+    lesson.stop()
     clearTimeout(old.timer)
     old.provider.dispose()
     void commands.executeCommand('setContext', 'threadlight.coach.trace', false)
@@ -63,7 +64,7 @@ function createTrace(context, connected) {
       typed: doc.getText(new vscode.Range(from, doc.positionAt(t.start + t.length))),
     }
   }
-  async function show(s, anchor, text) {
+  async function show(s, anchor, text, spoken = false) {
     const editor = s.editor
     const doc = editor.document
     if (
@@ -123,12 +124,7 @@ function createTrace(context, connected) {
           const rest = remaining(t, position)
           if (!rest) return
           t.offered = true
-          return [
-            new vscode.InlineCompletionItem(
-              rest.replace(/\r\n/g, '\n'),
-              new vscode.Range(position, position),
-            ),
-          ]
+          return [lesson.completion(doc, position, rest.replace(/\r\n/g, '\n'))]
         },
       },
     )
@@ -151,9 +147,19 @@ function createTrace(context, connected) {
         )
       return {
         tracing: true,
+        ...lesson.startBlock(
+          editor,
+          text,
+          anchor.line,
+          spoken,
+          Array.from({ length: Math.min(4, anchor.line - 1) }, (_, i) => {
+            const line = Math.max(1, anchor.line - 4) + i
+            return { line, text: doc.lineAt(line - 1).text.slice(0, 500) }
+          }),
+        ),
         line: anchor.line,
         column: anchor.column,
-        instruction: 'Let the learner type. Wait for their explicit next step.',
+        ...(!spoken && { instruction: 'Let the learner type. Wait for their explicit next step.' }),
       }
     } catch (error) {
       if (active === t) clear()
@@ -172,7 +178,7 @@ function createTrace(context, connected) {
     vscode.window.onDidChangeTextEditorSelection(({ textEditor }) => {
       if (active?.editor === textEditor) refresh(active)
     }),
-    vscode.workspace.onDidChangeTextDocument(({ document, contentChanges }) => {
+    vscode.workspace.onDidChangeTextDocument(({ document, contentChanges, reason }) => {
       const t = active
       if (!t || document !== t.editor.document || !contentChanges.length) return
       const [change] = contentChanges
@@ -187,6 +193,11 @@ function createTrace(context, connected) {
       t.length += change.text.length - change.rangeLength
       t.version = document.version
       if (t.length > t.text.length) return clear()
+      const from = document.positionAt(t.start)
+      const pos = change.range.start
+      const before = document.getText(new vscode.Range(from, pos))
+      if (t.text.startsWith(before))
+        lesson.changed(pos.line - from.line, before.split(/\r\n?|\n/).at(-1), change, reason)
       refresh(t)
     }),
     { dispose: clear },

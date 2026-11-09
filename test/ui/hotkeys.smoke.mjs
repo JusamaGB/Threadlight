@@ -3,6 +3,13 @@ import assert from 'node:assert/strict'
 
 export async function checkHotkeys(page, capture) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  const location = (choice) =>
+    page.getByRole('button', { name: 'Ghost practice location: ' + choice })
+  await location('Current file').click()
+  await page.getByRole('menuitem', { name: 'Practice copy', exact: true }).click()
+  await location('Practice copy').click()
+  await page.getByRole('menuitem', { name: 'Current file', exact: true }).click()
+  await location('Current file').waitFor()
   const preference = page.getByRole('button', {
     name: 'Automatic Python suggestions: VS Code setting',
   })

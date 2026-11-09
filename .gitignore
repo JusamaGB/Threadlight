@@ -18,6 +18,7 @@ build/
 coverage/
 release-local/
 vscode-coach/*.vsix
+vscode-margin-notes/*.vsix
 *.log
 
 screenshots/
@@ -25,6 +26,7 @@ screenshots/
 !resources/icon-16.png
 !resources/icon-32.png
 !resources/icon-64.png
+!src/renderer/assets/browser-spiral.png
 *.jpg
 *.jpeg
 *.gif

@@ -1,8 +1,8 @@
 {
   "name": "threadlight",
   "displayName": "Threadlight",
-  "version": "0.3.1",
-  "description": "Threadlight status, composer and scoped shared memory for Claude Code chats.",
+  "version": "0.4.4",
+  "description": "Threadlight status, composer, scoped shared memory and shared browser tools for Claude Code chats.",
   "author": {
     "name": "Julius Deane"
   },

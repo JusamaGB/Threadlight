@@ -61,6 +61,7 @@ const CYAN: Colour = [0.04, 0.83, 1]
 const BLUE: Colour = [0.15, 0.29, 1]
 const VIOLET: Colour = [0.58, 0.25, 1]
 const PINK: Colour = [1, 0.13, 0.6]
+const MIC_MUTED_RED: Colour = [231 / 255, 76 / 255, 60 / 255]
 const GOLD: Colour = [1, 0.67, 0.18]
 const SHINE: Colour = [1, 0.96, 0.78]
 // Approved active-wheel preview: vibrant Claude orange with a glossy Codex-blue sweep.
@@ -144,7 +145,7 @@ export class MotionGeometry {
         : (0.025 + (compact ? pose.rest * 0.02 : 0) + energy * 0.38) * height * size
       const colourAt = (u: number, strand: number): Colour => {
         if (audioStyle && audio.level <= 0.012) {
-          return audioStyle === 'muted' ? [231 / 255, 76 / 255, 60 / 255] : [0.55, 0.6, 0.65]
+          return audioStyle === 'muted' ? MIC_MUTED_RED : [0.55, 0.6, 0.65]
         }
         const flow = edgeToEdge
           ? t * 0.32 +
@@ -224,7 +225,22 @@ export class MotionGeometry {
         for (let i = 1; i <= segments; i++) {
           const u = i / segments
           const next = point(u, strand)
-          const ribbonColour = colourAt(u, strand)
+          let ribbonColour = colourAt(u, strand)
+          let mutedTip = 0
+          if (audioStyle === 'muted' && agent) {
+            const midpoint = (i - 0.5) / segments
+            const edge = Math.min(midpoint, 1 - midpoint)
+            // Keep the outer 5% red, then fade into the speaking colour by 18%.
+            if (edge < 0.18) {
+              const blend = smooth(unit((edge - 0.05) / 0.13))
+              mutedTip = 1 - blend
+              ribbonColour = [
+                mix(MIC_MUTED_RED[0], ribbonColour[0], blend),
+                mix(MIC_MUTED_RED[1], ribbonColour[1], blend),
+                mix(MIC_MUTED_RED[2], ribbonColour[2], blend),
+              ]
+            }
+          }
           const baseColour: Colour = activeWheel
             ? [
                 mix(ribbonColour[0], ACTIVE_ORANGE[0], pose.wheel),
@@ -262,7 +278,7 @@ export class MotionGeometry {
             pose.wheel,
           )
           const alpha =
-            taper *
+            mix(taper, 1, mutedTip) *
             (0.55 + energy * 0.4) *
             (1 - pose.rest * (compact ? 0.2 : 0.5)) *
             (1 + (activeWheel ? (0.18 + shine * 0.16) * pose.wheel : 0))

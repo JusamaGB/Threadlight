@@ -1,3 +1,4 @@
+import { setBrowserAccess } from '../src/main/browser/registry'
 import { memoryTestTransport } from './memoryTransportHelper'
 import { proxyRpc } from './mcpProxyHelper'
 import type { MemoryProxy } from '../src/main/memory/transport'
@@ -14,6 +15,7 @@ import { AgentStore } from '../src/main/agent/agentStore'
 import type { CodexTransport } from '../src/main/agent/codexClient'
 import type { JsonObject } from '../src/main/sessions/json'
 import { APP_CONTROL_SERVER } from '../src/shared/appControl'
+import { COACH_INSTRUCTIONS, COACH_SKILL_ROUTE } from '../src/shared/editorCoach'
 import { controlWorkspaces } from '../src/main/appControl/workspaces'
 import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
@@ -94,6 +96,83 @@ export function controlFixture(timeout = 40) {
   return { service, caller, deps, decisions, commands, publish, file, directory }
 }
 describe('application control contract and service', () => {
+  it('routes hosted browser tools through the shared service and honours caller revocation', async () => {
+    const f = controlFixture()
+    const call = vi.fn(async (caller) => ({
+      ok: caller.valid(),
+      observation: { id: caller.id, hosted: caller.hosted },
+    }))
+    setBrowserAccess({ call })
+    try {
+      const reply = await f.service.call(f.caller, 'threadlight_browser', { action: 'list' })
+      expect(reply).toMatchObject({
+        outcome: 'ok',
+        data: { ok: true, observation: { id: 'hosted:conversation', hosted: true } },
+      })
+      f.caller.active = false
+      expect(
+        (await f.service.call(f.caller, 'threadlight_browser', { action: 'list' })).outcome,
+      ).toBe('denied')
+      expect(call).toHaveBeenCalledTimes(1)
+    } finally {
+      setBrowserAccess(undefined)
+    }
+  })
+
+  it('loads the coach on request, persists only approved profile fields and respects later manual edits', async () => {
+    const f = controlFixture()
+    const skill = (action: string, caller = f.caller) =>
+      f.service.call(caller, 'threadlight_coach_skill', { action })
+    const file = join(f.directory, 'coach-profile.json')
+    writeFileSync(file, JSON.stringify({ level: 'CS50P weeks 0–3', teachingStyle: 'Ask me first' }))
+    const current = (await skill('profile')).data as { revision: string; selected: boolean }
+    expect(APP_CONTROL_INSTRUCTIONS).toContain(COACH_SKILL_ROUTE)
+    expect(APP_CONTROL_INSTRUCTIONS).not.toContain(COACH_INSTRUCTIONS)
+    expect(current.selected).toBe(false)
+    expect(current).not.toHaveProperty('skill')
+    expect((await skill('select')).data).toMatchObject({
+      selected: true,
+      skill: expect.stringContaining('name: threadlight-coach'),
+      editorInstructions: expect.stringContaining('proposal_line'),
+      profile: { level: 'CS50P weeks 0–3', teachingStyle: 'Ask me first' },
+    })
+    expect((await skill('profile', { ...f.caller })).data).toMatchObject({ selected: false })
+    const update = {
+      operationId: randomUUID(),
+      expectedRevision: current.revision,
+      patch: { level: 'CS50P week 4' },
+    }
+    const pending = await f.service.call(f.caller, 'threadlight_update_coach_profile', update)
+    expect(pending.outcome).toBe('pending')
+    const receipt = f.service.followChatReceipt(f.caller, pending)
+    f.decisions[0]!(true)
+    expect((await receipt).outcome).toBe('ok')
+    const saved = JSON.parse(readFileSync(file, 'utf8'))
+    expect(saved).toMatchObject({ level: 'CS50P week 4', teachingStyle: 'Ask me first' })
+    expect(
+      (await f.service.call(f.caller, 'threadlight_update_coach_profile', update)).outcome,
+    ).toBe('ok')
+    expect((await skill('leave')).data).toEqual({ selected: false })
+    const restarted = new AppControlService(f.deps, f.file)
+    expect(
+      (await restarted.call({ ...f.caller }, 'threadlight_coach_skill', { action: 'select' })).data,
+    ).toMatchObject({ profile: saved })
+    const stale = await f.service.call(f.caller, 'threadlight_update_coach_profile', {
+      ...update,
+      operationId: randomUUID(),
+    })
+    const staleReceipt = f.service.followChatReceipt(f.caller, stale)
+    f.decisions[1]!(true)
+    expect((await staleReceipt).outcome).toBe('conflict')
+    writeFileSync(file, JSON.stringify({ ...saved, editorHelp: 'Trace when asked' }))
+    expect((await skill('profile')).data).toMatchObject({
+      selected: false,
+      profile: { editorHelp: 'Trace when asked' },
+    })
+    writeFileSync(file, '{broken')
+    expect((await skill('profile')).outcome).toBe('unavailable')
+    expect(readFileSync(file, 'utf8')).toBe('{broken')
+  })
   it('normalizes only known workspace identities and retains the nearest known parent', () => {
     const workspaces = controlWorkspaces([
       { id: 'claude:C:\\Project', name: 'Claude · Project' },
@@ -249,19 +328,119 @@ describe('application control contract and service', () => {
     expect(f.deps.startSpaceChat).toHaveBeenCalledOnce()
   })
   it('publishes exactly the bounded tools and deliberately supported settings', () => {
-    expect(controlTools).toHaveLength(18)
+    expect(controlTools).toHaveLength(21)
     for (const tool of controlTools) expect(z.toJSONSchema(tool.schema).type).toBe('object')
     expect(Object.keys(controlSettingsSchema.shape).sort()).toEqual([
+      'ghostPracticeLocation',
       'hoverHelp',
       'listMode',
       'listWindowHours',
       'maxSessions',
       'panelLayout',
       'pythonSuggestions',
+      'spokenGhostWalkthroughs',
     ])
     expect(controlSettingsSchema.safeParse({ agentProvider: 'codex' }).success).toBe(false)
     expect(APP_CONTROL_INSTRUCTIONS).toContain('never delegate')
     expect(APP_CONTROL_INSTRUCTIONS).toContain('same spoken action')
+  })
+  it('returns a blocked space receipt before displaying an approval card', async () => {
+    const f = controlFixture()
+    const args = {
+      spaceId: randomUUID(),
+      operationId: randomUUID(),
+      provider: 'codex',
+      role: 'UI',
+      openingMessage: 'Wait for a request.',
+    }
+    f.deps.startSpaceChat = vi.fn()
+    f.deps.spaceChatIssue = () =>
+      'Resume the Shared Space and set an active communication period before starting a chat.'
+    const result = await f.service.call(f.caller, 'threadlight_start_space_chat', args)
+    expect(result).toMatchObject({ outcome: 'unavailable', data: { linked: false } })
+    expect(f.decisions).toHaveLength(0)
+    expect(f.deps.startSpaceChat).not.toHaveBeenCalled()
+    expect(
+      await f.service.call(f.caller, 'threadlight_get_operation', {
+        operationId: args.operationId,
+      }),
+    ).toEqual(result)
+  })
+  it('keeps chat approval attached to its tool call and uses the same receipt after a slow decision', async () => {
+    const f = controlFixture(),
+      operationId = randomUUID(),
+      target = 'codex:' + randomUUID()
+    f.deps.startSpaceChat = vi.fn(async () => ({ outcome: 'ok' as const, target, linked: true }))
+    const pending = await f.service.call(f.caller, 'threadlight_start_space_chat', {
+      operationId,
+      spaceId: randomUUID(),
+      provider: 'codex',
+      role: 'UI',
+      openingMessage: 'Wait for a request.',
+    })
+    expect((await f.service.followChatReceipt(f.caller, pending, 1)).outcome).toBe('pending')
+    const settled = f.service.followChatReceipt(f.caller, pending)
+    f.decisions[0]!(true)
+    expect(await settled).toMatchObject({
+      operationId,
+      outcome: 'ok',
+      data: { target, linked: true },
+    })
+    expect(f.deps.startSpaceChat).toHaveBeenCalledTimes(1)
+  })
+  it('identifies a bad creation UUID and reports progress through approval and Codex membership', async () => {
+    const f = controlFixture(),
+      spaceId = randomUUID(),
+      target = 'codex:' + randomUUID(),
+      model = 'gpt-6.1-sol'
+    const input = {
+      spaceId,
+      provider: 'codex',
+      role: 'UI updates',
+      openingMessage: 'Wait for a UI request.',
+      model,
+      operationId: randomUUID(),
+    }
+    const activity = vi.fn()
+    const caller = { ...f.caller, approve: vi.fn(f.caller.approve), chatActivity: activity }
+    f.deps.spaces = () => [{ id: spaceId, title: 'Threadlight', workspaceId: 'workspace' }]
+    f.deps.startSpaceChat = vi.fn(async () => ({
+      outcome: 'ok' as const,
+      linked: true,
+      target,
+      model,
+    }))
+    expect(
+      await f.service.call(caller, 'threadlight_start_space_chat', {
+        ...input,
+        operationId: 'start-threadlight-ui-updates-agent',
+      }),
+    ).toMatchObject({ outcome: 'unavailable', reason: expect.stringContaining('UUID') })
+    expect(await f.service.call(caller, 'threadlight_start_space_chat', input)).toMatchObject({
+      outcome: 'pending',
+    })
+    expect(caller.approve).toHaveBeenCalledWith(
+      'control:' + input.operationId,
+      'Start Codex chat',
+      expect.stringContaining('Model: ' + model),
+      expect.any(Function),
+    )
+    expect(f.deps.startSpaceChat).not.toHaveBeenCalled()
+    f.decisions[0]!(true)
+    await vi.waitFor(() => expect(activity).toHaveBeenCalledTimes(2))
+    expect(activity.mock.calls[0]).toEqual([
+      input.operationId,
+      true,
+      'Starting the Codex chat in Threadlight…',
+    ])
+    expect(activity.mock.calls[1]).toEqual([
+      input.operationId,
+      false,
+      expect.stringContaining('linked to Threadlight using ' + model),
+    ])
+    expect(
+      await f.service.call(caller, 'threadlight_get_operation', { operationId: input.operationId }),
+    ).toMatchObject({ outcome: 'ok', data: { linked: true, target, model } })
   })
   it('restricts coaching to the live caller and only accepts the bounded editor actions', async () => {
     const f = controlFixture()
@@ -476,6 +655,20 @@ describe('application control contract and service', () => {
     expect(unavailable.outcome).toBe('unavailable')
     expect(f.commands).toHaveLength(1)
   })
+  it('opens the panel browser without resolving a coding chat', async () => {
+    const f = controlFixture(1000)
+    f.caller.resolve = vi.fn(() => null)
+    f.publish()
+    const request = f.service.call(f.caller, 'threadlight_navigate', {
+      operationId: randomUUID(),
+      route: { page: 'browser' },
+    })
+    expect(f.commands).toHaveLength(1)
+    expect(f.commands[0]!.route).toEqual({ page: 'browser' })
+    expect(f.caller.resolve).not.toHaveBeenCalled()
+    f.publish(f.commands[0])
+    expect((await request).outcome).toBe('ok')
+  })
   it('awaits committed navigation and rejects stale generations and wrong routes', async () => {
     const f = controlFixture(1000)
     f.publish()
@@ -586,7 +779,7 @@ describe('application control contract and service', () => {
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
       })
     try {
-      expect((await json(await rpc())).result.tools).toHaveLength(18)
+      expect((await json(await rpc())).result.tools).toHaveLength(21)
       f.caller.foregroundWindow = async (inspect) => ({
         application: 'Fixture.exe',
         title: 'Fixture window',
@@ -641,6 +834,44 @@ describe('application control contract and service', () => {
 })
 
 describe('actual hosted adapters with synthetic provider transports and real MCP execution', () => {
+  it('answers the original chat tool call with the post-Submit receipt', async () => {
+    const f = controlFixture(),
+      server = new AppControlServer(f.service, memoryTestTransport(f.directory))
+    const target = 'codex:' + randomUUID()
+    f.deps.startSpaceChat = vi.fn(async () => ({ outcome: 'ok' as const, linked: true, target }))
+    await server.start()
+    const connection = server.connect({
+      ...f.caller,
+      approve: (_id, _title, _detail, decide) => {
+        expect(f.deps.startSpaceChat).not.toHaveBeenCalled()
+        setImmediate(() => decide(true))
+      },
+    })
+    try {
+      const args = {
+        spaceId: randomUUID(),
+        operationId: randomUUID(),
+        role: 'UI',
+        provider: 'codex',
+        openingMessage: 'Wait for a request.',
+      }
+      const reply = proxyRpc(connection.mcp!, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'threadlight_start_space_chat', arguments: args },
+      })
+      const response = await json(await reply)
+      expect(JSON.parse(response.result.content[0]!.text)).toMatchObject({
+        outcome: 'ok',
+        operationId: args.operationId,
+        data: { target, linked: true },
+      })
+    } finally {
+      connection.close()
+      server.close()
+    }
+  })
   it('Claude delivers the knowledge, executes control through its configured endpoint, denies worker use and revokes access', async () => {
     const f = controlFixture(),
       auth = memoryTestTransport(f.directory),

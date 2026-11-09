@@ -1,6 +1,8 @@
 const vscode = require('vscode')
 const { randomUUID } = require('node:crypto')
-const { reviewRows, reviewBodies, resultCommand, whyCommand } = require('./proposalReview.cjs')
+const { reviewRows, resultCommand, whyCommand } = require('./proposalReview.cjs')
+
+const { createProposalSurface } = require('./proposalSurface.cjs')
 
 function readGroups(doc, proposals) {
   const text = doc.getText()
@@ -66,7 +68,9 @@ function readGroups(doc, proposals) {
 }
 
 function createProposals(context, connected, emit) {
-  const controller = vscode.comments.createCommentController('threadlight.proposals', 'Threadlight')
+  const surface = createProposalSurface(context, (q) => {
+    if (queue === q) clear()
+  })
   const oldMark = vscode.window.createTextEditorDecorationType({
     backgroundColor: new vscode.ThemeColor('diffEditor.removedTextBackground'),
     textDecoration: 'line-through',
@@ -79,15 +83,18 @@ function createProposals(context, connected, emit) {
     },
   })
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 51)
+  const resultItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50)
+  const whyItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 49)
   item.command = 'threadlight.coach.nextProposal'
-  let queue, thread
+  let queue
   const setKey = (active) =>
     vscode.commands.executeCommand('setContext', 'threadlight.coach.proposal', active)
   function hide() {
     void vscode.commands.executeCommand('setContext', 'threadlight.coach.remaining', false)
-    thread?.dispose()
-    thread = undefined
-    if (queue) {
+    surface.clear()
+    resultItem.hide()
+    whyItem.hide()
+    if (queue && vscode.window.visibleTextEditors.includes(queue.editor)) {
       queue.editor.setDecorations(oldMark, [])
       queue.editor.setDecorations(newMark, [])
     }
@@ -99,61 +106,128 @@ function createProposals(context, connected, emit) {
     if (queue) emit({ proposalState: { status: 'idle' } })
     queue = undefined
   }
-  function current(q) {
+  function valid(q) {
     return (
       queue === q &&
       connected(q) &&
       vscode.workspace.isTrusted &&
-      q.editor === vscode.window.activeTextEditor &&
       !q.doc.isClosed &&
       q.doc.version === q.version
     )
   }
+  function current(q) {
+    const editor = vscode.window.activeTextEditor
+    return valid(q) && (surface.isPreview(editor, q) || (editor === q.editor && !q.preview))
+  }
   function inView(q) {
-    return q.editor.visibleRanges.some((range) => range.contains(q.target.start))
+    const editor = vscode.window.activeTextEditor
+    if (surface.isPreview(editor, q))
+      return (
+        q.previewAnchor && editor.visibleRanges.some((range) => range.contains(q.previewAnchor))
+      )
+    return (
+      editor === q.editor && q.editor.visibleRanges.some((range) => range.contains(q.target.start))
+    )
   }
   function status() {
-    if (queue && !queue.applying && !current(queue)) clear()
+    if (queue && !queue.applying && !valid(queue)) clear()
     if (!queue) return { status: 'idle' }
     const g = queue.groups[queue.index]
+    const shown = queue.presentation === 'shown' && current(queue)
     return {
-      status: queue.presentation === 'shown' ? 'shown' : 'pending',
+      status: shown ? 'shown' : 'pending',
       token: queue.token,
       step: g.number,
       total: queue.total,
-      explanation: queue.presentation === 'shown' ? g.explanation : undefined,
+      explanation: shown ? g.explanation : undefined,
+      ...(queue.walkRow && !queue.remaining && { walkRow: queue.walkRow }),
       line: queue.doc.positionAt(g.edits[0].start).line + 1,
     }
   }
-  function renderReview(q) {
-    thread.comments = reviewBodies(vscode, q, q.groups[q.index].explanation).map((body) => ({
-      body,
-      mode: vscode.CommentMode.Preview,
-      author: { name: 'Proposed change' },
-    }))
-  }
-  function toggle(token, field) {
+  async function line(token, requestedRow) {
     const q = queue
-    if (!thread || !q?.presentation || token !== q.token || !current(q)) return
-    q[field] = !q[field]
-    renderReview(q)
+    if (!q || token !== q.token || !q.presentation || !current(q))
+      throw Error('The displayed proposal changed. Check proposal status again.')
+    if (q.switching || q.accepting) throw Error('The proposal view is switching. Try again.')
+    const rows = (q.rows ?? reviewRows(q.doc, q.groups[q.index].edits)).filter(
+      (row) => row.kind === 'add' || row.kind === 'remove',
+    )
+    const number = requestedRow ?? q.walkRow ?? 1
+    if (!Number.isInteger(number) || number < 1 || number > rows.length)
+      throw Error('This proposal has ' + rows.length + ' changed rows.')
+    const row = rows[number - 1]
+    q.switching = true
+    let highlighted = false
+    try {
+      if (q.rows) highlighted = await surface.focusRow(q, row)
+    } catch {
+      // A valid proposal can still be discussed if its highlight cannot be displayed.
+    } finally {
+      q.switching = false
+    }
+    if (!valid(q) || q.token !== token || q.remaining)
+      throw Error('The displayed proposal changed. Check proposal status again.')
+    q.walkRow = number
+    resultItem.text = q.result ? 'Hide result' : 'Result'
+    return {
+      token,
+      row: number,
+      totalRows: rows.length,
+      kind: row.kind,
+      line: row.line,
+      text: row.text,
+      highlighted,
+    }
+  }
+  async function toggle(token, field) {
+    const q = queue
+    if (!q?.rows || !q.presentation || q.switching || token !== q.token || !current(q)) return
+    if (field === 'why') {
+      void vscode.window.showInformationMessage(q.groups[q.index].explanation)
+      return
+    }
+    q.result = !q.result
+    resultItem.text = q.result ? 'Hide result' : 'Result'
+    q.switching = true
+    try {
+      await surface.result(q, q.result)
+    } catch (error) {
+      if (queue === q && q.token === token) clear()
+      throw error
+    } finally {
+      q.switching = false
+    }
   }
   async function show(q) {
+    await surface.source(q)
+    if (queue !== q) throw Error('Proposal interrupted.')
     hide()
     q.presentation = undefined
     emit({ proposalState: { status: 'pending' } })
     q.token = randomUUID()
+    q.walkRow = undefined
     const token = q.token
     try {
       if (!current(q)) throw Error('Source changed. Review the active buffer again.')
+      if (!q.localPrediction && vscode.window.tabGroups.activeTabGroup.activeTab?.isPreview) {
+        // Opening another file in a preview tab would otherwise close the reviewed source.
+        await vscode.commands.executeCommand('workbench.action.keepEditor')
+        if (!current(q) || q.token !== token) throw Error('Proposal interrupted.')
+      }
       const g = q.groups[q.index]
       const ranges = g.edits.map(
         (e) => new vscode.Range(q.doc.positionAt(e.start), q.doc.positionAt(e.end)),
       )
       const target = ranges[0]
-      const commentsVisible = vscode.workspace.getConfiguration('comments').get('visible', true)
+      q.target = target
+      q.editor.selection = new vscode.Selection(target.start, target.start)
+      q.editor.revealRange(
+        q.editor.selection,
+        vscode.TextEditorRevealType.InCenterIfOutsideViewport,
+      )
+      q.rows = undefined
       const inline =
-        (q.localPrediction || !commentsVisible) &&
+        q.localPrediction &&
         g.edits.length === 1 &&
         !/[\r\n]/.test(g.edits[0].old + g.edits[0].replacement) &&
         g.edits[0].replacement.length <= 100 &&
@@ -168,24 +242,16 @@ function createProposals(context, connected, emit) {
           },
         ])
       } else {
-        if (!commentsVisible)
-          throw Error('Enable visible editor comments to display grouped or multiline changes.')
         q.rows = reviewRows(q.doc, g.edits)
-        q.result = q.why = false
-        thread = controller.createCommentThread(
-          q.doc.uri,
-          new vscode.Range(target.start, target.start),
-          [],
-        )
-        thread.canReply = false
-        thread.label =
-          'Threadlight · ' + g.number + '/' + q.total + ' · Tab accept · Alt+] next · Esc dismiss'
-        renderReview(q)
-        thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded
+        q.result = false
+        resultItem.text = 'Result'
+        whyItem.text = 'Why this edit?'
+        await surface.show(q)
+        resultItem.command = { command: resultCommand, title: 'Result', arguments: [token] }
+        whyItem.command = { command: whyCommand, title: 'Why this edit?', arguments: [token] }
+        resultItem.show()
+        whyItem.show()
       }
-      q.target = target
-      q.editor.selection = new vscode.Selection(target.start, target.end)
-      q.editor.revealRange(target, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
       for (let i = 0; i < 25; i++) {
         await new Promise((resolve) => setTimeout(resolve, 40))
         if (!current(q) || token !== q.token)
@@ -196,7 +262,7 @@ function createProposals(context, connected, emit) {
           q.presentation = inView(q) ? 'shown' : 'offscreen'
           item.text = '$(arrow-right) Change ' + g.number + '/' + q.total
           item.tooltip = 'Next change (Alt+]). Tab accepts, Alt+Backspace skips and Esc dismisses.'
-          item.show()
+          if (q.total > 1 || !q.rows) item.show()
           const result = status()
           emit({ proposalState: result, narrate: q.narrate })
           return result
@@ -215,6 +281,7 @@ function createProposals(context, connected, emit) {
       localPrediction: source.localPrediction === true,
       editor: source.editor,
       doc: source.document,
+      column: source.editor.viewColumn,
       version: source.version,
       groups,
       index: 0,
@@ -225,12 +292,9 @@ function createProposals(context, connected, emit) {
   }
   async function next(token, skip = false) {
     const q = queue
-    if (!q || q.token !== token || (!q.presentation && !q.remaining))
+    if (!q || q.switching || q.token !== token || (!q.presentation && !q.remaining))
       return { ...status(), applied: false }
-    if (!current(q)) {
-      clear()
-      return { status: 'idle', applied: false }
-    }
+    if (!current(q)) return { ...status(), applied: false }
     if (q.remaining) {
       q.remaining = false
       return { ...(await show(q)), applied: true }
@@ -246,15 +310,18 @@ function createProposals(context, connected, emit) {
   }
   async function accept() {
     const q = queue
-    if (!q?.presentation || !current(q)) return clear()
+    if (!q?.presentation || q.switching || q.accepting) return
+    if (!current(q)) return
     if (!inView(q)) return
-    if (
-      (thread &&
-        (!vscode.workspace.getConfiguration('comments').get('visible', true) ||
-          thread.collapsibleState === vscode.CommentThreadCollapsibleState.Collapsed)) ||
-      !q.editor.selection.isEqual(q.target)
-    )
-      return clear()
+    const token = q.token
+    q.accepting = true
+    try {
+      await surface.source(q)
+    } finally {
+      q.accepting = false
+    }
+    if (queue !== q || q.token !== token) return
+    if (!current(q)) return
     const g = q.groups[q.index],
       prior = q.doc.getText()
     const sorted = [...g.edits].sort((a, b) => b.start - a.start)
@@ -324,13 +391,21 @@ function createProposals(context, connected, emit) {
       void vscode.window.showWarningMessage(error.message)
     }
   }
+  function refreshVisibility(q) {
+    if (!q.presentation) return
+    const presentation = current(q) && inView(q) ? 'shown' : 'offscreen'
+    if (q.presentation === presentation) return
+    q.presentation = presentation
+    emit({ proposalState: status() })
+  }
   context.subscriptions.push(
-    controller,
     item,
+    resultItem,
+    whyItem,
     oldMark,
     newMark,
-    vscode.commands.registerCommand(resultCommand, (token) => toggle(token, 'result')),
-    vscode.commands.registerCommand(whyCommand, (token) => toggle(token, 'why')),
+    vscode.commands.registerCommand(resultCommand, (token) => run(() => toggle(token, 'result'))()),
+    vscode.commands.registerCommand(whyCommand, (token) => run(() => toggle(token, 'why'))()),
     vscode.commands.registerCommand('threadlight.coach.acceptProposal', run(accept)),
     vscode.commands.registerCommand('threadlight.coach.dismissProposals', clear),
     vscode.commands.registerCommand(
@@ -341,28 +416,45 @@ function createProposals(context, connected, emit) {
       'threadlight.coach.nextProposal',
       run(() => next(queue?.token)),
     ),
-    vscode.window.onDidChangeActiveTextEditor(() => {
-      if (queue) clear()
-    }),
-    vscode.window.onDidChangeTextEditorSelection(({ textEditor, kind }) => {
-      if (
-        (kind === vscode.TextEditorSelectionChangeKind.Keyboard ||
-          kind === vscode.TextEditorSelectionChangeKind.Mouse) &&
-        queue?.presentation &&
-        queue.editor === textEditor &&
-        !textEditor.selection.isEqual(queue.target)
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      const q = queue
+      if (!q || q.applying) return
+      if (q.localPrediction && editor?.document !== q.doc && !surface.isPreview(editor, q))
+        return clear()
+      if (editor?.document === q.doc && editor.viewColumn === q.column) {
+        q.editor = editor
+        if (q.preview && !q.returning && surface.hasInline(q)) {
+          q.result = false
+          resultItem.text = 'Result'
+          void surface.result(q, false).catch(() => {
+            if (queue === q) clear()
+          })
+        }
+        if (!q.preview) surface.redraw(q)
+      }
+      if (q.returning || q.switching || q.accepting) return
+      const focused = current(q)
+      void setKey(focused && !!q.presentation)
+      void vscode.commands.executeCommand(
+        'setContext',
+        'threadlight.coach.remaining',
+        focused && !!q.remaining,
       )
-        clear()
+      if (focused && q.rows && q.presentation) {
+        resultItem.show()
+        whyItem.show()
+      } else {
+        resultItem.hide()
+        whyItem.hide()
+      }
+      if (focused && (q.remaining || (q.presentation && (q.total > 1 || !q.rows)))) item.show()
+      else item.hide()
+      refreshVisibility(q)
     }),
     vscode.window.onDidChangeTextEditorVisibleRanges(({ textEditor }) => {
       const q = queue
-      if (!q?.presentation || q.editor !== textEditor) return
-      const presentation = inView(q) ? 'shown' : 'offscreen'
-      if (q.presentation === presentation) return
-      q.presentation = presentation
-      // Stop queued narration when scrolling away. Returning reveals the same
-      // thread with its controls intact and does not request narration again.
-      emit({ proposalState: presentation === 'shown' ? status() : { status: 'pending' } })
+      if (!q?.presentation || (q.editor !== textEditor && !surface.isPreview(textEditor, q))) return
+      refreshVisibility(q)
     }),
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
       if (queue?.doc === document && !queue.applying && document.version !== queue.version) clear()
@@ -370,12 +462,35 @@ function createProposals(context, connected, emit) {
     vscode.workspace.onDidCloseTextDocument((doc) => {
       if (queue?.doc === doc) clear()
     }),
+    vscode.window.tabGroups.onDidChangeTabs(({ closed }) => {
+      const q = queue
+      if (
+        q?.preview &&
+        !surface.hasInline(q) &&
+        closed.some((tab) => tab.input?.uri?.toString() === q.preview.toString())
+      )
+        clear()
+    }),
   )
   return {
     start,
     clear,
     status,
     next,
+    line,
+    practice(token, scope) {
+      const q = queue
+      if (!q || token !== q.token || !current(q) || q.presentation !== 'shown')
+        throw Error('The displayed proposal changed. Check proposal status again.')
+      const edits =
+        scope === 'all' ? q.groups.flatMap((group) => group.edits) : q.groups[q.index].edits
+      return {
+        source: q.doc,
+        rows: reviewRows(q.doc, edits)
+          .filter((row) => row.kind === 'add' || row.kind === 'remove')
+          .map(({ line, kind, text }) => ({ line, kind, text })),
+      }
+    },
     clearPrediction: () => {
       if (queue?.localPrediction) clear()
     },

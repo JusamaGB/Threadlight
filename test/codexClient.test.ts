@@ -69,8 +69,8 @@ describe('Codex stdio transport', () => {
   it.each([
     ['canonical', 'timeout'],
     ['canonical', 'rejection'],
-    ['factual', 'timeout'],
-    ['factual', 'rejection'],
+    ['reconnect', 'timeout'],
+    ['reconnect', 'rejection'],
   ])(
     'does not release queued or later proposal speech when %s progress submission ends in %s',
     async (source, failure) => {
@@ -88,7 +88,7 @@ describe('Codex stdio transport', () => {
         const ack =
           source === 'canonical'
             ? 'I’ll check the current editor buffer.'
-            : 'I’m checking the editor status.'
+            : 'I’ll reconnect to the active buffer and continue with the unknown-item message change.'
         if (source === 'canonical')
           live.completedCommentary('work', {
             type: 'agentMessage',
@@ -101,7 +101,7 @@ describe('Codex stdio transport', () => {
             type: 'agentMessage',
             id: 'mixed',
             phase: 'commentary',
-            text: "I'll check the current buffer, but first indent line ten.",
+            text: ack,
           })
           live.editorActivity('work', 'capabilities', false, {})
           await vi.advanceTimersByTimeAsync(1)

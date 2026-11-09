@@ -3,7 +3,7 @@ import { memoryFixture } from './live/memory-transport.fixture.mjs'
 // and one short test message. Never opens a physical microphone or plays through speakers.
 /* global window, AudioContext */
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -41,17 +41,30 @@ const eventSnapshot = {
   snapshotRequired: false,
   nativeRequests: [],
 }
-const projectFeed = (owner) => eventFeed.project(owner, eventSnapshot, () => 'Build')
+const { OwnedRequests } = require('../src/main/communication/ownedRequests.ts')
+const ownedRequests = new OwnedRequests(() => (service ? [service] : []))
+const projectFeed = (owner) => {
+  if (questionProof) eventSnapshot.nativeRequests = ownedRequests.list()
+  return eventFeed.project(owner, eventSnapshot, () => 'Build')
+}
 const folder = mkdtempSync(join(tmpdir(), 'threadlight-live-check-'))
 let browser, page, service, readServer, target
 let controlServer
+const browserProof = process.env.THREADLIGHT_LIVE_BROWSER === '1'
+const browserReads = []
 const windowProof = process.env.THREADLIGHT_LIVE_WINDOW === '1'
+const coachProfileProof = process.env.THREADLIGHT_LIVE_COACH_PROFILE === '1'
 const coachDescriptor = process.env.THREADLIGHT_LIVE_COACH
 const wholeReview = process.env.THREADLIGHT_LIVE_REVIEW === '1'
 const proposalProof = process.env.THREADLIGHT_LIVE_PROPOSAL === '1'
+const proposalWalk = process.env.THREADLIGHT_LIVE_PROPOSAL_WALK === '1'
+let walkedLine
 let proposalVisible = false,
   traceShown = false
 const guideProof = process.env.THREADLIGHT_LIVE_GUIDE === '1'
+const ghostWalk = process.env.THREADLIGHT_GHOST_ONLY === '1'
+const fileWalk = process.env.THREADLIGHT_WALKTHROUGH_ONLY === '1'
+const walkedSpeech = []
 const guideEvents = []
 let guideSpeechCount = 0,
   voiceProgress = false
@@ -65,6 +78,7 @@ let focused = 'Orchid'
 const windowReads = []
 const readProof = process.env.THREADLIGHT_LIVE_THREAD_READ === '1'
 const announcementProof = process.env.THREADLIGHT_LIVE_ANNOUNCEMENT === '1'
+const questionProof = process.env.THREADLIGHT_LIVE_QUESTION === '1'
 const bufferedOpening = process.env.THREADLIGHT_LIVE_BUFFERED === '1'
 if (bufferedOpening) assert.ok(process.env.THREADLIGHT_LIVE_INITIAL_WAV)
 let message =
@@ -115,7 +129,10 @@ const waitReady = async (agent) => {
       currentThreadId: null,
     }),
     cli: async () => ({ command: process.env.THREADLIGHT_CODEX_CLI, prefixArgs: [] }),
-    onChange: () => {},
+    onChange: () => {
+      if (questionProof && page)
+        void page.evaluate(() => window.communicationChanged?.()).catch(() => {})
+    },
     onConversation: (state) => {
       if (state.conversationId)
         eventFeed.register(
@@ -123,25 +140,26 @@ const waitReady = async (agent) => {
           state.sessionId ? `codex:${state.sessionId}` : undefined,
         )
     },
-    announcements: announcementProof
-      ? {
-          next: (owner, since) => {
-            projectFeed(owner)
-            return eventFeed.reserve(owner, since)
-          },
-          commit: (a) => {
-            projectFeed(a.owner)
-            return eventFeed.commit(a)
-          },
-          settle: (owner, id, state) => eventFeed.settle(owner, id, state),
-        }
-      : undefined,
+    announcements:
+      announcementProof || questionProof
+        ? {
+            next: (owner, since, questionsOnly) => {
+              projectFeed(owner)
+              return eventFeed.reserve(owner, since, questionsOnly)
+            },
+            commit: (a) => {
+              projectFeed(a.owner)
+              return eventFeed.commit(a)
+            },
+            settle: (owner, id, state) => eventFeed.settle(owner, id, state),
+          }
+        : undefined,
     onRateLimit: () => {},
     onLive: (event) => {
       void page.evaluate((e) => window.voiceEvent?.(e), event).catch(() => {})
     },
   }
-  if (windowProof || coachDescriptor) {
+  if (browserProof || windowProof || coachDescriptor || coachProfileProof) {
     const { AppControlService } = require('../src/main/appControl/service.ts')
     const { AppControlServer } = require('../src/main/appControl/server.ts')
     controlServer = new AppControlServer(
@@ -163,6 +181,81 @@ const waitReady = async (agent) => {
     }
     message = 'Can you help me with this app? Tell me which application is in front right now.'
     expected = /orchid/i
+    if (browserProof) {
+      const { setBrowserAccess } = require('../src/main/browser/registry.ts')
+      const state = {
+        id: 'lesson-browser',
+        threadId: '@threadlight-browser',
+        url: 'https://example.org/lesson',
+        title: 'Return values lesson',
+        visible: true,
+        revision: 1,
+        loading: false,
+      }
+      setBrowserAccess({
+        call: async (_caller, command) => {
+          browserReads.push(command.action)
+          if (command.action === 'list') return { ok: true, browsers: [state] }
+          if (command.action === 'inspect')
+            return {
+              ok: true,
+              state,
+              observation: [
+                {
+                  frame: 0,
+                  url: state.url,
+                  title: state.title,
+                  text: '',
+                  elements: [],
+                  media: [
+                    {
+                      element: 1,
+                      kind: 'video',
+                      currentTime: 37.5,
+                      duration: 120,
+                      paused: true,
+                      visible: true,
+                      observedAt: Date.now(),
+                      tracks: [
+                        {
+                          kind: 'captions',
+                          language: 'en',
+                          available: true,
+                          nearby: [{ start: 30, end: 42, text: 'A function can return a value.' }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            }
+          return { ok: false, reason: 'Read-only video discussion test.' }
+        },
+      })
+      message =
+        'I paused the video in the Threadlight browser. Where am I in the video, and what does the sentence I just heard about return values mean? Check the browser and explain briefly.'
+      expected =
+        /(?=.*(?:37|38|thirty.seven|thirty.eight))(?=.*(?:caller|result|gives back|sends back|hands back))/is
+    }
+    if (coachProfileProof) {
+      const file = join(folder, 'coach-profile.json')
+      writeFileSync(
+        file,
+        JSON.stringify({
+          level: 'Harbour Python course, week three',
+          teachingStyle: 'Ask one question at a time',
+        }),
+      )
+      message = 'Select Threadlight Coach. What is the name and week of my saved course?'
+      expected = /harbour|harbor/i
+      assert.ok(process.env.THREADLIGHT_LIVE_TEST_WAV, 'Supply the spoken week-five update.')
+      options.onChange = (state) => {
+        const card = state.requests.find(
+          (r) => r.title === 'Update coaching profile' && /five|5/i.test(r.detail),
+        )
+        if (card) setTimeout(() => service.respond(card.id, { action: 'allow' }), 0)
+      }
+    }
     if (coachDescriptor) {
       const { EditorCoach } = require('../src/main/editorCoach.ts')
       coach = new EditorCoach(
@@ -189,8 +282,10 @@ const waitReady = async (agent) => {
         },
         coachDescriptor,
         async (id, event) => {
-          if (!guideProof) return
+          if (!guideProof && !fileWalk && !ghostWalk) return
           try {
+            if (fileWalk && event.needsNotes && event.line === 77 && event.endLine === 79)
+              writeFileSync(join(process.env.THREADLIGHT_COACH_TEST_DIR, 'section-requested'), '')
             await service.coachEvent(id, event)
             guideEvents.push(event)
             console.log('Guide receipt', event.status, event.step)
@@ -200,11 +295,42 @@ const waitReady = async (agent) => {
           }
         },
         (id) => service.interruptProposal(id),
+        async (id, text, signal) => {
+          if (ghostWalk) {
+            const marker = join(process.env.THREADLIGHT_COACH_TEST_DIR, 'ghost-typed')
+            assert.ok(existsSync(marker), 'The learner started typing')
+            console.log(
+              'Typing to Live speech request:',
+              Date.now() - Number(readFileSync(marker, 'utf8')),
+              'ms',
+            )
+          }
+          coachShown = true
+          console.log('Walkthrough speech requested:', text)
+          await service.speakWalkthrough(id, text, signal).catch((error) => {
+            console.log('Walkthrough speech failed:', error.message)
+            throw error
+          })
+          walkedSpeech.push(text)
+        },
+        undefined,
+        fileWalk ? () => ({ arrow: true, x: 0, y: 0 }) : undefined,
       )
       options.editorCoach = async (id, command) => {
         const started = Date.now()
         const result = await coach.run(id, command)
-        if (proposalProof)
+        if (
+          fileWalk &&
+          command.action === 'walkthrough_notes' &&
+          result.line === 76 &&
+          !result.started
+        ) {
+          assert.equal(coachShown, false, 'Preparing did not speak the first line')
+          writeFileSync(join(process.env.THREADLIGHT_COACH_TEST_DIR, 'file-walk-ready'), '')
+        }
+        if (ghostWalk && command.action === 'walkthrough_notes' && result.prepared)
+          writeFileSync(join(process.env.THREADLIGHT_COACH_TEST_DIR, 'ghost-ready'), '')
+        if (proposalProof || fileWalk || ghostWalk)
           console.log(
             'Editor receipt',
             command.action,
@@ -212,6 +338,7 @@ const waitReady = async (agent) => {
             Date.now() - started,
           )
         if (command.action === 'propose') proposalVisible = result.status === 'shown'
+        if (command.action === 'proposal_line') walkedLine = result
         if (command.action === 'trace') traceShown = result.tracing === true
         if (command.action === 'review') reviewPages.push(result)
         if (guideProof && command.action === 'progress' && result.applied && result.step === 2)
@@ -236,6 +363,16 @@ const waitReady = async (agent) => {
       message =
         'Coach me in the connected VS Code editor. Use the editor coaching context and guide tools. Highlight the assignment to total with one step. Set the spoken explanation to precisely “The lantern value starts at one.” Wait for my click.'
       expected = /lantern|total|assign|value/i
+      if (ghostWalk) {
+        message =
+          'Select Threadlight Coach and make line 64 onwards in my current problem.py file ghost text for me to trace. Explain each line when I start typing it.'
+        expected = /print|display|output|lantern|screen/i
+      }
+      if (fileWalk) {
+        message =
+          'Walk me through my Python file. Keep going to the end and explain what each line does.'
+        expected = /apple|price|dictionary/i
+      }
       if (guideProof) {
         message =
           'Could you show me one step at a time how this code assigns total and then prints it? Use those two steps.'
@@ -299,8 +436,8 @@ const waitReady = async (agent) => {
   service = new AgentService(options)
   await page.exposeFunction('startVoice', (id, sdp) => service.startLive(id, sdp))
   await page.exposeFunction('openVoice', (id, text) => service.openLive(id, text))
-  await page.exposeFunction('livePlaybackBoundary', (id, kind, turn) =>
-    service.playbackBoundary(id, kind, turn),
+  await page.exposeFunction('livePlaybackBoundary', (id, kind, turn, words) =>
+    service.playbackBoundary(id, kind, turn, words),
   )
   await page.exposeFunction('getAgent', () => service.current)
   await page.exposeFunction('announceVoice', (id, command) =>
@@ -432,6 +569,11 @@ const waitReady = async (agent) => {
     JSON.stringify(await page.evaluate(() => window.phases)),
   )
   assert.equal(service.current.items.length, 0, 'Preparation must not send the opening')
+  if (questionProof) {
+    message =
+      'Use request_user_input to show me exactly one question card: Which colour do you want? The choices are Red and Blue. I will answer on the card.'
+    expected = /which colou?r do you want.*red or blue/is
+  }
   if (process.env.THREADLIGHT_LIVE_INITIAL_WAV && !bufferedOpening) {
     const wave = [...readFileSync(process.env.THREADLIGHT_LIVE_INITIAL_WAV)]
     await page.evaluate(async (bytes) => {
@@ -442,6 +584,8 @@ const waitReady = async (agent) => {
       speech.connect(window.testProcessor)
       speech.start()
     }, wave)
+  } else if (questionProof) {
+    await page.evaluate((text) => window.connection.open(text), message)
   } else if (announcementProof) {
     expected = /Build has returned a result/i
     await page.evaluate(() => {
@@ -525,22 +669,46 @@ const waitReady = async (agent) => {
   }
   const spokenAnswer = () =>
     (!coachDescriptor || (wholeReview ? reviewPages.at(-1)?.status === 'complete' : coachShown)) &&
-    service.current.items.some(
-      (i) =>
-        i.kind === 'agent' && i.liveComplete && i.id?.startsWith('live:') && expected.test(i.text),
-    )
-  const deadline = Date.now() + (wholeReview || proposalProof ? 120000 : 60000)
+    (browserProof
+      ? expected.test(
+          service.current.items
+            .filter((i) => i.kind === 'agent' && i.liveComplete && i.id?.startsWith('live:'))
+            .map((i) => i.text)
+            .join(' '),
+        )
+      : service.current.items.some(
+          (i) =>
+            i.kind === 'agent' &&
+            i.liveComplete &&
+            i.id?.startsWith('live:') &&
+            expected.test(i.text),
+        ))
+  const deadline = Date.now() + (wholeReview || proposalProof || ghostWalk ? 120000 : 60000)
   while (
     !spokenAnswer() &&
     (await page.evaluate(() => window.connection.active)) &&
     Date.now() < deadline
   )
     await new Promise((r) => setTimeout(r, 250))
+  if (browserProof)
+    writeFileSync(
+      join(folder, 'browser-discussion.json'),
+      JSON.stringify(
+        {
+          passed: spokenAnswer(),
+          browserReads,
+          state: service.current,
+          events: await page.evaluate(() => window.liveEvents),
+        },
+        null,
+        2,
+      ),
+    )
   assert.ok(
     spokenAnswer(),
     'Expected a native spoken answer matching THREADLIGHT_LIVE_EXPECT, not just a filler acknowledgment',
   )
-  if (announcementProof) {
+  if (announcementProof || questionProof) {
     const until = Date.now() + 45000
     while (
       eventFeed
@@ -556,6 +724,26 @@ const waitReady = async (agent) => {
       'announced',
       'Production scheduler must observe completion and audio playback',
     )
+    if (questionProof) {
+      const request = service.current.requests.find((r) => r.kind === 'questions')
+      assert.ok(request, 'The spoken question must still be waiting for the user')
+      const readouts = service.current.items.filter(
+        (i) =>
+          i.kind === 'agent' &&
+          i.liveComplete &&
+          i.id?.startsWith('live:') &&
+          expected.test(i.text),
+      )
+      assert.equal(readouts.length, 1)
+      const result = await service.respond(request.id, {
+        action: 'answer',
+        answers: { [request.questions[0].id]: 'Red' },
+      })
+      assert.ok(result.ok, result.reason)
+      console.log(
+        'PASS real native question card, spoken question and both options, one confirmed playback and accepted answer.',
+      )
+    }
   }
   // Let the native completed-item event persist the final transcript before stopping.
   await new Promise((r) => setTimeout(r, 2500))
@@ -673,6 +861,21 @@ const waitReady = async (agent) => {
         `PASS: fresh read after changed target on a later spoken turn. Evidence: ${folder}`,
       )
     }
+    if (coachProfileProof) {
+      const file = join(folder, 'coach-profile.json')
+      const deadline = Date.now() + 30000
+      let profile
+      do {
+        profile = JSON.parse(readFileSync(file, 'utf8'))
+        if (/five|5/i.test(profile.level)) break
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      } while (Date.now() < deadline)
+      assert.match(profile.level, /five|5/i)
+      assert.equal(profile.teachingStyle, 'Ask one question at a time')
+      console.log(
+        'PASS signed-in voice selected the coach, read the personal course and saved the approved spoken level update.',
+      )
+    }
     console.log(
       'PASS: generated speech entered the same Live conversation and received a follow-up reply.',
     )
@@ -680,6 +883,20 @@ const waitReady = async (agent) => {
       assert.ok(windowReads.includes('Orchid') && windowReads.includes('Marigold'))
       console.log('PASS: signed-in Agent queried both successive foreground-app observations.')
     }
+  }
+  if (browserProof) {
+    assert(
+      browserReads.includes('inspect'),
+      'Live must inspect media before discussing the paused video',
+    )
+    assert(
+      browserReads.every((action) => ['list', 'inspect', 'release'].includes(action)),
+      'discussion preserves playback',
+    )
+    console.log(
+      'PASS signed-in Live inspected the paused video context through its backing Agent.',
+      JSON.stringify(browserReads),
+    )
   }
   const stats = await page.evaluate(async () =>
     [...(await window.connection.peer.getStats())]
@@ -737,6 +954,55 @@ const waitReady = async (agent) => {
     false,
     'The coaching explanation preceded the visible highlight',
   )
+  if (ghostWalk) {
+    const deadline = Date.now() + 45000
+    while (!walkedSpeech.length && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    assert.equal(walkedSpeech.length, 1)
+    assert.ok(
+      await page.evaluate(async () =>
+        [...(await window.connection.peer.getStats()).values()].some(
+          (r) => r.type === 'inbound-rtp' && r.kind === 'audio' && r.totalAudioEnergy > 0,
+        ),
+      ),
+    )
+    const typed = Number(
+      readFileSync(join(process.env.THREADLIGHT_COACH_TEST_DIR, 'ghost-typed'), 'utf8'),
+    )
+    const playback = await page.evaluate(
+      (at) =>
+        window.liveEvents.find((e) => e.at >= at && /output_audio_buffer.started/.test(e.type))?.at,
+      typed,
+    )
+    if (playback) console.log('Typing to receiver playback start:', playback - typed, 'ms')
+    console.log('PASS signed-in ghost walkthrough prepared notes and delivered audio after typing.')
+  } else if (fileWalk) {
+    const until = Date.now() + 150000
+    while (!guideEvents.some((event) => event.status === 'completed') && Date.now() < until)
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    assert.equal(
+      walkedSpeech.length,
+      7,
+      'One section explanation and six subsequent lines finished speaking',
+    )
+    assert.equal(
+      guideEvents.filter((event) => event.needsNotes && event.line === 77 && event.endLine === 79)
+        .length,
+      1,
+    )
+    assert.ok(guideEvents.some((event) => event.needsNotes && event.line === 84))
+    assert.equal(guideEvents.find((event) => event.status === 'completed')?.line, 85)
+    assert.ok(
+      await page.evaluate(async () =>
+        [...(await window.connection.peer.getStats()).values()].some(
+          (r) => r.type === 'inbound-rtp' && r.kind === 'audio' && r.totalAudioEnergy > 0,
+        ),
+      ),
+    )
+    console.log(
+      'PASS one spoken section after gutter release, then six automatic lines including a second page on the native connection.',
+    )
+  }
   if (guideProof) {
     const until = Date.now() + 120000
     while (
@@ -761,6 +1027,13 @@ const waitReady = async (agent) => {
     console.log(
       'PASS signed-in spoken next, edit, clicked refresh with fresh context, and clicked finish with native acknowledgement.',
     )
+  } else if (proposalProof && proposalWalk) {
+    assert.ok(proposalVisible && coachShown && walkedLine?.highlighted && walkedLine.row === 1)
+    assert.equal(
+      (await coach.run(service.activeLiveSession, { action: 'proposal_status' })).token,
+      walkedLine.token,
+    )
+    console.log('PASS spoken follow-up highlighted the pending proposal and kept it open.')
   } else if (proposalProof) {
     assert.ok(
       proposalVisible && coachShown && traceShown,
@@ -789,7 +1062,7 @@ const waitReady = async (agent) => {
         (i) =>
           i.kind === 'you' &&
           (process.env.THREADLIGHT_LIVE_INITIAL_WAV
-            ? (wholeReview ? /whole file/i : expected).test(i.text)
+            ? (questionProof ? /red.*blue/is : wholeReview ? /whole file/i : expected).test(i.text)
             : i.text === message),
       ),
     )
@@ -828,12 +1101,32 @@ const waitReady = async (agent) => {
   })
   .finally(async () => {
     coach?.close()
-    if (announcementProof && page) {
+    if ((announcementProof || questionProof) && page) {
       const events = await page.evaluate(() => window.liveEvents).catch(() => [])
       writeFileSync(
         join(folder, 'announcement-diagnostic.json'),
         JSON.stringify(
-          { events, items: service?.current.items, cards: eventStore.list('conversation') },
+          {
+            events,
+            items: service?.current.items,
+            cards: eventStore.list('conversation'),
+            scheduler: await page
+              .evaluate(() => {
+                const s = window.connection?.announcements
+                return (
+                  s && {
+                    ready: s.ready,
+                    dirty: s.dirty,
+                    boundarySeen: s.boundarySeen,
+                    user: [...s.user],
+                    assistant: [...s.assistant],
+                    lastInput: s.lastInput,
+                    lastOutput: s.lastOutput,
+                  }
+                )
+              })
+              .catch(() => null),
+          },
           null,
           2,
         ),

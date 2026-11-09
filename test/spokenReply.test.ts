@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentItem } from '../src/shared/agent'
-import { latestSpokenReply, spokenExample } from '../src/shared/spokenReply'
+import { latestSpokenReply, presentSpokenReply, spokenExample } from '../src/shared/spokenReply'
 
 describe('collapsed Agent captions', () => {
   const prior = new Set(['live:prior'])
@@ -142,5 +142,123 @@ describe('collapsed Agent captions', () => {
       })
     }
     expect(latestSpokenReply([lead, tail], prior)?.source).toBe('')
+  })
+
+  it('keeps the written receipt example through unlinked dictation and explicitly replays it', () => {
+    const code = 'order[choice] += 1\n\nelif choice == "done":\n    break'
+    const fence = '\x60\x60\x60'
+    const user: AgentItem = {
+      kind: 'you',
+      id: 'live:ask',
+      text: 'Could you show me the example string in the thread, please',
+      voiceDelegationIds: ['req'],
+    }
+    const envelope: AgentItem = {
+      kind: 'you',
+      id: 'req',
+      backingTurnId: 'turn',
+      text: 'delegation',
+    }
+    const source = {
+      ...answer,
+      text:
+        fence +
+        'python\n' +
+        code +
+        '\n' +
+        fence +
+        '\n\nThis is the proposed example from the live diff.',
+    }
+    const voice = {
+      ...caption('one', 'This is the proposed example from the live diff.'),
+      narrationOf: origin,
+      liveAfter: 'answer',
+    }
+    const dictation = {
+      ...caption(
+        'two',
+        'total = 0.0 for name, info in items dot items(): total += info["quantity"] * info["price"]',
+      ),
+      liveAfter: 'live:one',
+    }
+    const base = [user, envelope]
+    const replyCodeBlocks = (text: string) =>
+      text === source.text ? [{ language: 'python', value: code, start: 0 }] : []
+    const project = (
+      items: AgentItem[],
+      previous: ReturnType<typeof presentSpokenReply>['example'] = null,
+    ) => presentSpokenReply(items, prior, new Set(), previous, replyCodeBlocks)
+    const first = project([...base, source])
+    expect(first.reply?.blocks[0]?.value).toBe(code)
+    const speaking = project([...base, source, voice], first.example)
+    const full = [...base, source, voice, dictation]
+    const later = project(full, speaking.example)
+    expect(later.reply).toMatchObject({
+      exampleId: first.reply?.exampleId,
+      blocks: first.reply?.blocks,
+      text: voice.text,
+    })
+    expect(project([...base, voice, dictation]).reply?.blocks).toEqual([])
+    expect(project([...base, voice, dictation, source]).reply?.blocks[0]?.value).toBe(code)
+    expect(
+      project([...full, { ...answer, id: 'status', text: 'Finished.' }]).reply?.blocks[0]?.value,
+    ).toBe(code)
+    const again = [
+      ...full,
+      { ...user, id: 'live:again', voiceDelegationIds: [], text: 'Sorry, can you repeat that?' },
+    ]
+    const restored = project(again, later.example)
+    expect(restored.reply?.blocks).toEqual(first.reply?.blocks)
+    expect(restored.reply?.exampleId).not.toBe(first.reply?.exampleId)
+    const different = {
+      ...user,
+      id: 'live:new-question',
+      text: 'Show me the file.',
+      voiceDelegationIds: ['req2'],
+    }
+    expect(project([...full, different], later.example).reply).toBeNull()
+    const nextCode = 'print("next")'
+    const nextAnswer = {
+      ...answer,
+      id: 'new-answer',
+      backingTurnId: 'turn2',
+      text: fence + 'python\n' + nextCode + '\n' + fence,
+    }
+    const switched = presentSpokenReply(
+      [...full, different, { ...envelope, id: 'req2', backingTurnId: 'turn2' }, nextAnswer],
+      prior,
+      new Set(),
+      later.example,
+      (text) =>
+        text === nextAnswer.text
+          ? [{ language: 'python', start: 0, value: nextCode }]
+          : replyCodeBlocks(text),
+    )
+    expect(switched.reply?.blocks[0]?.value).toBe(nextCode)
+    const ambiguous = {
+      ...later.example!,
+      blocks: [...later.example!.blocks, { language: 'python', start: 200, value: nextCode }],
+    }
+    expect(
+      project([...full, { ...different, text: 'Show me the Python file again.' }], ambiguous).reply,
+    ).toBeNull()
+    const next = [
+      ...again,
+      { ...user, id: 'live:next', voiceDelegationIds: [], text: 'Check the new VS Code diff.' },
+    ]
+    expect(project(next, restored.example).reply).toBeNull()
+    expect(
+      project(
+        [...next, { ...voice, id: 'live:late-linked', liveAfter: undefined }],
+        restored.example,
+      ).reply,
+    ).toBeNull()
+    expect(project([...next, { ...dictation, id: 'live:late' }], restored.example).reply).toBeNull()
+    expect(
+      project([...next, caption('next-reply', 'Checking the editor.')], restored.example).example,
+    ).toBeNull()
+    expect(
+      presentSpokenReply(full, prior, new Set(['answer']), null, replyCodeBlocks).reply?.blocks,
+    ).toEqual([])
   })
 })

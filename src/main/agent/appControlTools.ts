@@ -18,7 +18,7 @@ export function codexControlConfig(config: JsonObject, connection: ThreadReadCon
     enabled: true,
     default_tools_approval_mode: 'prompt',
     enabled_tools: controlTools.map((t) => t.name),
-    // Writes are proposed, never executed, until the service receives the real Agent card decision.
+    // Management writes use Agent decisions; browser actions use the human-selected sharing grant and receipts.
     tools: Object.fromEntries(controlTools.map((t) => [t.name, { approval_mode: 'approve' }])),
   }
 }

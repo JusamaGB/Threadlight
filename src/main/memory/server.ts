@@ -1,3 +1,5 @@
+import { browserCommand, browserTools } from '../../shared/browser'
+import { callBrowser, browserContent } from '../browser/registry'
 import { MemoryTransport, openMemoryProxy, type MemoryTransportOptions } from './transport'
 import { z } from 'zod'
 import { type MemoryRead, type MemoryInput, type MemoryManualConnection } from '../../shared/memory'
@@ -212,7 +214,7 @@ export class MemoryServer {
             result = {
               tools: communicationOnly
                 ? communicationTools
-                : [...memoryTools, ...communicationTools],
+                : [...memoryTools, ...communicationTools, ...(connection ? browserTools : [])],
             }
           else if (msg.method === 'tools/call') {
             const params = z
@@ -221,6 +223,26 @@ export class MemoryServer {
                 arguments: z.record(z.string(), z.unknown()).default({}),
               })
               .parse(msg.params)
+            if (params.name === 'threadlight_browser') {
+              if (!connection || communicationOnly)
+                throw Error('Use an enrolled Codex or Claude plugin connection.')
+              const connectionId = connection
+              const secret = request.headers.authorization!.slice(7)
+              const valid = () => {
+                try {
+                  this.connections.authenticate(connectionId, secret)
+                  return true
+                } catch {
+                  return false
+                }
+              }
+              const record = this.connections.list().find((c) => c.id === connectionId)
+              const value = await callBrowser(
+                { id: connectionId, label: record?.label ?? 'Connected agent', valid },
+                browserCommand.parse(params.arguments),
+              )
+              return finish(200, { jsonrpc: '2.0', id, result: browserContent(value) })
+            }
             const action = agentActions.find((a) => `memory_${a}` === params.name)
             const communicationAction = Object.keys(communicationSchemas).find(
               (a) => `threadlight_${a}` === params.name,

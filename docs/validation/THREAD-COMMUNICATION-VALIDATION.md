@@ -6,6 +6,10 @@ Date: 2026-10-26. Local branch: `feat/agent-thread-reading`.
 
 ## Release status
 
+The November 2026 Live question-card check sent a generated spoken request through the signed-in voice connection. Codex created a real red-or-blue question card. Live spoke the question and both choices once, the receiver confirmed playback, and the card accepted Red. The check also passed with a typed opening. Run the existing signed-in voice check with `THREADLIGHT_LIVE_QUESTION=1`; `THREADLIGHT_LIVE_INITIAL_WAV` supplies the spoken opening.
+
+The narrow Agent panel check exercises both a provider approval and the colour question. It checks equal answer-field insets, the provider and status row, the absence of the question’s redundant controls, and submission of Blue. Focused voice tests also cover answering a queued question before playback and a delegated user turn that remains open while Codex waits for input.
+
 The communication service, tools, journal, cards, workflow configuration and scheduler are implemented locally. This is a capability-gated implementation, not a claim that every installed provider can receive an automatic wakeup. The full specification's live acceptance criterion remains open for automatic Claude delivery and a human-operated voice/card session.
 
 The installed Codex binary passed independent concurrent-resume ownership testing. The installed Claude binary did **not**: two competing resumes of the same disposable chat both succeeded. Claude automatic resume is therefore disabled; enrolled Claude participants can read and write the shared inbox from an existing native turn. Native desktop-owned chats are not taken over. Updating either runtime does not silently admit an untested binary.

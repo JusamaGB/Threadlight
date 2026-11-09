@@ -5,6 +5,7 @@ import { SILENT_AUDIO, type AudioEnergy } from '../../shared/motion'
 import { AudioEnergyMeter } from './audioEnergy'
 import { timing, type LivePhase } from '../../shared/liveTiming'
 import { LiveAudioBuffer } from './liveAudioBuffer'
+import type { InputCaption } from './liveInputPreview'
 
 /** Selects the owning conversation without changing the audio transport. */
 export interface LiveVoicePort {
@@ -66,6 +67,8 @@ export class LiveVoiceConnection {
   private announcements?: LiveAnnouncements
   private announcementTimer?: ReturnType<typeof setInterval>
 
+  private userCaption?: InputCaption
+
   constructor(
     stream: MediaStream,
     private sampleRate: number,
@@ -73,6 +76,7 @@ export class LiveVoiceConnection {
     private audioContext?: AudioContext,
     private port: LiveVoicePort = agentPort(),
     readonly id: string = crypto.randomUUID(),
+    private onInputCaption?: (caption: InputCaption | null) => void,
   ) {
     this.backlog = new LiveAudioBuffer(sampleRate)
     if (port.announcements && window.threadlight.agentAnnouncement) {
@@ -87,7 +91,6 @@ export class LiveVoiceConnection {
           void this.announcements?.tick(
             this.active &&
               !this.paused &&
-              !this.inputMuted &&
               !this.opening &&
               this.backlog.length === 0 &&
               !this.audio.paused &&
@@ -95,6 +98,7 @@ export class LiveVoiceConnection {
               !!this.meter &&
               this.audioContext?.state === 'running',
             this.outputEnergy.level,
+            this.inputMuted,
           ),
         200,
       )
@@ -105,7 +109,12 @@ export class LiveVoiceConnection {
     // early session.started cannot be missed, and gate the opening on that signal.
     this.channel.onmessage = ({ data }) => {
       if (this.cancelled) return
-      let event: { type?: string; turn?: { role?: string; id?: string; transcript?: string } }
+      let event: {
+        type?: string
+        turn_id?: string
+        delta?: string
+        turn?: { role?: string; id?: string; transcript?: string }
+      }
       try {
         event = JSON.parse(data)
       } catch {
@@ -114,8 +123,38 @@ export class LiveVoiceConnection {
       if (!event || typeof event !== 'object') return
       this.announcements?.event(event)
       if (event.type === 'turn.created' && event.turn?.role === 'user' && event.turn.id) {
+        if (this.userCaption?.turn !== event.turn.id) {
+          this.userCaption = {
+            session: this.id,
+            turn: event.turn.id,
+            text: typeof event.turn.transcript === 'string' ? event.turn.transcript : '',
+          }
+          if (this.userCaption.text.trim()) this.mark('first-input-caption')
+          this.onInputCaption?.(this.userCaption)
+        }
         this.holdInterruptedSpeech = false
         window.threadlight?.livePlaybackBoundary?.(this.id, 'user', event.turn.id)
+      } else if (
+        this.userCaption &&
+        event.type === 'turn.delta' &&
+        event.turn_id === this.userCaption.turn &&
+        typeof event.delta === 'string'
+      ) {
+        if (!this.userCaption.text.trim() && event.delta.trim()) this.mark('first-input-caption')
+        this.userCaption = { ...this.userCaption, text: this.userCaption.text + event.delta }
+        this.onInputCaption?.(this.userCaption)
+      } else if (
+        this.userCaption &&
+        event.type === 'turn.done' &&
+        event.turn?.role === 'user' &&
+        event.turn.id === this.userCaption.turn
+      ) {
+        if (typeof event.turn.transcript === 'string') {
+          if (!this.userCaption.text.trim() && event.turn.transcript.trim())
+            this.mark('first-input-caption')
+          this.onInputCaption?.({ ...this.userCaption, text: event.turn.transcript })
+        }
+        this.userCaption = undefined
       }
       if (
         event.type === 'output_transcript.added' &&
@@ -369,7 +408,11 @@ export class LiveVoiceConnection {
       return
     if (this.active) this.announcements?.input(input)
     if (
-      !this.backlog.append(input, this.bufferAudio && (!this.active || this.backlog.length > 0))
+      !this.backlog.append(
+        input,
+        this.bufferAudio && (!this.active || this.backlog.length > 0),
+        this.active && !this.opening,
+      )
     ) {
       this.fail(
         'Live could not keep up. Buffered speech was discarded; reopen the mic and repeat your request.',
@@ -392,6 +435,8 @@ export class LiveVoiceConnection {
   stop(): void {
     if (this.cancelled) return
     this.cancelled = true
+    this.userCaption = undefined
+    this.onInputCaption?.(null)
     clearInterval(this.announcementTimer)
     this.announcements?.close()
     this.unsubscribeAnnouncements?.()

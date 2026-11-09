@@ -201,3 +201,11 @@ match require a short clarification. Only names and IDs are discoverable; access
 still needs human code confirmation in that project's **Chats → Requests**.
 The open project cannot retarget approval. Older plugins/requests without a target
 must be refreshed and recreated; they cannot silently use the open space.
+
+## Shared browser
+
+Version 0.4.0 adds `threadlight_browser`. Version 0.4.4 refreshes the guide for compact YouTube controls. Version 0.4.3 adds media inspection, available caption context and play/pause/seek/skip/speed actions, with paused-video discussion guidance in the existing skill. Update the local plugin and reopen or
+refresh the chat’s tools. After enrolling this chat, open **Settings → Agent → Browser access**
+in Threadlight and select the connection. The tool requires the connectionId
+on every call. Codex, Claude and the human operate the same live page.
+See the [shared browser guide](../docs/FEATURES.md#shared-browser).

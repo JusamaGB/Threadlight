@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, vi } from 'vitest'
 import { startClaudeSpaceChat } from '../src/main/appControl/claudeSpaceChat'
-import { startSpaceChat } from '../src/main/appControl/startSpaceChat'
+import { openSpaceProvider, startSpaceChat } from '../src/main/appControl/startSpaceChat'
 import { PerplexityChatReader, confirmsPerplexityCreation } from '../src/main/accountChats/adapters'
 import { defaultPaths } from '../src/main/sessions/paths'
 import type { Workflow } from '../src/shared/communication'
@@ -44,7 +44,13 @@ describe('foreground Agent starting a chat in its requested Shared Space', () =>
     const result = await startSpaceChat(input, actionId, deps)
     expect(result).toMatchObject({ outcome: 'ok', linked: true })
     expect(deps.reserve).toHaveBeenCalledWith(input.spaceId)
-    expect(deps.start).toHaveBeenCalledWith(input, 'workspace', actionId, expect.any(Function))
+    expect(deps.start).toHaveBeenCalledWith(
+      input,
+      'workspace',
+      actionId,
+      expect.any(Function),
+      expect.any(Function),
+    )
     expect(deps.save).toHaveBeenCalledWith(
       expect.objectContaining({
         spaceId: input.spaceId,
@@ -75,6 +81,54 @@ describe('foreground Agent starting a chat in its requested Shared Space', () =>
     })
     expect(deps.start).toHaveBeenCalledOnce()
   })
+  it.each([true, false])(
+    'uses the confirmed Codex model for the opening and links only confirmed delivery (%s)',
+    async (delivered) => {
+      const deps = make(),
+        target = 'codex:' + randomUUID(),
+        model = 'gpt-6.1-sol'
+      const request = { ...input, provider: 'codex' as const, model: 'Sol 6.1' }
+      const codex = vi.fn(
+        async (_cwd: string, _id: string, _model: string | undefined, beforeCreate: () => void) => {
+          beforeCreate()
+          return { ok: true as const, sessionId: target, model }
+        },
+      )
+      const sendCodex = vi.fn(async () => ({ ok: delivered }))
+      const id = randomUUID()
+      const result = await startSpaceChat(request, id, {
+        ...deps,
+        start: (data, root, op, reserve, check) =>
+          openSpaceProvider(
+            data,
+            root,
+            op,
+            reserve,
+            {
+              codex,
+              sendCodex,
+              paths: defaultPaths(),
+              claude: async () => null,
+              chats: {} as never,
+            },
+            check,
+          ),
+      })
+      expect(codex).toHaveBeenCalledWith('workspace', id, 'Sol 6.1', expect.any(Function))
+      expect(sendCodex).toHaveBeenCalledWith(target, input.openingMessage, model)
+      expect(result).toMatchObject({
+        outcome: delivered ? 'ok' : 'uncertain',
+        target,
+        linked: delivered,
+      })
+      if (delivered)
+        expect(deps.save.mock.calls[0]?.[0]).toMatchObject({
+          participants: [{ target, model, modelPolicy: 'exact' }],
+        })
+      else expect(deps.save).not.toHaveBeenCalled()
+      expect(deps.reserve).toHaveBeenCalledTimes(1)
+    },
+  )
   it('blocks disabled, paused, and exhausted spaces before sending any prompt', async () => {
     for (const condition of ['disabled', 'paused', 'exhausted']) {
       const deps = make()

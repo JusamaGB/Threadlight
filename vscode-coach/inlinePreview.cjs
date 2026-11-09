@@ -72,14 +72,21 @@ function createInlinePreview(context, connected) {
     const versions = [...new Set(replacements.map((text) => text.replace(/\r\n?|\n/g, eol)))]
     clear()
     const thread = controller.createCommentThread(s.editor.document.uri, s.selection, [])
-    const p = (preview = { ...s, thread, versions, index: 0 })
+    const p = (preview = {
+      ...s,
+      document: s.editor.document,
+      column: s.editor.viewColumn,
+      thread,
+      versions,
+      index: 0,
+    })
     try {
       thread.canReply = false
       render(p)
       p.editor.setDecorations(mark, [s.selection])
       p.editor.revealRange(s.selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
       await keys(true, versions.length > 1)
-      if (preview !== p || !matches(p)) throw Error('Selection changed. Request a fresh preview.')
+      if (current() !== p) throw Error('Source changed. Request a fresh preview.')
       return { preview: true, alternatives: versions.length, awaitingEditorAcceptance: true }
     } catch (error) {
       if (preview === p) clear()
@@ -87,8 +94,23 @@ function createInlinePreview(context, connected) {
     }
   }
   function current() {
-    if (preview && !matches(preview)) clear()
-    return preview
+    const p = preview
+    if (!p) return
+    if (
+      !connected() ||
+      !vscode.workspace.isTrusted ||
+      p.document.isClosed ||
+      p.version !== p.document.version ||
+      p.document.getText(p.selection) !== p.selectedText
+    ) {
+      clear()
+      return
+    }
+    const editor = vscode.window.activeTextEditor
+    if (editor?.document === p.document && editor.viewColumn === p.column) {
+      p.editor = editor
+      return p
+    }
   }
   function cycle(delta) {
     const p = current()
@@ -114,9 +136,15 @@ function createInlinePreview(context, connected) {
     commands.registerCommand('threadlight.coach.dismiss', clear),
     commands.registerCommand('threadlight.coach.previous', () => cycle(-1)),
     commands.registerCommand('threadlight.coach.following', () => cycle(1)),
-    vscode.window.onDidChangeActiveTextEditor(current),
-    vscode.window.onDidChangeTextEditorSelection(current),
-    vscode.workspace.onDidChangeTextDocument(current),
+    vscode.window.onDidChangeActiveTextEditor(() => {
+      if (!preview) return
+      const p = current()
+      void keys(!!p, !!p && p.versions.length > 1)
+      if (p) p.editor.setDecorations(mark, [p.selection])
+    }),
+    vscode.workspace.onDidChangeTextDocument(({ document }) => {
+      if (preview?.document === document) current()
+    }),
     vscode.workspace.onDidCloseTextDocument((doc) => {
       if (preview?.editor.document === doc) clear()
     }),

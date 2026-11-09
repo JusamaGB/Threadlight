@@ -1,11 +1,13 @@
 import { createPortal } from 'react-dom'
 import { IDLE_MOTION } from '../../shared/motion'
 import { ElectricMotion } from '../motion/ElectricMotion'
+import { LiveInputContext, withLiveInputPreview } from '../lib/liveInputPreview'
 import { timing } from '../../shared/liveTiming'
 import { ComposerInput } from '../composer/ComposerInput'
 import { ConversationTimeline } from '../communication/ConversationTimeline'
 import {
   useEffect,
+  useContext,
   useLayoutEffect,
   useImperativeHandle,
   useRef,
@@ -358,6 +360,7 @@ export function AgentView({
   onRecentOpened?: () => void
 } = {}) {
   const agent = useAgent(client)
+  const inputPreview = useContext(LiveInputContext)
   const settings = useSettings()
   const [text, updateText] = useState(() => client.readDraft?.() ?? '')
   const setText = (value: string) => {
@@ -827,7 +830,11 @@ export function AgentView({
               ? `${agent.provider === 'codex' ? 'codex:' : ''}${agent.sessionId}`
               : undefined
           }
-          items={agent.items}
+          items={
+            voiceActive && agent.live && inputPreview?.owner === agent.conversationId
+              ? withLiveInputPreview(agent.items, inputPreview)
+              : agent.items
+          }
           lines={(items, itemKey) => (
             <Lines
               items={items}
@@ -910,14 +917,32 @@ export function AgentView({
           </button>
         </div>
       )}
-      {agent.status === 'working' && !agent.requests.length && !agent.approval && (
-        <div className={threadStyles.currentWork} role="status" aria-label="Current Agent work">
-          <span className={threadStyles.workingMark}>
-            <ElectricMotion label="Agent working" snapshot={{ ...IDLE_MOTION, mode: 'thinking' }} />
-          </span>
-          <span>{agent.progress ?? en.agent.working}</span>
+      {agent.chatActivity && !agent.chatActivity.working && (
+        <div className={threadStyles.currentWork} role="status">
+          {agent.chatActivity.message}
         </div>
       )}
+      {(agent.status === 'working' ||
+        agent.chatActivity?.working ||
+        (agent.live && agent.pendingSpeechTurn && !agent.pendingReadout)) &&
+        !agent.requests.length &&
+        !agent.approval && (
+          <div className={threadStyles.currentWork} role="status" aria-label="Current Agent work">
+            <span className={threadStyles.workingMark}>
+              <ElectricMotion
+                label="Agent working"
+                snapshot={{ ...IDLE_MOTION, mode: 'thinking' }}
+              />
+            </span>
+            <span>
+              {agent.chatActivity?.working
+                ? agent.chatActivity.message
+                : agent.status === 'working'
+                  ? (agent.progress ?? en.agent.working)
+                  : 'Waiting for voice playback…'}
+            </span>
+          </div>
+        )}
       {(!readingResize || composing) && (
         <div
           className={styles.agentInput}

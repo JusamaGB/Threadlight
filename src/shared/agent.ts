@@ -49,6 +49,8 @@ export interface AgentItem {
   screenPreview?: string
   /** Ephemeral native Live turn boundary; partial speech cannot authorize a response. */
   liveComplete?: boolean
+  /** Native voice turn, when the provider identifies it on a transcript segment. */
+  liveUserTurnId?: string
   backingTurnId?: string
   voiceDelegationIds?: string[]
   /** Display-only raw delegations attached to one observed Live user segment. */
@@ -87,6 +89,9 @@ export interface AgentState {
   coachGuideToken?: string
   recent?: RecentAgentConversation
   pendingReadout?: { session: string; token: string } | null
+  /** The backing turn has finished and its Live voice handoff is still pending. */
+  pendingSpeechTurn?: string | null
+  chatActivity?: { working: boolean; message: string }
   live?: 'connecting' | 'ready' | 'active' | null
   revision: number
   provider: AgentProvider | null

@@ -1,5 +1,4 @@
-// Work in PCM16 units only to classify the noise floor. Speech is queued and
-// played from the original Float32 samples without quantization or resampling.
+// Classify the noise floor in PCM16 units; keep the queued audio in Float32.
 const MAX_NOISE_SPAN = 16
 function quietFloor(input: Float32Array) {
   let min = Infinity,
@@ -63,7 +62,24 @@ function quietFloor(input: Float32Array) {
   return { min, max }
 }
 
-/** Bounded, memory-only PCM queue. No transcription, resampling, or speech detection. */
+// Fit a newly arriving frame into fewer samples while the sender is behind.
+// Average every source sample over its destination interval, including both
+// edges. This advances through noisy pauses or speech without cutting a frame.
+function shortenFrame(frame: Float32Array, length: number): Float32Array {
+  const output = new Float32Array(length)
+  const step = frame.length / length
+  for (let i = 0; i < length; i++) {
+    const start = i * step,
+      end = Math.min(frame.length, (i + 1) * step)
+    let sum = 0
+    for (let j = Math.floor(start); j < end; j++)
+      sum += frame[j]! * (Math.min(j + 1, end) - Math.max(j, start))
+    output[i] = sum / step
+  }
+  return output
+}
+
+/** Bounded, memory-only PCM queue. */
 export class LiveAudioBuffer {
   private frames: Float32Array[] = []
   private head = 0
@@ -81,8 +97,12 @@ export class LiveAudioBuffer {
   get length(): number {
     return this.samples
   }
-  append(input: Float32Array, compactSilence: boolean): boolean {
-    let frame = input
+  append(input: Float32Array, compactSilence: boolean, catchUp = false): boolean {
+    // Keep the entire opening captured before readiness at its recorded
+    // rate. Only subsequent audio repays the debt, at up to 1.25x.
+    const repay = catchUp ? Math.min(this.samples, Math.floor(input.length / 5)) : 0
+    const incoming = repay ? shortenFrame(input, input.length - repay) : input
+    let frame = incoming
     const quiet = compactSilence ? quietFloor(input) : undefined
     if (quiet) {
       const { min, max } = quiet
@@ -99,10 +119,10 @@ export class LiveAudioBuffer {
         this.idleMax = hi
       }
       const keep = Math.max(0, Math.floor(this.sampleRate / 2) - this.silence)
-      this.silence += input.length
-      frame = input.subarray(0, keep)
-      if (frame.length < input.length && (min !== max || this.edgeSize > 0)) {
-        this.saveQuietEdge(input.subarray(frame.length))
+      this.silence += incoming.length
+      frame = incoming.subarray(0, keep)
+      if (frame.length < incoming.length && (min !== max || this.edgeSize > 0)) {
+        this.saveQuietEdge(incoming.subarray(frame.length))
       }
     } else {
       if (!this.restoreEdge(input.length)) return false
@@ -112,7 +132,7 @@ export class LiveAudioBuffer {
     }
     if (this.samples + frame.length > this.sampleRate * this.seconds) return false
     if (frame.length) {
-      this.frames.push(new Float32Array(frame))
+      this.frames.push(frame.buffer === input.buffer ? new Float32Array(frame) : frame)
       this.samples += frame.length
     }
     return true

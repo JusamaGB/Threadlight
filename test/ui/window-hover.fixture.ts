@@ -81,7 +81,7 @@ async function start() {
     [IPC.getRelays]: () => [],
     [IPC.getStt]: () => ({ state: 'ready' }),
     [IPC.agentGet]: () =>
-      process.env.THREADLIGHT_UI_FOCUS === 'agent-height'
+      ['agent-height', 'live-hover-handoff'].includes(process.env.THREADLIGHT_UI_FOCUS ?? '')
         ? {
             ...IDLE_AGENT,
             status: 'ready',

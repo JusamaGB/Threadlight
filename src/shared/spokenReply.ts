@@ -2,7 +2,7 @@ import type { AgentItem } from './agent'
 import { z } from 'zod'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import type { Nodes } from 'mdast'
-import { delegationLinks } from './agentTranscript'
+import { delegationLinks, liveUser } from './agentTranscript'
 import { spokenProse } from './spokenProse'
 import { matchesSpeech } from './speechCaption'
 
@@ -11,6 +11,7 @@ export const spokenReplySchema = z.object({
   captionIds: z.array(z.string()).optional(),
   awaitingLink: z.boolean().optional(),
   userItemId: z.string().optional(),
+  exampleId: z.string().optional(),
   text: z.string(),
   blocks: z.array(
     z.object({
@@ -87,6 +88,8 @@ export interface SpokenExample {
   sourceId: string
   session: string
   blocks: SpokenReply['blocks']
+  userItemId?: string
+  caption?: string
 }
 
 /** The presenter remembers a single actual fenced example. A follow-up must explicitly
@@ -182,5 +185,172 @@ export function latestSpokenReply(items: AgentItem[], priorIds: ReadonlySet<stri
     sourceSession: origin.sessionId,
     pendingSource: !answer,
     incomplete: latest.liveComplete === false,
+  }
+}
+
+/** Only an explicit redisplay of this example may reuse its written blocks on
+ * a new request. Named alternatives and revisions are resolved by the Agent. */
+function asksForReplay(text: string, blocks: SpokenReply['blocks']) {
+  const request = text
+    .toLowerCase()
+    .trim()
+    .replace(/[,.!?]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:uh |um )?(?:sorry )?(?:i meant )?/, '')
+    .replace(/^(?:(?:can|could|would) you |please )/, '')
+    .replace(/ please$/, '')
+    .replace(/ in (?:the |this )?thread$/, '')
+  if (
+    /\bpython\b/.test(request) &&
+    (blocks.length !== 1 || !/^(?:python|py)$/i.test(blocks[0]!.language))
+  )
+    return false
+  if (blocks.length > 1 && /\b(?:example|file|string|snippet|block)\b/.test(request)) return false
+  if (
+    !/\b(?:again|repeat|bring back|same|previous|last|you (?:gave|showed) me)\b/.test(request) &&
+    !/^(?:show(?: me)?|display) (?:that|this|it)$/.test(request)
+  )
+    return false
+  return /^(?:show(?: me)?|display|repeat|bring back) (?:that|this|it|(?:the|that|this|the same|the previous|the last) (?:python |code )?(?:example|string|snippet|block|file|code|python))(?: again)?(?: the (?:string|example|one) you (?:gave|showed) me)?$/.test(
+    request,
+  )
+}
+
+type BlockReader = (text: string) => SpokenReply['blocks']
+
+/** Project the current learner request independently of caption delivery order.
+ * Speech attribution remains untouched in the transcript. Only a written answer
+ * linked by delegation or narration may introduce new code into the pill. */
+export function presentSpokenReply(
+  items: AgentItem[],
+  priorIds: ReadonlySet<string>,
+  excludedSources: ReadonlySet<string>,
+  previous: SpokenExample | null,
+  readBlocks: BlockReader,
+): { reply: SpokenReply | null; example: SpokenExample | null } {
+  const userIndex = items.findLastIndex(
+    (item) => item.kind === 'you' && (liveUser(item) || !item.backingTurnId),
+  )
+  const boundary = items[userIndex]
+  const user = boundary?.id && priorIds.has(boundary.id) ? undefined : boundary
+  const links = delegationLinks(items)
+  const owners = new Map<string, string>()
+  for (const item of items) {
+    const owner = item.id && links.get(item.id)
+    if (owner && item.backingTurnId) owners.set(item.backingTurnId, owner)
+  }
+  const ignored = new Set(priorIds)
+  const narrated = new Map<string, NonNullable<AgentItem['narrationOf']>>()
+  const indices = new Map(items.map((item, index) => [item.id, index]))
+  const precedesRequest = (id?: string) => !!id && (indices.get(id) ?? userIndex) < userIndex
+  for (const [index, item] of items.entries()) {
+    if (item.kind !== 'agent' || !item.id?.startsWith('live:')) continue
+    const link = item.narrationOf
+    const owner = link && owners.get(link.turnId)
+    if (
+      index < userIndex ||
+      (owner && owner !== user?.id) ||
+      ((precedesRequest(item.liveAfter) || precedesRequest(link?.itemId)) &&
+        (!owner || owner !== user?.id)) ||
+      (item.liveAfter && ignored.has(item.liveAfter))
+    ) {
+      ignored.add(item.id)
+    } else if (link && !ignored.has(item.id)) narrated.set(link.itemId, link)
+  }
+  const speech = latestSpokenReply(items, ignored)
+  const verified = items.filter((item) => {
+    if (
+      item.kind !== 'agent' ||
+      !item.id ||
+      item.id.startsWith('live:') ||
+      excludedSources.has(item.id)
+    )
+      return false
+    const link = narrated.get(item.id)
+    return (
+      (link &&
+        (!item.backingTurnId || item.backingTurnId === link.turnId) &&
+        (!item.timingSession || item.timingSession === link.sessionId)) ||
+      (user?.id &&
+        item.timingSession &&
+        item.backingTurnId &&
+        owners.get(item.backingTurnId) === user.id)
+    )
+  })
+  // A status-only answer can follow the code in the same delivered batch.
+  // Recover the latest written example even on the first paint of that batch.
+  let written = verified.at(-1)
+  let blocks: SpokenReply['blocks'] = []
+  for (let index = verified.length - 1; index >= 0; index--) {
+    const item = verified[index]!
+    blocks = readBlocks(item.text)
+    if (blocks.length) {
+      written = item
+      break
+    }
+  }
+  const session = written?.timingSession ?? (written?.id && narrated.get(written.id)?.sessionId)
+  const carry =
+    previous &&
+    !excludedSources.has(previous.sourceId) &&
+    (!session || session === previous.session)
+      ? previous
+      : null
+  const sameRequest = !!user?.id && carry?.userItemId === user.id
+  const replay =
+    carry && user?.liveComplete !== false && user?.text && asksForReplay(user.text, carry.blocks)
+  const source = written?.text ?? ''
+  const selection = spokenExample(
+    carry,
+    {
+      source,
+      sourceId: written?.id,
+      sourceSession: session,
+      incomplete: speech?.incomplete ?? false,
+    },
+    blocks,
+  )
+  const card = replay
+    ? carry
+    : selection.blocks.length
+      ? selection.example
+      : sameRequest
+        ? carry
+        : null
+  const caption = speech && {
+    id: speech.id,
+    captionIds: speech.captionIds,
+    userItemId: user?.id ?? speech.userItemId,
+    awaitingLink: speech.awaitingLink,
+    text: speech.text,
+    blocks: [],
+  }
+  if (!card)
+    return {
+      reply: caption,
+      example: written || (speech?.incomplete === false && !speech.pendingSource) ? null : carry,
+    }
+  const sameCard = card.sourceId === carry?.sourceId && sameRequest
+  const spoken =
+    speech?.sourceId === written?.id && written && !speech?.incomplete ? speech?.text.trim() : ''
+  const first =
+    spoken && spoken.length <= 110 ? spoken : spoken?.match(/^.{1,110}?[.!?](?:\s|$)/)?.[0].trim()
+  const short = first && !/[[\]{}_=\x60]/.test(first) ? first : undefined
+  const language = card.blocks[0]?.language
+  const label = language
+    ? language.charAt(0).toUpperCase() + language.slice(1) + ' example'
+    : 'Code example'
+  const text = short ?? (sameCard ? carry?.caption : undefined) ?? label
+  const exampleId = JSON.stringify([card.session, card.sourceId, user?.id ?? null])
+  return {
+    example: { ...card, userItemId: user?.id, caption: text },
+    reply: {
+      ...caption,
+      id: caption?.id ?? exampleId,
+      userItemId: user?.id,
+      exampleId,
+      text,
+      blocks: card.blocks,
+    },
   }
 }

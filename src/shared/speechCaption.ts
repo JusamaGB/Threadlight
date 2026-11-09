@@ -12,6 +12,7 @@ export function plainSpeech(text: string): string {
 function prose(text: string) {
   return plainSpeech(text)
     .toLowerCase()
+    .replace(/(?<=[\w-])\.(?=[a-z]\w*\b)/g, ' dot ')
     .replace(/[,;:](?=\s|$)|\.(?=\s|$)/g, '')
 }
 
@@ -50,13 +51,36 @@ function alternatives(source: string): string[][] {
   parts.push([source.slice(end)])
   return parts
 }
+
+function matchesParts(parts: string[][], actual: string, partial: boolean): boolean {
+  let positions = new Set([0])
+  for (const options of parts) {
+    const next = new Set<number>()
+    for (const pos of positions)
+      for (const option of options) {
+        const rest = actual.slice(pos)
+        if (partial && option.startsWith(rest)) return true
+        if (rest.startsWith(option)) next.add(pos + option.length)
+      }
+    if (!next.size) return false
+    positions = next
+  }
+  return positions.has(actual.length)
+}
+
 export function matchesSpeech(requested: string, caption: string, partial = false): boolean {
+  // Live sometimes quotes the entire readout, including a space just inside the
+  // quotation marks. Keep internal quotes, punctuation and all spoken words.
+  if (!/^\s*["“]/.test(requested) && /^\s*["“]/.test(caption)) {
+    const quoted = /^\s*["“]([\s\S]*)["”]\s*$/.exec(caption)
+    if (quoted) caption = quoted[1]!.trim()
+    else if (partial) caption = caption.trimStart().slice(1).trimStart()
+  }
   const target = plainSpeech(requested),
     words = plainSpeech(caption)
   if (!words) return false
   if (target === words || (partial && target.startsWith(words))) return true
   if (
-    target.split(' ').length < 8 ||
     target.length > 8000 ||
     /[`{}<>=[\]\\]/.test(requested + caption) ||
     /\b(approv\w*|den(?:y|ied)|permission|authori[sz]\w*|delet\w*|refus\w*)\b/i.test(
@@ -64,20 +88,17 @@ export function matchesSpeech(requested: string, caption: string, partial = fals
     )
   )
     return false
+  // Native captions can spell a filename's separator as “ dot ” or “-dot-”.
+  // Offer those spellings only at literal in-word periods in the requested text.
+  const tokens = target.split(/(?<=[\w-])\.(?=[a-z]\w*\b)/i)
+  if (tokens.length > 1) {
+    const parts: string[][] = [[tokens[0]!]]
+    for (const token of tokens.slice(1)) parts.push(['.', ' dot ', '-dot-'], [token])
+    if (matchesParts(parts, words, partial)) return true
+  }
+  if (target.split(' ').length < 8) return false
   const source = canonical(requested),
     actual = prose(caption)
   if (!partial) return source === canonical(caption)
-  let positions = new Set([0])
-  for (const options of alternatives(source)) {
-    const next = new Set<number>()
-    for (const pos of positions)
-      for (const option of options) {
-        const rest = actual.slice(pos)
-        if (option.startsWith(rest)) return true
-        if (rest.startsWith(option)) next.add(pos + option.length)
-      }
-    if (!next.size) return false
-    positions = next
-  }
-  return positions.has(actual.length)
+  return matchesParts(alternatives(source), actual, true)
 }

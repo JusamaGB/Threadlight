@@ -289,6 +289,52 @@ export async function checkVoiceRouting(page) {
     0,
   )
   const beforeCaptions = await page.evaluate(() => window.threadlight.getAgent())
+  await openHeaderPage(page, 'Agent')
+  await page.evaluate(() => window.proof.agent({ live: 'active' }))
+  const wire = (event) =>
+    page.evaluate(
+      (e) => window.proof.livePeers.at(-1).channel.onmessage({ data: JSON.stringify(e) }),
+      event,
+    )
+  await wire({
+    type: 'turn.created',
+    turn: { id: 'input-proof', role: 'user', transcript: 'Please' },
+  })
+  const draftRow = page.locator('[data-message-id="live:preview-input-proof"]')
+  await draftRow.getByText('Please', { exact: true }).waitFor()
+  await wire({ type: 'turn.delta', turn_id: 'input-proof', delta: ' repeat those colors.' })
+  await draftRow.getByText('Please repeat those colors.', { exact: true }).waitFor()
+  await wire({
+    type: 'turn.done',
+    turn: { id: 'input-proof', role: 'user', transcript: 'Please repeat those colours.' },
+  })
+  await draftRow.getByText('Please repeat those colours.', { exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.proof.agent({
+      items: [
+        {
+          id: 'live:authoritative',
+          kind: 'you',
+          liveComplete: true,
+          text: 'Please repeat those colours.',
+        },
+      ],
+    }),
+  )
+  await draftRow.waitFor({ state: 'detached' })
+  assert.equal(await page.getByText('Please repeat those colours.', { exact: true }).count(), 1)
+  await wire({
+    type: 'turn.created',
+    turn: { id: 'second-input', role: 'user', transcript: 'Please' },
+  })
+  await wire({ type: 'turn.delta', turn_id: 'input-proof', delta: ' stale words' })
+  await wire({ type: 'turn.delta', turn_id: 'assistant-turn', delta: ' assistant words' })
+  const nextDraft = page.locator('[data-message-id="live:preview-second-input"]')
+  await nextDraft.getByText('Please', { exact: true }).waitFor()
+  assert.equal(await page.getByText(/stale words|assistant words/).count(), 0)
+  await wire({ type: 'turn.done', turn: { id: 'second-input', role: 'user', transcript: '' } })
+  await nextDraft.waitFor({ state: 'detached' })
+  assert.equal((await agentSends()).length, sendsBeforeLive)
   await page.evaluate(async () => {
     await window.threadlight.updateSettings({ spokenReplyCompanion: true })
     const source = {
@@ -383,6 +429,31 @@ export async function checkVoiceRouting(page) {
   await page.waitForFunction(() =>
     window.proof.spokenReply.blocks[0]?.value.includes('print(entry, inv[entry])'),
   )
+  const displayed = await page.evaluate(() => window.proof.spokenReply)
+  await page.evaluate(() => {
+    window.proof.receiptItems.push({
+      kind: 'agent',
+      id: 'live:extra-speech',
+      liveAfter: 'live:receipt-caption',
+      text: 'total = 0.0 for name, info in items dot items(): total += info["quantity"] * info["price"]',
+    })
+    window.proof.agent({ items: [...window.proof.receiptItems] })
+  })
+  await page.waitForFunction(() => window.proof.spokenReply?.id === 'live:extra-speech')
+  const retained = await page.evaluate(() => window.proof.spokenReply)
+  assert.equal(retained.exampleId, displayed.exampleId)
+  assert.deepEqual(retained.blocks, displayed.blocks)
+  assert.ok(!retained.text.includes('total'))
+  await page.evaluate(() => {
+    window.proof.receiptItems.push({
+      kind: 'you',
+      id: 'live:replay-this',
+      text: 'Could you show me that again?',
+    })
+    window.proof.agent({ items: [...window.proof.receiptItems] })
+  })
+  await page.waitForFunction(() => window.proof.spokenReply?.userItemId === 'live:replay-this')
+  assert.deepEqual(await page.evaluate(() => window.proof.spokenReply.blocks), displayed.blocks)
   await page.evaluate(() => {
     const answer = {
       kind: 'agent',
@@ -409,7 +480,7 @@ export async function checkVoiceRouting(page) {
   await page.waitForFunction(
     () =>
       window.proof.spokenReply?.id.includes('receipt-followup') &&
-      window.proof.spokenReply.blocks.length === 0,
+      window.proof.spokenReply.blocks[0]?.value.includes('print(entry, inv[entry])'),
   )
   await page.evaluate(() => {
     window.proof.agent({ items: window.proof.followupItems })
@@ -443,8 +514,23 @@ export async function checkVoiceRouting(page) {
       }),
     )
   await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
-  await page.getByRole('button', { name: 'Return to call' }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Return to call' }).count(), 0)
   assert.equal(await controls.count(), 0)
+  await page.evaluate(() =>
+    window.proof.agent({
+      recent: {
+        id: 'codex:voice-proof',
+        provider: 'codex',
+        at: Date.now(),
+        waiting: true,
+        summary: 'Current call',
+      },
+    }),
+  )
+  await page.getByRole('button', { name: 'Agent is waiting for your answer' }).click()
+  await controls.waitFor()
+  assert.equal(await draft.inputValue(), 'Keep this draft through the call')
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const pinnedPanel = page.locator('[data-card][data-pinned]')
   if (await pinnedPanel.count()) {
@@ -503,6 +589,33 @@ export async function checkVoiceRouting(page) {
   await page.waitForFunction(() => !window.proof.motion?.agentWorking)
   await page.evaluate(() => window.proof.agent({ status: 'ready' }))
   // Enter a Smart Thread from the Agent while the same native Live peer stays connected.
+  await page.evaluate(() =>
+    window.proof.agent({ status: 'ready', live: 'active', pendingSpeechTurn: 'receipt-turn' }),
+  )
+  await page.getByText('Waiting for voice playback…', { exact: true }).waitFor()
+  await page.waitForFunction(() => window.proof.motion?.agentWorking)
+  await page.evaluate(() =>
+    window.proof.agent({
+      pendingSpeechTurn: null,
+      chatActivity: { working: true, message: 'Starting the Codex chat in Threadlight…' },
+    }),
+  )
+  await page.getByText('Starting the Codex chat in Threadlight…', { exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.proof.agent({
+      chatActivity: {
+        working: false,
+        message: 'The Codex chat was linked to Threadlight using gpt-6.1-sol.',
+      },
+    }),
+  )
+  await page
+    .getByText('The Codex chat was linked to Threadlight using gpt-6.1-sol.', { exact: true })
+    .waitFor()
+  await page.waitForFunction(() => !window.proof.motion?.agentWorking)
+  await page.evaluate(() =>
+    window.proof.agent({ live: null, chatActivity: undefined, pendingSpeechTurn: null }),
+  )
   await page.evaluate(async () => {
     window.threadlight.threadTimeline = async ({ threadId }) => ({
       ok: true,
@@ -579,8 +692,7 @@ export async function checkVoiceRouting(page) {
       ],
     }),
   )
-  if (await page.getByRole('button', { name: 'Return to call' }).isVisible())
-    await page.getByRole('button', { name: 'Return to call' }).click()
+  if (!(await controls.isVisible())) await reopenWave()
   const pendingLeaves = await leaveCount()
   await page.evaluate(() => window.proof.emit('onPanelPointerOutside'))
   assert.equal(

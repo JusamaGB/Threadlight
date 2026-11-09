@@ -251,6 +251,13 @@ export interface ThreadlightApi {
     reference: import('./codexQuestions').CodexQuestionRef,
     answers: string[],
   ): Promise<import('./codexQuestions').CodexQuestionResult>
+  browserRequest(input: import('./browser').BrowserUiRequest): Promise<
+    import('./browser').BrowserReply & {
+      connections?: { id: string; label: string }[]
+      hosted?: boolean
+    }
+  >
+  onBrowserChanged(listener: (state: import('./browser').BrowserState) => void): () => void
   artifactPreview(
     input: import('./artifacts').ArtifactPreviewRequest,
   ): Promise<{ ok: boolean; reason?: string }>

@@ -92,6 +92,41 @@ async function run() {
     return answer
   }
   try {
+    if (process.env.THREADLIGHT_PROPOSAL_WALK_ONLY === '1') {
+      let review = await coach.run(owner, { action: 'review' })
+      while (review.nextPage)
+        review = await coach.run(owner, { action: 'review', nextPage: review.nextPage })
+      const proposal = await coach.run(owner, {
+        action: 'propose',
+        snapshot: review.snapshot,
+        proposals: [
+          {
+            explanation: 'Round one billable session to a six-minute unit.',
+            edits: [
+              {
+                line: 1,
+                column: 0,
+                oldText: '',
+                newText: 'def round_up_to_six(minutes):\n    return ((minutes + 5) // 6) * 6\n\n',
+              },
+            ],
+          },
+        ],
+      })
+      const location = () => coach.run(owner, { action: 'proposal_status' })
+      await turn('Walk me through this pending diff one line at a time. Start with the first line.')
+      assert.ok(actions.includes('proposal_line'))
+      assert.equal((await location()).walkRow, 1)
+      await turn('Next line, please.')
+      assert.ok(actions.includes('proposal_line'))
+      assert.equal((await location()).walkRow, 2)
+      const answer = await turn('Why add five there? Show me what happens for 6 and 7 minutes.')
+      assert.match(answer, /12|twelve/i)
+      assert.equal((await location()).walkRow, 2)
+      assert.equal((await location()).token, proposal.token)
+      console.log('PASS signed-in Agent discussed the tracker proposal and advanced by one line.')
+      return
+    }
     await turn(
       'In my connected VS Code editor, could you fill that blank line for me, inside greet? Show me what should go on that line to print hello so I can type it myself.',
     )

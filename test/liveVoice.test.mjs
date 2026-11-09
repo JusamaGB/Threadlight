@@ -255,6 +255,37 @@ it('holds startup speech until service readiness, then delivers old and new audi
   expect([...output]).toEqual([7, 8])
   expect(api.agentLiveOpen).not.toHaveBeenCalled()
 })
+it('repays a 3.392-second opening backlog during continuous sound and returns to sample-for-sample live audio', async () => {
+  const starting = connection.start({ bufferAudio: true })
+  await vi.advanceTimersByTimeAsync(0)
+  const size = 512,
+    output = new Float32Array(size)
+  const opening = Array.from({ length: 106 }, (_, n) =>
+    Float32Array.from({ length: size }, (_, i) => 0.08 * Math.sin((n * size + i) * 0.07)),
+  )
+  for (const frame of opening) connection.process(frame, output)
+  expect(connection.bufferedSeconds).toBe(3.392)
+  Peer.current.event('session.started')
+  await starting
+  let drainedAt = 0
+  for (let n = 0; n < 600; n++) {
+    const room = Float32Array.from(
+      { length: size },
+      (_, i) => 0.01 * Math.sin((n * size + i) * 0.37) + 0.004 * Math.cos(i * 0.71),
+    )
+    connection.process(room, output)
+    if (n < opening.length) expect(output).toEqual(opening[n])
+    if (!connection.bufferedSeconds) {
+      drainedAt = ((n + 1) * size) / 16000
+      break
+    }
+  }
+  expect(drainedAt).toBeGreaterThan(0)
+  expect(drainedAt).toBeLessThan(17.1)
+  const last = Float32Array.from({ length: size }, (_, i) => Math.sin(i * 0.11) * 0.19)
+  connection.process(last, output)
+  expect(output).toEqual(last)
+})
 it.each(['constant', 'two codes', 'three codes', 'stationary noise'])(
   'drains %s without skipping the quiet first utterance or shortening its samples',
   async (shape) => {

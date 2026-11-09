@@ -3,7 +3,9 @@ export interface NewThreadRequest {
   provider: 'codex' | 'claude'
   /** An explicitly selected workspace; null creates a fresh folder. */
   cwd: string | null
+  model?: string
 }
 
 export type NewThreadResult =
-  { ok: true; sessionId: string } | { ok: false; reason: string; sessionId?: string }
+  | { ok: true; sessionId: string; model?: string }
+  | { ok: false; reason: string; sessionId?: string }

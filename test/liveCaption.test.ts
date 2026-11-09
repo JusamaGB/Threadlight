@@ -3,6 +3,7 @@ import type { AgentItem } from '../src/shared/agent'
 import { agentTranscript } from '../src/shared/agentTranscript'
 import { LeadPlayback } from '../src/main/agent/leadPlayback'
 import { CodexLive } from '../src/main/agent/codexLive'
+import { matchesSpeech } from '../src/shared/speechCaption'
 import type { CodexTransport } from '../src/main/agent/codexClient'
 const lead =
   'I can see this file: you said the server was restarted and the editor reconnected, and I confirmed the connection.'
@@ -48,6 +49,173 @@ describe('native answer and spoken captions', () => {
     phase: 'commentary',
     text: 'I’ll check the current editor buffer.',
   }
+  it('continues the Coach call after Live captions problem.py as problem-dot-py', async () => {
+    const offered = vi.fn()
+    const { live, request, items, caption } = fixture(undefined, offered)
+    const opening =
+      'I’ll select the Threadlight Coach skill, then check the current VS Code coaching guidance and the `problem.py` pin before proposing the ghost text change.'
+    const heard = opening.replace('`problem.py`', 'problem-dot-py')
+    const next =
+      'Coach is active. The coaching instructions route this through VS Code’s ghost practice copy, which preserves the source file. I’m checking the connected editor and loading the requested file’s code now.'
+    const final =
+      'Threadlight Coach is selected. VS Code is connected, but its loaded companion doesn’t expose the ghost practice actions, so I couldn’t load `problem.py` or prepare its code for ghost narration. The source file was not changed. Activate or update the Threadlight VS Code companion, then ask me to try again.'
+    live.completedCommentary('turn', { ...acknowledgment, text: opening })
+    live.playbackBoundary('assistant', 'first')
+    caption('opening', ' ' + heard)
+    live.playbackBoundary('done', 'first', heard)
+    await Promise.resolve()
+    expect(items.get('live:opening')?.narrationOf?.itemId).toBe('note')
+    live.completedCommentary('turn', { ...acknowledgment, id: 'next', text: next })
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(request.mock.lastCall)).toContain(next)
+    const finish = live.finishTurn({
+      id: 'turn',
+      status: 'completed',
+      items: [{ id: 'final', type: 'agentMessage', phase: 'final_answer', text: final }],
+    })
+    live.playbackBoundary('assistant', 'second')
+    live.playbackBoundary('done', 'second', next)
+    await finish
+    expect(request).toHaveBeenCalledTimes(3)
+    expect(JSON.stringify(request.mock.lastCall)).toContain(final.replaceAll('`', ''))
+    expect(offered).not.toHaveBeenCalled()
+  })
+
+  it('recognizes streamed filename spellings while preserving the filename, question and negation', () => {
+    const requested = 'Open my-file.test.py.'
+    const heard = 'Open my-file dot test-dot-py.'
+    for (let i = 1; i <= heard.length; i++)
+      expect(matchesSpeech(requested, heard.slice(0, i), true)).toBe(true)
+    expect(matchesSpeech(requested, heard)).toBe(true)
+    for (const different of [
+      'Open my file dot test-dot-py.',
+      'Open my-file dot test-dot-js.',
+      'Open my-file dot test-dot-py?',
+      'Do not open my-file dot test-dot-py.',
+    ])
+      expect(matchesSpeech(requested, different)).toBe(false)
+  })
+
+  it.each([true, false])(
+    'continues independent prose after a reworded progress readout (RPC first: %s)',
+    async (rpcFirst) => {
+      let accept!: () => void
+      const request = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              accept = resolve
+            }),
+        )
+        .mockResolvedValue({})
+      const { live, items, caption } = fixture(request)
+      live.delegatedInput('turn', 'Check the file.')
+      live.completedCommentary('turn', acknowledgment)
+      const next = 'I found the file and am checking the highlighted line.'
+      live.completedCommentary('turn', { ...acknowledgment, id: 'next', text: next })
+      const finish = live.finishTurn({
+        id: 'turn',
+        status: 'completed',
+        items: [{ id: 'answer', type: 'agentMessage', phase: 'final_answer', text: tail }],
+      })
+      if (rpcFirst) accept()
+      live.playbackBoundary('assistant', 'first')
+      caption('paraphrase', 'Let me look at the file.')
+      live.playbackBoundary('done', 'first', 'Let me look at the file.')
+      if (!rpcFirst) {
+        await Promise.resolve()
+        expect(request).toHaveBeenCalledTimes(1)
+        accept()
+      }
+      await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+      expect(JSON.stringify(request.mock.lastCall)).toContain(next)
+      expect(items.get('live:paraphrase')?.narrationOf).toBeUndefined()
+      live.playbackBoundary('assistant', 'second')
+      live.playbackBoundary('done', 'second', 'I have the file open.')
+      await finish
+      expect(request).toHaveBeenCalledTimes(3)
+      expect(JSON.stringify(request.mock.lastCall)).toContain(tail)
+      live.disconnect('done')
+    },
+  )
+  it('automatically speaks the approval outcome when a corrected caption completes after playback', async () => {
+    const offered = vi.fn()
+    const { live, request, caption } = fixture(undefined, offered)
+    const first = 'I found the Threadlight space.'
+    const second =
+      'I’ll start a Codex thread there with a brief opening message, then check the operation receipt.'
+    live.streamCommentary('turn', 'opening', first + ' I’ll')
+    live.completedCommentary('turn', {
+      ...acknowledgment,
+      id: 'opening',
+      text: first + ' ' + second,
+    })
+    live.playbackBoundary('assistant', 'first')
+    live.playbackBoundary('done', 'first', '"' + first + '"')
+    await Promise.resolve()
+    expect(request).toHaveBeenCalledTimes(2)
+    live.playbackBoundary('assistant', 'second')
+    live.event('thread/realtime/item/started', {
+      threadId: 'thread',
+      item: { type: 'transcriptSegment', id: 's2', role: 'assistant', text: '"I’ll start a code' },
+    })
+    const finish = live.finishTurn({
+      id: 'turn',
+      status: 'completed',
+      items: [
+        {
+          id: 'receipt',
+          type: 'agentMessage',
+          phase: 'final_answer',
+          text: 'The space needs an active communication period.',
+        },
+      ],
+    })
+    live.playbackBoundary('done', 'second')
+    caption('s2', '"' + second + '"')
+    await finish
+    expect(request).toHaveBeenCalledTimes(3)
+    expect(JSON.stringify(request.mock.lastCall)).toContain(
+      'The space needs an active communication period.',
+    )
+    expect(offered).not.toHaveBeenCalledWith(expect.objectContaining({ token: expect.any(String) }))
+  })
+  it('releases the Shared Space final reply after the recorded quoted opening and no server caption', async () => {
+    const { live, request } = fixture()
+    const text =
+      'I’ll check what the current Threadlight tools support for creating or starting a chat in a Shared Space, then I can set up the right kind of agent there.'
+    const answer =
+      'I found the **Threadlight** Shared Space and prepared a Claude Code agent for UI updates on request.'
+    live.completedCommentary('turn', { ...acknowledgment, text })
+    const finish = live.finishTurn({
+      id: 'turn',
+      status: 'completed',
+      items: [{ id: 'final', type: 'agentMessage', phase: 'final_answer', text: answer }],
+    })
+    expect(request).toHaveBeenCalledTimes(1)
+    live.playbackBoundary('assistant', 'opening')
+    live.playbackBoundary('done', 'opening', '“ ' + text + '”')
+    await finish
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(request.mock.lastCall)).toContain('I found the Threadlight Shared Space')
+  })
+  it('delivers the final tail when the opening transcript arrives only on WebRTC', async () => {
+    const { live, request } = fixture()
+    live.streamFinal('turn', 'message', lead + '\n\n')
+    const finish = live.finishTurn({
+      id: 'turn',
+      status: 'completed',
+      items: [
+        { id: 'message', type: 'agentMessage', phase: 'final_answer', text: lead + '\n\n' + tail },
+      ],
+    })
+    live.playbackBoundary('assistant', 'lead')
+    live.playbackBoundary('done', 'lead', '“' + lead + '”')
+    await finish
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(request.mock.lastCall)).toContain(tail)
+  })
 
   it('requires the final opening’s own caption and playback after a progress readout', async () => {
     const { live, request, caption } = fixture()
@@ -117,15 +285,17 @@ describe('native answer and spoken captions', () => {
     },
   )
 
-  it('never sends progress protected by an unshown guide, a stale turn or a closed session', () => {
+  it('keeps the conversation audible in a guide and ignores stale or closed sessions', () => {
     const { live, request } = fixture()
     live.editorActivity('turn', 'guide', false, {})
+    live.setGuideActive(true)
     live.completedCommentary('turn', acknowledgment)
+    expect(request).toHaveBeenCalledTimes(1)
     live.beginTurn('next')
     live.completedCommentary('turn', acknowledgment)
     live.disconnect('closed')
     live.completedCommentary('next', acknowledgment)
-    expect(request).not.toHaveBeenCalled()
+    expect(request).toHaveBeenCalledTimes(1)
   })
 
   it.each(['skip', 'user', 'close', 'new'] as const)(
@@ -168,7 +338,7 @@ describe('native answer and spoken captions', () => {
   })
 
   it.each([true, false])(
-    'requires factual status ownership after a foreign completion (matching playback arrives: %s)',
+    'requires the commentary’s playback after a foreign completion (matching playback arrives: %s)',
     async (matched) => {
       vi.useFakeTimers()
       try {
@@ -179,7 +349,7 @@ describe('native answer and spoken captions', () => {
         })
         live.editorActivity('turn', 'capabilities', false, {})
         await vi.advanceTimersByTimeAsync(1)
-        const status = 'I’m checking the editor status.'
+        const status = "I'll check the current buffer, but first indent line ten."
         expect(request).toHaveBeenCalledTimes(1)
         expect(JSON.stringify(request.mock.lastCall)).toContain(status)
         const proposal = live.coachStep('The highlighted change is visible.', true, true)
@@ -209,6 +379,11 @@ describe('native answer and spoken captions', () => {
       const offered = vi.fn()
       const { live, request } = fixture(undefined, offered)
       live.completedCommentary('turn', acknowledgment)
+      live.completedCommentary('turn', {
+        ...acknowledgment,
+        id: 'next',
+        text: 'I’m checking the supported creation path.',
+      })
       const finish = live.finishTurn({
         id: 'turn',
         status: 'completed',
@@ -224,6 +399,37 @@ describe('native answer and spoken captions', () => {
       await live.readRemaining(token)
       expect(request).toHaveBeenCalledTimes(2)
       expect(JSON.stringify(request.mock.lastCall)).toContain(tail)
+      live.playbackBoundary('assistant', 'final-readout')
+      live.playbackBoundary('done', 'final-readout', tail)
+      await Promise.resolve()
+      expect(request).toHaveBeenCalledTimes(2)
+      await expect(live.readRemaining(token)).rejects.toThrow()
+      live.disconnect('done')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it('automatically reads the offered final once when matching playback arrives after the deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const offered = vi.fn()
+      const { live, request } = fixture(undefined, offered)
+      live.completedCommentary('turn', acknowledgment)
+      const finish = live.finishTurn({
+        id: 'turn',
+        status: 'completed',
+        items: [{ id: 'answer', type: 'agentMessage', phase: 'final_answer', text: tail }],
+      })
+      await vi.advanceTimersByTimeAsync(30001)
+      await finish
+      const token = offered.mock.lastCall?.[0]?.token
+      expect(token).toBeTypeOf('string')
+      live.playbackBoundary('assistant', 'matching')
+      live.playbackBoundary('done', 'matching', acknowledgment.text)
+      await Promise.resolve()
+      expect(request).toHaveBeenCalledTimes(2)
+      expect(JSON.stringify(request.mock.lastCall)).toContain(tail)
+      expect(offered.mock.lastCall?.[0]).toBeNull()
       await expect(live.readRemaining(token)).rejects.toThrow()
       live.disconnect('done')
     } finally {
@@ -231,31 +437,104 @@ describe('native answer and spoken captions', () => {
     }
   })
 
-  it('keeps uncertain instructions and raw tool output silent, with only observed read status eligible', async () => {
+  it('keeps tool results, reasoning, code blocks and stand-alone filler out of speech', async () => {
     vi.useFakeTimers()
     try {
       const { live, request } = fixture()
-      for (const [id, text] of [
-        ['filler', 'Just a sec.'],
-        ['mixed1', "I'll check the current buffer, but first indent line ten."],
-        ['mixed2', "I'll check the loop, but first move the return inside it."],
-        ['mixed3', "I'll check the editor and move the return inside the loop."],
-        ['instruction', 'I’ll check the editor. Type a colon on line twenty.'],
-        ['compound', 'I’ll check the editor, then change the return value.'],
-        ['code', 'I’ll check `print(value)`.'],
-        ['data', '{"action":"context"}'],
+      for (const action of ['capabilities', 'review', 'context', 'proposal_status']) {
+        live.editorActivity('turn', action, false, {})
+        live.editorActivity('turn', action, true, {
+          result: { content: [{ text: '{"outcome":"ok"}' }] },
+        })
+      }
+      for (const [id, type, text] of [
+        ['tool', 'mcpToolCall', 'raw result'],
+        ['thinking', 'reasoning', 'planning'],
+        ['filler', 'agentMessage', 'Just a sec.'],
+        ['code', 'agentMessage', '```py\nprint(1)\n```'],
       ])
-        live.completedCommentary('turn', { ...acknowledgment, id, text })
-      live.editorActivity('turn', 'capabilities', false, {})
-      live.editorActivity('turn', 'proposal_status', false, {})
+        live.completedCommentary('turn', { ...acknowledgment, id, type, text })
+      await vi.advanceTimersByTimeAsync(8000)
       expect(request).not.toHaveBeenCalled()
-      await vi.advanceTimersByTimeAsync(1)
-      expect(request).toHaveBeenCalledTimes(1)
-      expect(JSON.stringify(request.mock.lastCall)).toContain('checking the editor status')
       live.disconnect('done')
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('speaks the first complete thought immediately and drains every queued paragraph before the final answer', async () => {
+    const { live, request } = fixture()
+    const opening =
+      'I’ll reconnect to the active buffer and continue with the unknown-item message change.'
+    const rest = 'Then we can check what happens when the item is missing.'
+    const next = 'Your receipt already covers items that are in stock.'
+    live.streamCommentary('turn', 'opening', opening.slice(0, 20))
+    expect(request).not.toHaveBeenCalled()
+    live.streamCommentary('turn', 'opening', opening + ' Then')
+    expect(request).toHaveBeenCalledTimes(1)
+    const item = { ...acknowledgment, id: 'opening', text: opening + ' ' + rest }
+    live.completedCommentary('turn', item)
+    live.completedCommentary('turn', item)
+    live.completedCommentary('turn', { ...acknowledgment, id: 'second', text: next })
+    const done = live.finishTurn({
+      id: 'turn',
+      status: 'completed',
+      items: [{ ...item, id: 'final', phase: 'final_answer', text: tail }],
+    })
+    for (const [i, words] of [opening, rest, next].entries()) {
+      expect(request).toHaveBeenCalledTimes(i + 1)
+      expect(JSON.stringify(request.mock.lastCall)).toContain(words)
+      live.playbackBoundary('assistant', 'audio' + i)
+      live.playbackBoundary('done', 'audio' + i, words)
+      await Promise.resolve()
+    }
+    await done
+    expect(request).toHaveBeenCalledTimes(4)
+    expect(JSON.stringify(request.mock.lastCall)).toContain(tail)
+  })
+
+  it.each(['skip', 'user'] as const)(
+    'drops the remaining paragraph and queued updates on %s',
+    async (reason) => {
+      const { live, request } = fixture()
+      live.streamCommentary('turn', 'opening', acknowledgment.text + ' Next')
+      live.completedCommentary('turn', {
+        ...acknowledgment,
+        id: 'opening',
+        text: acknowledgment.text + ' Next I’ll inspect the receipt.',
+      })
+      live.completedCommentary('turn', {
+        ...acknowledgment,
+        id: 'other',
+        text: 'I found the receipt loop.',
+      })
+      live.playbackBoundary('assistant', 'first')
+      live.playbackBoundary(reason, 'interrupted')
+      live.playbackBoundary('done', 'first', acknowledgment.text)
+      await live.finishTurn({
+        id: 'turn',
+        status: 'completed',
+        items: [{ ...acknowledgment, id: 'final', phase: 'final_answer', text: tail }],
+      })
+      expect(request).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('speaks a distinct written reply after a shown step finishes playing', async () => {
+    const { live, request } = fixture()
+    const step = 'The receipt loop already knows the quantity.'
+    await live.coachStep(step, true, true)
+    live.playbackBoundary('assistant', 'step')
+    const done = live.finishTurn({
+      id: 'turn',
+      status: 'completed',
+      items: [{ ...acknowledgment, id: 'final', phase: 'final_answer', text: tail }],
+    })
+    expect(request).toHaveBeenCalledTimes(1)
+    live.playbackBoundary('done', 'step', step)
+    await done
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(request.mock.lastCall)).toContain(tail)
   })
 
   it('offers a manual fallback after the deadline without discarding a later valid playback boundary', async () => {

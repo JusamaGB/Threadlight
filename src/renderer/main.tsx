@@ -69,6 +69,7 @@ function DotView() {
         talk={talk}
         openOn={settings?.openOn ?? 'hover'}
         openMic={openMic}
+        needsInput={attention.pill?.waiting}
         micLevel={micLevel}
         motion={motion}
       />

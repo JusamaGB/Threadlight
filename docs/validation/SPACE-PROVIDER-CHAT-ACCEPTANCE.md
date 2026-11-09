@@ -136,3 +136,9 @@ Remove-Item Env:THREADLIGHT_LIVE_SPACE_CHAT
 ```
 
 The Claude check requires the exact opening reply in the saved Claude transcript. The Perplexity check requires a second reply attached to the original sender's space inbox. Also check the foreground Agent decision card in the regular app after deploying the patch. Select the intended space and confirm the provider, role and message before accepting.
+
+### Codex Shared Space follow-up, November 9
+
+The saved creation receipt for the reported conversation confirms a native workspace chat. Its receipt has no Shared Space membership. The earlier Claude request used a descriptive operation ID where the tool required a UUID.
+
+The Codex space path now resolves a requested model against the installed catalog, starts the native thread, sends the approved opening through its desktop owner, and adds the confirmed destination to the selected space. A failed opening or membership conflict returns the known thread identity for recovery. A signed-in, ephemeral native check confirmed the catalog ID and thread-start result for `gpt-6.1-sol`. Focused tests exercise the desktop request, approval, participant registration, delivery failure and membership conflict with controlled dependencies.

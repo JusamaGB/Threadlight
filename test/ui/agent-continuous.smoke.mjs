@@ -560,7 +560,7 @@ export async function checkAgentContinuous(page, capture) {
         anchor: 'settings-' + n,
         afterLiveItem: n === 1 ? 'live:original' : undefined,
         state: 'answered-here',
-        recordedAnswer: 'Allowed',
+        recordedAnswer: n === 3 ? 'Denied' : 'Allowed',
         request: { ...card.request, id: 'old-request-' + n, title: 'Update settings ' + n },
       })
     }
@@ -613,6 +613,19 @@ export async function checkAgentContinuous(page, capture) {
     .locator('[data-card-id="group-decision"][data-card-state="answered-here"]')
     .waitFor({ state: 'attached' })
   assert.ok(await follows('[data-card-id="group-decision"]', '[data-message-id="a2"]'))
+  const answered = first.locator('[data-card-id="group-decision"]')
+  const disclosure = answered.locator('summary')
+  assert.match(await disclosure.innerText(), /Start Perplexity chat/)
+  assert.match(await disclosure.innerText(), /Allowed/)
+  assert.equal(await answered.getByText('Opening message', { exact: true }).isVisible(), false)
+  assert.equal(await answered.getByRole('button', { name: 'Allow once' }).count(), 0)
+  await disclosure.press('Enter')
+  await answered.getByText('Opening message', { exact: true }).waitFor()
+  await answered.getByRole('button', { name: 'Open source chat' }).waitFor()
+  await page.evaluate(() => window.proof.emit('onCommunication'))
+  assert.equal(await answered.locator('details').evaluate((el) => el.open), true)
+  await disclosure.press('Space')
+  assert.equal(await answered.locator('details').evaluate((el) => el.open), false)
   // New turns and partial replies leave the preceding messages accessible.
   await page.evaluate(() =>
     window.proof.agent({
@@ -748,7 +761,8 @@ export async function checkAgentContinuous(page, capture) {
   assert.equal(await chat.locator('[data-card-id^="old-settings-"]').count(), 3)
   for (const n of [1, 2, 3]) {
     const card = chat.locator(`[data-card-id="old-settings-${n}"]`)
-    assert.equal(await card.getByText('Allowed', { exact: true }).count(), 1)
+    assert.equal(await card.getByText(n === 3 ? 'Denied' : 'Allowed', { exact: true }).count(), 1)
+    assert.equal(await card.locator('details').evaluate((el) => el.open), false)
     assert.ok(
       await card.evaluate(
         (el, n) => el.previousElementSibling?.textContent.includes('Update settings ' + n),

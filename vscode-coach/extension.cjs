@@ -1,9 +1,11 @@
 const vscode = require('vscode')
 const { createTrace } = require('./trace.cjs')
+const { createGhostLesson } = require('./ghostLesson.cjs')
 const { createInlinePreview } = require('./inlinePreview.cjs')
 const { createWholeFileReview } = require('./wholeFileReview.cjs')
 const { createProposals } = require('./proposals.cjs')
 const { createPythonSuggestions } = require('./pythonSuggestions.cjs')
+const { createWalkthrough } = require('./walkthrough.cjs')
 const net = require('node:net')
 const { homedir } = require('node:os')
 const { join, dirname, basename } = require('node:path')
@@ -17,14 +19,21 @@ const coachActions = [
   'propose',
   'proposal_status',
   'proposal_next',
+  'proposal_line',
   'context',
   'trace',
+  'ghost_practice',
+  'ghost_practice_diff',
+  'ghost_practice_text',
   'review',
   'guide',
   'diff',
   'inline',
   'progress',
   'guide_status',
+  'walkthrough',
+  'walkthrough_page',
+  'walkthrough_notes',
 ]
 function activate(context) {
   const directory =
@@ -33,6 +42,7 @@ function activate(context) {
       : context.globalStorageUri.fsPath
   const addressFile = join(directory, 'editor-coach.json')
   let server, address, client, snapshot, plan, lastGuide
+  let peerSupportsGutter = false
   const peers = new Set()
   const previews = new Map()
   const lenses = new vscode.EventEmitter()
@@ -44,7 +54,11 @@ function activate(context) {
   })
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50)
   const inline = createInlinePreview(context, () => client && !client.destroyed && ownsWindow())
-  const trace = createTrace(context, () => client && !client.destroyed && ownsWindow())
+  const connected = () => client && !client.destroyed && ownsWindow()
+  let spokenGhost = true
+  let practiceLocation = 'current'
+  const ghost = createGhostLesson(context, connected, send, () => spokenGhost)
+  const trace = createTrace(context, connected, ghost)
   const review = createWholeFileReview(vscode)
   // Live sharing still requires the explicit window connection. Local typing uses only
   // the saved preference and never creates a rendezvous record or claims another window.
@@ -55,10 +69,17 @@ function activate(context) {
   let preference = 'editor'
   function readPreference() {
     try {
-      const value = JSON.parse(fs.readFileSync(preferenceFile, 'utf8')).pythonSuggestions
+      const settings = JSON.parse(fs.readFileSync(preferenceFile, 'utf8'))
+      spokenGhost = settings.spokenGhostWalkthroughs !== false
+      practiceLocation = settings.ghostPracticeLocation === 'copy' ? 'copy' : 'current'
+      const value = settings.pythonSuggestions
       preference = value === 'on' || value === 'off' ? value : 'editor'
     } catch (error) {
-      if (error.code === 'ENOENT') preference = 'editor'
+      if (error.code === 'ENOENT') {
+        preference = 'editor'
+        spokenGhost = true
+        practiceLocation = 'current'
+      }
     }
   }
   function pythonEnabled() {
@@ -76,16 +97,34 @@ function activate(context) {
     (q) => (q.localPrediction ? pythonEnabled() : server && ownsWindow()),
     send,
   )
+  const walk = createWalkthrough(
+    vscode,
+    decoration,
+    () => client && !client.destroyed && ownsWindow(),
+    send,
+    () => {
+      updateStatus()
+      lenses.fire()
+    },
+  )
   const python = createPythonSuggestions(
     context,
     pythonEnabled,
-    () => !!plan || inline.active() || trace.active() || proposals.status().status !== 'idle',
+    () =>
+      !!plan ||
+      !!walk.current() ||
+      ghost.practicing() ||
+      inline.active() ||
+      trace.active() ||
+      proposals.status().status !== 'idle',
     proposals,
   )
   function refreshPython() {
-    const before = preference
+    const before = preference,
+      speechBefore = spokenGhost
     readPreference()
     if (preference !== before) python.remember()
+    if (speechBefore !== spokenGhost) ghost.updatePreference()
   }
   readPreference()
   python.remember()
@@ -114,6 +153,12 @@ function activate(context) {
       : 'Live Coach ' +
         context.extension.packageJSON.version +
         ' · File proposals and Trace. Click to stop coaching.'
+    if (walk.current()) {
+      const w = walk.current()
+      status.text = '$(book) ' + walk.state().hint + ' · ' + stepLabel(w)
+      status.tooltip = 'Walkthrough controls'
+      status.command = 'threadlight.coach.walkthroughControls'
+    }
     if (server) status.show()
     else status.hide()
   }
@@ -125,6 +170,22 @@ function activate(context) {
       (hint.length > 120 ? hint.slice(0, 119) + '…' : hint) +
       (plan.index + 1 === plan.steps.length ? ' · Finish guide' : ' · Next step ›')
     )
+  }
+  function stepLabel(w) {
+    if (w.status === 'paused') return 'Resume'
+    if (!w.started) return 'Start'
+    return w.finished && w.endLine === w.editor.document.lineCount ? 'Finish' : 'Next'
+  }
+  async function walkthroughControls() {
+    const w = walk.current()
+    if (!w) return
+    const token = w.token
+    const actions = [stepLabel(w), w.auto ? 'Turn Auto off' : 'Turn Auto on', 'End walkthrough']
+    const pick = await vscode.window.showQuickPick(actions, { title: 'Walkthrough' })
+    if (!pick || walk.current() !== w) return
+    if (pick === actions[0] && token === w.token) walk.step(token)
+    else if (pick === actions[1] && (pick === 'Turn Auto off') === w.auto) walk.toggle(w.token)
+    else if (pick === actions[2]) walk.stop()
   }
   function send(message) {
     if (client && !client.destroyed) client.write(JSON.stringify(message) + '\n')
@@ -211,6 +272,8 @@ function activate(context) {
     send({ finished: old.id, guideEvent: lastGuide })
   }
   function stop() {
+    walk.stop()
+    ghost.stop()
     python.stop()
     proposals.clear()
     review.clear()
@@ -241,27 +304,35 @@ function activate(context) {
       return false
     }
   }
-  function getContext() {
+  function getContext(line) {
     const editor = vscode.window.activeTextEditor
     if (!editor || !['file', 'untitled', 'vscode-remote'].includes(editor.document.uri.scheme))
       throw Error('Open the source file you want to discuss in the connected editor.')
     const doc = editor.document
     const selected = editor.selection
-    const first = Math.max(0, selected.start.line - 12)
+    if (line !== undefined && (!Number.isInteger(line) || line < 1 || line > doc.lineCount))
+      throw Error('Choose a line within the active file.')
+    const anchor = line === undefined ? selected.start.line : line - 1
+    const first = line === undefined ? Math.max(0, anchor - 12) : anchor
     const end = Math.min(doc.lineCount, first + 60)
     let size = 0
     const lines = []
     for (let i = first; i < end; i++) {
       const text = doc.lineAt(i).text
+      if (line !== undefined && !lines.length && text.length > 12000) {
+        lines.push({ line, text: text.slice(0, 12000), truncated: true })
+        break
+      }
       if (size + text.length > 12000) break
       size += text.length
       lines.push({ line: i + 1, text })
     }
-    if (!lines.length || selected.start.line >= first + lines.length)
+    if (!lines.length || anchor >= first + lines.length)
       throw Error('The selected line is too large for a coaching excerpt.')
     const bounded =
       editor.selections.length === 1 &&
       !selected.isEmpty &&
+      selected.start.line >= first &&
       selected.end.line < first + lines.length &&
       doc.offsetAt(selected.end) - doc.offsetAt(selected.start) <= 12000
     snapshot = {
@@ -274,6 +345,7 @@ function activate(context) {
       version: doc.version,
       first: first + 1,
       last: first + lines.length,
+      truncated: !!lines[0].truncated,
     }
     if (plan?.paused && plan.editor.document === doc) {
       plan.observedWhilePaused = true
@@ -283,6 +355,7 @@ function activate(context) {
       snapshot: snapshot.id,
       file: basename(doc.fileName),
       language: doc.languageId,
+      lineCount: doc.lineCount,
       cursor: { line: selected.active.line + 1, column: selected.active.character },
       trace: trace.inspect(editor),
       selectedText: snapshot.selectedText,
@@ -299,6 +372,8 @@ function activate(context) {
       s.editor.document.version !== s.version
     )
       throw Error('The active file or its text changed. Read fresh context first.')
+    if (s.truncated && command.action !== 'walkthrough')
+      throw Error('The line is too long for a complete coaching excerpt.')
     return s
   }
   function inExcerpt(s, line) {
@@ -351,10 +426,18 @@ function activate(context) {
         version: context.extension.packageJSON.version,
         actions: coachActions,
         verifiedGuideEdits: true,
+        ghostPracticeLocation: practiceLocation,
+        walkthroughControls: true,
+        gutterWalkthrough: true,
         python: python.describe(),
       }
-    if (command.action === 'context') return getContext()
+    if (command.action === 'context') return getContext(command.line)
     if (command.action === 'review') return review.read(command.nextPage)
+    if (
+      ghost.practicing() &&
+      ['propose', 'walkthrough', 'guide', 'inline', 'trace'].includes(command.action)
+    )
+      ghost.stop()
     if (command.action === 'propose') {
       const source = review.resolve(command.snapshot)
       trace.clear()
@@ -364,20 +447,81 @@ function activate(context) {
     }
     if (command.action === 'proposal_status') return proposals.status()
     if (command.action === 'proposal_next') return proposals.next(command.token)
-    if (command.action === 'guide_status') return state()
+    if (command.action === 'proposal_line') return proposals.line(command.token, command.row)
+    if (command.action.startsWith('ghost_practice')) {
+      if (command.action === 'ghost_practice') {
+        const s = source(command)
+        if (command.scope === 'selection' && !s.editor.selection.isEqual(s.cursorSelection))
+          throw Error('The selection changed. Read fresh editor context.')
+        clearPlan()
+        walk.stop()
+        trace.clear()
+        inline.clear()
+        readPreference()
+        return ghost.startSource(s.editor, command, command.location ?? practiceLocation)
+      }
+      let doc, rows
+      if (command.action === 'ghost_practice_diff') {
+        const selected = proposals.practice(command.token, command.scope)
+        doc = selected.source
+        rows = selected.rows
+      } else {
+        const s = source(command)
+        doc = s.editor.document
+        rows = command.text.split(/\r\n?|\n/).map((text, i) => ({ text, line: i + 1 }))
+      }
+      clearPlan()
+      walk.stop()
+      trace.clear()
+      inline.clear()
+      return ghost.startPractice(doc, rows, command.spoken, 0)
+    }
+    if (command.action === 'walkthrough_page')
+      return ghost.owns(command.token)
+        ? ghost.page(command.token)
+        : walk.page(command.token, command.fromLine)
+    if (command.action === 'walkthrough_notes')
+      return ghost.owns(command.token)
+        ? ghost.notes(command.token, command.explanations)
+        : walk.notes(command.token, command.explanations)
+    if (command.action === 'walkthrough') {
+      if (!peerSupportsGutter)
+        throw Error(
+          'Restart the updated Threadlight app to enable line-number walkthrough gestures.',
+        )
+      const s = source(command)
+      if (plan) throw Error('End the current typing guide before starting a file walkthrough.')
+      trace.clear()
+      inline.clear()
+      lastGuide = undefined
+      return walk.start(s.editor, command.line, command.auto)
+    }
+    if (command.action === 'guide_status') return walk.state() || state()
+    if (command.action === 'progress' && walk.current()) {
+      if (walk.current().token !== command.token) return { ...walk.state(), applied: false }
+      if (command.intent === 'next') {
+        const applied = walk.step(command.token)
+        return { ...walk.state(), applied }
+      }
+      walk.stop(command.intent === 'finish' ? 'ended' : 'cancelled')
+      return { ...walk.state(), applied: true }
+    }
     if (command.action === 'progress') return transition(command.token, command.intent, 'voice')
     const s = source(command)
     proposals.clear()
     python.remember()
     if (command.action === 'trace') {
       inline.clear()
-      return trace.show(s, command.anchor, command.text)
+      walk.stop()
+      return trace.show(s, command.anchor, command.text, command.spoken)
     }
     if (command.action === 'inline') {
       trace.clear()
       return inline.show(s, command.replacements)
     }
     if (command.action === 'guide') {
+      if (walk.current()) throw Error('End the file walkthrough before starting a typing guide.')
+      walk.clearLast()
       const previous = plan
       if (command.resume) {
         if (
@@ -539,6 +683,11 @@ function activate(context) {
     }
   }
   async function next(arg) {
+    if (walk.current()) {
+      const w = walk.current()
+      if (arg && (arg.id !== w.id || arg.label !== stepLabel(w))) return
+      return walk.step(w.token)
+    }
     if (!plan || (arg && (arg.id !== plan.id || arg.index !== plan.index))) return
     try {
       await transition(arg?.token || plan.token, 'next', 'editor')
@@ -560,6 +709,9 @@ function activate(context) {
         review.clear()
         trace.clear()
         inline.clear()
+        walk.stop()
+        ghost.stop()
+        walk.clearLast()
         client = undefined
         clearPlan()
         lastGuide = undefined
@@ -587,6 +739,7 @@ function activate(context) {
               )
                 return socket.destroy()
               client = socket
+              peerSupportsGutter = msg.command.gutterWalkthrough === true
               socket.setTimeout(0)
               send({
                 id: msg.id,
@@ -594,6 +747,9 @@ function activate(context) {
                   version: context.extension.packageJSON.version,
                   actions: coachActions,
                   verifiedGuideEdits: true,
+                  sourceGhostPractice: true,
+                  walkthroughControls: true,
+                  gutterWalkthrough: true,
                 },
               })
               return
@@ -610,6 +766,44 @@ function activate(context) {
               void vscode.window.showWarningMessage(
                 'Live could not confirm the guide update. Ask Live for the current guide status.',
               )
+              return
+            }
+            if (msg.ghostSpeechFailed) {
+              ghost.speechFailed(msg.ghostSpeechFailed)
+              return
+            }
+            if (msg.walkthroughGutter) {
+              walk.gutter(msg.walkthroughGutter, msg.gutter === true)
+              return
+            }
+            if (msg.walkthroughRelease) {
+              if (!msg.unavailable) walk.released(msg.walkthroughRelease)
+              else if (walk.current()?.token === msg.walkthroughRelease)
+                void vscode.window
+                  .showInformationMessage(
+                    'Choose when to explain the selected lines.',
+                    'Explain selection',
+                  )
+                  .then((pick) => {
+                    if (pick) walk.released(msg.walkthroughRelease)
+                    else if (walk.current()?.token === msg.walkthroughRelease)
+                      walk.pause(msg.walkthroughRelease)
+                  })
+              return
+            }
+            if (msg.walkthroughDone) {
+              if (msg.failed && ghost.owns(msg.walkthroughDone)) {
+                ghost.speechFailed(msg.walkthroughDone)
+                return
+              }
+              if (msg.failed) {
+                if (walk.current()?.token === msg.walkthroughDone) {
+                  walk.pause(msg.walkthroughDone)
+                  void vscode.window.showWarningMessage(
+                    'Walkthrough paused. Click a line or use the status bar to resume.',
+                  )
+                }
+              } else walk.spoken(msg.walkthroughDone)
               return
             }
             if (msg.narrated) {
@@ -664,8 +858,45 @@ function activate(context) {
     lenses,
     vscode.commands.registerCommand('threadlight.coach.start', start),
     vscode.commands.registerCommand('threadlight.coach.stop', stop),
+    vscode.commands.registerCommand('threadlight.coach.startGhostPractice', async () => {
+      if (!connected())
+        return vscode.window.showInformationMessage(
+          'Start Live Coaching in this window and ask your foreground GPT Live Agent to connect to the editor.',
+        )
+      const s = getContext()
+      const selected = snapshot.cursorSelection
+      const sourceEditor = snapshot.editor
+      const choice = await vscode.window.showQuickPick(
+        spokenGhost ? ['Trace with explanations', 'Trace silently'] : ['Trace silently'],
+        { title: selected.isEmpty ? 'Practise this file' : 'Practise the selection' },
+      )
+      if (!choice) return
+      try {
+        if (
+          sourceEditor !== vscode.window.activeTextEditor ||
+          !sourceEditor.selection.isEqual(selected)
+        )
+          throw Error('The selection changed. Start practice again.')
+        const result = await handle({
+          action: 'ghost_practice',
+          snapshot: s.snapshot,
+          scope: selected.isEmpty ? 'file' : 'selection',
+          spoken: choice === 'Trace with explanations',
+        })
+        ghost.askForNotes(result.token)
+      } catch (error) {
+        void vscode.window.showWarningMessage(error.message)
+      }
+    }),
     vscode.commands.registerCommand('threadlight.coach.next', next),
+    vscode.commands.registerCommand('threadlight.coach.walkthroughAuto', (id, auto) => {
+      const w = walk.current()
+      if (w && id === w.id && auto === w.auto) walk.toggle(w.token)
+    }),
+    vscode.commands.registerCommand('threadlight.coach.walkthroughControls', walkthroughControls),
     vscode.commands.registerCommand('threadlight.coach.cancelGuide', () => {
+      if (ghost.practicing()) return ghost.stop()
+      if (walk.current()) return walk.stop()
       if (plan) return transition(plan.token, 'cancel', 'editor')
     }),
     vscode.languages.registerCodeLensProvider(
@@ -673,6 +904,23 @@ function activate(context) {
       {
         onDidChangeCodeLenses: lenses.event,
         provideCodeLenses(doc) {
+          const w = walk.current()
+          if (w?.editor.document === doc) {
+            const range = doc.lineAt(w.line - 1).range
+            return [
+              new vscode.CodeLens(range, {
+                command: 'threadlight.coach.walkthroughAuto',
+                title: w.auto ? '☑ Auto' : '☐ Auto',
+                tooltip: 'Advance after each spoken explanation',
+                arguments: [w.id, w.auto],
+              }),
+              new vscode.CodeLens(range, {
+                command: 'threadlight.coach.next',
+                title: stepLabel(w),
+                arguments: [{ id: w.id, label: stepLabel(w) }],
+              }),
+            ]
+          }
           if (!plan || doc !== plan.editor.document) return []
           if (plan.paused)
             return [
@@ -700,12 +948,14 @@ function activate(context) {
       },
     }),
     vscode.workspace.onDidCloseTextDocument((doc) => {
+      if (walk.current()?.editor.document === doc) walk.stop('ended')
       previews.delete(doc.uri.toString())
       if (plan?.editor.document === doc) clearPlan()
       if (snapshot?.editor.document === doc) snapshot = undefined
     }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       review.clear()
+      if (walk.current() && walk.current().editor !== editor) walk.stop('ended')
       if (plan && editor !== plan.editor) {
         plan.watchExpected = false
         pausePlan(true)
@@ -715,7 +965,15 @@ function activate(context) {
         snapshot.traceEligible = false
       }
     }),
-    vscode.window.onDidChangeTextEditorSelection(({ textEditor, selections }) => {
+    vscode.window.onDidChangeTextEditorSelection(({ textEditor, selections, kind }) => {
+      const w = walk.current()
+      if (
+        w?.editor === textEditor &&
+        kind === vscode.TextEditorSelectionChangeKind.Mouse &&
+        selections.length === 1
+      ) {
+        walk.selected(selections[0])
+      }
       if (
         snapshot?.editor === textEditor &&
         (selections.length !== 1 ||
@@ -743,6 +1001,7 @@ function activate(context) {
       }
     }),
     vscode.workspace.onDidChangeTextDocument(({ document, contentChanges }) => {
+      if (walk.current()?.editor.document === document && contentChanges.length) walk.stop('ended')
       const p = plan
       if (
         !p ||

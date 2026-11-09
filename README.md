@@ -6,7 +6,9 @@ Threadlight is a compact Windows desktop overlay for following AI chats, replyin
 reviewing code changes and keeping project context together. It lives at the edge
 of your screen and opens into a small, contextual panel when you need it.
 
-**Early source preview · Windows only · MIT licensed**
+**0.1.0-alpha.2 · Windows source preview · MIT licensed**
+
+The [tagged release](https://github.com/JusamaGB/Threadlight/releases/tag/v0.1.0-alpha.2) includes the source and two optional VS Code extensions. Install **Threadlight Live Coach 0.6.17** for guided editor sessions and **Margin Notes 0.2.6** for pinned annotations. In desktop VS Code, use **Extensions: Install from VSIX**. See the [coach guide](vscode-coach/README.md) and [annotation guide](vscode-margin-notes/README.md).
 
 Visit the [Threadlight website](https://threadlight.jocosewasp4.chatgpt.site/) for an overview,
 a copyable assisted-setup prompt, manual instructions for the public source preview, and answers about compatibility and privacy.
@@ -18,6 +20,8 @@ provider support; this is not a production-stability promise.
 
 ## What it does
 
+- **Browse together.** Right-click the header and choose **Browser** to browse alongside your work. Search or enter a website address. During a Live conversation, read the Agent’s captions above the page and mute its voice independently of the video. Leaving Browser pauses playback. Returning resumes only the players Threadlight paused. In video fullscreen, drag either bottom corner to resize or Alt-drag the bottom edge to trim letterboxing. Reopening Browser restores that size and crop while the video remains fullscreen. **Agent → Browser access** in Settings grants selected enrolled Codex and Claude chats access to the same page. See the [browser guide](docs/FEATURES.md#shared-browser) for YouTube’s compact player, paused-video discussion, and validation limits.
+
 - **Follow work:** Active, Recent and Workspace views, provider colours, plans,
   questions and activity. Click a pinned Active thread to read or reply beneath
   your current page. Back collapses the thread and keeps your place.
@@ -25,16 +29,20 @@ provider support; this is not a production-stability promise.
   contextual history loading. Ordinary ChatGPT and Perplexity chats sit alongside
   coding threads in Recent. Replies show code in expanded, copyable cards with
   language labels and syntax colouring for supported languages. During a GPT Live conversation, a thread composer’s
-  mic takes over for dictation. The floating waveform turns red until Live can
-  hear you again. You can still hear the Agent while dictating.
+  mic takes over for dictation. While the Live microphone is muted, the waveform
+  rests in red. When the Agent speaks, its usual color shows through the center
+  and both tips stay red. You can still hear the Agent while dictating.
 - **Review changes:** inspect recorded edits and Git changes with their source and
   coverage shown. Preview local images, text and self-contained HTML artifacts.
 - **Understand a shared source file.** In a Space’s Handoffs, open a folder and use **Add file** to share a small Python, JavaScript or TypeScript file. Open the attachment and choose **Explain this file**. Brainstorm explains the selected copy, shows how many lines it read, and links its answers to the source. [File review guide](docs/BRAINSTORM-OPERATING-GUIDE.md#explain-a-shared-file)
 - **Keep context together:** Shared Spaces for notes, project discussions and
   handoffs. Optional plugins connect individual Claude/Codex chats after approval.
-  The foreground Agent can request a new Claude Code or ordinary Perplexity chat
-  in a named Shared Space. Its decision card shows the provider, space, opening
-  message and role before you approve it.
+  The foreground Agent can request a new Codex, Claude Code or ordinary Perplexity chat
+  in a named Shared Space. For Codex you can specify a model, such as Sol 6.1.
+  Its decision card shows the space, role, opening message and requested model.
+  The Agent checks space availability before requesting approval. Submitting the
+  card delivers the creation and membership result to the waiting Agent. If the
+  decision takes longer, it can check the same receipt without creating another chat.
   Shared-space messaging can also send bounded briefs to ordinary ChatGPT and
   Perplexity chats and collect their text replies in the sender inbox. See
   [account-chat messaging and limits](docs/ACCOUNT-CHATS.md#shared-space-messaging).
@@ -137,6 +145,8 @@ microphone are closed. Completed replies keep a quiet shortcut for 24 hours.
 
 A Smart Thread waiting for input opens at its question or approval card above
 the composer. Scroll up within the reader to see the conversation that led to it.
+In the Agent conversation, an answered approval folds into a row showing the
+action and decision. Expand it to inspect the original request, time and source.
 For a native Codex question, **×** dismisses that question in Threadlight. Use
 **Stop ignoring** in the thread menu to restore it. Codex keeps control of the
 answer. Threadlight clears the card when Codex confirms the matching answers
@@ -163,9 +173,9 @@ press **Pause/Break** or **Ctrl+Alt+M** to mute or unmute the microphone from an
 window. Use the keyboard's Pause function (some keyboards require Fn), or the
 microphone button if a shortcut is unavailable. The speaker button mutes playback independently. **Stop speaking**
 silences the current reply. **End call** disconnects voice and keeps the current chat
-available for typing or another call. The pencil sits beside the call controls during an Agent call. It toggles the reply box and keeps your draft. The new-chat icon starts fresh, and the bin closes the conversation and keeps it in Earlier. Both wait for active work and decisions. Hover over the floating waveform for half a second to open the call centered on it, or drag it to move the pill and its reply together. Right-click anywhere on the pill, or focus it and press **Shift+F10**, to pause or resume listening, stop an audible reply, or hang up. The waveform follows audible speech. A separate
+available for typing or another call. The pencil sits beside the call controls during an Agent call. It toggles the reply box and keeps your draft. The new-chat icon starts fresh, and the bin closes the conversation and keeps it in Earlier. Both wait for active work and decisions. Hover over the floating waveform for half a second to open the call centered on it, or drag it to move the pill and its reply together. If **Back** or another page change shrinks the panel away from your pointer, the new page stays open until you move into it and then leave. Right-click anywhere on the pill, or focus it and press **Shift+F10**, to pause or resume listening, stop an audible reply, or hang up. The waveform follows audible speech. A separate
 working mark in the Agent and travelling blue marks around the floating pill
-show when a task is running.
+show when a task is running. When an Agent question, approval or monitored thread needs input, flames spread along the bottom of the floating pill and climb its sides. As a spoken reply expands the pill, the glow stays strongest at the bottom rim and fades up the outer corners, leaving the middle grey for reading. Both the flames and glow fade when the last request clears. Reduced motion holds the effect still.
 
 Open **Audio received** to read or copy the original voice delegation. Use
 **Reply** at the top of the Agent to open the message composer at the bottom, or
@@ -175,12 +185,12 @@ Unanswered Agent questions and approvals appear below the latest message.
 Answered cards return to their place in history with the recorded response.
 If the original message is off-page, **Load earlier messages** in Earlier shows
 it when available. **Saved cards** keeps decisions readable when their position is unknown.
-Hover over the waveform or focus it and press **Enter** to return to the ongoing conversation. Moving away can collapse the panel while the call continues; other pages offer **Return to call**.
-Open the gear immediately left of **Back** for Agent settings and **Earlier** conversations. Enable **Show spoken replies in waveform pill** to follow the latest Agent reply while a GPT Live call is collapsed. The waveform centers the caption and widens as the words arrive, up to 296px before wrapping. Linked code stays left-aligned beneath it. A requested example can appear when its backing answer arrives, and a follow-up can refer to that same example without reopening the panel. Use the × to dismiss just that reply. The next reply opens automatically. The setting is off by default.
+Hover over the waveform or focus it and press **Enter** to return to the ongoing conversation. The flashing Agent icon in the header also opens the Agent conversation waiting for your answer. Moving away can collapse the panel while the call continues.
+Open the gear immediately left of **Back** for Agent settings and **Earlier** conversations. Enable **Show spoken replies in waveform pill** to follow a collapsed GPT Live call. The first line is centred beside the ×, and the remaining lines wrap to the inner edges of the pill. A written code example stays visible and copyable while the Agent speaks through the same request. “Show me that again” restores the displayed example with its original indentation. A new example replaces it, and an unrelated request or the end of the call clears the card. The × dismisses the current request, including late speech. The setting is off by default.
 Smart Thread and Agent use the same assistant reply text size and line spacing. Use the two-card Copy icon on a code block to copy its contents. A pinned block copies the version on screen. Drag the grip below the conversation to resize the reading area,
 or focus it and use the arrow keys. Threadlight remembers the height.
 
-GPT Live can read a brief acknowledgment that the Agent is checking or reading something while the tools run. Its spoken caption stays with the written update. Code guidance waits until the editor confirms that the relevant location is visible.
+GPT Live speaks the Agent’s written conversation, including its opening paragraph while tools are working. A complete opening sentence can start during streaming. Further commentary and the final answer play in order. Editor checks update the on-screen status silently, and the spoken caption stays with its message. Stop or new input cancels queued narration.
 
 For delegated answers, GPT Live can speak a complete opening sentence while the
 Agent continues writing. When Live confirms that opening finished, it can speak the
@@ -192,31 +202,44 @@ stays below the conversation while the Agent is waiting on the editor. [Timing a
 
 In **Agent Settings → Voice pace**, choose Slower, Slightly slower, Normal, Slightly faster or Faster. The choice applies to the next call or spoken screen reply. GPT Live uses a speaking-style instruction and Windows screen replies use the synthesizer’s rate. Normal is the default.
 
-GPT Live gives a brief cue once the microphone and connection are ready; speaker mute silences it. Opening the call still buffers early speech while the native session connects.
+GPT Live gives a brief cue when the microphone and connection are ready. Speaker mute silences the cue. The Agent thread shows words as they arrive over the voice connection, then uses the saved transcript when it’s ready. Threadlight preserves speech captured during connection setup. If that audio is still queued, it sends subsequent microphone audio at up to 1.25× speed until it catches up. The Agent’s speaking speed stays the same.
 
-For optional code coaching, install the [VS Code desktop companion](vscode-coach/README.md).
+When a question card arrives during Live, the Agent reads its question and choices at the next pause. You can select an option or type an answer and submit it on the card. Answering before playback cancels the queued question.
+
+A fresh foreground Agent conversation starts normally. Say “Select Threadlight Coach” or “Coach me through this problem” to start a lesson. Say “stop coaching” to return to ordinary conversation. Your saved level, teaching style and editor preferences travel with you into the next lesson. Say “I’m on week four now” or “Ask me to predict the output before giving me a hint,” then review the proposed profile change in the Agent. You can also edit `coach-profile.json` in Threadlight’s data folder. Its text fields are `level`, `teachingStyle` and `editorHelp`. The coach reads them on selection.
+
+For optional code coaching in the editor, install the [VS Code desktop companion](vscode-coach/README.md).
 Run **Threadlight: Start Live Coaching** in the editor window you want to share.
 Ask foreground GPT Live “Review the whole file I have open and tell me what looks wrong, if anything.”
 It reads the active text tab, including unsaved edits, without a selection or screenshot.
 The review supports up to 32,768 UTF-16 units and leaves the file untouched.
 After upgrading the companion, reload the connected VS Code window and run
 **Threadlight: Start Live Coaching** again to activate the installed version.
-Place the cursor near your code, start foreground GPT Live and ask for a walkthrough.
+Coach can report the version running in that window and read the active filename directly. If older features work but narrated ghost practice is missing, use **Developer: Reload Window** before reconnecting.
+For a typing-paced walkthrough with Live Coach 0.6.14, ask foreground GPT Live “Give me a ghost walkthrough of this selection and explain each line as I type.” You can also right-click in a connected editor, choose **Threadlight: Practise Ghost Text**, then **Trace with explanations** or **Trace silently**. With companion 0.6.15, **Settings → VS Code → Ghost practice location** chooses **Current file** (default) or **Practice copy** for existing code. “Line 64 onwards” starts the caret on line 64 and dims only the requested range, preserving syntax colours. Matching keystrokes reveal the text without editing the program. Pending diffs use a practice tab. Click a row or press Enter for the next row. New blocks requested at an insertion point use ordinary Trace in the working file. Click the trace status to mute the exercise. **Settings → VS Code → Spoken ghost walkthroughs** controls whether exercises can speak.
+
+Start foreground GPT Live and say “Walk me through this file,” or “Start at line 76.” With Live Coach 0.6.17, a Python walkthrough starts at the first code statement after introductory documentation, comments and blank lines, unless you name a line. The editor highlights it and waits for **Start**. **Auto** is checked by default. Leave it checked to continue after each explanation finishes, or uncheck it to advance with **Next**. You can switch pacing during the walkthrough. Click a gutter number to hear that line. Clicking or selecting code stays silent. Drag across gutter numbers in either direction and release to hear one explanation of the selected section. Before Start, a selection plays once and waits. After Start, the next step begins after the selected line or section. Automatic progression skips blank lines. Editing the file or changing tabs ends the walkthrough.
 Findings start with a verified line number where available and a brief explanation.
-Ask “Could you show me one step at a time?” to walk through the issue just discussed.
+For a typing exercise or manual pacing, ask the coach to wait for **Next step**.
 Typing clears the old highlight quietly. With a companion that supports verified guide edits, a step with one declared exact target line requests a fresh source check when that line matches. For open-ended steps or partial edits, say “I’m done,” “check this,” or “what’s next?” to have the coach check your work. **Next step** and **Refresh guide** are also available. **Finish guide** closes
 the last step and confirms completion in Live. To practise typing the next
 line, ask “Could you fill that line for me?” **Trace** places ghost text at a
 verified insertion point without requiring a selection. Type along, use Tab
 to indent, or press Esc to dismiss it. Companion 0.6.2 stops explicitly retriggering the inline-suggestion sound as you type. VS Code’s own accessibility preferences still control suggestion cues. When ready, say “I’m done, let’s move
 on” for a fresh check of your code. Ask “There are issues in my file; show me the inline diffs.” Coach reads the active
-buffer and brings each proposed change into view. Companion 0.6.5 opens a compact,
-line-numbered diff with the removed and added code together. **Result** previews
-the edited lines and **Why this edit?** reveals the coach’s explanation. Scroll away and back to continue reviewing the same proposal. You can type your own fix, press
+buffer and brings each proposed change into view. Companion 0.6.11 tints the existing
+source line red and shows its green replacement underneath. Each changed row fades
+just after its own text. The gray current-line bar fades after the longest visible source line. It keeps the caret unselected. When space
+or editor settings prevent this layout, it opens a read-only file review. The status
+bar offers **Result** and **Why this edit?**. Click elsewhere in the file, select text, visit another tab or scroll away
+and back to continue reviewing the same proposal. You can type your own fix, press
 Tab to accept, Alt+] to see the next, Alt+Backspace to skip, or Esc to dismiss.
+With companion 0.6.12, say “walk me through this diff” to highlight and discuss
+each proposed line before accepting it. Follow-up questions keep your place.
+“Next line” and “previous line” stay within the diff. “Next proposal” moves to another change.
 Each accepted proposal or dependent group is one Undo. Ask for a spoken explanation
 while the change is visible. Selecting a range and asking for alternatives still
-supports ← / → to cycle versions. With companion 0.6.1 or newer, choose **Settings → VS Code → Automatic Python suggestions → On** in Threadlight, or ask the Agent “Turn on automatic Python suggestions.” Trusted Python editors then offer ghost text and related edits whenever you open them, even with Threadlight closed. The default **VS Code setting** follows the editor checkbox. Ask for a **separate diff**
+supports ← / → to cycle versions. With companion 0.6.1 or newer, choose **Settings → VS Code → Automatic Python suggestions → On** in Threadlight, or ask the Agent “Turn on automatic Python suggestions.” Trusted Python editors then offer ghost text and related edits whenever you open them, even with Threadlight closed. A local suggestion can extend the highlighted IntelliSense item when both match what you typed. The default **VS Code setting** follows the editor checkbox. Ask for a **separate diff**
 to compare read-only snapshots, including unsaved edits.
 
 The app reads local chat metadata/history and talks to installed provider apps.

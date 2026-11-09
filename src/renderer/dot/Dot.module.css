@@ -25,7 +25,7 @@
   overflow: hidden;
   box-shadow: inset 0 0 0 1px var(--composer-edge);
   border-radius: 12px;
-  background: var(--composer-bg);
+  background: var(--live-pill-bg);
 }
 
 .micWave {
@@ -45,6 +45,45 @@
 .micPill {
   position: relative;
   isolation: isolate;
+}
+
+/* The glass clips the wash to its current size. Its first pixel covers the inset rim. */
+.pillHeat {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  --corner-reach: min(24%, 42px) min(100%, 96px);
+  --corner-glow: rgb(251 120 29 / 64%), rgb(234 95 19 / 29%) 43%, transparent;
+  background:
+    linear-gradient(
+      to top,
+      #ff9d39 0,
+      rgb(244 100 10 / 88%) 1.5px,
+      rgb(182 68 10 / 72%) min(20%, 7px),
+      rgb(197 76 12 / 23%) min(65%, 19px),
+      transparent min(100%, 36px)
+    ),
+    radial-gradient(ellipse 100% 100% at left bottom, var(--corner-glow)) left bottom /
+      var(--corner-reach) no-repeat,
+    radial-gradient(ellipse 100% 100% at right bottom, var(--corner-glow)) right bottom /
+      var(--corner-reach) no-repeat;
+  transform-origin: center bottom;
+  transform: scaleY(0);
+  transition: transform 620ms ease-out;
+}
+.micPill[data-needs-input] .pillHeat {
+  transform: scaleY(1);
+  transition-duration: 3.6s;
+  @starting-style {
+    transform: scaleY(0);
+  }
+}
+.micPill[data-needs-input]::before {
+  z-index: -2;
+}
+.micPill[data-needs-input][data-agent-working]::after {
+  clip-path: inset(0 0 50%);
 }
 .micPill[data-provider='codex'] {
   --speech-colour: var(--provider-codex);
@@ -101,6 +140,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .micPill .pillHeat {
+    transition: none;
+  }
   .micPill[data-provider]::before {
     transition: none;
     opacity: 0;

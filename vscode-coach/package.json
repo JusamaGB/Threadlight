@@ -3,7 +3,7 @@
   "displayName": "Threadlight Live Coach",
   "description": "In-place file proposals, optional Python suggestions and voice-paced coaching for Threadlight Live.",
   "publisher": "threadlight",
-  "version": "0.6.5",
+  "version": "0.6.17",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -16,13 +16,18 @@
   "main": "./extension.cjs",
   "files": [
     "extension.cjs",
+    "walkthrough.cjs",
+    "walkthroughStart.cjs",
     "inlinePreview.cjs",
     "trace.cjs",
+    "ghostLesson.cjs",
+    "sourcePractice.cjs",
     "wholeFileReview.cjs",
     "README.md",
     "LICENSE",
     "proposals.cjs",
     "proposalReview.cjs",
+    "proposalSurface.cjs",
     "pythonSuggestions.cjs"
   ],
   "extensionKind": [
@@ -34,7 +39,47 @@
     }
   },
   "contributes": {
+    "menus": {
+      "editor/context": [
+        {
+          "command": "threadlight.coach.startGhostPractice",
+          "when": "editorTextFocus && isWorkspaceTrusted",
+          "group": "navigation@100"
+        }
+      ]
+    },
     "commands": [
+      {
+        "command": "threadlight.coach.walkthroughControls",
+        "title": "Threadlight: Walkthrough Controls"
+      },
+      {
+        "command": "threadlight.coach.practiceBack",
+        "title": "Threadlight: Retrace Previous Character",
+        "enablement": "threadlight.coach.sourcePractice"
+      },
+      {
+        "command": "threadlight.coach.practiceIndent",
+        "title": "Threadlight: Trace Indentation",
+        "enablement": "threadlight.coach.sourcePractice"
+      },
+      {
+        "command": "threadlight.coach.startGhostPractice",
+        "title": "Threadlight: Practise Ghost Text"
+      },
+      {
+        "command": "threadlight.coach.toggleTraceSpeech",
+        "title": "Threadlight: Toggle Trace Explanations"
+      },
+      {
+        "command": "threadlight.coach.replayTraceLine",
+        "title": "Threadlight: Replay Trace Line"
+      },
+      {
+        "command": "threadlight.coach.practiceNext",
+        "title": "Threadlight: Next Practice Line",
+        "enablement": "threadlight.coach.practice"
+      },
       {
         "command": "threadlight.coach.start",
         "title": "Threadlight: Start Live Coaching"
@@ -106,6 +151,31 @@
       }
     ],
     "keybindings": [
+      {
+        "command": "threadlight.coach.practiceBack",
+        "key": "backspace",
+        "when": "threadlight.coach.sourcePractice && editorTextFocus && !inSnippetMode && !suggestWidgetVisible"
+      },
+      {
+        "command": "threadlight.coach.practiceIndent",
+        "key": "tab",
+        "when": "threadlight.coach.sourcePractice && editorTextFocus && !editorTabMovesFocus && !inSnippetMode && !suggestWidgetVisible"
+      },
+      {
+        "key": "tab",
+        "command": "tab",
+        "when": "threadlight.coach.practice && !threadlight.coach.sourcePractice && editorTextFocus && !inSnippetMode && !suggestWidgetVisible && !editorTabMovesFocus && inlineSuggestionVisible"
+      },
+      {
+        "command": "threadlight.coach.practiceNext",
+        "key": "enter",
+        "when": "threadlight.coach.practice && editorTextFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible"
+      },
+      {
+        "command": "threadlight.coach.cancelGuide",
+        "key": "escape",
+        "when": "threadlight.coach.practice && editorTextFocus && !suggestWidgetVisible && !inSnippetMode && !renameInputVisible"
+      },
       {
         "command": "threadlight.coach.accept",
         "key": "tab",

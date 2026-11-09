@@ -1,3 +1,5 @@
+import { PANEL_BROWSER_THREAD } from '../../shared/browser'
+import { useBrowserCaptions } from '../hooks/useBrowserCaptions'
 import type { ChangeLens } from '../../shared/changes'
 import { useAppControl } from '../hooks/useAppControl'
 import type { AppliedRoute } from '../../shared/appControl'
@@ -49,6 +51,11 @@ import { CallIcon } from './CallIcon'
 import { LIVE_MUTE_KEYS, acceleratorLabel } from '../../shared/accelerator'
 import { isGptLiveShortcut } from '../../shared/settings'
 import { useOpenMic, type OpenMicControls } from '../hooks/useOpenMic'
+import {
+  anchorInputCaption,
+  LiveInputContext,
+  type LiveInputPreview,
+} from '../lib/liveInputPreview'
 import { useVoice } from '../hooks/useVoice'
 import { useRecordedAgentVoice } from '../hooks/useRecordedAgentVoice'
 import { MicSessionRouter, type MicRoute } from '../../shared/voiceCommands'
@@ -85,12 +92,7 @@ import { WorkspacePicker } from './WorkspacePicker'
 import { sameFolder, WorkspaceTree } from './WorkspaceTree'
 import { motionMode, SILENT_AUDIO } from '../../shared/motion'
 import { useMotion } from '../hooks/useMotion'
-import {
-  latestSpokenReply,
-  spokenExample,
-  type SpokenExample,
-  type SpokenReply,
-} from '../../shared/spokenReply'
+import { presentSpokenReply, type SpokenExample } from '../../shared/spokenReply'
 import { VoicePresence } from '../motion/VoicePresence'
 import type { AgentClient } from '../lib/agentClient'
 import type { LiveVoicePort } from '../lib/liveVoice'
@@ -128,6 +130,16 @@ function SettingsIcon() {
   )
 }
 
+function AgentDiamond() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        fillRule="evenodd"
+        d="M8 .5C9 5.8 10.2 7 15.5 8C10.2 9 9 10.2 8 15.5C7 10.2 5.8 9 .5 8C5.8 7 7 5.8 8 .5ZM8 4.7Q8.9 7.1 11.3 8Q8.9 8.9 8 11.3Q7.1 8.9 4.7 8Q7.1 7.1 8 4.7Z"
+      />
+    </svg>
+  )
+}
 function HeaderBack({
   buttonRef,
   onBack,
@@ -255,12 +267,14 @@ export function Panel() {
     title: string
     artifactId?: string
     navigationKey: string
+    agentConversationId?: string
   } | null>(null)
   // The agent keeps working while another page shows; its button then says so.
   const agent = useAgent()
   const [recentEntry, setRecentEntry] = useState<{ id: string } | null>(null)
   const clearRecentEntry = useCallback(() => setRecentEntry(null), [])
   const voiceAgent = useAgent(voiceDestination ?? undefined)
+  const [liveInput, setLiveInput] = useState<LiveInputPreview | null>(null)
   const agentBusy =
     !showAgent &&
     (agent.status === 'starting' ||
@@ -608,6 +622,10 @@ export function Panel() {
     muteState.current = next
     setInputMuted(next)
   }, [micLive])
+  const toggleOutput = () => {
+    controls.current?.muteOutput(!outputMuted)
+    setOutputMuted(!outputMuted)
+  }
   useEffect(() => window.threadlight.onLiveMuteShortcut(toggleInput), [toggleInput])
   useEffect(() => {
     window.threadlight.setLiveCallControls(micLive)
@@ -789,10 +807,15 @@ export function Panel() {
     const element = card.current
     if (!element) return
     const resize = () =>
-      window.threadlight.resizePanel(element.getBoundingClientRect().height + room)
+      window.threadlight.resizePanel(
+        element.getBoundingClientRect().height +
+          room +
+          (element.parentElement?.querySelector('[data-video-grips]') ? 4 : 0),
+      )
     resize()
     const observer = new ResizeObserver(resize)
     observer.observe(element)
+    if (element.parentElement) observer.observe(element.parentElement)
     return () => observer.disconnect()
   }, [room])
 
@@ -1295,6 +1318,7 @@ export function Panel() {
             stop: voiceDestination.agentLiveStop,
             subscribe: voiceDestination.onAgentLive,
             state: voiceDestination.getAgent,
+            announcements: true,
           }
         : undefined,
     [voiceDestination],
@@ -1310,6 +1334,10 @@ export function Panel() {
     openingDraft: continuousDraft,
   } = useOpenMic({
     onControls,
+    onInputCaption: (caption) =>
+      setLiveInput((previous) =>
+        caption ? anchorInputCaption(caption, previous, voiceAgent) : null,
+      ),
     enabled: micLive && (gptLive || stt.state === 'ready'),
     nativeLive: gptLive,
     liveSessionId: micLive ? shortcutSessionId : undefined,
@@ -1395,7 +1423,9 @@ export function Panel() {
     !!(
       micLive &&
       (!gptLive || livePhase === 'live' || livePhase === 'waiting') &&
-      voiceAgent.status === 'working' &&
+      (voiceAgent.status === 'working' ||
+        voiceAgent.chatActivity?.working ||
+        (voiceAgent.pendingSpeechTurn && !voiceAgent.pendingReadout)) &&
       !voiceAgent.requests.length &&
       !voiceAgent.approval
     ),
@@ -1465,23 +1495,18 @@ export function Panel() {
       exampleScope.current = scope
     }
     previousItems.current = agent.items
-    const current =
+    const presentation =
       active && anyOpenMicListening && settings?.spokenReplyCompanion
-        ? latestSpokenReply(agent.items, earlierCaptionIds.current)
-        : null
-    const selection =
-      current && !(current.sourceId && oldExampleSources.current.has(current.sourceId))
-        ? spokenExample(activeExample.current, current, replyCodeBlocks(current.source))
-        : null
-    activeExample.current = selection?.example ?? null
-    const reply: SpokenReply | null = current && {
-      id: current.id,
-      captionIds: current.captionIds,
-      awaitingLink: current.awaitingLink,
-      userItemId: current.userItemId,
-      text: current.text,
-      blocks: selection?.blocks ?? [],
-    }
+        ? presentSpokenReply(
+            agent.items,
+            earlierCaptionIds.current,
+            oldExampleSources.current,
+            activeExample.current,
+            replyCodeBlocks,
+          )
+        : { reply: null, example: null }
+    activeExample.current = presentation.example
+    const { reply } = presentation
     const signature = reply && JSON.stringify(reply)
     if (signature !== publishedReply.current) {
       publishedReply.current = signature
@@ -1536,14 +1561,16 @@ export function Panel() {
         ...(changesFor.scope === 'card' ? { cardId: changesFor.card.id } : {}),
       }
     : artifactThread
-      ? {
-          page: 'artifact',
-          threadRef: controlRefs[artifactThread.id] ?? artifactThread.id,
-          artifactId:
-            controlArtifact?.threadId === artifactThread.id
-              ? controlArtifact.id
-              : (artifactThread.artifactId ?? 'catalog'),
-        }
+      ? artifactThread.id === PANEL_BROWSER_THREAD
+        ? { page: 'browser' }
+        : {
+            page: 'artifact',
+            threadRef: controlRefs[artifactThread.id] ?? artifactThread.id,
+            artifactId:
+              controlArtifact?.threadId === artifactThread.id
+                ? controlArtifact.id
+                : (artifactThread.artifactId ?? 'catalog'),
+          }
       : showAgent
         ? { page: 'agent' }
         : showMemory
@@ -1589,14 +1616,23 @@ export function Panel() {
       setPickingWorkspace(false)
       if (route.page === 'artifact') setControlArtifact(null)
       setArtifactThread(
-        route.page === 'artifact' && session
+        route.page === 'browser'
           ? {
-              id: session.id,
-              title: session.title,
-              artifactId: route.artifactId,
+              id: PANEL_BROWSER_THREAD,
+              title: 'Browser',
+              artifactId: '@browser',
+              agentConversationId: agent.conversationId ?? undefined,
               navigationKey: command.commandId,
             }
-          : null,
+          : route.page === 'artifact' && session
+            ? {
+                id: session.id,
+                title: session.title,
+                artifactId: route.artifactId,
+                agentConversationId: agent.conversationId ?? undefined,
+                navigationKey: command.commandId,
+              }
+            : null,
       )
       if (route.page === 'changes' && route.scope !== 'card') {
         setComparisonScope(route.scope)
@@ -1852,6 +1888,21 @@ export function Panel() {
   }
   const listMenuItems: MenuItem[] = [
     {
+      label: agentBusy ? 'Agent · working' : 'Agent',
+      onSelect: () => {
+        setShowSettings(false)
+        setShowMemory(false)
+        setPickingWorkspace(false)
+        setChangesFor(null)
+        setArtifactThread(null)
+        setShowAgent(true)
+      },
+    },
+    {
+      label: 'Browser',
+      onSelect: () => openArtifacts({ id: PANEL_BROWSER_THREAD, title: 'Browser' }, '@browser'),
+    },
+    {
       label: creatingThread ? 'Opening chat…' : 'New',
       disabled: creatingThread,
       onSelect: () => {},
@@ -1873,17 +1924,6 @@ export function Panel() {
       ],
     },
     { label: 'Spaces', onSelect: openSharedSpaces },
-    {
-      label: agentBusy ? 'Agent · working' : 'Agent',
-      onSelect: () => {
-        setShowSettings(false)
-        setShowMemory(false)
-        setPickingWorkspace(false)
-        setChangesFor(null)
-        setArtifactThread(null)
-        setShowAgent(true)
-      },
-    },
     {
       label: en.settings.listWorkspace,
       disabled: view === 'all' && listMode === 'workspace',
@@ -2085,7 +2125,7 @@ export function Panel() {
               onSelect: () => window.threadlight.ignoreNeedsInput(session.id, true),
             },
           ]
-  const openArtifacts = (session: Session, artifactId?: string) => {
+  const openArtifacts = (session: Pick<Session, 'id' | 'title'>, artifactId?: string) => {
     setShowAgent(false)
     setShowSettings(false)
     setShowMemory(false)
@@ -2145,6 +2185,10 @@ export function Panel() {
     />
   )
   const menuItems = (session: Session): MenuItem[] => [
+    {
+      label: 'Browser',
+      onSelect: () => openArtifacts(session, '@browser'),
+    },
     {
       label: 'Artifacts',
       onSelect: () => openArtifacts(session),
@@ -2236,9 +2280,29 @@ export function Panel() {
   }
 
   const agentVisible = showAgent && !pickingWorkspace && !changesFor
+  const browserFront =
+    !keyboardPeek &&
+    !changesFor &&
+    !pickingWorkspace &&
+    !!artifactThread &&
+    (controlArtifact?.threadId === artifactThread.id
+      ? controlArtifact.id
+      : artifactThread.artifactId) === '@browser'
+  const liveSpeech = micLive && gptLive && voiceAgent.live === 'active'
+  useBrowserCaptions(
+    voiceAgent,
+    liveSpeech,
+    browserFront ? artifactThread.id : null,
+    voiceDestination,
+  )
+  const agentOpenedBrowser =
+    !agent.ended &&
+    !!artifactThread?.agentConversationId &&
+    artifactThread.agentConversationId === agent.conversationId
   const recentConversation = agent.recent
   const recentButton = recentConversation &&
     !agentVisible &&
+    !browserFront &&
     (recentConversation.waiting || now - recentConversation.at < RECENT_AGENT_MS) && (
       <Tip
         as="button"
@@ -2261,12 +2325,7 @@ export function Panel() {
           setShowAgent(true)
         }}
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            fillRule="evenodd"
-            d="M8 .5C9 5.8 10.2 7 15.5 8C10.2 9 9 10.2 8 15.5C7 10.2 5.8 9 .5 8C5.8 7 7 5.8 8 .5ZM8 4.7Q8.9 7.1 11.3 8Q8.9 8.9 8 11.3Q7.1 8.9 4.7 8Q7.1 7.1 8 4.7Z"
-          />
-        </svg>
+        <AgentDiamond />
       </Tip>
     )
   const ownedCall = !!voiceDestination || gptLive || micMode === 'agent'
@@ -2391,6 +2450,7 @@ export function Panel() {
 
   return (
     <PanelProviders
+      liveInput={micLive && gptLive ? liveInput : null}
       room={panelRoom}
       helpMode={settings?.hoverHelp ?? 'info'}
       openCardChanges={openCardChanges}
@@ -2600,8 +2660,50 @@ export function Panel() {
                         collapsePinned={collapsePinned}
                         label={'Back to threads'}
                       />
-                      <span className={`${styles.heading} ${styles.pageHeading}`}>Artifacts</span>
-                      <div ref={setArtifactActionsHost} className={styles.artifactActionsSlot} />
+                      <span className={`${styles.heading} ${styles.pageHeading}`}>
+                        {controlArtifact?.id === '@browser' ? 'Browser' : 'Artifacts'}
+                      </span>
+                      <div ref={setArtifactActionsHost} className={styles.artifactActionsSlot}>
+                        {browserFront && (liveSpeech || agentOpenedBrowser) && (
+                          <button
+                            className={styles.browserAgent}
+                            type="button"
+                            aria-label={
+                              liveSpeech
+                                ? 'Return to live conversation'
+                                : 'Return to Agent conversation'
+                            }
+                            title={
+                              liveSpeech
+                                ? 'Return to live conversation'
+                                : 'Return to Agent conversation'
+                            }
+                            onClick={() => {
+                              if (liveSpeech) returnToCall()
+                              else {
+                                setArtifactThread(null)
+                                setShowAgent(true)
+                                setRecentEntry(null)
+                                agentNavigation.current?.showCurrent()
+                              }
+                            }}
+                          >
+                            <AgentDiamond />
+                          </button>
+                        )}
+                      </div>
+                      {browserFront && liveSpeech && (
+                        <button
+                          type="button"
+                          className={styles.browserSpeaker}
+                          onClick={toggleOutput}
+                          aria-pressed={outputMuted}
+                          aria-label={outputMuted ? 'Unmute Agent voice' : 'Mute Agent voice'}
+                          title={outputMuted ? 'Unmute Agent voice' : 'Mute Agent voice'}
+                        >
+                          <CallIcon action="speaker" muted={outputMuted} />
+                        </button>
+                      )}
                       <div
                         ref={setArtifactNavigationHost}
                         className={styles.artifactNavigationSlot}
@@ -2806,7 +2908,7 @@ export function Panel() {
                   </p>
                 )}
 
-                {showVoiceActivity && (
+                {showVoiceActivity && !(browserFront && liveSpeech) && (
                   <VoicePresence
                     label={voice.state === 'transcribing' ? 'Finishing transcription' : ''}
                     caption={
@@ -2852,15 +2954,6 @@ export function Panel() {
                     {en.openMic.blocked}
                   </p>
                 )}
-                {micLive && !showCallControls && (
-                  <button
-                    className={styles.returnToCall}
-                    onClick={returnToCall}
-                    title="Return to the ongoing conversation"
-                  >
-                    Return to call
-                  </button>
-                )}
                 {(preparing || (micLive && showCallControls)) && (
                   <div
                     className={styles.callControls}
@@ -2894,10 +2987,7 @@ export function Panel() {
                             aria-label={outputMuted ? 'Unmute speaker' : 'Mute speaker'}
                             aria-pressed={outputMuted}
                             title={outputMuted ? 'Unmute speaker' : 'Mute speaker'}
-                            onClick={() => {
-                              controls.current?.muteOutput(!outputMuted)
-                              setOutputMuted(!outputMuted)
-                            }}
+                            onClick={toggleOutput}
                           >
                             <CallIcon action="speaker" muted={outputMuted} />
                           </button>
@@ -3270,11 +3360,13 @@ export function Panel() {
 }
 
 function PanelProviders({
+  liveInput,
   room,
   helpMode,
   openCardChanges,
   children,
 }: {
+  liveInput: LiveInputPreview | null
   room: PanelRoomSource
   helpMode: HelpMode
   openCardChanges: (threadId: string, item: TimelineItem) => void
@@ -3286,7 +3378,9 @@ function PanelProviders({
       <PanelRoomContext.Provider value={room}>
         <CardChangesContext.Provider value={openCardChanges}>
           <CodePinsProvider>
-            <HoverHelp mode={helpMode}>{children}</HoverHelp>
+            <LiveInputContext.Provider value={liveInput}>
+              <HoverHelp mode={helpMode}>{children}</HoverHelp>
+            </LiveInputContext.Provider>
           </CodePinsProvider>
         </CardChangesContext.Provider>
       </PanelRoomContext.Provider>

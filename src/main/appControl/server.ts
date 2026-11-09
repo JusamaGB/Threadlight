@@ -1,3 +1,5 @@
+import { browserContent } from '../browser/registry'
+import type { BrowserReply } from '../../shared/browser'
 import { MemoryTransport, openMemoryProxy, type MemoryTransportOptions } from '../memory/transport'
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
@@ -101,7 +103,7 @@ export class AppControlServer {
                   annotations: {
                     readOnlyHint: t.effect === 'read',
                     destructiveHint: t.effect === 'write',
-                    openWorldHint: false,
+                    openWorldHint: t.name === 'threadlight_browser',
                   },
                 })),
               }
@@ -110,7 +112,7 @@ export class AppControlServer {
                 .object({ name: z.string().max(100), arguments: z.unknown() })
                 .parse(msg.params)
               let timer: ReturnType<typeof setTimeout> | undefined
-              const value = await Promise.race([
+              const initial = await Promise.race([
                 this.service.call(caller, params.name, params.arguments),
                 new Promise<never>((_, reject) => {
                   timer = setTimeout(() => reject(Error('Deadline')), 6000)
@@ -118,8 +120,23 @@ export class AppControlServer {
               ])
                 .catch(() => this.service.failure())
                 .finally(() => clearTimeout(timer))
+              let value = initial
+              if (
+                initial.outcome === 'pending' &&
+                [
+                  'threadlight_start_space_chat',
+                  'threadlight_create_chat',
+                  'threadlight_get_operation',
+                  'threadlight_update_coach_profile',
+                ].includes(params.name)
+              ) {
+                request.setTimeout(32000)
+                value = await this.service.followChatReceipt(caller, initial)
+              }
               if (!caller.active) return finish(401)
-              if (params.name === 'threadlight_foreground_window' && value.outcome === 'ok') {
+              if (params.name === 'threadlight_browser' && value.data)
+                result = browserContent(value.data as BrowserReply)
+              else if (params.name === 'threadlight_foreground_window' && value.outcome === 'ok') {
                 const { jpeg, ...identity } =
                   value.data as import('../liveScreen').WindowObservation
                 result = {

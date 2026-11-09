@@ -9,7 +9,9 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { IDLE_AGENT } from '../../src/shared/agent'
 import { IDLE_MOTION } from '../../src/shared/motion'
 
-const directory = mkdtempSync(join(tmpdir(), 'threadlight-artifacts-native-'))
+const directory =
+  process.env.THREADLIGHT_ARTIFACT_TEST_DIRECTORY ??
+  mkdtempSync(join(tmpdir(), 'threadlight-artifacts-native-'))
 const allowedAlias = `${directory}-allowed`
 symlinkSync(directory, allowedAlias, process.platform === 'win32' ? 'junction' : 'dir')
 app.once('will-quit', () => unlinkSync(allowedAlias))
@@ -18,6 +20,13 @@ void app.whenReady().then(async () => {
   const panel = new BrowserWindow({
     width: 500,
     height: 600,
+    ...(process.env.THREADLIGHT_BROWSER_GRIP_FIXTURE === '1' && {
+      frame: false,
+      transparent: true,
+      resizable: false,
+      width: 491,
+      height: 650,
+    }),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -86,7 +95,7 @@ void app.whenReady().then(async () => {
     sessions: [thread],
     workspaces: [],
     allWorkspaces: [],
-    currentWorkspace: null,
+    currentWorkspace: directory,
     currentThreadId: null,
   }
   const replies: Record<string, unknown> = {
@@ -97,6 +106,7 @@ void app.whenReady().then(async () => {
     [IPC.getStt]: { state: 'ready' },
     [IPC.agentGet]: IDLE_AGENT,
     [IPC.getMotion]: IDLE_MOTION,
+    [IPC.threadTimeline]: { ok: false, reason: 'No timeline in this fixture.' },
     [IPC.getVersion]: 'artifact-test',
     [IPC.spacesRequest]: { ok: false, reason: 'Shared Spaces disabled in this isolated test.' },
     [IPC.memoryRequest]: { ok: false, reason: 'Shared memory disabled in this isolated test.' },

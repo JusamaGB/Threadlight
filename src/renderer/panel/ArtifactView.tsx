@@ -1,3 +1,4 @@
+import { PANEL_BROWSER_THREAD } from '../../shared/browser'
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { useNavigationHistory } from '../hooks/useNavigationHistory'
 import type { NavigationHandle } from '../../shared/navigationHistory'
@@ -5,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { artifactDocument, type ThreadArtifact } from '../../shared/artifacts'
 import styles from './ArtifactView.module.css'
 import panelStyles from './Panel.module.css'
+import { BrowserView } from './BrowserView'
 import { InteractiveArtifact } from './InteractiveArtifact'
 import { ReplyCode } from './ReplyCode'
 import { artifactCodeFile, fileLanguage } from '../../shared/codeReference'
@@ -65,19 +67,26 @@ export function ArtifactView({
     readiness: 'ready' | 'loading' | 'unavailable'
   }) => void
 }) {
+  const [browser, setBrowser] = useState(initialArtifactId === '@browser')
   const catalog = useArtifactCatalog(threadId)
   const items = catalog?.items ?? NO_ARTIFACTS
   const [selected, setSelected] = useState<{ item: ThreadArtifact; content: string } | null>(null)
   const [selectedId, setSelectedId] = useState(initialArtifactId ?? '')
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(true)
+  const [busy, setBusy] = useState(!browser)
   useEffect(() => {
     onControlState?.({
       threadId,
-      id: selectedId,
-      readiness: error ? 'unavailable' : busy || !selected ? 'loading' : 'ready',
+      id: browser ? '@browser' : selectedId,
+      readiness: browser
+        ? 'ready'
+        : error
+          ? 'unavailable'
+          : busy || !selected
+            ? 'loading'
+            : 'ready',
     })
-  }, [threadId, selectedId, error, busy, selected, onControlState])
+  }, [browser, threadId, selectedId, error, busy, selected, onControlState])
   const notice = catalog?.notice
   const currentSelection = useRef(selectedId)
   const chipRail = useRef<HTMLDivElement>(null)
@@ -95,15 +104,17 @@ export function ArtifactView({
     currentSelection.current = selectedId
   }, [selectedId])
   useEffect(() => {
+    if (browser) return
     let cancelled = false
     void artifactCatalog
       .refresh(threadId)
       .then(async (reply) => {
         if (cancelled) return
         if (reply.ok) {
-          const item = initialArtifactId
-            ? reply.items.find((item) => item.id === initialArtifactId)
-            : reply.items[0]
+          const item =
+            initialArtifactId && initialArtifactId !== '@browser'
+              ? reply.items.find((item) => item.id === initialArtifactId)
+              : reply.items[0]
           if (!item) {
             setError('The selected artifact is no longer available.')
             return
@@ -127,7 +138,7 @@ export function ArtifactView({
     return () => {
       cancelled = true
     }
-  }, [threadId, initialArtifactId])
+  }, [threadId, initialArtifactId, browser])
 
   useEffect(() => {
     if (busy || currentSelection.current || !catalog?.items[0]) return
@@ -223,7 +234,7 @@ export function ArtifactView({
   )
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (!viewer.current?.getClientRects().length || busy || items.length < 2) return
+      if (browser || !viewer.current?.getClientRects().length || busy || items.length < 2) return
       if (
         event.altKey ||
         event.ctrlKey ||
@@ -247,11 +258,12 @@ export function ArtifactView({
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [busy, items.length, cycle])
+  }, [browser, busy, items.length, cycle])
 
   return (
     <section ref={viewer} className={styles.root} aria-label="Thread artifacts">
-      {items.length > 0 &&
+      {!browser &&
+        items.length > 0 &&
         navigationHost &&
         createPortal(
           <nav className={styles.navigator} aria-label="Thread artifact navigation">
@@ -297,42 +309,52 @@ export function ArtifactView({
       {actionsHost &&
         createPortal(
           <>
-            <ArtifactAction
-              label="Refresh"
-              help="Refresh this artifact from its original file."
-              disabled={busy || !selectedId}
-              onClick={() =>
-                void request(
-                  'read',
-                  items.find((item) => item.id === selectedId),
-                )
-              }
-            >
-              <path d="M13 6a5 5 0 1 0 .1 4M13 2v4H9" />
-            </ArtifactAction>
-            <ArtifactAction
-              label="Keep a copy"
-              help="Keep a separate saved copy of this artifact."
-              disabled={busy || selected?.item.source !== 'reference'}
-              onClick={() => {
-                if (selected) void request('copy', selected.item)
-              }}
-            >
-              <rect x="6" y="6" width="7" height="8" rx="1" />
-              <path d="M10 4V2H2v8h2" />
-            </ArtifactAction>
-            <ArtifactAction
-              label="Link file…"
-              help="Link an existing file to this thread without copying it."
-              disabled={busy}
-              onClick={() => void request('link')}
-            >
-              <path d="m6 10 4-4M5 9l-1 1a2.8 2.8 0 0 0 4 4l3-3a2.8 2.8 0 0 0 0-4M11 7l1-1a2.8 2.8 0 0 0-4-4L5 5a2.8 2.8 0 0 0 0 4" />
-            </ArtifactAction>
+            {threadId !== PANEL_BROWSER_THREAD && (
+              <button onClick={() => setBrowser((value) => !value)} aria-pressed={browser}>
+                {browser ? 'Artifacts' : 'Browser'}
+              </button>
+            )}
+            {!browser && (
+              <>
+                <ArtifactAction
+                  label="Refresh"
+                  help="Refresh this artifact from its original file."
+                  disabled={busy || !selectedId}
+                  onClick={() =>
+                    void request(
+                      'read',
+                      items.find((item) => item.id === selectedId),
+                    )
+                  }
+                >
+                  <path d="M13 6a5 5 0 1 0 .1 4M13 2v4H9" />
+                </ArtifactAction>
+                <ArtifactAction
+                  label="Keep a copy"
+                  help="Keep a separate saved copy of this artifact."
+                  disabled={busy || selected?.item.source !== 'reference'}
+                  onClick={() => {
+                    if (selected) void request('copy', selected.item)
+                  }}
+                >
+                  <rect x="6" y="6" width="7" height="8" rx="1" />
+                  <path d="M10 4V2H2v8h2" />
+                </ArtifactAction>
+                <ArtifactAction
+                  label="Link file…"
+                  help="Link an existing file to this thread without copying it."
+                  disabled={busy}
+                  onClick={() => void request('link')}
+                >
+                  <path d="m6 10 4-4M5 9l-1 1a2.8 2.8 0 0 0 4 4l3-3a2.8 2.8 0 0 0 0-4M11 7l1-1a2.8 2.8 0 0 0-4-4L5 5a2.8 2.8 0 0 0 0 4" />
+                </ArtifactAction>
+              </>
+            )}
           </>,
           actionsHost,
         )}
-      {infoHost &&
+      {!browser &&
+        infoHost &&
         (error || notice || busy) &&
         createPortal(
           <div className={styles.info} aria-label="Artifact information">
@@ -348,40 +370,46 @@ export function ArtifactView({
         data-code-thread={threadId}
         data-code-title={threadTitle}
       >
-        {!selected && !busy && (
-          <p>
-            {items.length
-              ? 'This artifact could not be displayed.'
-              : 'No local artifacts found in this thread yet. You can link an existing file.'}
-          </p>
-        )}
-        {selected?.item.kind === 'image' && (
-          <img src={selected.content} alt={selected.item.title} />
-        )}
-        {selected?.item.kind === 'text' && (
-          <ReplyCode
-            code={selected.content}
-            language={fileLanguage(selected.item.title)}
-            file={artifactCodeFile(selected.item)}
-            sourceId={'artifact:' + threadId + '/' + selected.item.id}
-          />
-        )}
-
-        {selected?.item.kind === 'html' && (
-          <InteractiveArtifact
-            threadId={threadId}
-            id={selected.item.id}
-            onEscape={onClose}
-            onNavigate={cycle}
-            fallback={
-              <iframe
-                title={selected.item.title}
-                sandbox=""
-                referrerPolicy="no-referrer"
-                srcDoc={staticHtml(selected.content)}
+        {browser ? (
+          <BrowserView threadId={threadId} />
+        ) : (
+          <>
+            {!selected && !busy && (
+              <p>
+                {items.length
+                  ? 'This artifact could not be displayed.'
+                  : 'No local artifacts found in this thread yet. You can link an existing file.'}
+              </p>
+            )}
+            {selected?.item.kind === 'image' && (
+              <img src={selected.content} alt={selected.item.title} />
+            )}
+            {selected?.item.kind === 'text' && (
+              <ReplyCode
+                code={selected.content}
+                language={fileLanguage(selected.item.title)}
+                file={artifactCodeFile(selected.item)}
+                sourceId={'artifact:' + threadId + '/' + selected.item.id}
               />
-            }
-          />
+            )}
+
+            {selected?.item.kind === 'html' && (
+              <InteractiveArtifact
+                threadId={threadId}
+                id={selected.item.id}
+                onEscape={onClose}
+                onNavigate={cycle}
+                fallback={
+                  <iframe
+                    title={selected.item.title}
+                    sandbox=""
+                    referrerPolicy="no-referrer"
+                    srcDoc={staticHtml(selected.content)}
+                  />
+                }
+              />
+            )}
+          </>
         )}
       </div>
     </section>

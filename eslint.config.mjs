@@ -44,7 +44,7 @@ export default defineConfig(
     languageOptions: { globals: globals.node },
   },
   {
-    files: ['test/**/*.cjs', 'vscode-coach/**/*.cjs'],
+    files: ['test/**/*.cjs', 'vscode-coach/**/*.cjs', 'vscode-margin-notes/**/*.js'],
     languageOptions: { globals: globals.node },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },

@@ -5,6 +5,8 @@ import type { Provider, Session } from './types'
 
 export const WORKSPACE_GUTTER = 16
 export interface AttentionMotion {
+  /** Live uses the same pending inputs, with the real waveform visible under the fire. */
+  pill?: { width: number; waiting: boolean }
   active: boolean
   /** The provider of the first waiting thread (kept for single-drip consumers). */
   provider: Provider

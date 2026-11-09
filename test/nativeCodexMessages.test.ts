@@ -55,40 +55,48 @@ function fixture(
     service: new NativeCodexMessages(history, journal, vi.fn(), connect),
   }
 }
-it('starts through the discovered desktop owner, preserving native model and permissions', async () => {
-  const { service, connection } = fixture()
-  expect(await service.send(key, 'Hello from Threadlight')).toEqual({ ok: true })
-  expect(connection.request).toHaveBeenLastCalledWith(
-    'thread-follower-start-turn',
-    {
-      conversationId: id,
-      turnStart: {
-        request: {
-          threadId: id,
-          input: [{ type: 'text', text: 'Hello from Threadlight', text_elements: [] }],
-          clientUserMessageId: expect.any(String),
-        },
-        context: {
-          inheritThreadSettings: true,
-          restoreMessage: { text: 'Hello from Threadlight', context: {} },
+it.each([undefined, 'gpt-6.1-sol'])(
+  'starts through the discovered desktop owner with the requested model %s',
+  async (model) => {
+    const { service, connection } = fixture()
+    expect(await service.send(key, 'Hello from Threadlight', [], 'send', model)).toEqual({
+      ok: true,
+    })
+    expect(connection.request).toHaveBeenLastCalledWith(
+      'thread-follower-start-turn',
+      {
+        conversationId: id,
+        turnStart: {
+          request: {
+            threadId: id,
+            input: [{ type: 'text', text: 'Hello from Threadlight', text_elements: [] }],
+            clientUserMessageId: expect.any(String),
+            ...(model && { model }),
+          },
+          context: {
+            inheritThreadSettings: true,
+            restoreMessage: { text: 'Hello from Threadlight', context: {} },
+          },
         },
       },
-    },
-    2,
-    'owner',
-  )
-  expect(service.list()[0]?.state).toBe('sent')
-  expect(readFileSync(join(journal, readdirSync(journal)[0]!), 'utf8')).not.toContain('Hello from')
-  db.prepare('INSERT INTO thread_turns VALUES (?,?,?,2)').run(id, newTurn, 'completed')
-  db.prepare('INSERT INTO thread_items VALUES (?,?,?,?,1)').run(
-    id,
-    newTurn,
-    'agentMessage',
-    JSON.stringify({ text: 'Received' }),
-  )
-  service.refresh()
-  expect(service.list()[0]).toMatchObject({ state: 'replied', detail: 'Received' })
-})
+      2,
+      'owner',
+    )
+    expect(service.list()[0]?.state).toBe('sent')
+    expect(readFileSync(join(journal, readdirSync(journal)[0]!), 'utf8')).not.toContain(
+      'Hello from',
+    )
+    db.prepare('INSERT INTO thread_turns VALUES (?,?,?,2)').run(id, newTurn, 'completed')
+    db.prepare('INSERT INTO thread_items VALUES (?,?,?,?,1)').run(
+      id,
+      newTurn,
+      'agentMessage',
+      JSON.stringify({ text: 'Received' }),
+    )
+    service.refresh()
+    expect(service.list()[0]).toMatchObject({ state: 'replied', detail: 'Received' })
+  },
+)
 it('steers a working turn instead of spawning or starting a second writer', async () => {
   db.exec("UPDATE thread_turns SET status='inProgress'")
   const { service, connection } = fixture()

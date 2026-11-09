@@ -59,79 +59,128 @@ function Card({
       setBusy(false)
     }
   }
+  const title = card.request?.title ?? card.title
+  const question = card.kind === 'question' || card.request?.kind === 'question'
+  const receipt =
+    card.state === 'answered-here' &&
+    card.kind === 'native' &&
+    (card.request?.kind === 'approval' ||
+      card.request?.nativeKind === 'permissions' ||
+      (!card.request && (card.recordedAnswer === 'Allowed' || card.recordedAnswer === 'Denied')))
+  const outcome =
+    card.recordedAnswer === 'Allowed' || card.recordedAnswer === 'Denied'
+      ? card.recordedAnswer
+      : 'Answered'
+  const sourceActions = (
+    <>
+      <p>
+        {card.state.replaceAll('-', ' ')}
+        {card.at ? ` · ${new Date(card.at).toLocaleString()}` : ''}
+      </p>
+      <button
+        onClick={async () => {
+          setError('')
+          try {
+            const result = await window.threadlight.communicationRequest({
+              action: 'conversation_open',
+              arguments: { owner, cardId: card.id },
+            })
+            if (result.ok && typeof result.value === 'string')
+              await window.threadlight.openInClaude(result.value)
+            else if (!result.ok) setError(result.reason)
+          } catch {
+            setError('Source chat is unavailable.')
+          }
+        }}
+      >
+        Open source chat
+      </button>
+    </>
+  )
   return (
     <section
       className={styles.card}
-      aria-label={`${card.title} ${card.kind} card`}
+      aria-label={
+        question ? `${provider(card.source)} question card` : `${card.title} ${card.kind} card`
+      }
       data-card-id={card.id}
       data-card-state={card.state}
+      data-question-card={question || undefined}
     >
-      {!(card.state === 'pending' && !historical && (card.request || card.question)) && (
-        <div className={styles.cardHead}>
-          <strong>{card.request?.title ?? card.title}</strong>
-        </div>
+      {receipt ? (
+        <details className={styles.approvalReceipt}>
+          <summary>
+            <span className={styles.receiptTitle}>{title}</span>
+            <span className={styles.receiptOutcome}>{outcome}</span>
+          </summary>
+          <div className={styles.receiptBody}>
+            <div className={styles.cardMeta}>
+              <span>{provider(card.source)}</span>
+              <span>{card.source}</span>
+            </div>
+            {card.body !== title && <AgentMessageContent text={card.body} />}
+            {card.request?.detail &&
+              card.request.detail !== card.body &&
+              card.request.detail !== title && <AgentMessageContent text={card.request.detail} />}
+            {card.recordedAnswer && card.recordedAnswer !== outcome && <p>{card.recordedAnswer}</p>}
+            {sourceActions}
+            {error && <p role="alert">{error}</p>}
+          </div>
+        </details>
+      ) : (
+        <>
+          {!(card.state === 'pending' && !historical && (card.request || card.question)) && (
+            <div className={styles.cardHead}>
+              <strong>{card.request?.title ?? card.title}</strong>
+            </div>
+          )}
+          <div className={styles.cardMeta}>
+            <span>{provider(card.source)}</span>
+            {card.request && !question && card.title !== card.request.title && (
+              <span>{card.title}</span>
+            )}
+            <span className={styles.state}>
+              {historical && card.state === 'pending' ? 'Earlier' : stateLabel(card.state)}
+            </span>
+          </div>
+          {card.state === 'pending' && !historical && card.request ? (
+            <NativeRequest
+              key={`${card.id}:${card.generation}`}
+              request={card.request}
+              direct={card.request.target === target}
+              busy={busy}
+              focus={() => call('conversation_focus')}
+              answer={(response) =>
+                call('conversation_answer', { operationId: crypto.randomUUID(), response })
+              }
+            />
+          ) : card.state === 'pending' && !historical && card.question ? (
+            <Question
+              key={`${card.id}:${card.generation}`}
+              title={card.body}
+              choices={card.question.choices}
+              allowOther={card.question.allowOther}
+              busy={busy}
+              answer={(answer) =>
+                call('conversation_answer', { operationId: crypto.randomUUID(), answer })
+              }
+            />
+          ) : card.body !== (card.request?.title ?? card.title) ? (
+            <AgentMessageContent text={card.body} />
+          ) : null}
+          {card.recordedAnswer && <p style={{ whiteSpace: 'pre-wrap' }}>{card.recordedAnswer}</p>}
+          {!question && (
+            <details className={styles.cardDetails}>
+              <summary>Details</summary>
+              {sourceActions}
+            </details>
+          )}
+          {error && <p role="alert">{error}</p>}
+        </>
       )}
-      <div className={styles.cardMeta}>
-        <span>{provider(card.source)}</span>
-        {card.request && card.title !== card.request.title && <span>{card.title}</span>}
-        <span className={styles.state}>
-          {historical && card.state === 'pending' ? 'Earlier' : stateLabel(card.state)}
-        </span>
-      </div>
-      {card.state === 'pending' && !historical && card.request ? (
-        <NativeRequest
-          key={`${card.id}:${card.generation}`}
-          request={card.request}
-          direct={card.request.target === target}
-          busy={busy}
-          focus={() => call('conversation_focus')}
-          answer={(response) =>
-            call('conversation_answer', { operationId: crypto.randomUUID(), response })
-          }
-        />
-      ) : card.state === 'pending' && !historical && card.question ? (
-        <Question
-          key={`${card.id}:${card.generation}`}
-          title={card.body}
-          choices={card.question.choices}
-          allowOther={card.question.allowOther}
-          busy={busy}
-          answer={(answer) =>
-            call('conversation_answer', { operationId: crypto.randomUUID(), answer })
-          }
-        />
-      ) : card.body !== (card.request?.title ?? card.title) ? (
-        <AgentMessageContent text={card.body} />
-      ) : null}
-      {card.recordedAnswer && <p style={{ whiteSpace: 'pre-wrap' }}>{card.recordedAnswer}</p>}
-      <details className={styles.cardDetails}>
-        <summary>Details</summary>
-        <p>
-          {card.state.replaceAll('-', ' ')}
-          {card.at ? ` · ${new Date(card.at).toLocaleString()}` : ''}
-        </p>
-        <button
-          onClick={() =>
-            void window.threadlight
-              .communicationRequest({
-                action: 'conversation_open',
-                arguments: { owner, cardId: card.id },
-              })
-              .then((result) => {
-                if (result.ok && typeof result.value === 'string')
-                  window.threadlight.openInClaude(result.value)
-                else if (!result.ok) setError(result.reason)
-              })
-              .catch(() => setError('Source chat is unavailable.'))
-          }
-        >
-          Open source chat
-        </button>
-      </details>
       {card.speech === 'uncertain' && (
         <p className={styles.warning}>Spoken update could not be confirmed.</p>
       )}
-      {error && <p role="alert">{error}</p>}
     </section>
   )
 }

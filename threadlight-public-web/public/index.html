@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Threadlight — A Windows overlay for Claude Code and Codex</title>
-  <meta name="description" content="Follow Claude Code and Codex work from a compact Windows desktop overlay. Explore Threadlight, install the open-source preview and connect your first coding thread.">
+  <meta name="description" content="Follow AI chats from a Windows overlay, share decisions through Claude Code and Codex plugins, and walk through code with a voice coach in VS Code. Try Threadlight from source.">
   <link rel="canonical" href="https://threadlight.jocosewasp4.chatgpt.site/">
   <link rel="icon" href="/assets/icon.svg">
   <link rel="stylesheet" href="/style.css">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Threadlight — Keep your AI chats in view">
-  <meta property="og:description" content="A compact Windows overlay for following coding threads, reviewing changes and sharing project context. Explore the preview and set it up from source.">
+  <meta property="og:description" content="Keep AI chats in view, give the next chat a project handoff, and talk through a line of code in VS Code. Open-source Windows preview.">
   <meta property="og:url" content="https://threadlight.jocosewasp4.chatgpt.site/">
   <meta property="og:image" content="https://threadlight.jocosewasp4.chatgpt.site/assets/release.jpg">
   <meta property="og:image:alt" content="Threadlight release artwork with an illuminated blue and amber spiral">
@@ -20,7 +20,7 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap mast"><a class="brand" href="/" aria-label="Threadlight home"><img src="/assets/icon.svg" alt="" width="32" height="32">Threadlight</a>
-<nav aria-label="Main navigation"><a href="#overview">Overview</a><a href="#setup">Setup</a><a href="#faq">FAQ</a><a class="repo" href="https://github.com/JusamaGB/Threadlight">GitHub <span aria-hidden="true">↗</span></a></nav></header>
+<nav aria-label="Main navigation"><a href="#overview">Overview</a><a href="#coaching">Coaching</a><a href="#setup">Setup</a><a href="#faq">FAQ</a><a class="repo" href="https://github.com/JusamaGB/Threadlight">GitHub <span aria-hidden="true">↗</span></a></nav></header>
 <main id="main">
 <section class="wrap hero" aria-labelledby="headline">
   <div class="hero-copy"><p class="kicker"><i></i> Open-source Windows alpha</p>
@@ -35,6 +35,13 @@
   <dt>Look at the change</dt><dd>Inspect Codex edit records and local Git changes in the panel. Open a local artifact to see what a thread produced.</dd>
   <dt>Give the next chat context</dt><dd>Save a decision or handoff in a Shared Space. Approve individual chat connections to let collaborators read the project material you share.</dd></dl></div>
   <figure><a href="/assets/recent-agent-call.webp" aria-label="Open the full-size Recent and Agent illustration"><img src="/assets/recent-agent-call.webp" alt="Recent lists four example chats. On a simulated call, the Agent checks two of them and shows the Python return statement that keeps the old welcome-button label." width="1254" height="1254" loading="lazy"></a><figcaption>Recent and Agent show example threads and a simulated call in the layout included in the public source preview.</figcaption></figure>
+</section>
+<section class="wrap feature" id="coaching" aria-labelledby="coach-title">
+  <div><p class="kicker blue">Plugins, skills &amp; coaching</p><h2 id="coach-title">Talk through the code in VS Code.</h2>
+  <dl><dt>Walk through a function</dt><dd>Connect a trusted Windows VS Code window to Threadlight’s foreground GPT Live session. Ask it to explain a function one line at a time. The companion highlights the line before the coach speaks. You choose when to move on.</dd>
+  <dt>Try a change yourself</dt><dd>Type along with ghost text or ask to see a proposed edit in place. Accepting changes the open buffer. You decide when to save. <a href="https://github.com/JusamaGB/Threadlight/tree/main/vscode-coach#install-from-source">Install the VS Code companion from source</a>.</dd>
+  <dt>Bring another chat into the project</dt><dd>The setup skill guides a local assistant through installation. The Claude Code and Codex plugins can connect individual chats to a Shared Space. Approve the chat and its permissions, then share a decision or a handoff there. <a href="https://github.com/JusamaGB/Threadlight/blob/main/docs/SHARED-MEMORY.md">Plugin and shared memory guide</a>.</dd></dl></div>
+  <figure><a href="/assets/live-coaching.webp" aria-label="Open the full-size VS Code coaching example"><img src="/assets/live-coaching.webp" alt="A Python receipt example in VS Code shows a proposed change from adding one unit price to multiplying each price by the quantity ordered. A pinned note asks the reader to check that three apples at 50p total £1.50." width="1254" height="1254" loading="lazy"></a><figcaption>A receipt example from the VS Code companion test, shown with a pinned annotation from the separate Margin Notes extension.</figcaption></figure>
 </section>
 <section class="band" id="setup" aria-labelledby="install"><div class="wrap setup">
   <div><p class="kicker">Windows setup</p><h2 id="install">Set up with an assistant.</h2>
@@ -71,9 +78,11 @@ node scripts/install.mjs --check --providers codex</code></pre></li>
 </div></section>
 <section class="wrap faq" id="faq" aria-labelledby="questions"><div><p class="kicker blue">Help &amp; compatibility</p><h2 id="questions">Common questions.</h2></div>
 <div class="answers">
+<details><summary>How does the shared browser work?</summary><p>Open Browser from the panel header in Threadlight 0.1.0-alpha.2. Give a connected Claude or Codex chat access to the page and it can click and type alongside you. You can take back control or revoke access. <a href="https://github.com/JusamaGB/Threadlight/releases/tag/v0.1.0-alpha.2">Get the source release and optional VS Code extensions</a>.</p></details>
+<details><summary>Does Threadlight support Kimi?</summary><p>Kimi integration is in development. It’s hidden in the public preview.</p></details>
 <details id="codex-connection"><summary>Can I use Codex without Claude?</summary><p>Yes. From the source folder, run <code>node scripts/install.mjs --providers codex</code>. It registers the Codex plugin and selects Codex. Run <code>node scripts/install.mjs --check --providers codex</code> to check the installation. Complete your own Codex sign-in, review hook trust in <code>/hooks</code> and start a new local Codex chat to verify activity. <a href="https://github.com/JusamaGB/Threadlight/blob/main/docs/validation/CODEX-ONLY-SETUP.md">Windows 10 installation results</a> · <a href="https://github.com/JusamaGB/Threadlight/blob/main/codex-plugin/README.md">Codex plugin guide</a></p></details>
 <details><summary>Can Threadlight follow chats in my browser?</summary><p>A browser tab alone cannot connect its chats to the overlay. The public build follows local Claude Code and Codex coding sessions. You can also read and reply to ordinary ChatGPT chats through a compatible, signed-in Codex Desktop app with a known local Codex chat, and to Perplexity chats through the signed-in Perplexity Windows app. Choose Chat or All in Threadlight to see them. <a href="https://github.com/JusamaGB/Threadlight/blob/main/docs/ACCOUNT-CHATS.md">Account chat guide</a></p></details>
-<details><summary>Is there a Windows installer or a Mac version?</summary><p>The public alpha is a Windows source build. There is no packaged release to download. Keep the source folder after setup because the app runs from it. Desktop integrations can change when provider apps update.</p></details>
+<details><summary>Is there a Windows installer or a Mac version?</summary><p>The desktop app runs from source on Windows. The <a href="https://github.com/JusamaGB/Threadlight/releases/tag/v0.1.0-alpha.2">0.1.0-alpha.2 release</a> includes the source and separate VSIX downloads for Live Coach and Margin Notes. Keep the source folder after setup because the app runs from it.</p></details>
 <details><summary>What stays on my PC?</summary><p>Threadlight reads local session records and workspace files for the features you use. It has no Threadlight account or analytics service. Sending a reply invokes your provider under your own account. Local dictation uses a downloaded speech model. GPT Live sends microphone audio to the provider while active. <a href="https://github.com/JusamaGB/Threadlight/blob/main/PRIVACY.md">Local data details</a> · <a href="https://github.com/JusamaGB/Threadlight#what-it-does">Voice and network use</a></p></details>
 <details><summary>Who can read a Shared Space?</summary><p>Connecting a chat requires approval in Threadlight. Match its verification code, check the requested space and permissions, then approve the intended connection. Project direct messages also require project DMs to be enabled. <a href="https://github.com/JusamaGB/Threadlight/blob/main/docs/SHARED-MEMORY.md">Shared memory guide</a></p></details>
 <details><summary>Why is my thread missing?</summary><p>Check the tray for Threadlight and run the diagnostic with the providers you installed, for example <code>node scripts/install.mjs --check --providers codex</code>. For Codex, check sign-in and hook trust, then open a new local chat. For Claude, open Claude Desktop, check <code>claude auth status</code> and start a fresh Claude Code session after installing the plugin. For account chats, check that the signed-in desktop app is open and Chat or All is selected.</p></details>

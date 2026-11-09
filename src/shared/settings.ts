@@ -52,6 +52,8 @@ export const settingsSchema = z.object({
   /** Explicit speech engine; independent of the local transcript's destination. */
   voiceMode: z.enum(['local-stt', 'gpt-live']).default('local-stt'),
   pythonSuggestions: z.enum(['editor', 'on', 'off']).default('editor'),
+  spokenGhostWalkthroughs: z.boolean().default(true),
+  ghostPracticeLocation: z.enum(['current', 'copy']).default('current'),
   screenRegionModes: z
     .array(z.enum(['live', 'outside']))
     .max(2)

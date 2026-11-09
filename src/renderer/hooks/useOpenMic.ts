@@ -9,6 +9,7 @@ import type { LiveVoicePhase } from '../../shared/liveVoice'
 import { SILENT_AUDIO, type AudioEnergy } from '../../shared/motion'
 import { AudioEnergyMeter } from '../lib/audioEnergy'
 import { callReadyCue } from '../lib/callReadyCue'
+import type { InputCaption } from '../lib/liveInputPreview'
 
 const FRAME = 512
 export type OpenMicState = 'off' | 'listening' | 'hearing' | 'blocked'
@@ -31,6 +32,7 @@ interface OpenMicOptions {
   onStop?: () => void
   conversationOnly?: boolean
   livePort?: LiveVoicePort
+  onInputCaption?: (caption: InputCaption | null) => void
 }
 
 /** One microphone owner, with mutually exclusive local transcription and native audio paths. */
@@ -46,6 +48,7 @@ export function useOpenMic({
   onStop,
   conversationOnly = false,
   livePort,
+  onInputCaption,
 }: OpenMicOptions) {
   const [state, setState] = useState<OpenMicState>('off')
   const [mode, setMode] = useState<MicSessionMode>('undecided')
@@ -54,9 +57,9 @@ export function useOpenMic({
   const level = useRef(0)
   const energy = useRef<AudioEnergy>(SILENT_AUDIO)
   const outputEnergy = useRef<AudioEnergy>(SILENT_AUDIO)
-  const latest = useRef({ paused, threads, onSentence, onConversation, onStop })
+  const latest = useRef({ paused, threads, onSentence, onConversation, onStop, onInputCaption })
   useEffect(() => {
-    latest.current = { paused, threads, onSentence, onConversation, onStop }
+    latest.current = { paused, threads, onSentence, onConversation, onStop, onInputCaption }
   })
 
   useEffect(() => {
@@ -127,6 +130,7 @@ export function useOpenMic({
           context,
           livePort,
           liveSessionId,
+          (caption) => latest.current.onInputCaption?.(caption),
         )
         connecting = live.start({ bufferAudio: true })
       }

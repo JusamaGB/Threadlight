@@ -315,6 +315,33 @@ describe('connected header motion', () => {
 })
 
 describe('provider speech and spatial frequency response', () => {
+  it.each([
+    [92, 24, false],
+    [342, 36, true],
+  ])(
+    'keeps mute visible at both tips of the %ipx speaking waveform',
+    (width, height, edgeToEdge) => {
+      const mesh = new MotionGeometry()
+      const pose = { ...restingPose(), output: full }
+      const frame = (style) =>
+        mesh.build(width, height, 1, pose, true, edgeToEdge, false, 'codex', style).slice()
+      const open = frame('audio')
+      const muted = frame('muted')
+      const regions = new Set()
+      for (let i = 0; i < open.length; i += 6) {
+        const x = open[i] / width
+        if (x > 0.25 && x < 0.75 && !regions.has('center')) {
+          expect(muted.slice(i + 2, i + 5)).toEqual(open.slice(i + 2, i + 5))
+          regions.add('center')
+        } else if ((x < 0.02 && !regions.has('left')) || (x > 0.98 && !regions.has('right'))) {
+          expect(muted[i + 2]).toBeGreaterThan(muted[i + 4])
+          expect(open[i + 2]).toBeLessThan(open[i + 4])
+          regions.add(x < 0.02 ? 'left' : 'right')
+        }
+      }
+      expect(regions.size).toBe(3)
+    },
+  )
   it('opens the thinking wheel for quiet speech and keeps its amplified response visible', () => {
     const pose = { ...restingPose(), wheel: 1 }
     const audio = { level: 0.025, low: 0.025, mid: 0, high: 0 }

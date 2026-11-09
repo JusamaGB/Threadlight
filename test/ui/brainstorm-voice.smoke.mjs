@@ -216,7 +216,7 @@ export async function checkBrainstormVoice(page, proof, capture) {
   await page.waitForFunction(async () => (await window.mockBrainstormCallCount()) >= 2)
   assert.equal(proof.store.discussions()[0].id, first)
   await page.getByRole('tab', { name: 'Notes', exact: true }).click()
-  await page.getByRole('button', { name: 'Return to call' }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Return to call' }).count(), 0)
   assert.equal(await stop.count(), 0)
   await page.evaluate(() =>
     window.proof.emit('onPanelOpened', {

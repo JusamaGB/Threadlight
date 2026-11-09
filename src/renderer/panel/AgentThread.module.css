@@ -149,6 +149,56 @@
 .card[data-card-state='pending'] {
   border-color: var(--amber);
 }
+.card[data-question-card] {
+  border-left: 0;
+  padding-left: 0;
+}
+.approvalReceipt summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 5px;
+  padding-block: 3px;
+  cursor: pointer;
+}
+.approvalReceipt summary::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border: solid var(--muted);
+  border-width: 0 1px 1px 0;
+  transform: translateY(-1px) rotate(-45deg);
+}
+.approvalReceipt[open] summary::before {
+  transform: translateY(-2px) rotate(45deg);
+}
+.receiptTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.receiptTitle::first-letter {
+  text-transform: uppercase;
+}
+.approvalReceipt[open] .receiptTitle {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.receiptOutcome {
+  color: var(--muted);
+  font-size: 11px;
+}
+.receiptBody {
+  display: grid;
+  gap: 4px;
+  padding: 2px 0 3px 10px;
+  overflow-wrap: anywhere;
+}
+.receiptBody p {
+  margin: 0;
+  white-space: pre-wrap;
+}
 .cardHead {
   display: flex;
   flex-wrap: wrap;
@@ -185,6 +235,7 @@
 }
 .card > article > button,
 .cardDetails button,
+.receiptBody button,
 .card > button,
 .announcement button {
   width: fit-content;
